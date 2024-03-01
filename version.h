@@ -1,0 +1,11 @@
+#ifndef TADAH_VERSION_H
+#define TADAH_VERSION_H
+
+#define TADAH_WORLD_VERSION 0
+#define TADAH_MAJOR_VERSION 9
+#define TADAH_MINOR_VERSION 0
+
+#define STRING(s) #s
+
+#endif
+

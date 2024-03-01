@@ -1,0 +1,7 @@
+#include "dm_kern_base.h"
+#include "dm_kern_linear.h"
+#include "dm_kern_rbf.h"
+//#include "dm_kern_lq.h"
+#include "dm_kern_polynomial.h"
+#include "dm_kern_sigmoid.h"
+#include "dm_kern_quadratic.h"
