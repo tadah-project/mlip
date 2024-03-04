@@ -12,6 +12,8 @@ stages:
   - trigger
 
 before_script:
+  - rm -rf ../CORE
+  - rm -rf ../MODELS
   - git clone https://git.ecdf.ed.ac.uk/tadah/core.git ../CORE
   - git clone https://git.ecdf.ed.ac.uk/tadah/models.git ../MODELS
   - pwd
