@@ -1,6 +1,10 @@
 variables:
   DEBUG_DIR: "build_debug"
   RELEASE_DIR: "build_release"
+  CPU_BUILD: 4
+  CPU_SIM: 4
+  INSTALL_PATH: "~/.local"
+
 stages:
   - build
   - build.tests
@@ -12,14 +16,14 @@ before_script:
   - git clone https://git.ecdf.ed.ac.uk/tadah/models.git MODELS
   - mkdir -p ${DEBUG_DIR}
   - mkdir -p ${RELEASE_DIR}
-  - export OMP_NUM_THREADS=4
+  - export OMP_NUM_THREADS=${CPU_SIM}
 
 build-debug:
   stage: build
   script:
     - cd ${DEBUG_DIR}
     - cmake .. -DCMAKE_CXX_FLAGS="-g -O1 -fsanitize=address -Wall -Wpedantic -pedantic-errors -Wextra --coverage"
-    - make -j ${OMP_NUM_THREADS}
+    - make -j ${CPU_BUILD}
 
 build-tests:
   variables: 
@@ -29,7 +33,7 @@ build-tests:
   script:
     - cd ${DEBUG_DIR}
     - cmake .. -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON -DCMAKE_CXX_FLAGS="--coverage -g -O1"
-    - make -j ${OMP_NUM_THREADS}
+    - make -j ${CPU_BUILD}
     - rm -rf _deps
     - find . -name "*.a" -exec rm {} +
     - find . -name "*.o" -exec rm {} +
@@ -58,7 +62,7 @@ build-release-shared:
   script:
     - cd ${RELEASE_DIR}
     - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON
-    - make -j ${OMP_NUM_THREADS}
+    - make -j ${CPU_BUILD}
 
 build-release-static:
   stage: build
@@ -66,8 +70,7 @@ build-release-static:
   script:
     - cd ${RELEASE_DIR}
     - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF
-    - make -j ${OMP_NUM_THREADS}
-
+    - make -j ${CPU_BUILD}
 
 trigger_job:
   stage: trigger
