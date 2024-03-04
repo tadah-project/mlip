@@ -92,15 +92,15 @@ class M_KRR: public M_Tadah_Base,
         norm = Normaliser(c);
     }
 
-        double epredict(const aed_type2 &aed) {
+        double epredict(const aed_type2 &aed) const {
             return kernel.epredict(weights,aed);
         };
 
-        double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) {
+        double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const {
             return kernel.fpredict(weights,fdij,aedi,k);
         }
 
-        force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) {
+        force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const {
             return kernel.fpredict(weights,fdij,aedi);
         }
 

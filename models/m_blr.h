@@ -112,15 +112,15 @@ class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
         norm = Normaliser(c);
     }
 
-        double epredict(const aed_type2 &aed) {
+        double epredict(const aed_type2 &aed) const{
             return bf.epredict(weights,aed);
         };
 
-        double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) {
+        double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const{
             return bf.fpredict(weights,fdij,aedi,k);
         }
 
-        force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) {
+        force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const{
             return bf.fpredict(weights,fdij,aedi);
         }
 
