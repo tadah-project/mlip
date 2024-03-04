@@ -9,7 +9,7 @@ stages:
 
 before_script:
   - git clone https://git.ecdf.ed.ac.uk/tadah/core.git CORE
-  - git clone https://git.ecdf.ed.ac.uk/tadah/core.git MODELS
+  - git clone https://git.ecdf.ed.ac.uk/tadah/models.git MODELS
   - mkdir -p ${DEBUG_DIR}
   - mkdir -p ${RELEASE_DIR}
   - export OMP_NUM_THREADS=4
