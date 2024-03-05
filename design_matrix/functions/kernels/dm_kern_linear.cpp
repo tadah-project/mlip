@@ -1,7 +1,7 @@
 #include "dm_kern_linear.h"
 
-Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "Kern_Linear" );
-Registry<DM_Function_Base,Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "Kern_Linear" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "Kern_Linear" );
+//CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "Kern_Linear" );
 
 DM_Kern_Linear::DM_Kern_Linear() {}
 DM_Kern_Linear::DM_Kern_Linear (const Config &c): Kern_Linear(c)

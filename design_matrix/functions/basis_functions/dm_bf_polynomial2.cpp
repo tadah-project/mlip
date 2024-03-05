@@ -1,7 +1,7 @@
 #include "dm_bf_polynomial2.h"
 
-Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "BF_Polynomial2" );
-Registry<DM_Function_Base,Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "BF_Polynomial2" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "BF_Polynomial2" );
+//CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "BF_Polynomial2" );
 
 DM_BF_Polynomial2::DM_BF_Polynomial2() {}
 DM_BF_Polynomial2::DM_BF_Polynomial2(const Config &c): BF_Polynomial2(c)

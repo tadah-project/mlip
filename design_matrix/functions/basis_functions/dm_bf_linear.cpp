@@ -1,7 +1,7 @@
 #include "dm_bf_linear.h"
 
-Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "BF_Linear" );
-Registry<DM_Function_Base,Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "BF_Linear" );
+//CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
 
 DM_BF_Linear::DM_BF_Linear() {}
 DM_BF_Linear::DM_BF_Linear(const Config &c): BF_Linear(c)

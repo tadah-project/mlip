@@ -27,6 +27,6 @@ struct DM_Function_Base: public virtual Function_Base {
     virtual void calc_phi_stress_rows(phi_type &, size_t &,
             const double[6], const Structure &, const StDescriptors &)=0;
 };
-template<> inline Registry<DM_Function_Base>::Map Registry<DM_Function_Base>::registry{};
-template<> inline Registry<DM_Function_Base,Config&>::Map Registry<DM_Function_Base,Config&>::registry{};
+//template<> inline CONFIG::Registry<DM_Function_Base>::Map CONFIG::Registry<DM_Function_Base>::registry{};
+//template<> inline CONFIG::Registry<DM_Function_Base,Config&>::Map CONFIG::Registry<DM_Function_Base,Config&>::registry{};
 #endif
