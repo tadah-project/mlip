@@ -51,7 +51,7 @@ if(TADAH_ENABLE_OPENMP)
     target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-add_library(tadah.mlip STATIC $<TARGET_OBJECTS:tadah.mlip.obj>)
+add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
 
 include(CTest) 
 if(TADAH_BUILD_TESTS)
