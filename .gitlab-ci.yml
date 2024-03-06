@@ -4,6 +4,7 @@ variables:
   CPU_BUILD: 4
   CPU_SIM: 4
   INSTALL_PATH: "~/.local"
+  GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_JOB_ID/$CI_PROJECT_NAME'
 
 stages:
   - build
