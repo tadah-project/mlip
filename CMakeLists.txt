@@ -24,16 +24,6 @@ ExternalProject_Add(Tadah.MODELS
     INSTALL_COMMAND cmake -E echo "Skipping install step."
     )
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../CORE")
-    message("This module requires CORE module for compilation.")
-    message(FATAL_ERROR "CORE module not found.")
-endif()
-
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../MODELS")
-    message("This module requires MODELS module for compilation.")
-    message(FATAL_ERROR "MODELS module not found.")
-endif()
-
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/build)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../CORE/build)
 
@@ -85,6 +75,9 @@ add_library(tadah.mlip.obj OBJECT
     ${MODELS_SRC}
     ${OUTPUT_SRC}
     )
+
+add_dependencies(tadah.mlip.obj Tadah.MODELS)
+
 if(TADAH_ENABLE_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
