@@ -23,7 +23,6 @@ ExternalProject_Add(Tadah.MODELS
     BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/build
     INSTALL_COMMAND cmake -E echo "Skipping install step."
     )
-
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/build)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../CORE/build)
 
