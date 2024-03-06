@@ -14,17 +14,17 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR}
     You may need to remove CMakeCache.txt and CMakeFiles dir. ")
 endif()
 
-include(ExternalProject)
-ExternalProject_Add(Tadah.MODELS
+include(FetchContent)
+FetchContent_Declare(
+    Tadah.MODELS
     GIT_REPOSITORY git@git.ecdf.ed.ac.uk:tadah/models.git
-    GIT_TAG main
+    GIT_TAG origin/main
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS
     PATCH_COMMAND  mkdir -p build
     BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/build
-    INSTALL_COMMAND cmake -E echo "Skipping install step."
     )
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/build)
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../CORE/build)
+
+FetchContent_MakeAvailable(Tadah.MODELS)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,8 +75,6 @@ add_library(tadah.mlip.obj OBJECT
     ${OUTPUT_SRC}
     )
 
-add_dependencies(tadah.mlip.obj Tadah.MODELS)
-
 if(TADAH_ENABLE_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
@@ -84,9 +82,7 @@ endif()
 
 add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
 
-include(CTest) 
 if(TADAH_BUILD_TESTS)
+    include(CTest) 
     add_subdirectory(tests)
 endif()
-
-set(CATCH_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/catch2)
