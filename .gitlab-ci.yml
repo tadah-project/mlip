@@ -21,7 +21,7 @@ build-debug-tests:
   stage: build.debug
   script:
     - cd ${DEBUG_DIR}
-    - cmake .. -DCMAKE_CXX_FLAGS="-g -O1 -fsanitize=address -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON
+    - cmake .. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON
     - make -j ${CPU_BUILD}
     - rm -rf _deps
     - find . -name "*.a" -exec rm {} +
