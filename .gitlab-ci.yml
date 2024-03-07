@@ -1,42 +1,28 @@
 variables:
-  DEBUG_DIR: "build_debug"
-  RELEASE_DIR: "build_release"
-  CPU_BUILD: 4
-  CPU_SIM: 4
-  INSTALL_PATH: "~/.local"
   GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_COMMIT_SHA/$CI_PROJECT_NAME
-
+  
 stages:
-  - build
-  - build.tests
-  - run.tests
+  - build.debug
+  - run.unit.tests
+  - build_release
+  - run.functional.tests
   - trigger
 
 before_script:
-  - echo "CI_BUILDS_DIR" $CI_BUILDS_DIR
-  - echo "CI_JOB_ID" $CI_JOB_ID
-  - echo "CI_COMMIT_SHA" $CI_COMMIT_SHA
-  - echo "CI_PROJECT_NAME" $CI_PROJECT_NAME
-  - echo "GIT_CLONE_PATH" $GIT_CLONE_PATH
   - mkdir -p ${DEBUG_DIR}
   - mkdir -p ${RELEASE_DIR}
+  - export PATH=$PATH:${INSTALL_PATH}/bin
+  - export CPATH=$CPATH:${INSTALL_PATH}/include
+  - export LIBRARY_PATH=$LIBRARY_PATH:${INSTALL_PATH}/lib
+  - export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${INSTALL_PATH}/lib
   - export OMP_NUM_THREADS=${CPU_SIM}
 
-build-debug:
-  stage: build
+build-debug-tests:
+  stage: build.debug
   script:
     - cd ${DEBUG_DIR}
     - cmake .. -DCMAKE_CXX_FLAGS="-g -O1 -fsanitize=address -Wall -Wpedantic -pedantic-errors -Wextra --coverage"
-    - make -j ${CPU_BUILD}
-
-build-tests:
-  variables: 
-    GIT_CLEAN_FLAGS: -ffdx -e ${DEBUG_DIR}
-  stage: build.tests
-  needs: [build-debug]
-  script:
-    - cd ${DEBUG_DIR}
-    - cmake .. -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON -DCMAKE_CXX_FLAGS="--coverage -g -O1"
+               -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}  -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON
     - make -j ${CPU_BUILD}
     - rm -rf _deps
     - find . -name "*.a" -exec rm {} +
@@ -46,8 +32,8 @@ build-tests:
       - "${DEBUG_DIR}"
 
 run-tests-1:
-  stage: run.tests
-  needs: [build-tests]
+  stage: run.unit.tests
+  dependencies: [build-debug-tests]
   script:
     - cd ${DEBUG_DIR}
     - make test
@@ -55,18 +41,19 @@ run-tests-1:
   coverage: /^TOTAL.*\s+(\d+\%)$/
 
 build-release-shared:
-  stage: build
+  stage: build_release
+  needs: [run-tests-1]
   script:
     - cd ${RELEASE_DIR}
-    - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}
     - make -j ${CPU_BUILD}
 
 build-release-static:
-  stage: build
+  stage: build_release
   needs: [build-release-shared]
   script:
     - cd ${RELEASE_DIR}
-    - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}
     - make -j ${CPU_BUILD}
 
 trigger_job:
