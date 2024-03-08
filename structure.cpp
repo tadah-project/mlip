@@ -74,7 +74,7 @@ int Structure::read(std::ifstream &ifs) {
     // make sure atoms vector is empty
     atoms.clear();
 
-    char symbol[3];
+    char symbol[2];
     double px,py,pz,fx,fy,fz;
     PeriodicTable pd;
     while(std::getline(ifs,line)) {

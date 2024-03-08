@@ -54,9 +54,7 @@ TEST_CASE( "Testing Structure virial pressure calculations", "[structure_virial_
 }
 TEST_CASE( "Testing Structure read and write", "[structure_read_write]" ) {
     Structure st;
-    std::cout << "Reading Structure" << std::endl;
     st.read("tests_data/structure_1.dat");
-    std::cout << "Reading Structure END" << std::endl;
 
     REQUIRE(st.get_volume() == Approx(989.521812));
 
