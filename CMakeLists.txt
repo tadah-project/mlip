@@ -83,7 +83,6 @@ if(TADAH_ENABLE_OPENMP)
 endif()
 
 add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
-target_link_libraries(tadah.mlip PRIVATE config::rc)
 
 if(TADAH_BUILD_TESTS)
     include(CTest) 
