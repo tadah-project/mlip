@@ -75,12 +75,15 @@ add_library(tadah.mlip.obj OBJECT
     ${OUTPUT_SRC}
     )
 
+target_link_libraries(tadah.mlip.obj PRIVATE config::rc)
+
 if(TADAH_ENABLE_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
+target_link_libraries(tadah.mlip PRIVATE config::rc)
 
 if(TADAH_BUILD_TESTS)
     include(CTest) 
