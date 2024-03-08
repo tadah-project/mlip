@@ -23,20 +23,22 @@ build-debug-tests:
     - cd ${DEBUG_DIR}
     - cmake .. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON
     - make -j ${CPU_BUILD}
-    - rm -rf _deps
-    - find . -name "*.a" -exec rm {} +
-    - find . -name "*.o" -exec rm {} +
-  artifacts:
-    paths:
-      - "${DEBUG_DIR}"
+#    - rm -rf _deps
+#    - find . -name "*.a" -exec rm {} +
+#    - find . -name "*.o" -exec rm {} +
+#  artifacts:
+#    paths:
+#      - "${DEBUG_DIR}"
 
 run-tests-1:
+  variables: 
+    GIT_CLEAN_FLAGS: -ffdx -e ${DEBUG_DIR} -e CORE -e MODELS  
   stage: run.unit.tests
   dependencies: [build-debug-tests]
   script:
     - cd ${DEBUG_DIR}
     - make test
-    - gcovr --exclude='.*/Eigen/.*' --exclude='.*/catch2/.*' --exclude='.*/tests/.*' --exclude='.*/CLI11/.*' --exclude='.*/toml11/.*'  --exclude='.*/CMakeFiles/.*' -r ..
+    - gcovr --exclude='.*CMakeCXXCompilerId.cpp.*' --exclude='.*/Eigen/.*' --exclude='.*/catch2/.*' --exclude='.*/tests/.*' --exclude='.*/CLI11/.*' --exclude='.*/toml11/.*'  --exclude='.*/CMakeFiles/.*' -r ..
   coverage: /^TOTAL.*\s+(\d+\%)$/
 
 build-release-shared:
