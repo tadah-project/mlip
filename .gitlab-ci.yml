@@ -10,7 +10,7 @@ stages:
 
 before_script:
   - apk update
-  - apk add git
+  - apk add git openssh
   - apk add cmake
   - apk add g++
   - apk add gcovr
