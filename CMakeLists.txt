@@ -47,7 +47,7 @@ endif()
 include(FetchContent)
 FetchContent_Declare(
     Tadah.MODELS
-    GIT_REPOSITORY git@git.ecdf.ed.ac.uk:tadah/models.git
+    GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
     GIT_TAG origin/main
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS
     PATCH_COMMAND  mkdir -p build
