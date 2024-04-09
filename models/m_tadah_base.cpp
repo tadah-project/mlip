@@ -78,6 +78,7 @@ predict(Config &c, const StructureDB &stdb, DC_Base &dc)
   #pragma omp parallel for
   for (size_t i=0; i<stdb.size(); ++i) {
     StDescriptors st_d = dc.calc(stdb(i));
+    if (i==0) std::cout << st_d.aeds << std::endl;
     stdb_(i) = predict(c,st_d, stdb(i));
   }
   return stdb_;

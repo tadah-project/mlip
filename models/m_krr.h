@@ -389,8 +389,9 @@ class M_KRR: public M_Tadah_Base,
 
         template <typename D>
             void train(D &desmat) {
-                phi_type &Phi = desmat.Phi;
-                t_type &T = desmat.T;
+              // TODO see comments in M_BLR
+                phi_type Phi = desmat.Phi;
+                t_type T = desmat.T;
                 M_KRR_Train<K>::train(Phi,T);
 
                 if (config.template get<bool>("NORM") &&
