@@ -256,6 +256,11 @@ struct Structure {
      */
     bool operator==(const Structure& st) const;
 
+    // move iterator forward to the next structure
+    // return 0 if success
+    // return 1 if there is no more structures
+    static int next_structure(std::ifstream &ifs) const;
+
     private:
     const static size_t w=15;  // controls output width
     const static size_t p=6;   // controls output precision

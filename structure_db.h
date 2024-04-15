@@ -123,5 +123,8 @@ struct StructureDB {
 
     /** Return unique elements for all Structures */
     std::unordered_set<Element> get_unique_elements();
+
+    static int count_structures(const Config &c) const;
+    static int count_structures(const std::string fn) const;
 };
 #endif
