@@ -110,15 +110,15 @@ std::pair<T,U> operator+(const std::pair<T,U> & l,const std::pair<T,U> & r) {
   return {l.first+r.first,l.second+r.second};                                    
 }  
 std::pair<int,int> StructureDB::count(const Config &config) {
-  std::pair<int, int> count=std::make_pair(0,0);  
+  std::pair<int, int> res=std::make_pair(0,0);  
   for (const std::string &fn : config("DBFILE")) {
-    count = count + count(fn);
+    res = res + count(fn);
   }
-  return count;
+  return res;
 }
 
 std::pair<int,int> StructureDB::count(const std::string fn){
-  int count=0;
+  int nstruc=0;
   int natoms_tot=0;
 
   std::ifstream ifs(fn);
@@ -129,8 +129,9 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   while(natoms) {
     natoms_tot += natoms;
     natoms = Structure::next_structure(ifs);
-    count++;
+    nstruc++;
   }
 
-  return std::make_pair<int,int>(count,natoms_tot);
+  std::pair<int,int> res = std::make_pair<int,int>(nstruc,natoms_tot);
+  return res;
 }
