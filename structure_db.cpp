@@ -22,6 +22,30 @@ void StructureDB::add(const std::string fn) {
     }
     ifs.close();
 }
+void StructureDB::add(const std::string fn, int first, int N) {
+  std::ifstream ifs(fn);
+  if (!ifs.is_open()) {
+    throw std::runtime_error("DBFILE does not exist: "+fn);
+  }
+
+  // move iterator to the first structure we want to read
+  for (size_t i=0; i<first; ++i) {
+    Structure::next_structure(ifs);
+  }
+
+  int count=0;
+  while (count++<N) {
+    structures.push_back(Structure());
+    int t = structures.back().read(ifs);
+
+    // did we read structure succesfully?
+    // if not remove last object from the list
+    if (t==1) structures.pop_back();
+
+    if (ifs.eof()) break;
+  }
+  ifs.close();
+}
 
 void StructureDB::add(const Structure &s) {
     structures.push_back(s);

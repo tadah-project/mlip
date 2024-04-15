@@ -62,6 +62,9 @@ struct StructureDB {
     /** Add all structures from a file */
     void add(const std::string fn);
 
+    /** Add N structures from a file begining from first. */
+    void add(const std::string fn, int first, int N);
+
     /** Add a single Structure object to this container */
     void add(const Structure &s);
 
@@ -112,7 +115,7 @@ struct StructureDB {
      */
     std::vector<size_t> dbidx;
 
-    /** Calculate total number of atoms stored by this object */
+    /** Calculate total number of atoms stored by this object. */
     size_t calc_natoms() const;
 
     /** Calculate total number of atoms in the n-th DBFILE.
@@ -121,10 +124,13 @@ struct StructureDB {
      */
     size_t calc_natoms(size_t n) const;
 
-    /** Return unique elements for all Structures */
+    /** Return unique elements for all Structures. */
     std::unordered_set<Element> get_unique_elements();
 
+    /** Count number of structures in all datasets from the Config file. */
     static int count_structures(const Config &c);
+
+    /** Count number of structures in a single dataset. */
     static int count_structures(const std::string fn);
 };
 #endif
