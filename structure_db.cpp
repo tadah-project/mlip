@@ -112,7 +112,7 @@ std::pair<T,U> operator+(const std::pair<T,U>  l,const std::pair<T,U>  r) {
 std::pair<int,int> StructureDB::count(const Config &config) {
   std::pair<int, int> res=std::make_pair(0,0);  
   for (const std::string &fn : config("DBFILE")) {
-    res = res + count(fn);
+    //res = res + count(fn);
   }
   return res;
 }
