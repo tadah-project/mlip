@@ -106,7 +106,7 @@ std::unordered_set<Element> StructureDB::get_unique_elements() {
 }
 
 template <typename T,typename U>                                                   
-std::pair<T,U> operator+(const std::pair<T,U> & l,const std::pair<T,U> & r) {   
+std::pair<T,U> operator+(const std::pair<T,U>  l,const std::pair<T,U>  r) {   
   return {l.first+r.first,l.second+r.second};                                    
 }  
 std::pair<int,int> StructureDB::count(const Config &config) {
