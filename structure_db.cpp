@@ -22,7 +22,7 @@ void StructureDB::add(const std::string fn) {
     }
     ifs.close();
 }
-void StructureDB::add(const std::string fn, int first, int N) {
+int StructureDB::add(const std::string fn, int first, int N) {
   std::ifstream ifs(fn);
   if (!ifs.is_open()) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
@@ -45,6 +45,8 @@ void StructureDB::add(const std::string fn, int first, int N) {
     if (ifs.eof()) break;
   }
   ifs.close();
+
+  return count;
 }
 
 void StructureDB::add(const Structure &s) {

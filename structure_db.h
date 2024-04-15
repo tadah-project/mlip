@@ -66,8 +66,13 @@ struct StructureDB {
      *
      * Indexing starts from zero, i.e.
      * first=0 corresponds to the first structure in the file.
+     *
+     * In the case of N greater than the number of available 
+     * structures, this method will load only the available ones.
+     *
+     * Return the number of loaded structures.
      */
-    void add(const std::string fn, int first, int N);
+    int add(const std::string fn, int first, int N);
 
     /** Add a single Structure object to this container */
     void add(const Structure &s);
