@@ -213,9 +213,9 @@ int Structure::next_structure(std::ifstream &ifs) {
 
   int natoms=0;
   while(std::getline(ifs,line)) {
-    natoms++;
     if(line.empty()) break;
     if(line == "\r") break;     // detects windows newline
+    natoms++;
   }
   return natoms;
 }
