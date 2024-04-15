@@ -199,7 +199,6 @@ int Structure::next_structure(std::ifstream &ifs) {
   while(std::getline(ifs,line)) {
     if(line.empty()) break;
     if(line == "\r") break;     // detects windows newline
-
   }
   return 0;
 }

@@ -78,14 +78,14 @@ std::unordered_set<Element> StructureDB::get_unique_elements() {
             st.unique_elements.begin(),st.unique_elements.end());
     return s;
 }
-int StructureDB::count_structures(const Config &c) {
+int StructureDB::count_structures(const Config &config) {
   int count=0;
-  for (const std::string &s : config("DBFILE")) {
-    count += count_structures(fn)''
+  for (const std::string &fn : config("DBFILE")) {
+    count += count_structures(fn);
   }
   return count;
 }
-int StructureDB::count_structures(const std::string fn) const {
+int StructureDB::count_structures(const std::string fn){
   int count=0;
 
   std::ifstream ifs(fn);
@@ -93,7 +93,7 @@ int StructureDB::count_structures(const std::string fn) const {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
-  while(Structure::next_structure(ifs)) {
+  while(!Structure::next_structure(ifs)) {
     count++;
   }
 

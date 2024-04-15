@@ -259,7 +259,7 @@ struct Structure {
     // move iterator forward to the next structure
     // return 0 if success
     // return 1 if there is no more structures
-    static int next_structure(std::ifstream &ifs) const;
+    static int next_structure(std::ifstream &ifs);
 
     private:
     const static size_t w=15;  // controls output width
