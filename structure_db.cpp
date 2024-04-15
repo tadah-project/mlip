@@ -46,7 +46,7 @@ int StructureDB::add(const std::string fn, int first, int N) {
   }
   ifs.close();
 
-  return count;
+  return --count;
 }
 
 void StructureDB::add(const Structure &s) {
