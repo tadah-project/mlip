@@ -137,9 +137,9 @@ struct StructureDB {
     std::unordered_set<Element> get_unique_elements();
 
     /** Count number of structures and atoms in all datasets from the Config file. */
-    static std::pair<int,int> count_structures(const Config &c);
+    static std::pair<int,int> count(const Config &c);
 
     /** Count number of structures and atoms in a single dataset. */
-    static std::pair<int,int> count_structures(const std::string fn);
+    static std::pair<int,int> count(const std::string fn);
 };
 #endif
