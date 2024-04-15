@@ -104,24 +104,33 @@ std::unordered_set<Element> StructureDB::get_unique_elements() {
             st.unique_elements.begin(),st.unique_elements.end());
     return s;
 }
-int StructureDB::count_structures(const Config &config) {
-  int count=0;
+
+template <typename T,typename U>                                                   
+std::pair<T,U> operator+(const std::pair<T,U> & l,const std::pair<T,U> & r) {   
+  return {l.first+r.first,l.second+r.second};                                    
+}  
+std::pair<int,int> StructureDB::count(const Config &config) {
+  std::pair<int, int> count=std::make_pair(0,0);  
   for (const std::string &fn : config("DBFILE")) {
-    count += count_structures(fn);
+    count = count + count_structures(fn);
   }
   return count;
 }
-int StructureDB::count_structures(const std::string fn){
+
+std::pair<int,int> StructureDB::count(const std::string fn){
   int count=0;
+  int natoms_tot=0;
 
   std::ifstream ifs(fn);
   if (!ifs.is_open()) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
-
-  while(!Structure::next_structure(ifs)) {
+  int natoms = Structure::next_structure(ifs);
+  while(natoms) {
+    natoms_tot += natoms;
+    natoms = Structure::next_structure(ifs);
     count++;
   }
 
-  return count;
+  return std::make_pair<int,int>(count,natoms_tot);
 }
