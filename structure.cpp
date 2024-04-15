@@ -194,11 +194,29 @@ bool Structure::operator==(const Structure& st) const
 int Structure::next_structure(std::ifstream &ifs) {
   std::string line;
   std::getline(ifs,line);
-  if(line.empty()) return 1;
+  if(line.empty()) return 0;
 
+  std::getline(ifs,line);
+  std::getline(ifs,line);
+  // the second line could be energy or
+  // a scalling factors eweight fweight sweight
+  std::stringstream stream(line);
+  std::string temp;
+  size_t count = 0;
+  while(stream >> temp) { ++count;}
+  // optional if second line is a weight
+  if (count==3)
+    std::getline(ifs,line);
+
+  for (size_t i=0; i<6;++i)
+    std::getline(ifs,line);
+
+
+  int natoms=0;
   while(std::getline(ifs,line)) {
+    natoms++;
     if(line.empty()) break;
     if(line == "\r") break;     // detects windows newline
   }
-  return 0;
+  return natoms;
 }

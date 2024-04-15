@@ -257,8 +257,8 @@ struct Structure {
     bool operator==(const Structure& st) const;
 
     // move iterator forward to the next structure
-    // return 0 if success
-    // return 1 if there is no more structures
+    // return number of atoms in the structure
+    // return 0 if there is no more structures
     static int next_structure(std::ifstream &ifs);
 
     private:
