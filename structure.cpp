@@ -197,7 +197,6 @@ int Structure::next_structure(std::ifstream &ifs) {
   if(line.empty()) return 0;
 
   std::getline(ifs,line);
-  std::getline(ifs,line);
   // the second line could be energy or
   // a scalling factors eweight fweight sweight
   std::stringstream stream(line);
