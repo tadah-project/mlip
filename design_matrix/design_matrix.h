@@ -62,7 +62,7 @@ class DesignMatrixBase {
  *
  */
 template <typename F>
-class DesignMatrix {
+class DesignMatrix : public DesignMatrixBase {
 
     public:
 
