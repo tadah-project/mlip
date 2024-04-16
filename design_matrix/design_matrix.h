@@ -19,7 +19,7 @@ class DesignMatrixBase {
       if (force) rows += 3*natoms_tot;
       return rows;
     }
-}
+};
 
 
 /** Design Matrix \f$ \Phi \f$ and the corresponding target vector \f$ \mathrm{T} \f$
