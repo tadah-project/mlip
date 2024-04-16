@@ -9,6 +9,19 @@
 #include "../normaliser.h"
 
 
+class DesignMatrixBase {
+  public:
+    int phi_rows_num(Config &c, int nstruct_tot, int natoms_tot) {
+      bool force = c.get<bool>("FORCE");
+      bool stress = c.get<bool>("STRESS");
+      int rows = nstruct_tot;
+      if (stress) rows += 6*nstruct_tot;
+      if (force) rows += 3*natoms_tot;
+      return rows;
+    }
+}
+
+
 /** Design Matrix \f$ \Phi \f$ and the corresponding target vector \f$ \mathrm{T} \f$
  *
  * An aggregation matrix composed of \phi_i matrices
