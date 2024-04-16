@@ -11,7 +11,7 @@
 
 class DesignMatrixBase {
   public:
-    int phi_rows_num(Config &c, int nstruct_tot, int natoms_tot) {
+    static int phi_rows_num(Config &c, int nstruct_tot, int natoms_tot) {
       bool force = c.get<bool>("FORCE");
       bool stress = c.get<bool>("STRESS");
       int rows = nstruct_tot;
