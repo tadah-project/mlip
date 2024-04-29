@@ -69,7 +69,7 @@ class DesignMatrix : public DesignMatrixBase {
     F f;
     phi_type Phi;
     t_type T;
-    t_type Tlabels; // 0-Energy, 1-Force, 2-Stress
+    t_type Tlabels; // 0-Energy, 1-Force, 2-Stress  // TODO should be array of int not double
     bool scale=true;    // Control escale,fscale,sscale
 
     double e_std_dev=1;
@@ -194,8 +194,8 @@ class DesignMatrix : public DesignMatrixBase {
         f.calc_phi_stress_rows(Phi,row,sscale_arr,st,st_d);
       }
     }
-    void fill_T(const StructureDB &stdb) {
-      size_t j=0;
+    void fill_T(const StructureDB &stdb, size_t start=0) {
+      size_t j=start;
       for (size_t s=0; s<stdb.size(); ++s) {
 
         double escale = 1;
