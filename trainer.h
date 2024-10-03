@@ -49,6 +49,7 @@ class Trainer {
       nnf(config),
       dm(*fb, config)
   {
+  std::cout << "HELLO "<< std::endl;
     config.postprocess();
     config.check_for_training();
 
