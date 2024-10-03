@@ -28,16 +28,14 @@ class Trainer {
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config),
+      fb(CONFIG::factory<DM_Function_Base,Config&>(
+        config.get<std::string>("MODEL",1),config)),
+      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
+      (config.get<std::string>("MODEL",0),*fb,config)),
       dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
-
-    fb = CONFIG::factory<DM_Function_Base,Config&>(
-        config.get<std::string>("MODEL",1),config);
-
-    model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
-      (config.get<std::string>("MODEL",0),*fb,config);
   }
     Trainer (std::string &c_file):
       config(c_file),
@@ -47,16 +45,12 @@ class Trainer {
       nnf(config),
       fb(CONFIG::factory<DM_Function_Base,Config&>(
         config.get<std::string>("MODEL",1),config)),
+      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
+      (config.get<std::string>("MODEL",0),*fb,config)),
       dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
-
-    //fb = CONFIG::factory<DM_Function_Base,Config&>(
-    //    config.get<std::string>("MODEL",1),config);
-
-    model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
-      (config.get<std::string>("MODEL",0),*fb,config);
   }
 
     void train(StructureDB &stdb) {
