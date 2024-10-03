@@ -33,10 +33,10 @@ class Trainer {
     config.postprocess();
     config.check_for_training();
 
-    std::cout << fb.get_phi_cols(config) << std::endl;
+    std::cout << fb->get_phi_cols(config) << std::endl;
     fb = CONFIG::factory<DM_Function_Base,Config&>(
         config.get<std::string>("MODEL",1),config);
-    std::cout << fb.get_phi_cols(config) << std::endl;
+    std::cout << fb->get_phi_cols(config) << std::endl;
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
@@ -52,10 +52,10 @@ class Trainer {
     config.postprocess();
     config.check_for_training();
 
-    std::cout << fb.get_phi_cols(config) << std::endl;
+    std::cout << fb->get_phi_cols(config) << std::endl;
     fb = CONFIG::factory<DM_Function_Base,Config&>(
         config.get<std::string>("MODEL",1),config);
-    std::cout << fb.get_phi_cols(config) << std::endl;
+    std::cout << fb->get_phi_cols(config) << std::endl;
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
