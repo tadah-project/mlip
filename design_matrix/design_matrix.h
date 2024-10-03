@@ -178,7 +178,6 @@ class DesignMatrix : public DesignMatrixBase {
     void build(size_t &row, const Structure &st, const StDescriptors &st_d) {
 
       double escale = 1;
-
       if (scale) escale = st.eweight*eweightglob/st.natoms();
       f.calc_phi_energy_row(Phi,row,escale,st,st_d);
       if (force) {
