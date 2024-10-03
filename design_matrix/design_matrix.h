@@ -180,6 +180,7 @@ class DesignMatrix : public DesignMatrixBase {
       double escale = 1;
       std::cout << "H1" << std::endl;
       if (scale) escale = st.eweight*eweightglob/st.natoms();
+      std::cout << "H1" << std::endl;
       f.calc_phi_energy_row(Phi,row,escale,st,st_d);
       std::cout << "H1" << std::endl;
       if (force) {
