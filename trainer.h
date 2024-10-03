@@ -64,8 +64,7 @@ class Trainer {
 
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
-        int &phi_cols1, MPI_Datatype &rowvecs, 
-        int &worker) {
+        int &phi_cols1, MPI_Datatype &rowvecs) {
 
         // otherwise get work package
         int fn_length;  // length of the filename char array
