@@ -51,9 +51,106 @@ class Trainer {
 #ifdef TADAH_BUILD_MPI
 class MPI_Trainer: public Trainer {
   public:
+  int PHI_cols;
+  int PHI_rows;
     MPI_Trainer(Config &c):
       Trainer(c)
   {}
+    void init() {
+
+  if (rank==0) {
+    int nstruct_tot = StructureDB::count(tr.config).first;
+    int natoms_tot = StructureDB::count(tr.config).second;
+    PHI_cols = tr.fb->get_phi_cols(tr.config);
+    PHI_rows = DesignMatrixBase::phi_rows_num(tr.config, nstruct_tot, natoms_tot);
+  }
+  MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  // Initialize BLACS
+  // We create two contexts.
+  // context1 is used for the computation of phi matrices
+  // context2 is used for distribution of local phi to "block cyclic phi"
+  int b_rank;
+  blacs_pinfo_(&b_rank, &ncpu) ; // BLACS rank and world size
+
+  int context1,                      context2;
+  int b_row1,                        b_row2;
+  int b_col1,                        b_col2;
+  int b_nrows1,                      b_nrows2;    // Number of row procs
+  int b_ncols1,                      b_ncols2;    // Number of column procs
+  int rnb1 = ceil(PHI_rows/ncpu),    rnb2 = tr.config.get<int>("MBLOCK");   // Row block size
+  int cnb1 = PHI_cols,               cnb2 = tr.config.get<int>("NBLOCK");   // Column block size
+
+  b_ncols1 = 1;        b_ncols2 = 2;
+  b_nrows1 = ncpu;     b_nrows2 = ncpu/b_ncols2;
+
+  // make as sqaure grid as possible
+  int sr = sqrt(ncpu);
+  if (sr*sr==ncpu) {
+    b_nrows2 = sr;
+    b_ncols2 = sr;
+  }
+  else {
+    // loop over all possible divisors
+    int before, /*sqrt(ncpu),*/ after;
+    for (int i = 1; i <= ncpu; ++i){
+      if (ncpu % i == 0) {
+        if (i>sqrt(ncpu)) {
+          after=i; 
+          break;
+        }
+        before=i;
+      }
+    }
+    b_nrows2 = after;
+    b_ncols2 = before;
+  }
+
+  assert(b_nrows2 * b_ncols2 == ncpu);
+  assert(b_nrows1 * b_ncols1 == ncpu);
+
+  int izero = 0;
+  int ione = 1;
+  char layout='R'; // Block cyclic, Row major processor mapping
+
+  // Create first context
+  blacs_get_(&izero,&izero, &context1 ); // -> Create context1
+  blacs_gridinit_(&context1, &layout, &b_nrows1, &b_ncols1 ); // context1 -> Initialize the grid
+  blacs_gridinfo_(&context1, &b_nrows1, &b_ncols1, &b_row1, &b_col1 );
+
+  // Create second context
+  blacs_get_(&izero,&izero, &context2 ); // -> Create context2
+  blacs_gridinit_(&context2, &layout, &b_nrows2, &b_ncols2 ); // context2 -> Initialize the grid
+  blacs_gridinfo_(&context2, &b_nrows2, &b_ncols2, &b_row2, &b_col2 );
+
+  // Compute the size of the local phi matrices
+  int phi_rows1 = numroc_( &PHI_rows, &rnb1, &b_row1, &izero, &b_nrows1 );
+  int phi_cols1 = numroc_( &PHI_cols, &cnb1, &b_col1, &izero, &b_ncols1 );
+  int phi_rows2 = numroc_( &PHI_rows, &rnb2, &b_row2, &izero, &b_nrows2 );
+  int phi_cols2 = numroc_( &PHI_cols, &cnb2, &b_col2, &izero, &b_ncols2 );
+
+  // Define MPI datatype to send rows from the PHI matrix with column-major order
+  // used only in context1
+  MPI_Datatype rowvec, rowvecs;
+  MPI_Type_vector( phi_cols1, 1, phi_rows1, MPI_DOUBLE, &rowvec); 
+  MPI_Type_commit(&rowvec);
+  MPI_Type_create_resized(rowvec, 0, sizeof(double), &rowvecs);
+  MPI_Type_commit(&rowvecs);
+
+  // COUNTERS
+  size_t phi_row = 0; // next row to be filled in the local phi array
+  int rows_available=phi_rows1;  // number of available rows in the local phi array
+
+  // once we know the size of local phi, we can allocate memory to it
+  // including host as well. The host will collect excees computations from
+  // workers.
+  //DesignMatrix<DM_Function_Base&> dm(*tr.fb, tr.config);
+  tr.dm.Phi.resize(phi_rows1,phi_cols1);
+  tr.dm.T.resize(phi_rows1);
+  tr.dm.Tlabels.resize(phi_rows1);
+
+    }
     int calc_desc(MPI_Status &status, int &rows_available, size_t &phi_row) {
 
       // get work package
