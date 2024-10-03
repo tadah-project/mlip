@@ -14,7 +14,6 @@ class Trainer {
     NNFinder nnf;
     DM_Function_Base *fb;
     M_Tadah_Base *model;
-    //DesignMatrix<DM_Function_Base&> dm;
 
     ~Trainer() {
       if(model)
@@ -28,15 +27,12 @@ class Trainer {
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config)
-      //dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
 
-    std::cout << fb->get_phi_cols(config) << std::endl;
     fb = CONFIG::factory<DM_Function_Base,Config&>(
         config.get<std::string>("MODEL",1),config);
-    std::cout << fb->get_phi_cols(config) << std::endl;
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
@@ -47,15 +43,12 @@ class Trainer {
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config)
-      //dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
 
-    std::cout << fb->get_phi_cols(config) << std::endl;
     fb = CONFIG::factory<DM_Function_Base,Config&>(
         config.get<std::string>("MODEL",1),config);
-    std::cout << fb->get_phi_cols(config) << std::endl;
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
@@ -72,8 +65,7 @@ class Trainer {
 
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
-        int &phi_cols1, MPI_Datatype &rowvecs, 
-        DesignMatrix<DM_Function_Base&> &dm,
+        int &phi_cols1, DesignMatrix<DM_Function_Base&> &dm, MPI_Datatype &rowvecs, 
         int &worker) {
 
         // otherwise get work package
