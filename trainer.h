@@ -337,16 +337,16 @@ class MPI_Trainer_HOST {
       else if (tag==TadahCLI::DATA_TAG) {
         int rows_needed;
         MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-        if (rows_available>0) {
-          int rows_accepted = rows_available < rows_needed ? rows_available : rows_needed;
+        if (tr.rows_available>0) {
+          int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
           MPI_Send (&b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Recv (&tr.dm.Phi.data()[phi_row], rows_accepted, rowvecs, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.T.data()[phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.Tlabels.data()[phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-          rows_available -= rows_accepted;
+          tr.rows_available -= rows_accepted;
           phi_row += rows_accepted;
-          if (rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
+          if (tr.rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
         }
         else {
           // Host is unable to fit data we have to ask workers for their storage availability
@@ -389,16 +389,16 @@ class MPI_Trainer_HOST {
       if (tag==TadahCLI::DATA_TAG) {
         int rows_needed;
         MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-        if (rows_available>0) {
-          int rows_accepted = rows_available < rows_needed ? rows_available : rows_needed;
+        if (tr.rows_available>0) {
+          int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
           MPI_Send (&b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Recv (&tr.dm.Phi.data()[phi_row], rows_accepted, rowvecs, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.T.data()[phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.Tlabels.data()[phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-          rows_available -= rows_accepted;
+          tr.rows_available -= rows_accepted;
           phi_row += rows_accepted;
-          if (rows_available<0 ) { throw std::runtime_error(" HOST2: The number of rows in the local array is smaller than requested.");}
+          if (tr.rows_available<0 ) { throw std::runtime_error(" HOST2: The number of rows in the local array is smaller than requested.");}
         }
         else {
           // host is unable to fit data we have to ask workers for their storage availability
