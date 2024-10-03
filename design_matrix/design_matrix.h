@@ -178,11 +178,8 @@ class DesignMatrix : public DesignMatrixBase {
     void build(size_t &row, const Structure &st, const StDescriptors &st_d) {
 
       double escale = 1;
-      std::cout << "H1" << std::endl;
       if (scale) escale = st.eweight*eweightglob/st.natoms();
-      std::cout << "H1" << std::endl;
       f.calc_phi_energy_row(Phi,row,escale,st,st_d);
-      std::cout << "H1" << std::endl;
       if (force) {
         double fscale = 1;
         if (scale) fscale = st.fweight*fweightglob/st.natoms()/3.0;///f_std_dev;
