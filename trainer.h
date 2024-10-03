@@ -284,6 +284,7 @@ class MPI_Trainer: public Trainer {
 
 class MPI_Trainer_HOST {
   MPI_Trainer &tr;
+  std::vector<std::tuple<std::string,int,int>> wpckgs;
   public:
   MPI_Trainer_HOST(MPI_Trainer &MPIT):
     tr(MPIT)
@@ -291,7 +292,6 @@ class MPI_Trainer_HOST {
   void run(MPI_Status &status, int &rank, int &ncpu) {
     // HOST: prepare work packages
     // filename, first structure index, number of structures to read
-    std::vector<std::tuple<std::string,int,int>> wpckgs;
     int nstruc = tr.config.get<int>("MPIWPCKG");
     for (const std::string &fn : tr.config("DBFILE")) {
       // get number of structures
