@@ -48,11 +48,6 @@ class Trainer {
     }
 
 #ifdef TADAH_BUILD_MPI
-    class MPI_Trainer public Trainer {
-      MPI_Trainer(Config &c):
-        Trainer(c)
-      {}
-    };
     int calc_desc(MPI_Status &status, int &rows_available, size_t &phi_row) {
 
         // get work package
@@ -156,3 +151,10 @@ class Trainer {
     }
 #endif
 };
+#ifdef TADAH_BUILD_MPI
+class MPI_Trainer public Trainer {
+  MPI_Trainer(Config &c):
+    Trainer(c)
+  {}
+};
+#endif
