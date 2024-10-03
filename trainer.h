@@ -314,7 +314,7 @@ class MPI_Trainer_HOST {
       int worker = status.MPI_SOURCE;
       int tag = status.MPI_TAG;
 
-      if (tag==WORK_TAG) {
+      if (tag==TadahCLI::WORK_TAG) {
         int rows_available;
         MPI_Recv (&rows_available, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
 
@@ -334,7 +334,7 @@ class MPI_Trainer_HOST {
         int nstruc = std::get<2>(wpckg);
         MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
       }
-      else if (tag==DATA_TAG) {
+      else if (tag==TadahCLI::DATA_TAG) {
         int rows_needed;
         MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
         if (rows_available>0) {
@@ -356,12 +356,12 @@ class MPI_Trainer_HOST {
           // find a worker capable of accepting data
           int w_rows_available;
           while (true) {
-            MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &status2);
+            MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
             worker2 = status2.MPI_SOURCE;
             if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
             if (w_rows_available==0 ) {
               // give up on this worker
-              MPI_Send (&worker2, 1, MPI_INT, worker2, WAIT_TAG, MPI_COMM_WORLD);
+              MPI_Send (&worker2, 1, MPI_INT, worker2, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
             } 
             else {
               // found a worker
@@ -386,7 +386,7 @@ class MPI_Trainer_HOST {
       int worker = status.MPI_SOURCE;
       int tag = status.MPI_TAG;
 
-      if (tag==DATA_TAG) {
+      if (tag==TadahCLI::DATA_TAG) {
         int rows_needed;
         MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
         if (rows_available>0) {
@@ -408,7 +408,7 @@ class MPI_Trainer_HOST {
           // find a worker capable of accepting data
           int w_rows_available;
           while (true) {
-            MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, WORK_TAG, MPI_COMM_WORLD, &status2);
+            MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
             worker2 = status2.MPI_SOURCE;
             if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
             if (w_rows_available==0 ) {
@@ -422,20 +422,20 @@ class MPI_Trainer_HOST {
             }
           }
           int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
-          MPI_Send (&worker2, 1, MPI_INT, worker, DATA_TAG, MPI_COMM_WORLD);
-          MPI_Send (&rows_accepted, 1, MPI_INT, worker, DATA_TAG, MPI_COMM_WORLD);
+          MPI_Send (&worker2, 1, MPI_INT, worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
+          MPI_Send (&rows_accepted, 1, MPI_INT, worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
         }
       }
       else {
         int rows_available;
-        MPI_Recv (&rows_available, 1, MPI_INT, worker, WORK_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv (&rows_available, 1, MPI_INT, worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
         // there is no more work so release a worker
         if (rows_available==0) {
           MPI_Send (0, 0, MPI_INT, worker, RELEASE_TAG, MPI_COMM_WORLD);
           count++;
         }
         else {
-          MPI_Send (0, 0, MPI_INT, worker, WAIT_TAG, MPI_COMM_WORLD);
+          MPI_Send (0, 0, MPI_INT, worker, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
         }
       }
       if (count==ncpu) {  break; }  // count starts from 1
