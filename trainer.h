@@ -317,69 +317,72 @@ class MPI_Trainer_HOST {
         }
       }
     }
+    bool has_packages() {
+      return wpckgs.size()>0;
+    }
 
     void work_tag(int &worker, int &tag) {
 
-          int rows_available;
-          MPI_Recv (&rows_available, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      int rows_available;
+      MPI_Recv (&rows_available, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
 
-          std::tuple<std::string,int,int> wpckg = wpckgs.back();
-          wpckgs.pop_back();
+      std::tuple<std::string,int,int> wpckg = wpckgs.back();
+      wpckgs.pop_back();
 
-          // send dataset filename
-          const char *fn = std::get<0>(wpckg).c_str();
-          int fn_length = std::get<0>(wpckg).length()+1;  // +1 for char
-          MPI_Send (fn, fn_length, MPI_CHAR, worker, tag, MPI_COMM_WORLD);
+      // send dataset filename
+      const char *fn = std::get<0>(wpckg).c_str();
+      int fn_length = std::get<0>(wpckg).length()+1;  // +1 for char
+      MPI_Send (fn, fn_length, MPI_CHAR, worker, tag, MPI_COMM_WORLD);
 
-          // send index of the first structure to load
-          int first = std::get<1>(wpckg);
-          MPI_Send (&first, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+      // send index of the first structure to load
+      int first = std::get<1>(wpckg);
+      MPI_Send (&first, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
 
-          // send number of structures to load
-          int nstruc = std::get<2>(wpckg);
-          MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+      // send number of structures to load
+      int nstruc = std::get<2>(wpckg);
+      MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
     }
 
     void data_tag(int &worker, int &tag) {
-          int rows_needed;
-          MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-          if (tr.rows_available>0) {
-            int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
-            MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-            MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-            MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-            MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-            MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-            tr.rows_available -= rows_accepted;
-            tr.phi_row += rows_accepted;
-            if (tr.rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
-          }
+      int rows_needed;
+      MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      if (tr.rows_available>0) {
+        int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
+        MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+        MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+        MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
+        MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+        MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+        tr.rows_available -= rows_accepted;
+        tr.phi_row += rows_accepted;
+        if (tr.rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
+      }
+      else {
+        // Host is unable to fit data we have to ask workers for their storage availability
+        // Locate a worker willing to accept at least some data.
+        int worker2;
+        MPI_Status status2;
+        // find a worker capable of accepting data
+        int w_rows_available;
+        while (true) {
+          MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
+          worker2 = status2.MPI_SOURCE;
+          if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
+          if (w_rows_available==0 ) {
+            // give up on this worker
+            MPI_Send (&worker2, 1, MPI_INT, worker2, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
+          } 
           else {
-            // Host is unable to fit data we have to ask workers for their storage availability
-            // Locate a worker willing to accept at least some data.
-            int worker2;
-            MPI_Status status2;
-            // find a worker capable of accepting data
-            int w_rows_available;
-            while (true) {
-              MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
-              worker2 = status2.MPI_SOURCE;
-              if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
-              if (w_rows_available==0 ) {
-                // give up on this worker
-                MPI_Send (&worker2, 1, MPI_INT, worker2, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
-              } 
-              else {
-                // found a worker
-                break;
-              }
-            }
-            int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
-            // tell worker about worker2
-            MPI_Send (&worker2, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-            MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+            // found a worker
+            break;
           }
         }
+        int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
+        // tell worker about worker2
+        MPI_Send (&worker2, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+        MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+      }
+    }
 
     void run() {
       // work finised, collect remaining data and release all workers
