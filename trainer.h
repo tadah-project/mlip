@@ -59,7 +59,7 @@ class Trainer {
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
   std::cout << "HELLO 2"<< std::endl;
-    dm.f = *fb;
+    //dm.f = *fb;
   std::cout << "HELLO 3"<< std::endl;
   }
 
