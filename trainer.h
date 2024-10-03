@@ -53,4 +53,13 @@ class Trainer {
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
   }
+
+    void train(StructureDB &stdb) {
+        nn.calc(stdb);
+        model->train(stdb,dc);
+    }
+
+    Config get_param_file() {
+      return model->get_param_file();
+    }
 };
