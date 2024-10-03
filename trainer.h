@@ -281,6 +281,25 @@ class MPI_Trainer_HOST {
     MPIT(MPIT)
   {}
   void run() {
+    // HOST: prepare work packages
+    // filename, first structure index, number of structures to read
+    std::vector<std::tuple<std::string,int,int>> wpckgs;
+    int nstruc = tr.config.get<int>("MPIWPCKG");
+    for (const std::string &fn : tr.config("DBFILE")) {
+      // get number of structures
+      int dbsize = StructureDB::count(fn).first;
+      int first=0;
+      while(true) {
+        if (nstruc < dbsize) {
+          wpckgs.push_back(std::make_tuple(fn,first,nstruc));
+          first += nstruc;
+        } else {
+          wpckgs.push_back(std::make_tuple(fn,first,dbsize));
+          break;
+        }
+        dbsize-=nstruc;
+      }
+    }
 
     while (true) {
 
