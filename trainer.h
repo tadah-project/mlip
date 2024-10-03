@@ -73,6 +73,7 @@ class Trainer {
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
         int &phi_cols1, MPI_Datatype &rowvecs, 
+        DesignMatrix<DM_Function_Base&> &dm;
         int &worker) {
 
         // otherwise get work package
