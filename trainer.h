@@ -39,7 +39,7 @@ class Trainer {
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
 
-    dm.f = *fb;
+    //dm.f = *fb;
   }
     Trainer (std::string &c_file):
       config(c_file),
@@ -74,7 +74,7 @@ class Trainer {
 
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
-        int &phi_cols1, DesignMatrix<DM_Function_Base&> &dm, MPI_Datatype &rowvecs, 
+        int &phi_cols1, MPI_Datatype &rowvecs, 
         int &worker) {
 
         // otherwise get work package
