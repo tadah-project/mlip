@@ -66,10 +66,13 @@ extern "C" void	pdgemr2d_(int *m, int *n, double *a, int *ia, int *ja, int *desc
 extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
     int* ia, int* ja, int* desc_a, double* x, int* ix, int* jx, int* desc_x,
     int* incx, double* beta, double* y, int* iy, int* jy, int* desc_y, int* incy);	
+
 class MPI_Trainer: public Trainer {
   public:
-  int PHI_cols;
-  int PHI_rows;
+    int PHI_cols;
+    int PHI_rows;
+    int rows_available;
+
     MPI_Trainer(Config &c):
       Trainer(c)
   {}
@@ -157,7 +160,7 @@ class MPI_Trainer: public Trainer {
 
       // COUNTERS
       size_t phi_row = 0; // next row to be filled in the local phi array
-      int rows_available=phi_rows1;  // number of available rows in the local phi array
+      rows_available=phi_rows1;  // number of available rows in the local phi array
 
       // once we know the size of local phi, we can allocate memory to it
       // including host as well. The host will collect excees computations from
@@ -269,5 +272,12 @@ class MPI_Trainer: public Trainer {
         delete fn;
       return 0;
     }
+};
+
+class MPI_Trainer_HOST {
+  MPI_Trainer &MPIT;
+  public:
+  MPI_Trainer_HOST(MPI_Trainer &MPIT):
+    MPIT(MPIT)
 };
 #endif
