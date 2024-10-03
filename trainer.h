@@ -64,7 +64,7 @@ class Trainer {
 
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
-        int &phi_cols1, MPI_Datatype &rowvecs) {
+        MPI_Datatype &rowvecs) {
 
         // otherwise get work package
         int fn_length;  // length of the filename char array
@@ -93,7 +93,7 @@ class Trainer {
           // we do not have enough rows in the local phi matrix
           // so we create temp DM of required size
           DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
-          temp_dm.Phi.resize(rows_needed,phi_cols1);
+          temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
           temp_dm.T.resize(rows_needed);
           temp_dm.Tlabels.resize(rows_needed);
 
@@ -109,7 +109,7 @@ class Trainer {
           // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
           if (rows_available>0) {
             for (rows_available; rows_available>0; rows_available--) {
-              for (int c=0; c<phi_cols1; c++) {
+              for (int c=0; c<dm.Phi.cols(); c++) {
                 dm.Phi(phi_row,c) = temp_dm.Phi(rows_available-1,c); 
                 dm.T(phi_row) = temp_dm.T(rows_available-1); 
                 dm.Tlabels(phi_row) = temp_dm.Tlabels(rows_available-1); 
