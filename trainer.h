@@ -288,8 +288,9 @@ class MPI_Trainer_HOST {
     MPI_Status &status;
     int &rank;
     int &ncpu;
-  public:
     std::vector<std::tuple<std::string,int,int>> wpckgs;
+
+  public:
     MPI_Trainer_HOST(MPI_Trainer &MPIT, MPI_Status &status, int &rank, int &ncpu):
       tr(MPIT),
       status(status),
