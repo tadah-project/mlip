@@ -78,6 +78,7 @@ class MPI_Trainer: public Trainer {
     int phi_rows2;
     int phi_cols2;
     size_t phi_row = 0; // next row to be filled in the local phi array
+    MPI_Datatype rowvec, rowvecs;
     MPI_Trainer(Config &c):
       Trainer(c)
   {}
@@ -156,7 +157,6 @@ class MPI_Trainer: public Trainer {
 
       // Define MPI datatype to send rows from the PHI matrix with column-major order
       // used only in context1
-      MPI_Datatype rowvec, rowvecs;
       MPI_Type_vector( phi_cols1, 1, phi_rows1, MPI_DOUBLE, &rowvec); 
       MPI_Type_commit(&rowvec);
       MPI_Type_create_resized(rowvec, 0, sizeof(double), &rowvecs);
@@ -344,7 +344,7 @@ class MPI_Trainer_HOST {
           int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
           MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-          MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, rowvecs, worker, tag, MPI_COMM_WORLD, &status);
+          MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           tr.rows_available -= rows_accepted;
@@ -396,7 +396,7 @@ class MPI_Trainer_HOST {
           int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
           MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
           MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-          MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, rowvecs, worker, tag, MPI_COMM_WORLD, &status);
+          MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
           tr.rows_available -= rows_accepted;
@@ -416,7 +416,7 @@ class MPI_Trainer_HOST {
             if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
             if (w_rows_available==0 ) {
               // give up on this worker and release him as there is no more work to be done
-              MPI_Send (0, 0, MPI_INT, worker2, RELEASE_TAG, MPI_COMM_WORLD);
+              MPI_Send (0, 0, MPI_INT, worker2, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
               count++;
             } 
             else {
@@ -434,7 +434,7 @@ class MPI_Trainer_HOST {
         MPI_Recv (&rows_available, 1, MPI_INT, worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
         // there is no more work so release a worker
         if (rows_available==0) {
-          MPI_Send (0, 0, MPI_INT, worker, RELEASE_TAG, MPI_COMM_WORLD);
+          MPI_Send (0, 0, MPI_INT, worker, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
           count++;
         }
         else {
