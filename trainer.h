@@ -279,5 +279,6 @@ class MPI_Trainer_HOST {
   public:
   MPI_Trainer_HOST(MPI_Trainer &MPIT):
     MPIT(MPIT)
+  {}
 };
 #endif
