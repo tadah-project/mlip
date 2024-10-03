@@ -289,7 +289,7 @@ class MPI_Trainer_HOST {
   MPI_Trainer_HOST(MPI_Trainer &MPIT):
     tr(MPIT)
   {}
-  void run(MPI_Status &status, int &rank, int &ncpu) {
+  void prep_wpckgs() {
     // HOST: prepare work packages
     // filename, first structure index, number of structures to read
     int nstruc = tr.config.get<int>("MPIWPCKG");
@@ -308,6 +308,9 @@ class MPI_Trainer_HOST {
         dbsize-=nstruc;
       }
     }
+
+  }
+  void run(MPI_Status &status, int &rank, int &ncpu) {
 
     while (true) {
 
