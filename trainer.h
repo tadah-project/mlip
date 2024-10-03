@@ -318,7 +318,7 @@ class MPI_Trainer_HOST {
       }
     }
 
-    void work_tag() {
+    void work_tag(int &worker, int &tag) {
 
           int rows_available;
           MPI_Recv (&rows_available, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
@@ -340,7 +340,7 @@ class MPI_Trainer_HOST {
           MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
     }
 
-    void data_tag() {
+    void data_tag(int &worker, int &tag) {
           int rows_needed;
           MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
           if (tr.rows_available>0) {
