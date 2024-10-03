@@ -344,48 +344,48 @@ class MPI_Trainer_HOST {
       MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
     }
 
-    void data_tag(int &worker, int &tag) {
-      int rows_needed;
-      MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-      if (tr.rows_available>0) {
-        int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
-        MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-        tr.rows_available -= rows_accepted;
-        tr.phi_row += rows_accepted;
-        if (tr.rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
-      }
-      else {
-        // Host is unable to fit data we have to ask workers for their storage availability
-        // Locate a worker willing to accept at least some data.
-        int worker2;
-        MPI_Status status2;
-        // find a worker capable of accepting data
-        int w_rows_available;
-        while (true) {
-          MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
-          worker2 = status2.MPI_SOURCE;
-          if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
-          if (w_rows_available==0 ) {
-            // give up on this worker
-            MPI_Send (&worker2, 1, MPI_INT, worker2, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
-          } 
-          else {
-            // found a worker
-            break;
-          }
-        }
-        int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
-        // tell worker about worker2
-        MPI_Send (&worker2, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-      }
-    }
+    //void data_tag(int &worker, int &tag) {
+    //  int rows_needed;
+    //  MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+    //  if (tr.rows_available>0) {
+    //    int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
+    //    MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+    //    MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+    //    MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
+    //    MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+    //    MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+    //    tr.rows_available -= rows_accepted;
+    //    tr.phi_row += rows_accepted;
+    //    if (tr.rows_available<0 ) { throw std::runtime_error(" HOST1: The number of rows in the local array is smaller than requested.");}
+    //  }
+    //  else {
+    //    // Host is unable to fit data we have to ask workers for their storage availability
+    //    // Locate a worker willing to accept at least some data.
+    //    int worker2;
+    //    MPI_Status status2;
+    //    // find a worker capable of accepting data
+    //    int w_rows_available;
+    //    while (true) {
+    //      MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
+    //      worker2 = status2.MPI_SOURCE;
+    //      if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
+    //      if (w_rows_available==0 ) {
+    //        // give up on this worker
+    //        MPI_Send (&worker2, 1, MPI_INT, worker2, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
+    //      } 
+    //      else {
+    //        // found a worker
+    //        break;
+    //      }
+    //    }
+    //    int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
+    //    // tell worker about worker2
+    //    MPI_Send (&worker2, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+    //    MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+    //  }
+    //}
 
-    void a(int &worker, int &tag, int &count) {
+    void data_tag(int &worker, int &tag, int &count) {
 
       int rows_needed;
       MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
