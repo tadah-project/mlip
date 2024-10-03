@@ -27,8 +27,8 @@ class Trainer {
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config)
-      //dm(*fb, config)
+      nnf(config),
+      dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
@@ -38,16 +38,15 @@ class Trainer {
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
-
-    dm = DesignMatrix<DM_Function_Base&>(*fb, config);
+    dm.f(*fb);  // reset?
   }
     Trainer (std::string &c_file):
       config(c_file),
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config)
-      //dm(*fb, config)
+      nnf(config),
+      dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
@@ -57,8 +56,7 @@ class Trainer {
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
-
-    dm = DesignMatrix<DM_Function_Base&>(*fb, config);
+    dm.f(*fb);  // reset?
   }
 
     void train(StructureDB &stdb) {
