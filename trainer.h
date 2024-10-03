@@ -56,12 +56,12 @@ class MPI_Trainer: public Trainer {
     MPI_Trainer(Config &c):
       Trainer(c)
   {}
-    void init(int &rank) {
+    void init(int &rank, int &ncpu) {
 
       if (rank==0) {
-        int nstruct_tot = StructureDB::count(tr.config).first;
-        int natoms_tot = StructureDB::count(tr.config).second;
-        PHI_cols = tr.fb->get_phi_cols(tr.config);
+        int nstruct_tot = StructureDB::count(config).first;
+        int natoms_tot = StructureDB::count(config).second;
+        PHI_cols = tr.fb->get_phi_cols(config);
         PHI_rows = DesignMatrixBase::phi_rows_num(tr.config, nstruct_tot, natoms_tot);
       }
       MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
