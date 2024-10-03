@@ -280,7 +280,7 @@ class MPI_Trainer_HOST {
   MPI_Trainer_HOST(MPI_Trainer &MPIT):
     tr(MPIT)
   {}
-  void run() {
+  void run(MPI_Status &status) {
     // HOST: prepare work packages
     // filename, first structure index, number of structures to read
     std::vector<std::tuple<std::string,int,int>> wpckgs;
