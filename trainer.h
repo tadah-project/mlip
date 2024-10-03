@@ -64,35 +64,10 @@ class Trainer {
     }
 
 #ifdef TADAH_BUILD_MPI
-    int train_worker(int &rows_available, MPI_Status &status, size_t &phi_row, 
+    int train(MPI_Status &status, int &rows_available, size_t &phi_row, 
         int &phi_cols1, DesignMatrix<DM_Function_Base&> &dm, MPI_Datatype &rowvecs, 
-        int &worker, int &tag) {
+        int &worker) {
 
-      // release a worker
-      if (status.MPI_TAG == TadahCLI::RELEASE_TAG) {
-        int temp;
-        MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-        if (rows_available!=0) { throw std::runtime_error("Attempting to release a worker... but the worker requires more data!!");}
-        return 0;
-      }
-      else if (status.MPI_TAG == TadahCLI::WAIT_TAG) {
-        int temp;
-        MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
-        // do nothing here; ask for more work in the next cycle
-      }
-      else if (status.MPI_TAG == TadahCLI::DATA_TAG) {
-        // other worker is giving me some data
-        int arr_size;
-        MPI_Get_count(&status, MPI_DOUBLE, &arr_size);
-        int rows_accepted = arr_size/phi_cols1;
-        if (rows_available<rows_accepted) { throw std::runtime_error("Number of rows available is smaller than number of provided rows");}
-        MPI_Recv (&dm.Phi.data()[phi_row], rows_available, rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&dm.T.data()[phi_row], rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&dm.Tlabels.data()[phi_row], rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-        rows_available -= rows_accepted;
-        phi_row += rows_accepted;
-      }
-      else if (status.MPI_TAG == TadahCLI::WORK_TAG) {
         // otherwise get work package
         int fn_length;  // length of the filename char array
         int first;  // index of the first structure to read from the file
@@ -190,7 +165,6 @@ class Trainer {
 
         if (fn)
           delete fn;
-      }
       return 1;
     }
 #endif
