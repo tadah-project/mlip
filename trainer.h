@@ -46,7 +46,7 @@ class Trainer {
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config),
       fb(CONFIG::factory<DM_Function_Base,Config&>(
-        config.get<std::string>("MODEL",1),config))
+        config.get<std::string>("MODEL",1),config)),
       dm(*fb, config)
   {
     config.postprocess();
