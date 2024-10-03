@@ -285,13 +285,16 @@ class MPI_Trainer: public Trainer {
 class MPI_Trainer_HOST {
   private:
     MPI_Trainer &tr;
+    MPI_Status &status;
     int &rank;
     int &ncpu;
-    MPI_Status &status;
   public:
     std::vector<std::tuple<std::string,int,int>> wpckgs;
     MPI_Trainer_HOST(MPI_Trainer &MPIT, MPI_Status &status, int &rank, int &ncpu):
-      tr(MPIT)
+      tr(MPIT),
+      status(status),
+      rank(rank),
+      ncpu(ncpu)
   {}
 
     void prep_wpckgs() {
