@@ -47,20 +47,18 @@ class Trainer {
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config),
+      fb(CONFIG::factory<DM_Function_Base,Config&>(
+        config.get<std::string>("MODEL",1),config))
       dm(*fb, config)
   {
-  std::cout << "HELLO 1"<< std::endl;
     config.postprocess();
     config.check_for_training();
 
-    fb = CONFIG::factory<DM_Function_Base,Config&>(
-        config.get<std::string>("MODEL",1),config);
+    //fb = CONFIG::factory<DM_Function_Base,Config&>(
+    //    config.get<std::string>("MODEL",1),config);
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
-  std::cout << "HELLO 2"<< std::endl;
-    //dm.f = *fb;
-  std::cout << "HELLO 3"<< std::endl;
   }
 
     void train(StructureDB &stdb) {
@@ -101,7 +99,6 @@ class Trainer {
         }
 
         if (rows_available<rows_needed) {
-  std::cout << "TRAIN 11"<< std::endl;
           // we do not have enough rows in the local phi matrix
           // so we create temp DM of required size
           DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
@@ -163,21 +160,14 @@ class Trainer {
           }
         }
         else {
-  std::cout << "TRAIN 2"<< std::endl;
           // just fill local phi array as it is large enough
           // fill_T must be called before phi_row is incremented
           dm.fill_T(stdb,phi_row);  // phi_row is not incremented by this method
-  std::cout << "TRAIN 3"<< std::endl;
           for (size_t s=0; s<stdb.size(); ++s) {
-  std::cout << "TRAIN 3a"<< std::endl;
             StDescriptors st_d = dc.calc(stdb(s));
-  std::cout << "TRAIN 3b"<< std::endl;
             dm.build(phi_row,stdb(s),st_d); // build() increments phi_row++
-  std::cout << "TRAIN 3c"<< std::endl;
           }
-  std::cout << "TRAIN 4"<< std::endl;
           rows_available-=rows_needed;
-  std::cout << "TRAIN 5"<< std::endl;
         }
 
         if (fn)
