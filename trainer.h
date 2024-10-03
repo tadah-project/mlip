@@ -165,7 +165,7 @@ class Trainer {
 
         if (fn)
           delete fn;
-      return 1;
+      return 0;
     }
 #endif
 };
