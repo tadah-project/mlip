@@ -69,6 +69,13 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
+    int context1,      context2;
+    int b_row1,        b_row2;
+    int b_col1,        b_col2;
+    int b_nrows1,      b_nrows2;    // Number of row procs
+    int b_ncols1,      b_ncols2;    // Number of column procs
+    int rnb1,          rnb2;   // Row block size
+    int cnb1,          cnb2;   // Column block size
     int PHI_cols;
     int PHI_rows;
     int rows_available;
@@ -77,6 +84,9 @@ class MPI_Trainer: public Trainer {
     int phi_cols1;
     int phi_rows2;
     int phi_cols2;
+    int izero = 0;
+    int ione = 1;
+    char layout='R'; // Block cyclic, Row major processor mapping
     size_t phi_row = 0; // next row to be filled in the local phi array
     MPI_Datatype rowvec, rowvecs;
     MPI_Trainer(Config &c):
@@ -99,13 +109,10 @@ class MPI_Trainer: public Trainer {
       // context2 is used for distribution of local phi to "block cyclic phi"
       blacs_pinfo_(&b_rank, &ncpu) ; // BLACS rank and world size
 
-      int context1,                      context2;
-      int b_row1,                        b_row2;
-      int b_col1,                        b_col2;
-      int b_nrows1,                      b_nrows2;    // Number of row procs
-      int b_ncols1,                      b_ncols2;    // Number of column procs
-      int rnb1 = ceil(PHI_rows/ncpu),    rnb2 = config.get<int>("MBLOCK");   // Row block size
-      int cnb1 = PHI_cols,               cnb2 = config.get<int>("NBLOCK");   // Column block size
+      rnb1 = ceil(PHI_rows/ncpu);
+      rnb2 = config.get<int>("MBLOCK");   // Row block size
+      cnb1 = PHI_cols;
+      cnb2 = config.get<int>("NBLOCK");   // Column block size
 
       b_ncols1 = 1;        b_ncols2 = 2;
       b_nrows1 = ncpu;     b_nrows2 = ncpu/b_ncols2;
@@ -135,9 +142,6 @@ class MPI_Trainer: public Trainer {
       assert(b_nrows2 * b_ncols2 == ncpu);
       assert(b_nrows1 * b_ncols1 == ncpu);
 
-      int izero = 0;
-      int ione = 1;
-      char layout='R'; // Block cyclic, Row major processor mapping
 
       // Create first context
       blacs_get_(&izero,&izero, &context1 ); // -> Create context1
