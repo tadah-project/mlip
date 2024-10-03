@@ -49,6 +49,23 @@ class Trainer {
 
 };
 #ifdef TADAH_BUILD_MPI
+extern "C" void blacs_get_(int*, int*, int*);
+extern "C" void blacs_pinfo_(int*, int*);
+extern "C" void blacs_gridinit_(int*, char*, int*, int*);
+extern "C" void blacs_gridinfo_(int*, int*, int*, int*, int*);
+extern "C" void descinit_(int*, int*, int*, int*, int*,
+    int*, int*, int*, int*, int*);
+extern "C" void pdpotrf_(char*, int*, double*, int*, int*, int*, int*);
+extern "C" void blacs_gridexit_(int*);
+extern "C" int numroc_(int*, int*, int*, int*, int*);
+extern "C" void	pdgels_(char* trans, int* m, int* n, int* nrhs,
+    double* a, int* ia, int* ja, int* desca, double* b, int* ib,
+    int* jb, int* descb, double* work, int* lwork, int* info);
+extern "C" void	pdgemr2d_(int *m, int *n, double *a, int *ia, int *ja, int *desca,
+    double *b, int *ib, int *jb, int *descb, int *context);
+extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
+    int* ia, int* ja, int* desc_a, double* x, int* ix, int* jx, int* desc_x,
+    int* incx, double* beta, double* y, int* iy, int* jy, int* desc_y, int* incy);	
 class MPI_Trainer: public Trainer {
   public:
   int PHI_cols;
@@ -61,8 +78,8 @@ class MPI_Trainer: public Trainer {
       if (rank==0) {
         int nstruct_tot = StructureDB::count(config).first;
         int natoms_tot = StructureDB::count(config).second;
-        PHI_cols = tr.fb->get_phi_cols(config);
-        PHI_rows = DesignMatrixBase::phi_rows_num(tr.config, nstruct_tot, natoms_tot);
+        PHI_cols = fb->get_phi_cols(config);
+        PHI_rows = DesignMatrixBase::phi_rows_num(config, nstruct_tot, natoms_tot);
       }
       MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
       MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -79,8 +96,8 @@ class MPI_Trainer: public Trainer {
       int b_col1,                        b_col2;
       int b_nrows1,                      b_nrows2;    // Number of row procs
       int b_ncols1,                      b_ncols2;    // Number of column procs
-      int rnb1 = ceil(PHI_rows/ncpu),    rnb2 = tr.config.get<int>("MBLOCK");   // Row block size
-      int cnb1 = PHI_cols,               cnb2 = tr.config.get<int>("NBLOCK");   // Column block size
+      int rnb1 = ceil(PHI_rows/ncpu),    rnb2 = config.get<int>("MBLOCK");   // Row block size
+      int cnb1 = PHI_cols,               cnb2 = config.get<int>("NBLOCK");   // Column block size
 
       b_ncols1 = 1;        b_ncols2 = 2;
       b_nrows1 = ncpu;     b_nrows2 = ncpu/b_ncols2;
@@ -145,10 +162,10 @@ class MPI_Trainer: public Trainer {
       // once we know the size of local phi, we can allocate memory to it
       // including host as well. The host will collect excees computations from
       // workers.
-      //DesignMatrix<DM_Function_Base&> dm(*tr.fb, tr.config);
-      tr.dm.Phi.resize(phi_rows1,phi_cols1);
-      tr.dm.T.resize(phi_rows1);
-      tr.dm.Tlabels.resize(phi_rows1);
+      //DesignMatrix<DM_Function_Base&> dm(*fb, config);
+      dm.Phi.resize(phi_rows1,phi_cols1);
+      dm.T.resize(phi_rows1);
+      dm.Tlabels.resize(phi_rows1);
 
     }
     int calc_desc(MPI_Status &status, int &rows_available, size_t &phi_row) {
