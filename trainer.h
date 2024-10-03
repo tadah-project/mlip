@@ -163,15 +163,18 @@ class Trainer {
           }
         }
         else {
-  std::cout << "TRAIN 22"<< std::endl;
+  std::cout << "TRAIN 2"<< std::endl;
           // just fill local phi array as it is large enough
           // fill_T must be called before phi_row is incremented
           dm.fill_T(stdb,phi_row);  // phi_row is not incremented by this method
+  std::cout << "TRAIN 4"<< std::endl;
           for (size_t s=0; s<stdb.size(); ++s) {
             StDescriptors st_d = dc.calc(stdb(s));
             dm.build(phi_row,stdb(s),st_d); // build() increments phi_row++
           }
+  std::cout << "TRAIN 4"<< std::endl;
           rows_available-=rows_needed;
+  std::cout << "TRAIN 5"<< std::endl;
         }
 
         if (fn)
