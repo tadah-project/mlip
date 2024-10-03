@@ -55,7 +55,7 @@ class Trainer {
   }
 
     void train(StructureDB &stdb) {
-        nn.calc(stdb);
+        nnf.calc(stdb);
         model->train(stdb,dc);
     }
 
