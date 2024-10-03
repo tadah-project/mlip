@@ -14,6 +14,7 @@ class Trainer {
     NNFinder nnf;
     DM_Function_Base *fb;
     M_Tadah_Base *model;
+    DesignMatrix<DM_Function_Base&> dm;
 
     ~Trainer() {
       if(model)
@@ -26,7 +27,8 @@ class Trainer {
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config)
+      nnf(config),
+      dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
@@ -42,7 +44,8 @@ class Trainer {
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config)
+      nnf(config),
+      dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();
