@@ -152,7 +152,7 @@ class Trainer {
 #endif
 };
 #ifdef TADAH_BUILD_MPI
-class MPI_Trainer public Trainer {
+class MPI_Trainer: public Trainer {
   MPI_Trainer(Config &c):
     Trainer(c)
   {}
