@@ -38,7 +38,7 @@ class Trainer {
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
-    dm.f(*fb);  // reset?
+    dm.f = *fb;  // reset?
   }
     Trainer (std::string &c_file):
       config(c_file),
@@ -56,7 +56,7 @@ class Trainer {
 
     model = CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
       (config.get<std::string>("MODEL",0),*fb,config);
-    dm.f(*fb);  // reset?
+    dm.f= *fb;  // reset?
   }
 
     void train(StructureDB &stdb) {
