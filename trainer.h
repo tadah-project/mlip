@@ -77,10 +77,12 @@ class Trainer {
         int &phi_cols1, MPI_Datatype &rowvecs, 
         int &worker) {
 
+  std::cout << "TRAIN 11"<< std::endl;
         // otherwise get work package
         int fn_length;  // length of the filename char array
         int first;  // index of the first structure to read from the file
         int nstruc; // number of structures to be processed
+  std::cout << "TRAIN 11"<< std::endl;
         MPI_Get_count(&status, MPI_CHAR, &fn_length);
 
         char *fn  = (char *) malloc(fn_length+1);
@@ -88,19 +90,23 @@ class Trainer {
         MPI_Recv (&first, 1, MPI_INT, 0, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
         MPI_Recv (&nstruc, 1, MPI_INT, 0, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
 
+  std::cout << "TRAIN 11"<< std::endl;
         // do work
         StructureDB stdb;
         stdb.add(std::string(fn,fn_length),first,nstruc);
         nnf.calc(stdb);
 
+  std::cout << "TRAIN 11"<< std::endl;
         // compute number of rows needed for a given StructureDB
         int rows_needed = 0;
         for (size_t s=0; s<stdb.size(); ++s) {
           int natoms = stdb(s).natoms();
           rows_needed += DesignMatrixBase::phi_rows_num(config, 1, natoms);
         }
+  std::cout << "TRAIN 11"<< std::endl;
 
         if (rows_available<rows_needed) {
+  std::cout << "TRAIN 11"<< std::endl;
           // we do not have enough rows in the local phi matrix
           // so we create temp DM of required size
           DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
@@ -162,6 +168,7 @@ class Trainer {
           }
         }
         else {
+  std::cout << "TRAIN 11"<< std::endl;
           // just fill local phi array as it is large enough
           // fill_T must be called before phi_row is incremented
           dm.fill_T(stdb,phi_row);  // phi_row is not incremented by this method
