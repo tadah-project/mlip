@@ -37,21 +37,6 @@ class Trainer {
     config.postprocess();
     config.check_for_training();
   }
-    Trainer (std::string &c_file):
-      config(c_file),
-      DCS(config),
-      dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
-          *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config),
-      fb(CONFIG::factory<DM_Function_Base,Config&>(
-        config.get<std::string>("MODEL",1),config)),
-      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
-      (config.get<std::string>("MODEL",0),*fb,config)),
-      dm(*fb, config)
-  {
-    config.postprocess();
-    config.check_for_training();
-  }
 
     void train(StructureDB &stdb) {
         nnf.calc(stdb);
@@ -65,7 +50,7 @@ class Trainer {
 #ifdef TADAH_BUILD_MPI
     int train(MPI_Status &status, int &rows_available, size_t &phi_row) {
 
-        // otherwise get work package
+        // get work package
         int fn_length;  // length of the filename char array
         int first;  // index of the first structure to read from the file
         int nstruc; // number of structures to be processed
