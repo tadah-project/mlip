@@ -291,7 +291,7 @@ class MPI_Trainer_HOST {
         MPI_Send (&rows_accepted, 1, MPI_INT, tr.worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
       }
     }
-    void release() {
+    void release_tag(int &count) {
       int rows_available;
       MPI_Recv (&rows_available, 1, MPI_INT, tr.worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
       // there is no more work so release a worker if full
