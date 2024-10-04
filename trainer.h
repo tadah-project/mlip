@@ -326,11 +326,11 @@ class MPI_Trainer_WORKER {
       if (tr.rows_available!=0) { throw std::runtime_error("Attempting to release a worker... but the worker requires more data!!");}
       return true;
     }
-    bool wait_tag() {
+    void wait_tag() {
       int temp;
       MPI_Recv (&temp, 1, MPI_INT, tr.worker, tr.tag, MPI_COMM_WORLD, &status);
     }
-    bool data_tag() {
+    void data_tag() {
       // other worker is giving me some data
       int arr_size;
       MPI_Get_count(&status, MPI_DOUBLE, &arr_size);
