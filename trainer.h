@@ -351,16 +351,16 @@ class MPI_Trainer_WORKER {
       // do work
       StructureDB stdb;
       stdb.add(std::string(fn,fn_length),first,nstruc);
-      nnf.calc(stdb);
+      tr.nnf.calc(stdb);
 
       // compute number of rows needed for a given StructureDB
       int rows_needed = 0;
       for (size_t s=0; s<stdb.size(); ++s) {
         int natoms = stdb(s).natoms();
-        rows_needed += DesignMatrixBase::phi_rows_num(config, 1, natoms);
+        rows_needed += DesignMatrixBase::phi_rows_num(tr.config, 1, natoms);
       }
 
-      if (rows_available<rows_needed) {
+      if (tr.rows_available<rows_needed) {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
         DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
