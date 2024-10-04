@@ -363,8 +363,8 @@ class MPI_Trainer_WORKER {
       if (tr.rows_available<rows_needed) {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
-        DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
-        temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
+        DesignMatrix<DM_Function_Base&> temp_dm(*tr.fb, config);
+        temp_dm.Phi.resize(rows_needed,tr.dm.Phi.cols());
         temp_dm.T.resize(rows_needed);
         temp_dm.Tlabels.resize(rows_needed);
 
@@ -372,20 +372,20 @@ class MPI_Trainer_WORKER {
         size_t temp_phi_row=0;
         temp_dm.fill_T(stdb);
         for (size_t s=0; s<stdb.size(); ++s) {
-          StDescriptors st_d = dc.calc(stdb(s));
+          StDescriptors st_d = tr.dc.calc(stdb(s));
           temp_dm.build(temp_phi_row,stdb(s),st_d); // phi_row++
         }
 
         // first we try to fill remaining rows in the local phi matrix
         // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
-        if (rows_available>0) {
-          for (rows_available; rows_available>0; rows_available--) {
-            for (int c=0; c<dm.Phi.cols(); c++) {
-              dm.Phi(phi_row,c) = temp_dm.Phi(rows_available-1,c); 
-              dm.T(phi_row) = temp_dm.T(rows_available-1); 
-              dm.Tlabels(phi_row) = temp_dm.Tlabels(rows_available-1); 
+        if (tr.rows_available>0) {
+          for (rows_available; tr.rows_available>0; tr.rows_available--) {
+            for (int c=0; c<tr.dm.Phi.cols(); c++) {
+              tr.dm.Phi(phi_row,c) = temp_dm.Phi(tr.rows_available-1,c); 
+              tr.dm.T(phi_row) = temp_dm.T(tr.rows_available-1); 
+              tr.dm.Tlabels(phi_row) = temp_dm.Tlabels(tr.rows_available-1); 
             }
-            phi_row++;
+            tr.phi_row++;
             rows_needed--;
           }
         }
@@ -424,12 +424,12 @@ class MPI_Trainer_WORKER {
       else {
         // just fill local phi array as it is large enough
         // fill_T must be called before phi_row is incremented
-        dm.fill_T(stdb,phi_row);  // phi_row is not incremented by this method
+        tr.dm.fill_T(stdb,tr.phi_row);  // phi_row is not incremented by this method
         for (size_t s=0; s<stdb.size(); ++s) {
-          StDescriptors st_d = dc.calc(stdb(s));
-          dm.build(phi_row,stdb(s),st_d); // build() increments phi_row++
+          StDescriptors st_d = tr.dc.calc(stdb(s));
+          tr.dm.build(tr.phi_row,stdb(s),st_d); // build() increments phi_row++
         }
-        rows_available-=rows_needed;
+        tr.rows_available-=rows_needed;
       }
 
       if (fn)
