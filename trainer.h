@@ -69,6 +69,8 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
+    int worker;
+    int tag;
     int context1,      context2;
     int b_row1,        b_row2;
     int b_col1,        b_col2;
@@ -179,6 +181,11 @@ class MPI_Trainer: public Trainer {
       dm.Tlabels.resize(phi_rows1);
 
     }
+    void probe() {
+      MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+      worker = status.MPI_SOURCE;
+      tag = status.MPI_TAG;
+    }
 };
 
 class MPI_Trainer_HOST {
@@ -221,10 +228,10 @@ class MPI_Trainer_HOST {
       return wpckgs.size()>0;
     }
 
-    void work_tag(int &worker, int &tag) {
+    void work_tag() {
 
       int rows_available;
-      MPI_Recv (&rows_available, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&rows_available, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD, &status);
 
       std::tuple<std::string,int,int> wpckg = wpckgs.back();
       wpckgs.pop_back();
@@ -232,28 +239,28 @@ class MPI_Trainer_HOST {
       // send dataset filename
       const char *fn = std::get<0>(wpckg).c_str();
       int fn_length = std::get<0>(wpckg).length()+1;  // +1 for char
-      MPI_Send (fn, fn_length, MPI_CHAR, worker, tag, MPI_COMM_WORLD);
+      MPI_Send (fn, fn_length, MPI_CHAR, tr.worker, tag, MPI_COMM_WORLD);
 
       // send index of the first structure to load
       int first = std::get<1>(wpckg);
-      MPI_Send (&first, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+      MPI_Send (&first, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD);
 
       // send number of structures to load
       int nstruc = std::get<2>(wpckg);
-      MPI_Send (&nstruc, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
+      MPI_Send (&nstruc, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD);
     }
 
-    void data_tag(int &worker, int &tag, int &count) {
+    void data_tag(int &count) {
 
       int rows_needed;
-      MPI_Recv (&rows_needed, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&rows_needed, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD, &status);
       if (tr.rows_available>0) {
         int rows_accepted = tr.rows_available < rows_needed ? tr.rows_available : rows_needed;
-        MPI_Send (&tr.b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+        MPI_Send (&tr.b_rank, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD);
+        MPI_Send (&rows_accepted, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD);
+        MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], rows_accepted, tr.rowvecs, tr.worker, tag, MPI_COMM_WORLD, &status);
+        MPI_Recv (&tr.dm.T.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, tr.worker, tag, MPI_COMM_WORLD, &status);
+        MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], rows_accepted, MPI_DOUBLE, tr.worker, tag, MPI_COMM_WORLD, &status);
         tr.rows_available -= rows_accepted;
         tr.phi_row += rows_accepted;
         if (tr.rows_available<0 ) { throw std::runtime_error(" HOST2: The number of rows in the local array is smaller than requested.");}
@@ -268,7 +275,7 @@ class MPI_Trainer_HOST {
         while (true) {
           MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
           worker2 = status2.MPI_SOURCE;
-          if (worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
+          if (tr.worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
           if (w_rows_available==0 ) {
             // give up on this worker and release him as there is no more work to be done
             MPI_Send (0, 0, MPI_INT, worker2, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
@@ -280,20 +287,20 @@ class MPI_Trainer_HOST {
           }
         }
         int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
-        MPI_Send (&worker2, 1, MPI_INT, worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
-        MPI_Send (&rows_accepted, 1, MPI_INT, worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
+        MPI_Send (&worker2, 1, MPI_INT, tr.worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
+        MPI_Send (&rows_accepted, 1, MPI_INT, tr.worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
       }
     }
-    void release(int &worker, int &tag, int &count) {
+    void release() {
       int rows_available;
-      MPI_Recv (&rows_available, 1, MPI_INT, worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
+      MPI_Recv (&rows_available, 1, MPI_INT, tr.worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
       // there is no more work so release a worker if full
       if (rows_available==0) {
-        MPI_Send (0, 0, MPI_INT, worker, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
+        MPI_Send (0, 0, MPI_INT, tr.worker, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
         count++;
       }
       else {
-        MPI_Send (0, 0, MPI_INT, worker, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
+        MPI_Send (0, 0, MPI_INT, tr.worker, TadahCLI::WAIT_TAG, MPI_COMM_WORLD);
       }
     }
 
@@ -313,29 +320,29 @@ class MPI_Trainer_WORKER {
       ncpu(ncpu)
   {}
 
-    bool release_tag(int &worker, int &tag) {
+    bool release_tag() {
       int temp;
-      MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&temp, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD, &status);
       if (tr.rows_available!=0) { throw std::runtime_error("Attempting to release a worker... but the worker requires more data!!");}
       return true;
     }
-    bool wait_tag(int &worker, int &tag) {
+    bool wait_tag() {
       int temp;
-      MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&temp, 1, MPI_INT, tr.worker, tag, MPI_COMM_WORLD, &status);
     }
-    bool data_tag(int &worker, int &tag) {
+    bool data_tag() {
       // other worker is giving me some data
       int arr_size;
       MPI_Get_count(&status, MPI_DOUBLE, &arr_size);
       int rows_accepted = arr_size/tr.phi_cols1;
       if (tr.rows_available<rows_accepted) { throw std::runtime_error("Number of rows available is smaller than number of provided rows");}
-      MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], tr.rows_available, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-      MPI_Recv (&tr.dm.T.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-      MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], tr.rows_available, tr.rowvecs, tr.worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&tr.dm.T.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, tr.worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, tr.worker, tag, MPI_COMM_WORLD, &status);
       tr.rows_available -= rows_accepted;
       tr.phi_row += rows_accepted;
     }
-    int work_tag(int &worker, int &tag) {
+    int work_tag() {
 
       // get work package
       int fn_length;  // length of the filename char array
