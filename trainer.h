@@ -384,7 +384,7 @@ class MPI_Trainer_WORKER {
         // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
         if (tr.rows_available>0) {
           for (; tr.rows_available>0; tr.rows_available--) {
-            for (int c=0; c<tr.dm.Phi.cols(); c++) {
+            for (size_t c=0; c<tr.dm.Phi.cols(); c++) {
               tr.dm.Phi(tr.phi_row,c) = temp_dm.Phi(tr.rows_available-1,c); 
               tr.dm.T(tr.phi_row) = temp_dm.T(tr.rows_available-1); 
               tr.dm.Tlabels(tr.phi_row) = temp_dm.Tlabels(tr.rows_available-1); 
