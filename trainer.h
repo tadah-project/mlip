@@ -94,8 +94,7 @@ class MPI_Trainer: public Trainer {
     MPI_Datatype rowvec, rowvecs;
 
     MPI_Trainer(Config &c):
-      Trainer(c),
-      status(status)
+      Trainer(c)
   {}
     void init(int &rank, int &ncpu) {
 
@@ -250,7 +249,7 @@ class MPI_Trainer_HOST {
       MPI_Send (&nstruc, 1, MPI_INT, tr.worker, tr.tag, MPI_COMM_WORLD);
     }
 
-    void data_tag(int &count) {
+    void data_tag() {
 
       int rows_needed;
       MPI_Recv (&rows_needed, 1, MPI_INT, tr.worker, tr.tag, MPI_COMM_WORLD, &tr.status);
@@ -384,7 +383,7 @@ class MPI_Trainer_WORKER {
         // first we try to fill remaining rows in the local phi matrix
         // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
         if (tr.rows_available>0) {
-          for (tr.rows_available; tr.rows_available>0; tr.rows_available--) {
+          for (; tr.rows_available>0; tr.rows_available--) {
             for (int c=0; c<tr.dm.Phi.cols(); c++) {
               tr.dm.Phi(tr.phi_row,c) = temp_dm.Phi(tr.rows_available-1,c); 
               tr.dm.T(tr.phi_row) = temp_dm.T(tr.rows_available-1); 
