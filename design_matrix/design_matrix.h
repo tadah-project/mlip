@@ -148,7 +148,6 @@ class DesignMatrix : public DesignMatrixBase {
         fill_T(stdb);
         // for opm we need to find first rows for each structure
 
-        std::cout << "Build PHI" << std::endl;
 
         std::vector<size_t> rows(stdb.size());
         size_t row=0;
