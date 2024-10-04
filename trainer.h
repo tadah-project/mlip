@@ -69,6 +69,7 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
+    int status;
     int worker;
     int tag;
     int context1,      context2;
@@ -92,8 +93,9 @@ class MPI_Trainer: public Trainer {
     size_t phi_row = 0; // next row to be filled in the local phi array
     MPI_Datatype rowvec, rowvecs;
 
-    MPI_Trainer(Config &c):
-      Trainer(c)
+    MPI_Trainer(Config &c, int &status):
+      Trainer(c),
+      status(status)
   {}
     void init(int &rank, int &ncpu) {
 
