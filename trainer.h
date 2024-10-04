@@ -363,7 +363,7 @@ class MPI_Trainer_WORKER {
       if (tr.rows_available<rows_needed) {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
-        DesignMatrix<DM_Function_Base&> temp_dm(*tr.fb, config);
+        DesignMatrix<DM_Function_Base&> temp_dm(*tr.fb, tr.config);
         temp_dm.Phi.resize(rows_needed,tr.dm.Phi.cols());
         temp_dm.T.resize(rows_needed);
         temp_dm.Tlabels.resize(rows_needed);
@@ -379,11 +379,11 @@ class MPI_Trainer_WORKER {
         // first we try to fill remaining rows in the local phi matrix
         // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
         if (tr.rows_available>0) {
-          for (rows_available; tr.rows_available>0; tr.rows_available--) {
+          for (tr.rows_available; tr.rows_available>0; tr.rows_available--) {
             for (int c=0; c<tr.dm.Phi.cols(); c++) {
-              tr.dm.Phi(phi_row,c) = temp_dm.Phi(tr.rows_available-1,c); 
-              tr.dm.T(phi_row) = temp_dm.T(tr.rows_available-1); 
-              tr.dm.Tlabels(phi_row) = temp_dm.Tlabels(tr.rows_available-1); 
+              tr.dm.Phi(tr.phi_row,c) = temp_dm.Phi(tr.rows_available-1,c); 
+              tr.dm.T(tr.phi_row) = temp_dm.T(tr.rows_available-1); 
+              tr.dm.Tlabels(tr.phi_row) = temp_dm.Tlabels(tr.rows_available-1); 
             }
             tr.phi_row++;
             rows_needed--;
