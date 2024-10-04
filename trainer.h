@@ -414,11 +414,27 @@ class MPI_Trainer_WORKER {
       ncpu(ncpu)
   {}
 
-    bool release(int &worker, int &tag) {
+    bool release_tag(int &worker, int &tag) {
       int temp;
       MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
       if (tr.rows_available!=0) { throw std::runtime_error("Attempting to release a worker... but the worker requires more data!!");}
       return true;
+    }
+    bool wait_tag(int &worker, int &tag) {
+      int temp;
+      MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+    }
+    bool data_tag(int &worker, int &tag) {
+      // other worker is giving me some data
+      int arr_size;
+      MPI_Get_count(&status, MPI_DOUBLE, &arr_size);
+      int rows_accepted = arr_size/tr.phi_cols1;
+      if (tr.rows_available<rows_accepted) { throw std::runtime_error("Number of rows available is smaller than number of provided rows");}
+      MPI_Recv (&tr.dm.Phi.data()[tr.phi_row], tr.rows_available, tr.rowvecs, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&tr.dm.T.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+      MPI_Recv (&tr.dm.Tlabels.data()[tr.phi_row], tr.rows_available, MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
+      tr.rows_available -= rows_accepted;
+      tr.phi_row += rows_accepted;
     }
 };
 #endif
