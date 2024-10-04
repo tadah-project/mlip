@@ -276,15 +276,15 @@ class MPI_Trainer_HOST {
           MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status2);
           worker2 = status2.MPI_SOURCE;
           if (tr.worker==worker2) {throw std::runtime_error("worker and worker2 are the same."); }
-          if (w_rows_available==0 ) {
-            // give up on this worker and release him as there is no more work to be done
-            MPI_Send (0, 0, MPI_INT, worker2, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
-            count++;
-          } 
-          else {
+          //if (w_rows_available==0 ) {
+          //  // give up on this worker and release him as there is no more work to be done
+          //  MPI_Send (0, 0, MPI_INT, worker2, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
+          //  count++;
+          //} 
+          //else {
             // found a worker
             break;
-          }
+          //}
         }
         int rows_accepted = w_rows_available < rows_needed ? w_rows_available : rows_needed;
         MPI_Send (&worker2, 1, MPI_INT, tr.worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
