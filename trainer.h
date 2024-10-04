@@ -385,10 +385,10 @@ class MPI_Trainer_HOST {
         MPI_Send (&rows_accepted, 1, MPI_INT, worker, TadahCLI::DATA_TAG, MPI_COMM_WORLD);
       }
     }
-    void b(int &worker, int &tag, int &count) {
+    void release(int &worker, int &tag, int &count) {
       int rows_available;
       MPI_Recv (&rows_available, 1, MPI_INT, worker, TadahCLI::WORK_TAG, MPI_COMM_WORLD, &status);
-      // there is no more work so release a worker
+      // there is no more work so release a worker if full
       if (rows_available==0) {
         MPI_Send (0, 0, MPI_INT, worker, TadahCLI::RELEASE_TAG, MPI_COMM_WORLD);
         count++;
@@ -398,5 +398,27 @@ class MPI_Trainer_HOST {
       }
     }
 
+};
+class MPI_Trainer_WORKER {
+  private:
+    MPI_Trainer &tr;
+    MPI_Status &status;
+    int &rank;
+    int &ncpu;
+
+  public:
+    MPI_Trainer_WORKER(MPI_Trainer &MPIT, MPI_Status &status, int &rank, int &ncpu):
+      tr(MPIT),
+      status(status),
+      rank(rank),
+      ncpu(ncpu)
+  {}
+
+    bool release(int &worker, int &tag) {
+      int temp;
+      MPI_Recv (&temp, 1, MPI_INT, worker, tag, MPI_COMM_WORLD, &status);
+      if (tr.rows_available!=0) { throw std::runtime_error("Attempting to release a worker... but the worker requires more data!!");}
+      return true;
+    }
 };
 #endif
