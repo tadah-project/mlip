@@ -52,7 +52,9 @@ class Trainer {
     }
 
 };
+
 #ifdef TADAH_BUILD_MPI
+#include <mpi.h>
 extern "C" void blacs_get_(int*, int*, int*);
 extern "C" void blacs_pinfo_(int*, int*);
 extern "C" void blacs_gridinit_(int*, char*, int*, int*);
