@@ -1,3 +1,5 @@
+#ifndef MPI_TRAINER_H
+#define MPI_TRAINER_H
 #include <iostream>
 #include "../CORE/config/config.h"
 #include "../MODELS/dc_selector.h"
@@ -559,4 +561,5 @@ class MPI_Trainer_WORKER {
       return 0;
     }
 };
+#endif
 #endif
