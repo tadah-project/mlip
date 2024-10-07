@@ -5,6 +5,7 @@
 #include "../MODELS/dc_selector.h"
 #include "descriptors_calc.h"
 #include "../MLIP/design_matrix/design_matrix.h"
+#include "../MLIP/trainer.h"
 #include "design_matrix/functions/dm_function_base.h"
 #include "models/m_tadah_base.h"
 #include "nn_finder.h"
