@@ -78,6 +78,7 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
+    const static int CONFIG_TAG = 4;
     const static int WAIT_TAG = 3;
     const static int RELEASE_TAG = 2;
     const static int DATA_TAG = 1;
@@ -413,6 +414,13 @@ class MPI_Trainer_HOST {
         MPI_Send (0, 0, MPI_INT, tr.worker, 
             MPI_Trainer::WAIT_TAG, MPI_COMM_WORLD);
       }
+    }
+    void config_tag() {
+      int ready;
+      MPI_Recv (&ready, 1, MPI_INT, tr.worker, 
+          MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD, &tr.status);
+        MPI_Send (1, 1, MPI_INT, tr.worker, 
+            MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD);
     }
 
 };
