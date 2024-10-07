@@ -419,8 +419,9 @@ class MPI_Trainer_HOST {
       int ready;
       MPI_Recv (&ready, 1, MPI_INT, tr.worker, 
           MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD, &tr.status);
-        MPI_Send (1, 1, MPI_INT, tr.worker, 
-            MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD);
+      ready=1;
+      MPI_Send (&ready, 1, MPI_INT, tr.worker, 
+          MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD);
     }
 
 };
