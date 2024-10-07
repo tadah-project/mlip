@@ -92,12 +92,16 @@ class MPI_Trainer: public Trainer {
     char layout='R'; // Block cyclic, Row major processor mapping
     size_t phi_row = 0; // next row to be filled in the local phi array
     MPI_Datatype rowvec, rowvecs;
+    int &rank;
+    int &ncpu;
 
     MPI_Trainer(Config &c):
       Trainer(c)
   {}
-    void init(int &rank, int &ncpu) {
+    void init(int &_rank, int &_ncpu) {
 
+      rank = _rank;
+      ncpu = _ncpu;
       if (rank==0) {
         int nstruct_tot = StructureDB::count(config).first;
         int natoms_tot = StructureDB::count(config).second;
