@@ -83,6 +83,12 @@ if(TADAH_ENABLE_OPENMP)
     target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
+if (TADAH_BUILD_MPI)
+    find_package(MPI REQUIRED)
+    target_link_libraries(tadah.mlip.obj PUBLIC MPI::MPI_CXX)
+    add_compile_definitions(TADAH_BUILD_MPI)
+else()
+
 add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
 
 if(TADAH_BUILD_TESTS)
