@@ -78,10 +78,10 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
-const static int WAIT_TAG = 3;
-const static int RELEASE_TAG = 2;
-const static int DATA_TAG = 1;
-const static int WORK_TAG = 0;
+    const static int WAIT_TAG = 3;
+    const static int RELEASE_TAG = 2;
+    const static int DATA_TAG = 1;
+    const static int WORK_TAG = 0;
     MPI_Status status;
     int worker;
     int tag;
@@ -384,7 +384,7 @@ class MPI_Trainer_HOST {
         int w_rows_available;
         while (true) {
           MPI_Recv (&w_rows_available, 1, MPI_INT, MPI_ANY_SOURCE, 
-              WORK_TAG, MPI_COMM_WORLD, &status2);
+              MPI_Trainer::WORK_TAG, MPI_COMM_WORLD, &status2);
           worker2 = status2.MPI_SOURCE;
           if (tr.worker==worker2) {
             throw std::runtime_error("worker and worker2 are the same.");
@@ -393,25 +393,25 @@ class MPI_Trainer_HOST {
         }
         int rows_accepted = w_rows_available < rows_needed ? 
           w_rows_available : rows_needed;
-        MPI_Send (&worker2, 1, MPI_INT, tr.worker, DATA_TAG, 
+        MPI_Send (&worker2, 1, MPI_INT, tr.worker, MPI_Trainer::DATA_TAG, 
             MPI_COMM_WORLD);
         MPI_Send (&rows_accepted, 1, MPI_INT, tr.worker, 
-            DATA_TAG, MPI_COMM_WORLD);
+            MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
       }
     }
     void release_tag(int &count) {
       int rows_available;
       MPI_Recv (&rows_available, 1, MPI_INT, tr.worker, 
-          WORK_TAG, MPI_COMM_WORLD, &tr.status);
+          MPI_Trainer::WORK_TAG, MPI_COMM_WORLD, &tr.status);
       // there is no more work so release a worker if full
       if (rows_available==0) {
         MPI_Send (0, 0, MPI_INT, tr.worker, 
-            RELEASE_TAG, MPI_COMM_WORLD);
+            MPI_Trainer::RELEASE_TAG, MPI_COMM_WORLD);
         count++;
       }
       else {
         MPI_Send (0, 0, MPI_INT, tr.worker, 
-            WAIT_TAG, MPI_COMM_WORLD);
+            MPI_Trainer::WAIT_TAG, MPI_COMM_WORLD);
       }
     }
 
@@ -469,11 +469,11 @@ class MPI_Trainer_WORKER {
       MPI_Get_count(&tr.status, MPI_CHAR, &fn_length);
 
       char *fn  = (char *) malloc(fn_length+1);
-      MPI_Recv (fn, fn_length, MPI_CHAR, 0, WORK_TAG,
+      MPI_Recv (fn, fn_length, MPI_CHAR, 0, MPI_Trainer::WORK_TAG,
           MPI_COMM_WORLD, &tr.status);
-      MPI_Recv (&first, 1, MPI_INT, 0, WORK_TAG, 
+      MPI_Recv (&first, 1, MPI_INT, 0, MPI_Trainer::WORK_TAG, 
           MPI_COMM_WORLD, &tr.status);
-      MPI_Recv (&nstruc, 1, MPI_INT, 0, WORK_TAG, 
+      MPI_Recv (&nstruc, 1, MPI_INT, 0, MPI_Trainer::WORK_TAG, 
           MPI_COMM_WORLD, &tr.status);
 
       // do work
@@ -522,14 +522,14 @@ class MPI_Trainer_WORKER {
         // send remaining data to available processes
         while (rows_needed > 0) {
           // request host 
-          MPI_Send (&rows_needed, 1, MPI_INT, 0, DATA_TAG, MPI_COMM_WORLD);
+          MPI_Send (&rows_needed, 1, MPI_INT, 0, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
           int rows_accepted; // number of accepted rows
           int dest; // receiving process
                     // host returns which dest can accept and how much
-          MPI_Recv (&dest, 1, MPI_INT, 0, DATA_TAG, 
+          MPI_Recv (&dest, 1, MPI_INT, 0, MPI_Trainer::DATA_TAG, 
               MPI_COMM_WORLD, &tr.status);
 
-          MPI_Recv (&rows_accepted, 1, MPI_INT, 0, DATA_TAG, 
+          MPI_Recv (&rows_accepted, 1, MPI_INT, 0, MPI_Trainer::DATA_TAG, 
               MPI_COMM_WORLD, &tr.status);
           // we send data to the host or a willing worker
           int start=temp_dm.Phi.rows()-rows_needed;
@@ -545,11 +545,11 @@ class MPI_Trainer_WORKER {
 
           // ready to send
           MPI_Send (&temp_dm.Phi.data()[start], rows_accepted, 
-              trowvecs, dest, DATA_TAG, MPI_COMM_WORLD);
+              trowvecs, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
           MPI_Send (&temp_dm.T.data()[start], rows_accepted, 
-              MPI_DOUBLE, dest, DATA_TAG, MPI_COMM_WORLD);
+              MPI_DOUBLE, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
           MPI_Send (&temp_dm.Tlabels.data()[start], rows_accepted, 
-              MPI_DOUBLE, dest, DATA_TAG, MPI_COMM_WORLD);
+              MPI_DOUBLE, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
           rows_needed -= rows_accepted;
           MPI_Type_free(&trowvec);
           MPI_Type_free(&trowvecs);
