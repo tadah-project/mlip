@@ -87,7 +87,7 @@ if (TADAH_BUILD_MPI)
     find_package(MPI REQUIRED)
     target_link_libraries(tadah.mlip.obj PUBLIC MPI::MPI_CXX)
     add_compile_definitions(TADAH_BUILD_MPI)
-else()
+endif()
 
 add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
 
