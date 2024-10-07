@@ -92,8 +92,8 @@ class MPI_Trainer: public Trainer {
     char layout='R'; // Block cyclic, Row major processor mapping
     size_t phi_row = 0; // next row to be filled in the local phi array
     MPI_Datatype rowvec, rowvecs;
-    int &rank;
-    int &ncpu;
+    int rank;
+    int ncpu;
 
     MPI_Trainer(Config &c):
       Trainer(c)
