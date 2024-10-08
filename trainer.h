@@ -213,13 +213,15 @@ class MPI_Trainer: public Trainer {
      * The model weights are updated at the end of this call.
      */
     void solve() {
+
+      if (PHI_cols>PHI_rows) {
+          throw std::runtime_error("MPI solver requires M > N")
+      }
+
       // Descriptors for scalaPACK
       int descPHI[9],  descPHI2[9];
       int descB[9],    descB2[9];
       int info,        info2;
-
-      int sol[9],      sol2[9];
-      int info3,       info4;
 
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
           &izero, &context1, /*leading dimension*/&phi_rows1, &info);
@@ -234,8 +236,6 @@ class MPI_Trainer: public Trainer {
         printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
 
-
-      //int temp = PHI_rows > PHI_cols ? PHI_rows : PHI_cols;
       descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
           &izero, &context1, /*leading dimension*/&phi_rows1, &info);
       descinit_( descB2,  &PHI_rows, &ione, &rnb2, &cnb2, &izero, 
@@ -247,21 +247,6 @@ class MPI_Trainer: public Trainer {
       if(info2 != 0) {
         printf("Error in descinit 2b, info = %d\n", info2);
         printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
-      }
-
-      //int lda1 = PHI_rows > PHI_cols ? phi_rows1 : phi_cols1;
-      //int lda2 = PHI_rows > PHI_cols ? phi_rows2 : phi_cols2;
-
-      descinit_( sol,  &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&phi_rows1, &info3);
-      descinit_( sol2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&phi_rows2, &info4);
-
-      if(info3 != 0) {
-        printf("Error in descinit 1c, info = %d\n", info3);
-      }
-      if(info4 != 0) {
-        printf("Error in descinit 2c, info = %d\n", info4);
       }
 
       char trans= 'N';
@@ -297,8 +282,8 @@ class MPI_Trainer: public Trainer {
           descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
 
       // get weight vector, for context1 
-      pdgemr2d_(&PHI_cols, &ione, dm2.T.ptr(), &ione, &ione, sol2,
-          dm.T.ptr(), &ione, &ione, sol, &context1);
+      pdgemr2d_(&PHI_cols, &ione, dm2.T.ptr(), &ione, &ione, descB2,
+          dm.T.ptr(), &ione, &ione, descB, &context1);
 
       if (rank==0) {
         t_type w(dm.T.ptr(), PHI_cols);
