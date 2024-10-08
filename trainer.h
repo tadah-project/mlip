@@ -215,7 +215,7 @@ class MPI_Trainer: public Trainer {
     void solve() {
 
       if (PHI_cols>PHI_rows) {
-          throw std::runtime_error("MPI solver requires M > N")
+          throw std::runtime_error("MPI solver requires M > N");
       }
 
       // Descriptors for scalaPACK
