@@ -230,9 +230,9 @@ class MPI_Trainer: public Trainer {
         printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
 
-      descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
+      descinit_( descB,   &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
           &izero, &context1, /*leading dimension*/&phi_cols1, &info);
-      descinit_( descB2,  &PHI_rows, &ione, &rnb2, &cnb2, &izero, 
+      descinit_( descB2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
           &izero, &context2, /*leading dimension*/&phi_cols2, &info2);
 
       if(info != 0) {
