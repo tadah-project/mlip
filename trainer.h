@@ -245,7 +245,7 @@ class MPI_Trainer: public Trainer {
           &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
 
       descinit_( sol,  &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&lda1, &info3);
+          &izero, &context1, /*leading dimension*/&phi_cols1, &info3);
 
       if(info != 0) {
         printf("Error in descinit 1b, info = %d\n", info);
