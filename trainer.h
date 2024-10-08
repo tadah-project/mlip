@@ -265,7 +265,7 @@ class MPI_Trainer: public Trainer {
         printf("Error in descinit 2c, info = %d\n", info4);
       }
 
-      char trans='N';
+      char trans= PHI_rows > PHI_cols ? 'N' : 'T';
       int nrhs = 1;
 
       int ia = 1;
