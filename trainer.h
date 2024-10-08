@@ -225,44 +225,44 @@ class MPI_Trainer: public Trainer {
       int lda2 = phi_rows2 > phi_cols2 ? phi_rows2 : phi_cols2;
 
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
-          &izero, &context1, /*leading dimension*/&izero, &info);
+          &izero, &context1, /*leading dimension*/&lda1, &info);
       descinit_( descPHI2, &PHI_rows, &PHI_cols, &rnb2, &cnb2, &izero,
-          &izero, &context2, /*leading dimension*/&izero, &info2);
+          &izero, &context2, /*leading dimension*/&lda2, &info2);
 
-      //if(info != 0) {
-      //  printf("Error in descinit 1a, info = %d\n", info);
-      //}
-      //if(info2 != 0) {
-      //  printf("Error in descinit 2a, info = %d\n", info2);
-      //  printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
-      //}
+      if(info != 0) {
+        printf("Error in descinit 1a, info = %d\n", info);
+      }
+      if(info2 != 0) {
+        printf("Error in descinit 2a, info = %d\n", info2);
+        printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
+      }
 
 
       //int temp = PHI_rows > PHI_cols ? PHI_rows : PHI_cols;
       descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&izero, &info);
+          &izero, &context1, /*leading dimension*/&phi_rows1, &info);
       descinit_( descB2,  &PHI_rows, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&izero, &info2);
+          &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
 
-      //if(info != 0) {
-      //  printf("Error in descinit 1b, info = %d\n", info);
-      //}
-      //if(info2 != 0) {
-      //  printf("Error in descinit 2b, info = %d\n", info2);
-      //  printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
-      //}
+      if(info != 0) {
+        printf("Error in descinit 1b, info = %d\n", info);
+      }
+      if(info2 != 0) {
+        printf("Error in descinit 2b, info = %d\n", info2);
+        printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
+      }
 
       descinit_( sol,  &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&izero, &info3);
+          &izero, &context1, /*leading dimension*/&phi_cols1, &info3);
       descinit_( sol2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&izero, &info4);
+          &izero, &context2, /*leading dimension*/&phi_cols2, &info4);
 
-      //if(info3 != 0) {
-      //  printf("Error in descinit 1c, info = %d\n", info3);
-      //}
-      //if(info4 != 0) {
-      //  printf("Error in descinit 2c, info = %d\n", info4);
-      //}
+      if(info3 != 0) {
+        printf("Error in descinit 1c, info = %d\n", info3);
+      }
+      if(info4 != 0) {
+        printf("Error in descinit 2c, info = %d\n", info4);
+      }
 
       char trans='N';
       int nrhs = 1;
