@@ -254,7 +254,7 @@ class MPI_Trainer: public Trainer {
       // Distribute data in 2D block cyclic 
       DesignMatrix<DM_Function_Base&> dm2(*fb, config);
       dm2.Phi.resize(phi_rows2,phi_cols2);
-      dm2.T.resize(phi_rows2);
+      dm2.T.resize(phi_rows2>phi_cols2 ? phi_rows2 : phi_cols2);
       dm2.Tlabels.resize(phi_rows2);
 
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
@@ -263,20 +263,19 @@ class MPI_Trainer: public Trainer {
       pdgemr2d_(&PHI_rows, &ione, dm.T.ptr(), &ione, &ione, descB,
           dm2.T.ptr(), &ione, &ione, descB2, &context2);
 
-      double *b2 = dm2.T.ptr();
       double wkopt2;
       int lwork2 = -1; // query -> get size of the work matrix
-      std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << "nrhs: " << nrhs << std::endl;
+      std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
-          descPHI2, b2, &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
+          descPHI2, dm2.T.ptr(), &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
       if (info2 != 0) {
         printf("Error in pdgels, info = %d\n", info);
       }
       lwork2 = (int)wkopt2;
       double *work2 = new double[lwork2];
-      std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << "nrhs: " << nrhs << std::endl;
+      std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
-          descPHI2, b2, &ib, &jb, descB2, work2, &lwork2, &info2);
+          descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
 
       // get weight vector, for context1 
       pdgemr2d_(&PHI_rows, &ione, dm2.T.ptr(), &ione, &ione, descB2,
