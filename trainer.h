@@ -218,11 +218,13 @@ class MPI_Trainer: public Trainer {
       int descB[9],    descB2[9];
       int info,        info2;
 
+      int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
+      int lda2 = phi_rows2 > phi_cols2 ? phi_rows2 : phi_cols2;
 
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
-          &izero, &context1, /*leading dimension*/&phi_rows1, &info);
+          &izero, &context1, /*leading dimension*/&izero, &info);
       descinit_( descPHI2, &PHI_rows, &PHI_cols, &rnb2, &cnb2, &izero,
-          &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
+          &izero, &context2, /*leading dimension*/&izero, &info2);
 
       if(info != 0) {
         printf("Error in descinit 1a, info = %d\n", info);
@@ -232,12 +234,11 @@ class MPI_Trainer: public Trainer {
         printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
 
-      int b_lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
-      int b_lda2 = phi_rows2 > phi_cols2 ? phi_rows2 : phi_cols2;
+
       descinit_( descB,   &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&b_lda1, &info);
+          &izero, &context1, /*leading dimension*/&lda1, &info);
       descinit_( descB2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&b_lda2, &info2);
+          &izero, &context2, /*leading dimension*/&lda2, &info2);
 
       if(info != 0) {
         printf("Error in descinit 1b, info = %d\n", info);
