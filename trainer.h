@@ -220,6 +220,7 @@ class MPI_Trainer: public Trainer {
 
       int sol[9],    sol2[9];
       int info3;
+      int info4;
 
       int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
       int lda2 = phi_rows2 > phi_cols2 ? phi_rows2 : phi_cols2;
@@ -245,9 +246,10 @@ class MPI_Trainer: public Trainer {
           &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
 
       descinit_( sol,  &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&phi_cols1, &info3);
+          &izero, &context1, /*leading dimension*/&phi_rows1, &info3);
+
       descinit_( sol2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&phi_cols2, &info3);
+          &izero, &context2, /*leading dimension*/&phi_rows2, &info4);
 
       if(info != 0) {
         printf("Error in descinit 1b, info = %d\n", info);
@@ -257,7 +259,10 @@ class MPI_Trainer: public Trainer {
         printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
       if(info3 != 0) {
-        printf("Error in descinit 1b, info = %d\n", info);
+        printf("Error in descinit 1c, info = %d\n", info3);
+      }
+      if(info4 != 0) {
+        printf("Error in descinit 2c, info = %d\n", info4);
       }
 
       char trans='N';
