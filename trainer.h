@@ -224,7 +224,7 @@ class MPI_Trainer: public Trainer {
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
           &izero, &context1, /*leading dimension*/&phi_rows1, &info);
       descinit_( descPHI2, &PHI_rows, &PHI_cols, &rnb2, &cnb2, &izero,
-          &izero, &context2, /*leading dimension*/&phi_cols1, &info2);
+          &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
 
       if(info != 0) {
         printf("Error in descinit 1a, info = %d\n", info);
@@ -235,10 +235,10 @@ class MPI_Trainer: public Trainer {
       }
 
 
-      //int temp = PHI_rows > PHI_cols ? PHI_rows : PHI_cols;
-      descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
+      int temp = PHI_rows > PHI_cols ? PHI_rows : PHI_cols;
+      descinit_( descB,   &temp, &ione, &rnb1, &cnb1, &izero, 
           &izero, &context1, /*leading dimension*/&lda1, &info);
-      descinit_( descB2,  &PHI_rows, &ione, &rnb2, &cnb2, &izero, 
+      descinit_( descB2,  &temp, &ione, &rnb2, &cnb2, &izero, 
           &izero, &context2, /*leading dimension*/&lda2, &info2);
 
       if(info != 0) {
