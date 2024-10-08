@@ -253,9 +253,9 @@ class MPI_Trainer: public Trainer {
       //int lda2 = PHI_rows > PHI_cols ? phi_rows2 : phi_cols2;
 
       descinit_( sol,  &PHI_cols, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&phi_cols1, &info3);
+          &izero, &context1, /*leading dimension*/&phi_rows1, &info3);
       descinit_( sol2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&phi_cols1, &info4);
+          &izero, &context2, /*leading dimension*/&phi_rows2, &info4);
 
       if(info3 != 0) {
         printf("Error in descinit 1c, info = %d\n", info3);
