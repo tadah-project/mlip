@@ -109,13 +109,13 @@ class MPI_Trainer: public Trainer {
     int rank;
     int ncpu;
 
-    MPI_Trainer(Config &c):
-      Trainer(c)
+    MPI_Trainer(Config &c, int &rank, int &ncpu):
+      Trainer(c),
+      rank(rank),
+      ncpu(ncpu)
   {}
-    void init(int &_rank, int &_ncpu) {
+    void init() {
 
-      rank = _rank;
-      ncpu = _ncpu;
       if (rank==0) {
         int nstruct_tot = StructureDB::count(config).first;
         int natoms_tot = StructureDB::count(config).second;
@@ -297,8 +297,8 @@ class MPI_Trainer_HOST: public MPI_Trainer {
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
-    MPI_Trainer_HOST(int &rank, int &ncpu):
-      MPI_Trainer(rank, ncpu)
+    MPI_Trainer_HOST(Config &c, int &rank, int &ncpu):
+      MPI_Trainer(c, rank, ncpu)
   {}
 
     void prep_wpckgs() {
@@ -426,8 +426,8 @@ class MPI_Trainer_HOST: public MPI_Trainer {
 class MPI_Trainer_WORKER: public MPI_Trainer {
 
   public:
-    MPI_Trainer_WORKER(int &rank, int &ncpu):
-      MPI_Trainer(rank, ncpu)
+    MPI_Trainer_WORKER(Config &c, int &rank, int &ncpu):
+      MPI_Trainer(c, rank, ncpu)
   {}
 
     bool release_tag() {
