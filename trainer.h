@@ -254,7 +254,7 @@ class MPI_Trainer: public Trainer {
       // Distribute data in 2D block cyclic 
       DesignMatrix<DM_Function_Base&> dm2(*fb, config);
       dm2.Phi.resize(phi_rows2,phi_cols2);
-      dm2.T.resize(phi_rows2);
+      dm2.T.resize(phi_cols2);
       dm2.Tlabels.resize(phi_rows2);
 
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
@@ -279,7 +279,7 @@ class MPI_Trainer: public Trainer {
           descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
 
       // get weight vector, for context1 
-      pdgemr2d_(&PHI_cols, &ione, dm2.T.ptr(), &ione, &ione, descB2,
+      pdgemr2d_(&PHI_rows, &ione, dm2.T.ptr(), &ione, &ione, descB2,
           dm.T.ptr(), &ione, &ione, descB, &context1);
 
       if (rank==0) {
