@@ -274,11 +274,12 @@ class MPI_Trainer: public Trainer {
       lwork2 = (int)wkopt2;
       double *work2 = new double[lwork2];
       std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
+
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
           descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
 
       // get weight vector, for context1 
-      pdgemr2d_(&PHI_rows, &ione, dm2.T.ptr(), &ione, &ione, descB2,
+      pdgemr2d_(&PHI_cols, &ione, dm2.T.ptr(), &ione, &ione, descB2,
           dm.T.ptr(), &ione, &ione, descB, &context1);
 
       if (rank==0) {
