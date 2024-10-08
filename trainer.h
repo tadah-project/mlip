@@ -125,6 +125,8 @@ class MPI_Trainer: public Trainer {
       MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
       MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+      std::cout << "PHI_cols " << PHI_cols << std::endl;
+
       // Initialize BLACS
       // We create two contexts.
       // context1 is used for the computation of phi matrices
