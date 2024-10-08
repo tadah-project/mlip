@@ -298,7 +298,7 @@ class MPI_Trainer_HOST: public MPI_Trainer {
 
   public:
     MPI_Trainer_HOST(int &rank, int &ncpu):
-      MPI_Trainer(rank. ncpu),
+      MPI_Trainer(rank, ncpu)
   {}
 
     void prep_wpckgs() {
@@ -427,7 +427,7 @@ class MPI_Trainer_WORKER: public MPI_Trainer {
 
   public:
     MPI_Trainer_WORKER(int &rank, int &ncpu):
-      MPI_Trainer(rank. ncpu),
+      MPI_Trainer(rank, ncpu)
   {}
 
     bool release_tag() {
