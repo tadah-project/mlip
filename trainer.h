@@ -125,8 +125,6 @@ class MPI_Trainer: public Trainer {
       MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
       MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-      std::cout << "PHI_cols " << PHI_cols << std::endl;
-
       // Initialize BLACS
       // We create two contexts.
       // context1 is used for the computation of phi matrices
@@ -419,14 +417,11 @@ class MPI_Trainer_HOST: public MPI_Trainer {
     }
     void config_tag() {
       int ready;
-      std::cout << "HOST CONFIG 1" << std::endl;
       MPI_Recv (&ready, 1, MPI_INT, worker, 
           MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD, &status);
-      std::cout << "HOST CONFIG 2" << std::endl;
       ready=1;
       MPI_Send (&ready, 1, MPI_INT, worker, 
           MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD);
-      std::cout << "HOST CONFIG 3" << std::endl;
     }
 
 };
