@@ -198,7 +198,8 @@ class MPI_Trainer: public Trainer {
       // workers.
       //DesignMatrix<DM_Function_Base&> dm(*fb, config);
       dm.Phi.resize(phi_rows1,phi_cols1);
-      dm.T.resize(phi_rows1);
+      int LLD = phi_rows1>phi_cols1 ? phi_rows1 : phi_cols1;
+      dm.T.resize(LLD);
       dm.Tlabels.resize(phi_rows1);
     }
     void probe() {
@@ -217,10 +218,13 @@ class MPI_Trainer: public Trainer {
       int descB[9],    descB2[9];
       int info,        info2;
 
+      int LLD1 = phi_rows1>phi_cols1 ? phi_rows1 : phi_cols1;
+      int LLD2 = phi_rows2>phi_cols2 ? phi_rows2 : phi_cols2;
+
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
-          &izero, &context1, /*leading dimension*/&phi_rows1, &info);
+          &izero, &context1, /*leading dimension*/&LLD1, &info);
       descinit_( descPHI2, &PHI_rows, &PHI_cols, &rnb2, &cnb2, &izero,
-          &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
+          &izero, &context2, /*leading dimension*/&LLD2, &info2);
 
       if(info != 0) {
         printf("Error in descinit 1a, info = %d\n", info);
@@ -231,9 +235,9 @@ class MPI_Trainer: public Trainer {
       }
 
       descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
-          &izero, &context1, /*leading dimension*/&phi_rows1, &info);
+          &izero, &context1, /*leading dimension*/&LLD1, &info);
       descinit_( descB2,  &PHI_rows, &ione, &rnb2, &cnb2, &izero, 
-          &izero, &context2, /*leading dimension*/&phi_rows2, &info2);
+          &izero, &context2, /*leading dimension*/&LLD2, &info2);
 
       if(info != 0) {
         printf("Error in descinit 1b, info = %d\n", info);
@@ -254,7 +258,7 @@ class MPI_Trainer: public Trainer {
       // Distribute data in 2D block cyclic 
       DesignMatrix<DM_Function_Base&> dm2(*fb, config);
       dm2.Phi.resize(phi_rows2,phi_cols2);
-      dm2.T.resize(phi_rows2>phi_cols2 ? phi_rows2 : phi_cols2);
+      dm2.T.resize(LLD2);
       dm2.Tlabels.resize(phi_rows2);
 
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
