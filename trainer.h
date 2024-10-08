@@ -251,6 +251,9 @@ class MPI_Trainer: public Trainer {
       descinit_( sol2,  &PHI_cols, &ione, &rnb2, &cnb2, &izero, 
           &izero, &context2, /*leading dimension*/&phi_rows2, &info4);
 
+      std::cout << "phi_rows1, phi_cols1 " << phi_rows1 << ", " << phi_cols1 << std::endl; 
+      std::cout << "phi_rows2, phi_cols2 " << phi_rows2 << ", " << phi_cols2 << std::endl; 
+
       if(info != 0) {
         printf("Error in descinit 1b, info = %d\n", info);
       }
