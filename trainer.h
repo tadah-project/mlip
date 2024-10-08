@@ -261,12 +261,15 @@ class MPI_Trainer: public Trainer {
       dm2.T.resize(LLD2);
       dm2.Tlabels.resize(phi_rows2);
 
+      std::cout << "111" << std::endl;
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
           dm2.Phi.ptr(), &ione, &ione, descPHI2, &context2);
 
+      std::cout << "222" << std::endl;
       pdgemr2d_(&PHI_rows, &ione, dm.T.ptr(), &ione, &ione, descB,
           dm2.T.ptr(), &ione, &ione, descB2, &context2);
 
+      std::cout << "333" << std::endl;
       double wkopt2;
       int lwork2 = -1; // query -> get size of the work matrix
       std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
