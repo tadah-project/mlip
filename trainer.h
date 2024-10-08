@@ -198,8 +198,8 @@ class MPI_Trainer: public Trainer {
       // workers.
       //DesignMatrix<DM_Function_Base&> dm(*fb, config);
       dm.Phi.resize(phi_rows1,phi_cols1);
-      int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
-      dm.T.resize(lda1);
+      //int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
+      dm.T.resize(phi_rows1);
       dm.Tlabels.resize(phi_rows1);
     }
     void probe() {
@@ -220,7 +220,6 @@ class MPI_Trainer: public Trainer {
 
       int sol[9],      sol2[9];
       int info3,       info4;
-
 
       descinit_( descPHI,  &PHI_rows, &PHI_cols, &rnb1, &cnb1, &izero,
           &izero, &context1, /*leading dimension*/&phi_rows1, &info);
@@ -265,7 +264,7 @@ class MPI_Trainer: public Trainer {
         printf("Error in descinit 2c, info = %d\n", info4);
       }
 
-      char trans= PHI_rows > PHI_cols ? 'N' : 'T';
+      char trans= 'N';
       int nrhs = 1;
 
       int ia = 1;
@@ -275,7 +274,7 @@ class MPI_Trainer: public Trainer {
       // Distribute data in 2D block cyclic 
       DesignMatrix<DM_Function_Base&> dm2(*fb, config);
       dm2.Phi.resize(phi_rows2,phi_cols2);
-      dm2.T.resize(lda2);
+      dm2.T.resize(phi_rows2);
       dm2.Tlabels.resize(phi_rows2);
 
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
@@ -286,7 +285,6 @@ class MPI_Trainer: public Trainer {
 
       double wkopt2;
       int lwork2 = -1; // query -> get size of the work matrix
-      std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
           descPHI2, dm2.T.ptr(), &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
       if (info2 != 0) {
@@ -294,7 +292,6 @@ class MPI_Trainer: public Trainer {
       }
       lwork2 = (int)wkopt2;
       double *work2 = new double[lwork2];
-      std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << " nrhs: " << nrhs << std::endl;
 
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
           descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
