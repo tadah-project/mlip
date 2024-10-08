@@ -294,14 +294,11 @@ class MPI_Trainer: public Trainer {
 
 class MPI_Trainer_HOST: public MPI_Trainer {
   private:
-    int &rank;
-    int &ncpu;
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
     MPI_Trainer_HOST(int &rank, int &ncpu):
-      rank(rank),
-      ncpu(ncpu)
+      MPI_Trainer(rank. ncpu),
   {}
 
     void prep_wpckgs() {
@@ -427,14 +424,10 @@ class MPI_Trainer_HOST: public MPI_Trainer {
 
 };
 class MPI_Trainer_WORKER: public MPI_Trainer {
-  private:
-    int &rank;
-    int &ncpu;
 
   public:
     MPI_Trainer_WORKER(int &rank, int &ncpu):
-      rank(rank),
-      ncpu(ncpu)
+      MPI_Trainer(rank. ncpu),
   {}
 
     bool release_tag() {
