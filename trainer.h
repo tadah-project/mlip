@@ -138,8 +138,8 @@ class MPI_Trainer: public Trainer {
       cnb1 = PHI_cols;
       cnb2 = config.get<int>("NBLOCK");   // Column block size
 
-      b_ncols1 = 1;        b_ncols2 = 2;
-      b_nrows1 = ncpu;     b_nrows2 = ncpu/b_ncols2;
+      //b_ncols1 = 1;        b_ncols2 = 2;
+      //b_nrows1 = ncpu;     b_nrows2 = ncpu/b_ncols2;
 
       // make as sqaure grid as possible
       int sr = sqrt(ncpu);
