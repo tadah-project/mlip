@@ -266,7 +266,7 @@ class MPI_Trainer: public Trainer {
       double *b2 = dm2.T.ptr();
       double wkopt2;
       int lwork2 = -1; // query -> get size of the work matrix
-      std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << std::endl;
+      std::cout << "rank: " << rank << " 1. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << "nrhs: " << nrhs << std::endl;
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
           descPHI2, b2, &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
       if (info2 != 0) {
@@ -274,7 +274,7 @@ class MPI_Trainer: public Trainer {
       }
       lwork2 = (int)wkopt2;
       double *work2 = new double[lwork2];
-      std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << std::endl;
+      std::cout << "rank: " << rank << " 2. trans: " << trans << "  PHI_cols " << PHI_cols << " PHI_rows " << PHI_rows << "nrhs: " << nrhs << std::endl;
       pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
           descPHI2, b2, &ib, &jb, descB2, work2, &lwork2, &info2);
 
