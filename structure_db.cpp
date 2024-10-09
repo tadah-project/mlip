@@ -135,3 +135,6 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   std::pair<int,int> res = std::make_pair(nstruc,natoms_tot);
   return res;
 }
+void StructureDB::clear_nn() {
+    for (auto struc: structures) struc.clear_nn();
+}

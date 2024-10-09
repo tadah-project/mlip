@@ -210,7 +210,6 @@ int Structure::next_structure(std::ifstream &ifs) {
   for (size_t i=0; i<6;++i)
     std::getline(ifs,line);
 
-
   int natoms=0;
   while(std::getline(ifs,line)) {
     if(line.empty()) break;
@@ -218,4 +217,9 @@ int Structure::next_structure(std::ifstream &ifs) {
     natoms++;
   }
   return natoms;
+}
+void Structure::clear_nn() {
+  near_neigh_atoms.clear();
+  near_neigh_shift.clear();
+  near_neigh_idx.clear();
 }

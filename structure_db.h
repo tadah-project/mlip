@@ -141,5 +141,7 @@ struct StructureDB {
 
     /** Count number of structures and atoms in a single dataset. */
     static std::pair<int,int> count(const std::string fn);
+
+    void clear_nn();
 };
 #endif
