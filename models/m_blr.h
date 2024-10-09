@@ -181,6 +181,7 @@ class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
       c.remove("FORCE");
       c.remove("STRESS");
       c.remove("VERBOSE");
+      c.add("VERBOSE", 0);
 
       c.clear_internal_keys();
       c.remove("MODEL");
