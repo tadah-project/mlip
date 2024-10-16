@@ -136,5 +136,5 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   return res;
 }
 void StructureDB::clear_nn() {
-    for (auto struc: structures) struc.clear_nn();
+    for (auto &struc: structures) struc.clear_nn();
 }
