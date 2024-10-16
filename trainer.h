@@ -284,7 +284,7 @@ class MPI_Trainer: public Trainer {
       if (rank==0) {
         t_type w(dm.T.ptr(), PHI_cols);
         model->set_weights(w);
-        model->trained=true;
+        // model->trained=true; // still can't train with this model
       }
       delete[] work2;
       MPI_Type_free(&rowvec);
