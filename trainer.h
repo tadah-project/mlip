@@ -409,7 +409,6 @@ class MPI_Trainer_HOST: public MPI_Trainer {
         count++;
       }
       else {
-        std::cout << "HOST release_tag(count) WAIT_TAG" << std::endl;
         MPI_Send (0, 0, MPI_INT, worker, 
             MPI_Trainer::WAIT_TAG, MPI_COMM_WORLD);
       }
