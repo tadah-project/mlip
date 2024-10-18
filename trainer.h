@@ -423,10 +423,10 @@ class MPI_Trainer_HOST: public MPI_Trainer {
     }
 
 };
-class MPI_Trainer_WORKER: public MPI_Trainer {
+class Trainer_WORKER: public MPI_Trainer {
 
   public:
-    MPI_Trainer_WORKER(Config &c, int &rank, int &ncpu):
+    Trainer_WORKER(Config &c, int &rank, int &ncpu):
       MPI_Trainer(c, rank, ncpu)
   {}
 
@@ -570,6 +570,28 @@ class MPI_Trainer_WORKER: public MPI_Trainer {
       if (fn)
         delete fn;
       return 0;
+    }
+
+    void run() {
+      while (true) {
+        // Send a request for more work to the host
+        MPI_Send(&rows_available, 1, MPI_INT, 0, MPI_Trainer::WORK_TAG, MPI_COMM_WORLD);
+
+        // Probe and respond to host or worker requests
+        probe();
+
+        // Handle requests based on their tags
+        if (tag == MPI_Trainer::RELEASE_TAG) {
+          release_tag();
+          break;
+        } else if (tag == MPI_Trainer::WAIT_TAG) {
+          wait_tag();
+        } else if (tag == MPI_Trainer::DATA_TAG) {
+          data_tag();
+        } else if (tag == MPI_Trainer::WORK_TAG) {
+          work_tag();
+        }
+      }
     }
 };
 #endif
