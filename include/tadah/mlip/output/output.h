@@ -3,7 +3,7 @@
 
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/config.h>
-#include <tadah/core/utils/utils.h>
+#include <tadah/core/utils.h>
 #include <tadah/core/core_types.h>
 
 #include <ios>
