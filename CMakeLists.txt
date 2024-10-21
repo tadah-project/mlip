@@ -88,10 +88,11 @@ if(TADAH_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-#set(TADAH_MLIP_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/include/tadah/MLIP)
-#file(GLOB MLIP_H CONFIGURE_DEPENDS "*.h" "*.hpp")
-#install(FILES ${MLIP_H} DESTINATION ${TADAH_MLIP_INSTALL_DIR})
-#install(DIRECTORY analytics DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-#install(DIRECTORY design_matrix DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-#install(DIRECTORY models DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-#install(DIRECTORY output DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
+# Installation rules
+install(TARGETS tadah.mlip
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include
+)
