@@ -45,7 +45,7 @@ if (BUILD_SHARED_LIBS)
 endif()
 
 include(FetchContent)
-get_filename_component(BUILD_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+#get_filename_component(BUILD_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
