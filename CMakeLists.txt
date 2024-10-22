@@ -45,19 +45,21 @@ if (BUILD_SHARED_LIBS)
 endif()
 
 include(FetchContent)
-#get_filename_component(BUILD_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
-execute_process(
-    COMMAND git branch --show-current
+
+if(DEFINED ENV{CI_COMMIT_REF_NAME})
+    set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
+else()
+    execute_process(
+    COMMAND git rev-parse --symbolic-full-name --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     OUTPUT_VARIABLE GIT_BRANCH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
     GIT_TAG origin/${GIT_BRANCH}
-    #SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS
-    #PATCH_COMMAND  mkdir -p ${BUILD_DIR_NAME}
-    #BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/${BUILD_DIR_NAME}
     )
 
 FetchContent_MakeAvailable(Tadah.MODELS)
