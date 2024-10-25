@@ -1,5 +1,0 @@
-#include "m_all.h"
-
-template<> CONFIG::Registry<M_Tadah_Base,DM_Function_Base&,Config&>::Map CONFIG::Registry<M_Tadah_Base,DM_Function_Base&,Config&>::registry{};
-CONFIG::Registry<M_Tadah_Base,DM_Function_Base&,Config&>::Register<M_KRR<>> M_KRR_1("M_KRR");
-CONFIG::Registry<M_Tadah_Base,DM_Function_Base&,Config&>::Register<M_BLR<>> M_BLR_1("M_BLR");

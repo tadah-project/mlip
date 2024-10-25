@@ -1,8 +1,8 @@
 #include <string>
 #include <filesystem>
 #include "catch2/catch.hpp"
-#include "../atom.h"
-#include "../structure.h"
+#include <tadah/mlip/atom.h>
+#include <tadah/mlip/structure.h>
 
 // Conversion factor from eV/A^3 to kbar;
 double fac = 1602.1766208;

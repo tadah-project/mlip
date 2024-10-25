@@ -1,5 +1,5 @@
 #include "catch2/catch.hpp"
-#include "../atom.h"
+#include <tadah/mlip/atom.h>
 #include <string>
 
 

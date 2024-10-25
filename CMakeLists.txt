@@ -45,61 +45,56 @@ if (BUILD_SHARED_LIBS)
 endif()
 
 include(FetchContent)
-get_filename_component(BUILD_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+
+if(DEFINED ENV{CI_COMMIT_REF_NAME})
+    set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
+else()
+    execute_process(
+    COMMAND git rev-parse --symbolic-full-name --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
-    GIT_TAG origin/main
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS
-    PATCH_COMMAND  mkdir -p ${BUILD_DIR_NAME}
-    BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../MODELS/${BUILD_DIR_NAME}
+    GIT_TAG origin/${GIT_BRANCH}
     )
 
 FetchContent_MakeAvailable(Tadah.MODELS)
 
-file(GLOB MLIP_SRC CONFIGURE_DEPENDS "*.cpp" "*.h" "*.hpp")
-file(GLOB_RECURSE ANALYTICS_SRC CONFIGURE_DEPENDS 
-    "analytics/*.cpp" "analytics/*.h" "analytics/*.hpp")
-file(GLOB_RECURSE DESIGN_MATRIX_SRC CONFIGURE_DEPENDS 
-    "design_matrix/*.cpp" "design_matrix/*.h" "design_matrix/*.hpp")
-file(GLOB_RECURSE MODELS_SRC CONFIGURE_DEPENDS 
-    "models/*.cpp" "models/*.h" "models/*.hpp")
-file(GLOB_RECURSE OUTPUT_SRC CONFIGURE_DEPENDS 
-    "output/*.cpp" "output/*.h" "output/*.hpp")
-#file(GLOB_RECURSE UTILS_SRC CONFIGURE_DEPENDS "utils/*.cpp")
-
-add_library(tadah.mlip.obj OBJECT
-    ${MLIP_SRC}
-    ${ANALYTICS_SRC}
-    ${DESIGN_MATRIX_SRC}
-    ${MODELS_SRC}
-    ${OUTPUT_SRC}
-    )
-
-target_link_libraries(tadah.mlip.obj PRIVATE config::rc)
+file(GLOB MLIP_SRC CONFIGURE_DEPENDS "src/*.cpp")
+add_library(tadah.mlip ${MLIP_SRC})
+target_link_libraries(tadah.mlip PRIVATE config::rc)
+target_link_libraries(tadah.mlip PUBLIC tadah.models)
+target_include_directories(tadah.mlip PUBLIC include)
+target_include_directories(tadah.mlip PUBLIC ${Tadah.MODELS_SOURCE_DIR}/include)
+target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/include)
+target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/external/toml11)
 
 if(TADAH_ENABLE_OPENMP)
     find_package(OpenMP REQUIRED)
-    target_link_libraries(tadah.mlip.obj PUBLIC OpenMP::OpenMP_CXX)
+    target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 if (TADAH_BUILD_MPI)
     find_package(MPI REQUIRED)
-    target_link_libraries(tadah.mlip.obj PUBLIC MPI::MPI_CXX)
+    target_link_libraries(tadah.mlip PUBLIC MPI::MPI_CXX)
     add_compile_definitions(TADAH_BUILD_MPI)
 endif()
 
-add_library(tadah.mlip $<TARGET_OBJECTS:tadah.mlip.obj>)
 
 if(TADAH_BUILD_TESTS)
     include(CTest) 
     add_subdirectory(tests)
 endif()
 
-set(TADAH_MLIP_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/include/tadah/MLIP)
-file(GLOB MLIP_H CONFIGURE_DEPENDS "*.h" "*.hpp")
-install(FILES ${MLIP_H} DESTINATION ${TADAH_MLIP_INSTALL_DIR})
-install(DIRECTORY analytics DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-install(DIRECTORY design_matrix DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-install(DIRECTORY models DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
-install(DIRECTORY output DESTINATION ${TADAH_MLIP_INSTALL_DIR} FILES_MATCHING REGEX "(.+.h|.+.hpp)")
+# Installation rules
+install(TARGETS tadah.mlip
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include
+)
