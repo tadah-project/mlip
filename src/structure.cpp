@@ -77,7 +77,6 @@ int Structure::read(std::ifstream &ifs) {
 
   char symbol[3];
   double px,py,pz,fx,fy,fz;
-  PeriodicTable pd;
   while(std::getline(ifs,line)) {
     if(line.empty()) break;
     //if(line == " ") break;
@@ -85,7 +84,7 @@ int Structure::read(std::ifstream &ifs) {
 
     std::istringstream tmp(line);
     tmp >> symbol >> px >> py >> pz >> fx >> fy >> fz;
-    Element e = pd.find_by_symbol(symbol);
+    Element e = PeriodicTable::find_by_symbol(symbol);
     unique_elements.insert(e);
     atoms.push_back(Atom(e,px,py,pz,fx,fy,fz));
     //Atom &a = atoms.back();

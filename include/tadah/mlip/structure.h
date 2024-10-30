@@ -9,7 +9,7 @@
 #include <fstream>
 #include <iomanip>
 #include <vector>
-#include <unordered_set>
+#include <set>
 
 /**
  * Container for a collection of Atom(s).
@@ -109,7 +109,7 @@ struct Structure {
   double sweight=1.0;
 
   /** List of chemical elements in this structure. */
-  std::unordered_set<Element> unique_elements;
+  std::set<Element> unique_elements;
 
   /** @return a reference to the i-th Atom.
    *

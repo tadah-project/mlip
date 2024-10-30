@@ -1,26 +1,28 @@
 #include <tadah/mlip/structure_db.h>
 
 StructureDB::StructureDB() {}
-StructureDB::StructureDB(const Config &config) {
-    add(config);
+StructureDB::StructureDB(Config &config) {
+  add(config);
+  check_atoms_key(config);
+  check_watoms_key(config);
 }
 
 void StructureDB::add(const std::string fn) {
-    std::ifstream ifs(fn);
-    if (!ifs.is_open()) {
-        throw std::runtime_error("DBFILE does not exist: "+fn);
-    }
-    while (true) {
-        structures.push_back(Structure());
-        int t = structures.back().read(ifs);
+  std::ifstream ifs(fn);
+  if (!ifs.is_open()) {
+    throw std::runtime_error("DBFILE does not exist: "+fn);
+  }
+  while (true) {
+    structures.push_back(Structure());
+    int t = structures.back().read(ifs);
 
-        // did we read structure succesfully?
-        // if not remove last object from the list
-        if (t==1) structures.pop_back();
+    // did we read structure succesfully?
+    // if not remove last object from the list
+    if (t==1) structures.pop_back();
 
-        if (ifs.eof()) break;
-    }
-    ifs.close();
+    if (ifs.eof()) break;
+  }
+  ifs.close();
 }
 int StructureDB::add(const std::string fn, int first, int N) {
   std::ifstream ifs(fn);
@@ -50,59 +52,59 @@ int StructureDB::add(const std::string fn, int first, int N) {
 }
 
 void StructureDB::add(const Structure &s) {
-    structures.push_back(s);
+  structures.push_back(s);
 }
 
 void StructureDB::remove(size_t i) {
-    structures.erase(structures.begin()+i);
+  structures.erase(structures.begin()+i);
 }
 
 void StructureDB::add(const Config &config) {
-    for (const std::string &s : config("DBFILE")) {
-        dbidx.push_back(size());
-        add(s);
-    }
+  for (const std::string &s : config("DBFILE")) {
     dbidx.push_back(size());
+    add(s);
+  }
+  dbidx.push_back(size());
 }
 
 size_t StructureDB::size() const {
-    return structures.size();
+  return structures.size();
 }
 
 size_t StructureDB::size(size_t n) const {
-    return dbidx[n+1]-dbidx[n];
+  return dbidx[n+1]-dbidx[n];
 }
 
 Structure &StructureDB::operator()(size_t s) {
-    return structures[s];
+  return structures[s];
 }
 
 const Structure &StructureDB::operator()(size_t s) const {
-    return structures[s];
+  return structures[s];
 }
 
 Atom &StructureDB::operator()(size_t s, size_t a) {
-    return structures[s].atoms[a];
+  return structures[s].atoms[a];
 }
 size_t StructureDB::calc_natoms() const {
-    size_t natoms=0;
-    for (auto struc: structures) natoms += struc.natoms();
-    return natoms;
+  size_t natoms=0;
+  for (auto struc: structures) natoms += struc.natoms();
+  return natoms;
 }
 size_t StructureDB::calc_natoms(size_t n) const {
-    size_t start = dbidx[n];
-    size_t stop = dbidx[n+1];
-    size_t natoms=0;
-    for (size_t i=start; i<stop; ++i) {
-        natoms += (*this)(i).natoms();
-    }
-    return natoms;
+  size_t start = dbidx[n];
+  size_t stop = dbidx[n+1];
+  size_t natoms=0;
+  for (size_t i=start; i<stop; ++i) {
+    natoms += (*this)(i).natoms();
+  }
+  return natoms;
 }
-std::unordered_set<Element> StructureDB::get_unique_elements() {
-    std::unordered_set<Element> s;
-    for (const auto & st: structures) s.insert(
-            st.unique_elements.begin(),st.unique_elements.end());
-    return s;
+std::set<Element> StructureDB::get_unique_elements() const {
+  std::set<Element> s;
+  for (const auto & st: structures) s.insert(
+      st.unique_elements.begin(),st.unique_elements.end());
+  return s;
 }
 
 template <typename T,typename U>                                                   
@@ -136,5 +138,55 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   return res;
 }
 void StructureDB::clear_nn() {
-    for (auto &struc: structures) struc.clear_nn();
+  for (auto &struc: structures) struc.clear_nn();
+}
+void StructureDB::check_atoms_key(Config &config) const {
+  std::set<Element> unique_elements = get_unique_elements();
+  bool error=false;
+
+  if (config.exist("ATOMS")) {
+    // user set this key so here we check does it correspond to unique_elements
+    if (unique_elements.size()!=config.size("ATOMS")) {
+      error=true;
+    }
+
+    auto set_it = unique_elements.begin();
+    auto atoms_it = config("ATOMS").begin();
+    while (set_it != unique_elements.end() && atoms_it != config("ATOMS").end()) {
+      if (set_it->symbol != *atoms_it)  {
+        error=true;
+      }
+      ++set_it;
+      ++atoms_it;
+    }
+    if (error) {
+      throw std::runtime_error("\n"
+          "Mismatch between elements in datasets and ATOMS in the config file.\n"
+          "Please either update the ATOMS in the config file or remove ATOMS\n"
+          "key completely. Tadah! will automatically configure this key.\n"
+          );
+    }
+  } else {
+    for (const auto &s : unique_elements) config.add("ATOMS", s.symbol);
+  }
+}
+void StructureDB::check_watoms_key(Config &config) const {
+  std::set<Element> unique_elements = get_unique_elements();
+  bool error=false;
+
+  if (config.exist("WATOMS")) {
+    // user set this key so here we check does it correspond to unique_elements
+    if (unique_elements.size()!=config.size("WATOMS")) {
+      error=true;
+    }
+    if (error) {
+      throw std::runtime_error("\n"
+          "Mismatch between elements in datasets and WATOMS in the config file.\n"
+          "Please either update the WATOMS in the config file or remove WATOMS\n"
+          "key completely. In the latter case Tadah! will use default values.\n"
+          );
+    }
+  } else {
+    for (const auto &s : unique_elements) config.add("WATOMS", s.Z);
+  }
 }
