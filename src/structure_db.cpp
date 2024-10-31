@@ -2,8 +2,11 @@
 #include <tadah/core/periodic_table.h>
 #include <cstdio>
 
-StructureDB::StructureDB() {}
+StructureDB::StructureDB() {
+  PeriodicTable::initialize();
+}
 StructureDB::StructureDB(Config &config) {
+  PeriodicTable::initialize();
   add(config);
 }
 
