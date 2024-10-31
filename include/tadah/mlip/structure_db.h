@@ -1,14 +1,15 @@
 #ifndef STRUCTURE_DB_h
 #define STRUCTURE_DB_h
 
-#include <tadah/mlip/structure.h>
+#include <tadah/core/element.h>
 #include <tadah/core/config.h>
+#include <tadah/mlip/structure.h>
 
 #include <string>
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <unordered_set>
+#include <set>
 
 /**
  * Container for a collection of Structure(s).
@@ -49,7 +50,7 @@ struct StructureDB {
      * \note
      *      Required Config key: \ref DBFILE
      */
-    StructureDB(const Config &config);
+    StructureDB(Config &config);
 
     /** Add structures listed in the config file
      *
@@ -57,7 +58,7 @@ struct StructureDB {
      *      Required Config key: \ref DBFILE
      *
      */
-    void add(const Config &config);
+    void add(Config &config);
 
     /** Add all structures from a file */
     void add(const std::string fn);
@@ -134,7 +135,13 @@ struct StructureDB {
     size_t calc_natoms(size_t n) const;
 
     /** Return unique elements for all Structures. */
-    std::unordered_set<Element> get_unique_elements();
+    std::set<Element> get_unique_elements() const;
+
+    /** Find unique elements in provided Config file */
+    static std::set<Element> find_unique_elements(const Config &c);
+
+    /** Find unique elements in provided file */
+    static std::set<Element> find_unique_elements(const std::string &fn);
 
     /** Count number of structures and atoms in all datasets from the Config file. */
     static std::pair<int,int> count(const Config &c);
@@ -143,5 +150,11 @@ struct StructureDB {
     static std::pair<int,int> count(const std::string fn);
 
     void clear_nn();
+
+    /** Check consistency of the ATOMS key. */
+    static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
+
+    /** Check consistency of the WATOMS key. Add if missing*/
+    static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
 };
 #endif

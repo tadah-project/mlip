@@ -72,7 +72,7 @@ void NNFinder::calc(Structure &st) {
   }
 }
 void NNFinder::calc(StructureDB &stdb) {
-  #pragma omp parallel for
+#pragma omp parallel for
   for (size_t s=0; s<stdb.size(); ++s) {
     calc(stdb(s));
   }
@@ -85,7 +85,6 @@ bool NNFinder::check_box(Structure &st) {
   return true;
 }
 void NNFinder::num_shifts(Structure &st, int N[3]) {
-  //Matrix3d cell_inv = st.cell.completeOrthogonalDecomposition().pseudoInverse();
   Matrix3d cell_inv = st.cell.inverse();
 
   double l1 = cell_inv.col(0).norm();
