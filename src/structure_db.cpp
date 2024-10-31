@@ -108,37 +108,34 @@ std::set<Element> StructureDB::get_unique_elements() const {
 }
 std::set<Element> StructureDB::find_unique_elements(const std::string &fn) {
   std::set<Element> s;
-  std::ifstream datafile(fn);
+  std::ifstream ifs(fn);
   std::string line;
 
-  if (!datafile.is_open()) {
+  if (!ifs.is_open()) {
     std::cerr << "Could not open the file." << std::endl;
   }
 
   char symbol[3];
+  while (std::getline(ifs, line)) {
+    // the second line could be energy or
+    // a scalling factors eweight fweight sweight
+    std::getline(ifs,line);  
+    std::stringstream stream(line);
+    size_t count = std::distance(std::istream_iterator<std::string>(stream),
+        std::istream_iterator<std::string>());
 
-  // move to first non empty line
-  while (std::getline(datafile, line)) {
-    if (!line.empty()) {
-      break;
+    if (count == 3)
+      std::getline(ifs,line);
+
+    for (size_t i=0; i<6; ++i)
+      std::getline(ifs,line);
+
+    while (std::getline(ifs, line)) {
+      if(line.empty()) break;
+      sscanf(line.c_str(), "%2s", symbol);
+      s.insert(PeriodicTable::find_by_symbol(symbol));
     }
-  }
-  // skip 
-  for (int i = 0; i < 7; ++i) {
-    std::getline(datafile, line);
-  }
-  while (std::getline(datafile, line)) {
-    if(line.empty()) {
-      for (int i = 0; i < 8; ++i) {
-        if (!std::getline(datafile, line)) {
-          // Handle the case where there are not enough lines
-          break; // or handle the error
-        }
-      }
-      continue;
-    }
-    sscanf(line.c_str(), "%2s", symbol);
-    s.insert(PeriodicTable::find_by_symbol(symbol));
+
   }
   return s;
 }

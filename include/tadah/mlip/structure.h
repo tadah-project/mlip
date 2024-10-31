@@ -3,6 +3,7 @@
 
 #include <tadah/mlip/atom.h>
 #include <tadah/core/core_types.h>
+#include <tadah/core/periodic_table.h>
 
 #include <string>
 #include <iostream>
