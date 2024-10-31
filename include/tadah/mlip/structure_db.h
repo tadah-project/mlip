@@ -58,7 +58,7 @@ struct StructureDB {
      *      Required Config key: \ref DBFILE
      *
      */
-    void add(const Config &config);
+    void add(Config &config);
 
     /** Add all structures from a file */
     void add(const std::string fn);
@@ -137,6 +137,12 @@ struct StructureDB {
     /** Return unique elements for all Structures. */
     std::set<Element> get_unique_elements() const;
 
+    /** Find unique elements in provided Config file */
+    static std::set<Element> find_unique_elements(const Config &c);
+
+    /** Find unique elements in provided file */
+    static std::set<Element> find_unique_elements(const std::string &fn);
+
     /** Count number of structures and atoms in all datasets from the Config file. */
     static std::pair<int,int> count(const Config &c);
 
@@ -146,9 +152,9 @@ struct StructureDB {
     void clear_nn();
 
     /** Check consistency of the ATOMS key. */
-    void check_atoms_key(Config &config) const;
+    static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
 
     /** Check consistency of the WATOMS key. Add if missing*/
-    void check_watoms_key(Config &config) const;
+    static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
 };
 #endif
