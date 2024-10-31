@@ -4,7 +4,9 @@
 #include <stdexcept>
 #include <cmath>
 
-Structure::Structure() {}
+Structure::Structure() {
+  PeriodicTable::initialize();
+}
 
 const Atom &Structure::operator()(const size_t i) const{
   return atoms[i];
