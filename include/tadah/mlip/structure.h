@@ -265,6 +265,12 @@ struct Structure {
   /** Clear NN list */
   void clear_nn();
 
+  // Methods to enable range-based for loop
+  std::vector<Atom>::iterator begin();
+  std::vector<Atom>::iterator end();
+  std::vector<Atom>::const_iterator begin() const;
+  std::vector<Atom>::const_iterator end() const;
+
   private:
     const static size_t w=15;  // controls output width
     const static size_t p=6;   // controls output precision

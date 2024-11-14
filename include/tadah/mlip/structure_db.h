@@ -156,5 +156,11 @@ struct StructureDB {
 
     /** Check consistency of the WATOMS key. Add if missing*/
     static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
+
+    // Methods to enable range-based for loop
+    std::vector<Structure>::iterator begin();
+    std::vector<Structure>::iterator end();
+    std::vector<Structure>::const_iterator begin() const;
+    std::vector<Structure>::const_iterator end() const;
 };
 #endif
