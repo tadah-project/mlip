@@ -225,3 +225,19 @@ void Structure::clear_nn() {
   near_neigh_shift.clear();
   near_neigh_idx.clear();
 }
+
+std::vector<Atom>::iterator Structure::begin() { 
+    return atoms.begin(); 
+}
+
+std::vector<Atom>::iterator Structure::end() { 
+    return atoms.end(); 
+}
+
+std::vector<Atom>::const_iterator Structure::begin() const { 
+    return atoms.cbegin(); 
+}
+
+std::vector<Atom>::const_iterator Structure::end() const { 
+    return atoms.cend(); 
+}

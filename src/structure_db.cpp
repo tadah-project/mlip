@@ -232,3 +232,19 @@ void StructureDB::check_watoms_key(Config &config, std::set<Element> &unique_ele
     for (const auto &s : unique_elements) config.add("WATOMS", s.Z);
   }
 }
+
+std::vector<Structure>::iterator StructureDB::begin() { 
+    return structures.begin(); 
+}
+
+std::vector<Structure>::iterator StructureDB::end() { 
+    return structures.end(); 
+}
+
+std::vector<Structure>::const_iterator StructureDB::begin() const { 
+    return structures.cbegin(); 
+}
+
+std::vector<Structure>::const_iterator StructureDB::end() const { 
+    return structures.cend(); 
+}
