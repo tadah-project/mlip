@@ -88,7 +88,12 @@ void VasprunReader::extract_calculations(rx::xml_node<> *root_node) {
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
     extract_total_energy(calculation_node);
+
     extract_stress_tensor(calculation_node);
+    if (!stress_tensor_bool) {
+      _s.stress.set_zero();
+    }
+    stress_tensor_bool = false;
 
     auto structure_node = calculation_node->first_node("structure");
     while (structure_node) {
@@ -100,12 +105,6 @@ void VasprunReader::extract_calculations(rx::xml_node<> *root_node) {
 
     stdb.add(_s);
     _s = Structure(); // reset
-  }
-
-  if (!stress_tensor_bool) {
-    for (auto& s : stdb) {
-      s.stress.set_zero();
-    }
   }
 }
 

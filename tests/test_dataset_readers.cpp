@@ -1,4 +1,5 @@
 #include "catch2/catch.hpp"
+#include "tadah/mlip/dataset_readers/castep_md_reader.h"
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/outcar_reader.h>
 #include <tadah/mlip/dataset_readers/vasprun_reader.h>
@@ -23,9 +24,11 @@ TEST_CASE("Dataset Readers process datasets in directories", "[DatasetReaders]")
 
     std::string valid_outcar_dir = "./tests_data/valid_outcars";
     std::string valid_vasprun_dir = "./tests_data/valid_vaspruns";
+    std::string valid_castep_md_dir = "./tests_data/valid_castep_md";
 
     std::vector<std::string> valid_outcar_files = get_all_files(valid_outcar_dir);
     std::vector<std::string> valid_vasprun_files = get_all_files(valid_vasprun_dir);
+    std::vector<std::string> valid_castep_md_files = get_all_files(valid_castep_md_dir);
 
     SECTION("Valid OUTCAR datasets - Constructor 1") {
         for (const auto& filename : valid_outcar_files) {
@@ -68,6 +71,29 @@ TEST_CASE("Dataset Readers process datasets in directories", "[DatasetReaders]")
             StructureDB db;
             REQUIRE_NOTHROW(VasprunReader(db,filename));
             VasprunReader reader(db, filename);
+            
+            REQUIRE_NOTHROW(reader.print_summary());
+            // Additional checks to confirm data validity
+        }
+    }
+
+    SECTION("Valid CASTEP .md datasets - Constructor 1") {
+        for (const auto& filename : valid_castep_md_files) {
+            StructureDB db;
+            REQUIRE_NOTHROW(CastepMDReader(db));
+            CastepMDReader reader(db);
+            
+            REQUIRE_NOTHROW(reader.read_data(filename));
+            REQUIRE_NOTHROW(reader.parse_data());
+            REQUIRE_NOTHROW(reader.print_summary());
+            // Additional checks to confirm data validity
+        }
+    }
+    SECTION("Valid CASTEP .md datasets - Constructor 2") {
+        for (const auto& filename : valid_castep_md_files) {
+            StructureDB db;
+            REQUIRE_NOTHROW(CastepMDReader(db, filename));
+            CastepMDReader reader(db, filename);
             
             REQUIRE_NOTHROW(reader.print_summary());
             // Additional checks to confirm data validity
