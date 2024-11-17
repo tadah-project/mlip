@@ -47,6 +47,7 @@ void CastepMDReader::postproc_structure(Structure &s) {
   // finish conversion
   s.cell *= d_conv;
   s.stress *= s_conv;
+  // T /= k_b;
 
   // add to database
   stdb.add(s);
@@ -71,7 +72,8 @@ void CastepMDReader::parse_data() {
   while (std::getline(stream, line)) {
     std::istringstream iss(line);
     if (ends_with(line,"<-- E")) {
-      s.label = "Filename: "+filename_+ " | Units: (eV, Angstrom) | Time: " + time;
+      s.label = "Filename: "+filename_+ " | Units: (eV, Angstrom) | Time: "
+        + std::to_string(std::stod(time)*t_conv) + " ps";
       iss >> s.energy;
       s.energy *= e_conv;
       break;
@@ -83,7 +85,6 @@ void CastepMDReader::parse_data() {
     if (ends_with(line,"<-- T")) {
       std::istringstream iss(line);
       iss >> T;
-      T /= k_b;
     }
     else if (ends_with(line,"<-- E")) {
       std::istringstream iss(line);
@@ -135,7 +136,7 @@ void CastepMDReader::parse_data() {
         std::string time;
         std::istringstream iss(line);
         iss >> time;
-        s.label =  "Time: " + time;
+        s.label =  "Time: " + std::to_string(std::stod(time)*t_conv) + " ps";
       }
 
       cell_idx=0;

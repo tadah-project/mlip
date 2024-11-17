@@ -74,6 +74,7 @@ private:
   double d_conv = 0.529177210903; /**< Conversion factor from Bohr to Ångström */
   double f_conv = e_conv / d_conv;  /**< Conversion factor from Hartree/Bohr to eV/Å */
   double s_conv = e_conv / (d_conv * d_conv * d_conv);  /**< Conversion factor from Hartree/Bohr³ to eV/Å³ */
+  double t_conv = 2.418884326505e-5; /**< Time conversion to ps */ 
   double k_b = 8.617333262145e-5 / e_conv; /**< Boltzmann constant in atomic units (Hartree/K) */
 
   // Helper methods
