@@ -17,8 +17,11 @@
  *
  * Implements data extraction and processing for molecular dynamics
  * simulations by converting data from atomic units to common units:
- * eV for energy, Ångström for distance, eV/Å for force, and eV/Å³
- * for pressure.
+ * eV for energy, Ångström for distance, eV/Å for force, eV/Å³
+ * for pressure and ps for time.
+ * 
+ * The virial stress tensor is extracted from full pressure tensor
+ * by removing kinetic contributions.
  *
  * Example usage:
  * @code
@@ -53,19 +56,27 @@ public:
    * @brief Reads data from a specified .md file.
    * @param filename The name of the .md file to read data from.
    */
-  void read_data(const std::string& filename) override;
+  virtual void read_data(const std::string& filename) override;
 
   /**
    * @brief Parses the data read from the .md file.
    */
-  void parse_data() override;
+  virtual void parse_data() override;
 
   /**
    * @brief Prints a summary of the parsed .md data.
    */
-  void print_summary() const override;
+  virtual void print_summary() const override;
 
-private:
+  /**
+   * @brief Checks if a string ends with a given suffix.
+   * @param str The string to check.
+   * @param suffix The suffix to check for.
+   * @return True if str ends with suffix, otherwise false.
+   */
+  bool ends_with(const std::string& str, const std::string& suffix);
+
+protected:
   std::string raw_data_;  /**< Stores raw file data */
   std::string filename_; /**< Filename of the .md file */
 
@@ -78,13 +89,6 @@ private:
   double k_b = 8.617333262145e-5 / e_conv; /**< Boltzmann constant in atomic units (Hartree/K) */
 
   // Helper methods
-  /**
-   * @brief Checks if a string ends with a given suffix.
-   * @param str The string to check.
-   * @param suffix The suffix to check for.
-   * @return True if str ends with suffix, otherwise false.
-   */
-  bool ends_with(const std::string& str, const std::string& suffix);
 
   /**
    * @brief Calculates the ideal gas pressure.
@@ -92,7 +96,7 @@ private:
    * @param T Temperature in atomic units.
    * @return Calculated ideal gas pressure.
    */
-  double calc_P_ideal(Structure &s, double T);
+  virtual double calc_P_ideal(Structure &s, double T);
 
   /**
    * @brief Performs post-processing on the given structure.
@@ -102,6 +106,10 @@ private:
 
   double T = 0; /**< Temperature in atomic units (Hartree/k_B) */
   bool stress_tensor_bool = false; /**< Indicates presence of a stress tensor */
+
+  virtual std::string get_first_label(std::string &);
+  virtual std::string get_label(std::string &);
+
 };
 
 #endif // CASTEP_MD_READER_H
