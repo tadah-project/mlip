@@ -1,19 +1,19 @@
-#include <tadah/mlip/dataset_readers/vasprun_reader.h>
+#include <tadah/mlip/dataset_readers/vasp_vasprun_reader.h>
 
-VasprunReader::VasprunReader(StructureDB& stdb)
+VaspVasprunReader::VaspVasprunReader(StructureDB& stdb)
 : DatasetReader(stdb), stdb(stdb) {}
 
-VasprunReader::VasprunReader(StructureDB& stdb, const std::string& filename)
+VaspVasprunReader::VaspVasprunReader(StructureDB& stdb, const std::string& filename)
 : DatasetReader(stdb, filename), stdb(stdb) {
   read_data(filename);
   parse_data();
 }
 
-VasprunReader::~VasprunReader() {
+VaspVasprunReader::~VaspVasprunReader() {
   delete xmlFile;
 }
 
-void VasprunReader::read_data(const std::string& filename) {
+void VaspVasprunReader::read_data(const std::string& filename) {
   std::ifstream infile(filename);
   if (!infile.good()) {
     std::cerr << "Error: File " << filename << " cannot be opened or read." << std::endl;
@@ -28,7 +28,7 @@ void VasprunReader::read_data(const std::string& filename) {
   }
 }
 
-void VasprunReader::parse_data() {
+void VaspVasprunReader::parse_data() {
   rx::xml_node<> *root_node = doc.first_node("modeling");
   if (!root_node) {
     std::cerr << "Root node not found." << std::endl;
@@ -39,7 +39,7 @@ void VasprunReader::parse_data() {
   extract_calculations(root_node);
 }
 
-int VasprunReader::get_number_of_atoms() const {
+int VaspVasprunReader::get_number_of_atoms() const {
   auto root_node = doc.first_node("modeling");
   if (!root_node) {
     std::cerr << "Root node not found." << std::endl;
@@ -65,7 +65,7 @@ int VasprunReader::get_number_of_atoms() const {
   return count;
 }
 
-void VasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
+void VaspVasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
   auto atominfo_node = root_node->first_node("atominfo");
   if (atominfo_node) {
     auto array_node = atominfo_node->first_node("array");
@@ -83,7 +83,7 @@ void VasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
   }
 }
 
-void VasprunReader::extract_calculations(rx::xml_node<> *root_node) {
+void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
   for (auto calculation_node = root_node->first_node("calculation");
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
@@ -108,7 +108,7 @@ void VasprunReader::extract_calculations(rx::xml_node<> *root_node) {
   }
 }
 
-void VasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
+void VaspVasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
   auto energy_node = calculation_node->first_node("energy");
   if (energy_node) {
     for (auto energy_val_node = energy_node->first_node("i");
@@ -126,7 +126,7 @@ void VasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
   }
 }
 
-void VasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) {
+void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) {
   auto varray_node = calculation_node->first_node("varray");
   while (varray_node) {
     auto attribute = varray_node->first_attribute("name");
@@ -152,7 +152,7 @@ void VasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) {
   }
 }
 
-void VasprunReader::extract_basis_vectors_and_positions(rx::xml_node<> *structure_node) {
+void VaspVasprunReader::extract_basis_vectors_and_positions(rx::xml_node<> *structure_node) {
   auto crystal_node = structure_node->first_node("crystal");
   if (crystal_node) {
     auto basis_node = crystal_node->first_node("varray");
@@ -204,7 +204,7 @@ void VasprunReader::extract_basis_vectors_and_positions(rx::xml_node<> *structur
   }
 }
 
-void VasprunReader::extract_forces(rx::xml_node<> *calculation_node) {
+void VaspVasprunReader::extract_forces(rx::xml_node<> *calculation_node) {
   auto forces_node = calculation_node->first_node("varray");
   while (forces_node) {
     auto attribute = forces_node->first_attribute("name");
@@ -229,7 +229,7 @@ void VasprunReader::extract_forces(rx::xml_node<> *calculation_node) {
   }
 }
 
-void VasprunReader::print_summary() const {
+void VaspVasprunReader::print_summary() const {
   std::cout << stdb;
 }
 
