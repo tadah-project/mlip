@@ -1,6 +1,6 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/structure.h>
-#include <tadah/mlip/structure.h>
+#include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/vasp_outcar_reader.h>
 
 #include <fstream>
