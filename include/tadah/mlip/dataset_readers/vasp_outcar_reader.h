@@ -1,12 +1,12 @@
-#ifndef OUTCAR_READER_H
-#define OUTCAR_READER_H
+#ifndef VASP_OUTCAR_READER_H
+#define VASP_OUTCAR_READER_H
 
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/dataset_reader.h>
 #include <string>
 
 /**
- * @class OutcarReader
+ * @class VaspOutcarReader
  * @brief Concrete class for reading and parsing VASP OUTCAR files.
  *
  * This class implements the DatasetReader interface for handling
@@ -16,24 +16,24 @@
  * @code
  * StructureDB my_db;
  * // Using the basic constructor
- * OutcarReader reader1(my_db);
+ * VaspOutcarReader reader1(my_db);
  * reader1.read_data("OUTCAR");
  * reader1.parse_data();
  * reader1.print_summary();
  * 
  * // Using the constructor with filename
- * OutcarReader reader2(my_db, "OUTCAR");
+ * VaspOutcarReader reader2(my_db, "OUTCAR");
  * reader2.print_summary();
  * @endcode
  */
-class OutcarReader : public DatasetReader {
+class VaspOutcarReader : public DatasetReader {
 public:
   /**
    * @brief Constructor initializing base class reference.
    *
    * @param db Reference to a StructureDB object to store parsed data.
    */
-  OutcarReader(StructureDB& db);
+  VaspOutcarReader(StructureDB& db);
 
   /**
    * @brief Constructor that initializes and reads from a file.
@@ -43,7 +43,7 @@ public:
    * @param db Reference to a StructureDB object to store parsed data.
    * @param filename The name of the OUTCAR file to read data from.
    */
-  OutcarReader(StructureDB& db, const std::string& filename);
+  VaspOutcarReader(StructureDB& db, const std::string& filename);
 
   /**
    * @brief Reads data from the specified OUTCAR file.
@@ -74,4 +74,4 @@ private:
   std::string raw_data_;  // Stores raw file data
 };
 
-#endif // OUTCAR_READER_H
+#endif // VASP_OUTCAR_READER_H

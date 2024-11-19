@@ -1,5 +1,5 @@
-#ifndef VASPRUN_READER_H
-#define VASPRUN_READER_H
+#ifndef VASP_VASPRUN_READER_H
+#define VASP_VASPRUN_READER_H
 
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/dataset_reader.h>
@@ -12,7 +12,7 @@
 namespace rx = rapidxml;
 
 /**
- * @class VasprunReader
+ * @class VaspVasprunReader
  * @brief Concrete class for reading and parsing VASP vasprun.xml files.
  *
  * This class implements the DatasetReader interface for handling
@@ -22,24 +22,24 @@ namespace rx = rapidxml;
  * @code
  * StructureDB my_db;
  * // Using the basic constructor
- * VasprunReader reader1(my_db);
+ * VaspVasprunReader reader1(my_db);
  * reader1.read_data("vasprun.xml");
  * reader1.parse_data();
  * reader1.print_summary();
  * 
  * // Using the constructor with filename
- * VasprunReader reader2(my_db, "vasprun.xml");
+ * VaspVasprunReader reader2(my_db, "vasprun.xml");
  * reader2.print_summary();
  * @endcode
  */
-class VasprunReader : public DatasetReader {
+class VaspVasprunReader : public DatasetReader {
 public:
   /**
      * @brief Constructor initializing with a StructureDB reference.
      *
      * @param stdb Reference to a StructureDB object for storing parsed data.
      */
-  VasprunReader(StructureDB& stdb);
+  VaspVasprunReader(StructureDB& stdb);
 
   /**
      * @brief Constructor that initializes and reads from a file.
@@ -49,19 +49,19 @@ public:
      * @param stdb Reference to a StructureDB object.
      * @param filename Name of the vasprun.xml file to read.
      */
-  VasprunReader(StructureDB& stdb, const std::string& filename);
+  VaspVasprunReader(StructureDB& stdb, const std::string& filename);
 
   /**
-     * @brief Destructor for VasprunReader.
+     * @brief Destructor for VaspVasprunReader.
      *
      * Cleans up dynamically allocated resources, if any.
      */
 
   // Delete copy constructor
-  VasprunReader(const VasprunReader& other) = delete;
+  VaspVasprunReader(const VaspVasprunReader& other) = delete;
 
   // Delete copy assignment operator
-  VasprunReader& operator=(const VasprunReader& other) = delete;   ~VasprunReader();
+  VaspVasprunReader& operator=(const VaspVasprunReader& other) = delete;   ~VaspVasprunReader();
 
   /**
      * @brief Reads data from the specified vasprun.xml file.
@@ -161,4 +161,4 @@ private:
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
 };
 
-#endif // VASPRUN_READER_H
+#endif // VASP_VASPRUN_READER_H

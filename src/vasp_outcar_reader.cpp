@@ -1,21 +1,21 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/structure.h>
-#include <tadah/mlip/structure.h>
-#include <tadah/mlip/dataset_readers/outcar_reader.h>
+#include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/dataset_readers/vasp_outcar_reader.h>
 
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 
-OutcarReader::OutcarReader(StructureDB& db) : DatasetReader(db) {}
+VaspOutcarReader::VaspOutcarReader(StructureDB& db) : DatasetReader(db) {}
 
-OutcarReader::OutcarReader(StructureDB& db, const std::string& filename) 
+VaspOutcarReader::VaspOutcarReader(StructureDB& db, const std::string& filename) 
 : DatasetReader(db, filename) {
   read_data(filename);
   parse_data();
 }
 
-void OutcarReader::read_data(const std::string& filename) {
+void VaspOutcarReader::read_data(const std::string& filename) {
   std::ifstream file(filename);
   if (!file.is_open()) {
     throw std::runtime_error("Could not open the file: " + filename);
@@ -29,7 +29,7 @@ void OutcarReader::read_data(const std::string& filename) {
   file.close();
 }
 
-void OutcarReader::parse_data() {
+void VaspOutcarReader::parse_data() {
   // order in OUTCAR is: VRHFIN, NIONS,...
   std::istringstream stream(raw_data_);
   std::string line;
@@ -182,6 +182,6 @@ void OutcarReader::parse_data() {
   }
 }
 
-void OutcarReader::print_summary() const {
+void VaspOutcarReader::print_summary() const {
   std::cout << stdb;
 }
