@@ -4,8 +4,8 @@
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_Kern_Sigmoid> DM_Kern_Sigmoid_2( "Kern_Sigmoid" );
 
 DM_Kern_Sigmoid::DM_Kern_Sigmoid():
-    Kern_Sigmoid()
+  Kern_Sigmoid()
 {}
 DM_Kern_Sigmoid::DM_Kern_Sigmoid(const Config &c):
-    Kern_Sigmoid(c)
+  Kern_Sigmoid(c)
 {}
