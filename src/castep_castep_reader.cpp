@@ -36,12 +36,27 @@ void CastepCastepReader::parse_data() {
   bool stress_tensor_bool = false;
   bool constant_volume = false;
   bool complete_structure = false;
+  bool md_run = false;
+  bool go_run = false;
+  int scf_idx = 0;
 
   Structure s;
   std::string label;
 
   while (std::getline(stream, line)) {
-    if (line.find("Unit Cell") != std::string::npos) {
+    if (line.find("type of calculation") != std::string::npos) {
+      stress_tensor_bool=false;
+      constant_volume=false;
+      md_run = false;
+      go_run = false;
+      if (line.find(": geometry optimization") != std::string::npos) {
+        go_run = true;
+      }
+      if (line.find(": molecular dynamics") != std::string::npos) {
+        md_run = true;
+      }
+    }
+    else if (line.find("Unit Cell") != std::string::npos) {
       if (!std::getline(stream, line) || !std::getline(stream, line)) {
         std::cerr << "Warning: Unexpected end of data when reading atom information" << std::endl;
       }
@@ -80,8 +95,6 @@ void CastepCastepReader::parse_data() {
       if (count < 7) {
         std::cerr << "Error: Line is too short to extract total number of ions in a cell. Line: " << line << std::endl;
       }
-      stress_tensor_bool=false;
-      constant_volume=false;
     }
 
     else if (line.find("so fixing cell parameters") != std::string::npos) {
@@ -171,6 +184,11 @@ void CastepCastepReader::parse_data() {
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.energy)) {
         std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
+      }
+      // scf only loop
+      if (!md_run && !go_run) {
+        s.label = "SCF run: " + std::to_string(scf_idx++);
+        complete_structure = true;
       }
     }
 
