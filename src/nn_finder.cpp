@@ -72,7 +72,9 @@ void NNFinder::calc(Structure &st) {
   }
 }
 void NNFinder::calc(StructureDB &stdb) {
+#ifdef _OPENMP
 #pragma omp parallel for
+#endif
   for (size_t s=0; s<stdb.size(); ++s) {
     calc(stdb(s));
   }

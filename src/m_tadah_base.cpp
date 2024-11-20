@@ -63,7 +63,9 @@ predict(const Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
+#ifdef _OPENMP
   #pragma omp parallel for
+#endif
   for (size_t i=0; i<stdb.size(); ++i) {
     stdb_(i) = predict(c,st_desc_db(i), stdb(i));
   }
@@ -75,7 +77,9 @@ predict(Config &c, const StructureDB &stdb, DC_Base &dc)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
+#ifdef _OPENMP
   #pragma omp parallel for
+#endif
   for (size_t i=0; i<stdb.size(); ++i) {
     StDescriptors st_d = dc.calc(stdb(i));
     stdb_(i) = predict(c,st_d, stdb(i));
