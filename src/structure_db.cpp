@@ -254,46 +254,8 @@ void StructureDB::dump_to_file(const std::string& filepath, size_t prec) const {
     std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
     return;
   }
-  const int n = 5;
   for (const auto &s : structures) {
-    file << s.label << std::endl;
-    file << std::fixed << std::setprecision(prec);
-    file << s.eweight << " " << s.fweight << " " << s.sweight << std::endl;
-    file << s.energy << std::endl;
-
-    file
-      << std::setw(prec+n) << s.cell(0,0) << " "
-      << std::setw(prec+n) << s.cell(0,1) << " "
-      << std::setw(prec+n) << s.cell(0,2) << " " << std::endl
-      << std::setw(prec+n) << s.cell(1,0) << " "
-      << std::setw(prec+n) << s.cell(1,1) << " "
-      << std::setw(prec+n) << s.cell(1,2) << " " << std::endl
-      << std::setw(prec+n) << s.cell(2,0) << " "
-      << std::setw(prec+n) << s.cell(2,1) << " "
-      << std::setw(prec+n) << s.cell(2,2) << " " << std::endl;
-
-    file 
-      << std::setw(prec+n) << s.stress(0,0) << " "
-      << std::setw(prec+n) << s.stress(0,1) << " "
-      << std::setw(prec+n) << s.stress(0,2) << " " << std::endl
-      << std::setw(prec+n) << s.stress(1,0) << " "
-      << std::setw(prec+n) << s.stress(1,1) << " "
-      << std::setw(prec+n) << s.stress(1,2) << " " << std::endl
-      << std::setw(prec+n) << s.stress(2,0) << " "
-      << std::setw(prec+n) << s.stress(2,1) << " "
-      << std::setw(prec+n) << s.stress(2,2) << " " << std::endl;
-
-    for (const auto& a : s.atoms) {
-      file << std::setw(2) << a.symbol << " "
-        << std::setw(prec+n) << a.position[0] << " "
-        << std::setw(prec+n) << a.position[1] << " "
-        << std::setw(prec+n) << a.position[2] << " "
-        << std::setw(prec+n) << a.force[0] << " "
-        << std::setw(prec+n) << a.force[1] << " "
-        << std::setw(prec+n) << a.force[2] << std::endl;
-    }
-    file << std::endl;
+    s.dump_to_file(file,prec);
   }
-
   file.close();
 }

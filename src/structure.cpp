@@ -241,3 +241,52 @@ std::vector<Atom>::const_iterator Structure::begin() const {
 std::vector<Atom>::const_iterator Structure::end() const { 
     return atoms.cend(); 
 }
+void Structure::dump_to_file(std::ostream& file, size_t prec) const {
+  const int n = 5;
+  file << label << std::endl;
+  file << std::fixed << std::setprecision(prec);
+  file << eweight << " " << fweight << " " << sweight << std::endl;
+  file << energy << std::endl;
+
+  file
+    << std::setw(prec+n) << cell(0,0) << " "
+    << std::setw(prec+n) << cell(0,1) << " "
+    << std::setw(prec+n) << cell(0,2) << " " << std::endl
+    << std::setw(prec+n) << cell(1,0) << " "
+    << std::setw(prec+n) << cell(1,1) << " "
+    << std::setw(prec+n) << cell(1,2) << " " << std::endl
+    << std::setw(prec+n) << cell(2,0) << " "
+    << std::setw(prec+n) << cell(2,1) << " "
+    << std::setw(prec+n) << cell(2,2) << " " << std::endl;
+
+  file 
+    << std::setw(prec+n) << stress(0,0) << " "
+    << std::setw(prec+n) << stress(0,1) << " "
+    << std::setw(prec+n) << stress(0,2) << " " << std::endl
+    << std::setw(prec+n) << stress(1,0) << " "
+    << std::setw(prec+n) << stress(1,1) << " "
+    << std::setw(prec+n) << stress(1,2) << " " << std::endl
+    << std::setw(prec+n) << stress(2,0) << " "
+    << std::setw(prec+n) << stress(2,1) << " "
+    << std::setw(prec+n) << stress(2,2) << " " << std::endl;
+
+  for (const auto& a : atoms) {
+    file << std::setw(2) << a.symbol << " "
+      << std::setw(prec+n) << a.position[0] << " "
+      << std::setw(prec+n) << a.position[1] << " "
+      << std::setw(prec+n) << a.position[2] << " "
+      << std::setw(prec+n) << a.force[0] << " "
+      << std::setw(prec+n) << a.force[1] << " "
+      << std::setw(prec+n) << a.force[2] << std::endl;
+  }
+  file << std::endl;
+}
+void Structure::dump_to_file(const std::string& filepath, size_t prec) const {
+  std::ofstream file(filepath, std::ios::app);  // Open in append mode
+  if (!file.is_open()) {
+    std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
+    return;
+  }
+  dump_to_file(file,prec);
+  file.close();
+}

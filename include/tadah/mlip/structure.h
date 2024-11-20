@@ -271,6 +271,12 @@ struct Structure {
   std::vector<Atom>::const_iterator begin() const;
   std::vector<Atom>::const_iterator end() const;
 
+  /** Method to dump class content to a file */
+  void dump_to_file(std::ostream &file, size_t prec=12) const;
+
+  /** Method to dump class content to a file */
+  void dump_to_file(const std::string& filepath, size_t prec=12) const;
+
   private:
     const static size_t w=15;  // controls output width
     const static size_t p=6;   // controls output precision
