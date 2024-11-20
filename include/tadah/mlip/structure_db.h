@@ -39,31 +39,31 @@
  *
  */
 struct StructureDB {
-    std::vector<Structure> structures;
+  std::vector<Structure> structures;
 
-    /** Create an empty StructureDB object. */
-    StructureDB();
+  /** Create an empty StructureDB object. */
+  StructureDB();
 
-    /** Create this object and load structures
+  /** Create this object and load structures
      *  listed in the config file
      *
      * \note
      *      Required Config key: \ref DBFILE
      */
-    StructureDB(Config &config);
+  StructureDB(Config &config);
 
-    /** Add structures listed in the config file
+  /** Add structures listed in the config file
      *
      *	\note
      *      Required Config key: \ref DBFILE
      *
      */
-    void add(Config &config);
+  void add(Config &config);
 
-    /** Add all structures from a file */
-    void add(const std::string fn);
+  /** Add all structures from a file */
+  void add(const std::string fn);
 
-    /** Add N structures from a file begining from first index.
+  /** Add N structures from a file begining from first index.
      *
      * Indexing starts from zero, i.e.
      * first=0 corresponds to the first structure in the file.
@@ -73,24 +73,24 @@ struct StructureDB {
      *
      * Return the number of loaded structures.
      */
-    int add(const std::string fn, size_t first, int N);
+  int add(const std::string fn, size_t first, int N);
 
-    /** Add a single Structure object to this container */
-    void add(const Structure &s);
+  /** Add a single Structure object to this container */
+  void add(const Structure &s);
 
-    /** remove i-th Structure object from this container */
-    void remove(size_t i);
+  /** remove i-th Structure object from this container */
+  void remove(size_t i);
 
-    /** \return number of structures held by this object */
-    size_t size() const;
+  /** \return number of structures held by this object */
+  size_t size() const;
 
-    /** \return number of structures in the n-th DBFILE
+  /** \return number of structures in the n-th DBFILE
      *
      * n={0,...,number of DBFILEs-1}
      */
-    size_t size(size_t n) const;
+  size_t size(size_t n) const;
 
-    /** \return reference to the s-th structure
+  /** \return reference to the s-th structure
      *
      * Usage example:
      *
@@ -98,10 +98,10 @@ struct StructureDB {
      *     # and bind it to Structure st.
      *     Structure &st = st(1);
      */
-    Structure& operator()(size_t s);
-    const Structure& operator()(size_t s) const;
+  Structure& operator()(size_t s);
+  const Structure& operator()(size_t s) const;
 
-    /** \return reference to the a-th atom in the s-th structure
+  /** \return reference to the a-th atom in the s-th structure
      *
      * Usage example:
      *
@@ -109,58 +109,61 @@ struct StructureDB {
      *     # held by this object and bind it to the atom object.
      *     Atom &atom = st(2,4);
      */
-    Atom& operator()(size_t s, size_t a);
+  Atom& operator()(size_t s, size_t a);
 
-    /** Print this object summary to the stream */
-    friend std::ostream& operator<<(std::ostream& os, const StructureDB& stdb)
-    {
-        os << "# of structures  :    " << std::left << stdb.structures.size() << std::endl;
-        return os;
-    }
+  /** Print this object summary to the stream */
+  friend std::ostream& operator<<(std::ostream& os, const StructureDB& stdb)
+  {
+    os << "# of structures  :    " << std::left << stdb.structures.size() << std::endl;
+    return os;
+  }
 
-    /** Store  indices for each dataset.
+  /** Store  indices for each dataset.
      *
      * e.g. if 3 datasets of sizes 11,13,15
      * dbidx=={0,11,24,39}
      */
-    std::vector<size_t> dbidx;
+  std::vector<size_t> dbidx;
 
-    /** Calculate total number of atoms stored by this object. */
-    size_t calc_natoms() const;
+  /** Calculate total number of atoms stored by this object. */
+  size_t calc_natoms() const;
 
-    /** Calculate total number of atoms in the n-th DBFILE.
+  /** Calculate total number of atoms in the n-th DBFILE.
      *
      * n={0,...,number of DBFILEs-1}
      */
-    size_t calc_natoms(size_t n) const;
+  size_t calc_natoms(size_t n) const;
 
-    /** Return unique elements for all Structures. */
-    std::set<Element> get_unique_elements() const;
+  /** Return unique elements for all Structures. */
+  std::set<Element> get_unique_elements() const;
 
-    /** Find unique elements in provided Config file */
-    static std::set<Element> find_unique_elements(const Config &c);
+  /** Find unique elements in provided Config file */
+  static std::set<Element> find_unique_elements(const Config &c);
 
-    /** Find unique elements in provided file */
-    static std::set<Element> find_unique_elements(const std::string &fn);
+  /** Find unique elements in provided file */
+  static std::set<Element> find_unique_elements(const std::string &fn);
 
-    /** Count number of structures and atoms in all datasets from the Config file. */
-    static std::pair<int,int> count(const Config &c);
+  /** Count number of structures and atoms in all datasets from the Config file. */
+  static std::pair<int,int> count(const Config &c);
 
-    /** Count number of structures and atoms in a single dataset. */
-    static std::pair<int,int> count(const std::string fn);
+  /** Count number of structures and atoms in a single dataset. */
+  static std::pair<int,int> count(const std::string fn);
 
-    void clear_nn();
+  void clear_nn();
 
-    /** Check consistency of the ATOMS key. */
-    static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
+  /** Check consistency of the ATOMS key. */
+  static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
 
-    /** Check consistency of the WATOMS key. Add if missing*/
-    static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
+  /** Check consistency of the WATOMS key. Add if missing*/
+  static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
 
-    // Methods to enable range-based for loop
-    std::vector<Structure>::iterator begin();
-    std::vector<Structure>::iterator end();
-    std::vector<Structure>::const_iterator begin() const;
-    std::vector<Structure>::const_iterator end() const;
+  // Methods to enable range-based for loop
+  std::vector<Structure>::iterator begin();
+  std::vector<Structure>::iterator end();
+  std::vector<Structure>::const_iterator begin() const;
+  std::vector<Structure>::const_iterator end() const;
+
+  /** Method to dump class content to a file */
+  void dump_to_file(const std::string& filepath, size_t prec=12) const;
 };
 #endif
