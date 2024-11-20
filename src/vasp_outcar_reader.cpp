@@ -110,6 +110,7 @@ void VaspOutcarReader::parse_data() {
         s.stress(0,1) = s.stress(1,0) = row[3]; // xy
         s.stress(1,2) = s.stress(2,1) = row[4]; // yz
         s.stress(0,2) = s.stress(2,0) = row[5]; // zx
+        s.stress *= s_conv;
       }
     }
 

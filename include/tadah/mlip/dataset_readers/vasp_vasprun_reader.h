@@ -159,6 +159,7 @@ protected:
 private:
   Structure _s; ///< Internal structure representation.
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
+  double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 
 #endif // VASP_VASPRUN_READER_H

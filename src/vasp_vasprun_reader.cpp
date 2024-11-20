@@ -141,6 +141,7 @@ void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) 
           _s.stress(r, 0) = x;
           _s.stress(r, 1) = y;
           _s.stress(r, 2) = z;
+          _s.stress *= s_conv;
         } else {
           std::cerr << "Error parsing stress tensor components." << std::endl;
         }
