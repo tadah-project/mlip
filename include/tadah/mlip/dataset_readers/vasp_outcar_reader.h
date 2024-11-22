@@ -68,7 +68,8 @@ public:
    *
    * @param stdb Reference to a StructureDB object for data summary.
    */
-  void print_summary() const override;
+  virtual void print_summary() const override;
+  virtual std::string get_summary() const override;
 
 private:
   std::string raw_data_;  // Stores raw file data

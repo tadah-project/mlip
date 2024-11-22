@@ -1,3 +1,4 @@
+#include "tadah/core/element.h"
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/periodic_table.h>
 #include <cstdio>
@@ -57,6 +58,9 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
 void StructureDB::add(const Structure &s) {
   structures.push_back(s);
 }
+void StructureDB::add(const StructureDB &stdb) {
+  for (const auto &s: stdb) add(s);
+}
 
 void StructureDB::remove(size_t i) {
   structures.erase(structures.begin()+i);
@@ -105,8 +109,10 @@ size_t StructureDB::calc_natoms(size_t n) const {
 }
 std::set<Element> StructureDB::get_unique_elements() const {
   std::set<Element> s;
-  for (const auto & st: structures) s.insert(
-      st.unique_elements.begin(),st.unique_elements.end());
+  for (const auto & st: structures) {
+    std::set<Element> u = st.get_unique_elements();
+    s.insert(u.cbegin(),u.cend());
+  }
   return s;
 }
 std::set<Element> StructureDB::find_unique_elements(const std::string &fn) {
@@ -258,4 +264,16 @@ void StructureDB::dump_to_file(const std::string& filepath, size_t prec) const {
     s.dump_to_file(file,prec);
   }
   file.close();
+}
+
+std::string StructureDB::summary() const {
+  std::string str =  "# of structures : " + to_string(structures.size());
+
+  str +=  " | # of atoms : " + to_string(calc_natoms());
+
+  str += " | Elements : ";
+  std::set<Element> ue = get_unique_elements(); 
+  for (const auto &e: ue) str+= e.symbol + " ";
+  str+="\n";
+  return str;
 }

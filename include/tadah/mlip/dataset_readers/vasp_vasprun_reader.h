@@ -84,7 +84,8 @@ public:
      *
      * Uses the parsed data stored in the StructureDB to provide a summary.
      */
-  void print_summary() const override;
+  virtual void print_summary() const override;
+  virtual std::string get_summary() const override;
 
 protected:
   /**

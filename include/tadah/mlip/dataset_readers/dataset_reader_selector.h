@@ -28,6 +28,7 @@ public:
    * @return A string representing the detected file type.
    */
   static std::string determine_file_type_by_content(const std::string& filepath);
+
 };
 
 #endif // DATASET_READER_SELECTOR_H

@@ -1,6 +1,7 @@
 #ifndef STRUCTURE_DB_h
 #define STRUCTURE_DB_h
 
+#include "tadah/core/utils.h"
 #include <tadah/core/element.h>
 #include <tadah/core/config.h>
 #include <tadah/mlip/structure.h>
@@ -78,6 +79,9 @@ struct StructureDB {
   /** Add a single Structure object to this container */
   void add(const Structure &s);
 
+  /** Add all structure from other Structure object to this container */
+  void add(const StructureDB &stdb);
+
   /** remove i-th Structure object from this container */
   void remove(size_t i);
 
@@ -114,9 +118,10 @@ struct StructureDB {
   /** Print this object summary to the stream */
   friend std::ostream& operator<<(std::ostream& os, const StructureDB& stdb)
   {
-    os << "# of structures  :    " << std::left << stdb.structures.size() << std::endl;
+    os << stdb.summary();
     return os;
   }
+  std::string summary() const;
 
   /** Store  indices for each dataset.
      *

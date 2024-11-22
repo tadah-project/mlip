@@ -21,6 +21,9 @@ std::vector<std::string> get_all_files(const std::string& directory) {
     }
     return filenames;
 }
+TEST_CASE("Dataset Readers PeriodicTable Initialization") {
+    PeriodicTable::initialize();
+}
 
 TEST_CASE("Dataset Readers process datasets in directories", "[DatasetReaders]") {
 

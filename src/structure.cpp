@@ -87,7 +87,6 @@ int Structure::read(std::ifstream &ifs) {
     std::istringstream tmp(line);
     tmp >> symbol >> px >> py >> pz >> fx >> fy >> fz;
     Element e = PeriodicTable::find_by_symbol(symbol);
-    unique_elements.insert(e);
     atoms.push_back(Atom(e,px,py,pz,fx,fy,fz));
     //Atom &a = atoms.back();
 
@@ -289,4 +288,9 @@ void Structure::dump_to_file(const std::string& filepath, size_t prec) const {
   }
   dump_to_file(file,prec);
   file.close();
+}
+std::set<Element> Structure::get_unique_elements() const{
+  std::set<Element> unique_elements;
+  for (const auto& a:atoms) unique_elements.insert(a);
+  return unique_elements;
 }

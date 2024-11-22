@@ -12,7 +12,6 @@ VaspOutcarReader::VaspOutcarReader(StructureDB& db) : DatasetReader(db) {}
 VaspOutcarReader::VaspOutcarReader(StructureDB& db, const std::string& filename) 
 : DatasetReader(db, filename) {
   read_data(filename);
-  parse_data();
 }
 
 void VaspOutcarReader::read_data(const std::string& filename) {
@@ -184,5 +183,9 @@ void VaspOutcarReader::parse_data() {
 }
 
 void VaspOutcarReader::print_summary() const {
-  std::cout << stdb;
+  std::cout << get_summary();
+}
+
+std::string VaspOutcarReader::get_summary() const {
+  return stdb.summary();
 }

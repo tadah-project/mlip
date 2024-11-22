@@ -48,10 +48,10 @@ std::string DatasetReaderSelector::determine_file_type_by_content(const std::str
         return "VASP.VASPRUN";
       }
     }
-
-    if (line.find("<-- c") != std::string::npos) {
+    else if (line.find("<-- c") != std::string::npos) {
       return "CASTEP.GEOM";
-    } else if (line.find("<-- hv") != std::string::npos) {
+    } else if (line.find("<-- E") != std::string::npos) {
+      // <-- E is also in .geom but .geom has <-- c before <-- E
       return "CASTEP.MD";
     } else if (line.find("Unit Cell") != std::string::npos) { 
       return "CASTEP.CASTEP";

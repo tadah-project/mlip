@@ -6,7 +6,6 @@ VaspVasprunReader::VaspVasprunReader(StructureDB& stdb)
 VaspVasprunReader::VaspVasprunReader(StructureDB& stdb, const std::string& filename)
 : DatasetReader(stdb, filename), stdb(stdb) {
   read_data(filename);
-  parse_data();
 }
 
 VaspVasprunReader::~VaspVasprunReader() {
@@ -231,6 +230,9 @@ void VaspVasprunReader::extract_forces(rx::xml_node<> *calculation_node) {
 }
 
 void VaspVasprunReader::print_summary() const {
-  std::cout << stdb;
+  std::cout << get_summary();
 }
 
+std::string VaspVasprunReader::get_summary() const {
+  return stdb.summary();
+}

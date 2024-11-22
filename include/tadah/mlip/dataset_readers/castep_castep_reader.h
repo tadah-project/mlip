@@ -74,6 +74,7 @@ public:
    * @brief Prints a summary of the parsed .castep data.
    */
   virtual void print_summary() const override;
+  virtual std::string get_summary() const override;
 
 protected:
   std::string raw_data_;  /**< Stores raw file data */

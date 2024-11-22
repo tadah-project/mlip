@@ -7,7 +7,6 @@ CastepMDReader::CastepMDReader(StructureDB& db)
 CastepMDReader::CastepMDReader(StructureDB& db, const std::string& filename)
 : DatasetReader(db, filename) {
   read_data(filename);
-  parse_data();
 }
 
 void CastepMDReader::read_data(const std::string& filename) {
@@ -62,7 +61,16 @@ std::string CastepMDReader::get_first_label(std::string &time) {
   + std::to_string(std::stod(time)*t_conv) + " ps";
 }
 std::string CastepMDReader::get_label(std::string &time) {
-  return "Time: " + std::to_string(std::stod(time)*t_conv) + " ps";
+  try {
+    return "Time: " + std::to_string(std::stod(time)*t_conv) + " ps";
+  } catch (const std::invalid_argument& e) {
+    std::cerr << "Warning: " << filename << std::endl;
+    std::cerr << "Invalid argument: unable to convert to double: " << time << std::endl;
+  } catch (const std::out_of_range& e) {
+    std::cerr << "Warning: " << filename << std::endl;
+    std::cerr << "Out of range: string represents a value too large: " << time << std::endl;
+  }
+  return "Time: FAIL" ;
 }
 
 void CastepMDReader::parse_data() {
@@ -80,41 +88,72 @@ void CastepMDReader::parse_data() {
   while (std::getline(stream, line)) {
     std::istringstream iss(line);
     if (ends_with(line,"<-- E")) {
-      s.label = get_first_label(time);
       iss >> s.energy;
       s.energy *= e_conv;
       break;
     }
     iss >> time;
   }
+  bool error=false;
+  //bool T_flag=false;
+  bool E_flag=false;
+  int H_flag=0;
+  int S_flag=0;
+  bool R_flag=false;
+  bool F_flag=false;
+  bool complete_structure=false;
 
   while (std::getline(stream, line)) {
     if (ends_with(line,"<-- T")) {
+      if (/* T_flag || */ complete_structure) {
+        error=true;
+        continue;
+      }
       std::istringstream iss(line);
       iss >> T;
+      //T_flag=true;
     }
     else if (ends_with(line,"<-- E")) {
+      if (/* T_flag || */ E_flag || complete_structure) {
+        error=true;
+        continue;
+      }
       std::istringstream iss(line);
       iss >> s.energy;
       s.energy *= e_conv;
+      E_flag=true;
     }
     else if (ends_with(line,"<-- h")) {
       //  the current matrix of cell vectors 
+      if (/* !T_flag || */ !E_flag || H_flag==3 || complete_structure) {
+        error=true;
+        continue;
+      }
       std::istringstream iss(line);
       if (!(iss >> s.cell(0,cell_idx) >> s.cell(1,cell_idx) >> s.cell(2,cell_idx)))
         std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << cell_idx << std::endl;
       cell_idx++;
+      H_flag++;
     }
 
     else if (ends_with(line,"<-- S")) {
       // The full pressure tensor (including kinetic contributions)
+      if (/* !T_flag || */ !E_flag || H_flag!=3 || S_flag==3 || complete_structure) {
+        error=true;
+        continue;
+      }
       std::istringstream iss(line);
       if (!(iss >> s.stress(0,stress_idx) >> s.stress(1,stress_idx) >> s.stress(2,stress_idx)))
         std::cerr << "Warning: Unexpected end of data when reading stress tensor at row " << stress_idx << std::endl;
       stress_idx++;
       stress_tensor_bool = true;
+      S_flag++;
     }
     else if (ends_with(line,"<-- R")) {
+      if (/* !T_flag || */ !E_flag || H_flag!=3 || F_flag || complete_structure) {
+        error=true;
+        continue;
+      }
       // First the position vectors of all ions are printed with the label <-- R.
       std::string element;
       int temp;
@@ -123,8 +162,13 @@ void CastepMDReader::parse_data() {
       if (!(iss >> element >> temp >> px >> py >> pz)) 
         std::cerr << "Warning: Unexpected end of data when reading atomic positions:\n" << line << std::endl;
       s.add_atom(Atom(Element(element),px*d_conv,py*d_conv,pz*d_conv,0,0,0));
+      R_flag=true;
     }
     else if (ends_with(line,"<-- F")) {
+      if (/* !T_flag || */ !E_flag || H_flag!=3 || !R_flag || force_idx==s.natoms() || complete_structure) {
+        error=true;
+        continue;
+      }
       std::string element;
       int temp;
       double fx, fy, fz;
@@ -135,15 +179,28 @@ void CastepMDReader::parse_data() {
       s.atoms[force_idx].force[1]=fy*f_conv;
       s.atoms[force_idx].force[2]=fz*f_conv;
       force_idx++;
+      F_flag=true;
+      if (force_idx==s.natoms()) complete_structure=true;
     }
     else if (is_blank_line(line)) {
-      postproc_structure(s);
+      if (!error && complete_structure)
+        postproc_structure(s);
+
+      error=false;
+      //T_flag=false;
+      E_flag=false;
+      H_flag=0;
+      S_flag=0;
+      R_flag=false;
+      F_flag=false;
+      complete_structure=false;
+
 
       if (std::getline(stream, line)) {
         std::string time;
         std::istringstream iss(line);
         iss >> time;
-        s.label = get_label(time);
+        s.label = !stdb.size() ? get_first_label(time) : get_label(time);
       }
 
       cell_idx=0;
@@ -154,11 +211,15 @@ void CastepMDReader::parse_data() {
   }
 
   // in case there is no blank line at the end we have to add last strcuture here
-  if (s.natoms()) {
+  if (s.natoms() && !error && complete_structure) {
     postproc_structure(s);
   }
 }
 
 void CastepMDReader::print_summary() const {
-  std::cout << stdb;
+  std::cout << get_summary();
+}
+
+std::string CastepMDReader::get_summary() const {
+  return stdb.summary();
 }
