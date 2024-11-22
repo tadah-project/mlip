@@ -138,6 +138,7 @@ stress_force_predict(const StDescriptors &std, Structure &st_)
 {
   stress_type s;
   s.set_zero();
+  double V_inv = 1/st_.get_volume();
   for (size_t a=0; a<st_.natoms(); ++a) {
     force_type v;
     const Vec3d &ri = st_.atoms[a].position;
@@ -157,7 +158,7 @@ stress_force_predict(const StDescriptors &std, Structure &st_)
 
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
-          s(x,y) -= 0.5*(ri[x]-rj[x])*(fij[y]-fji[y]);
+          s(x,y) -= V_inv*0.5*(ri[x]-rj[x])*(fij[y]-fji[y]);
         }
       }
     }
