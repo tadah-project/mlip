@@ -49,12 +49,12 @@ template
 <class K=DM_Function_Base&>
 class M_KRR: public M_Tadah_Base,
   public M_KRR_Train<K>
-             //public M_KRR_Predict<K>
+//public M_KRR_Predict<K>
 {
 
-  public:
+public:
 
-    /** This constructor will preapare this object for either training
+  /** This constructor will preapare this object for either training
      *  or prediction (if potential is provides as a Config)
      *
      * Usage example:
@@ -65,15 +65,15 @@ class M_KRR: public M_Tadah_Base,
      * \endcode
      *
      */
-    M_KRR(Config &c):
-      M_KRR_Train<K>(c),
-      basis(c),
-      desmat(kernel,c)
+  M_KRR(Config &c):
+    M_KRR_Train<K>(c),
+    basis(c),
+    desmat(kernel,c)
   {
     norm = Normaliser(c);
   }
 
-    /** This constructor will preapare this object for either training
+  /** This constructor will preapare this object for either training
      *  or prediction (if potential is provides as a Config)
      *
      * Usage example:
@@ -85,330 +85,330 @@ class M_KRR: public M_Tadah_Base,
      * \endcode
      *
      */
-    M_KRR(K &kernel, Config &c):
-      M_KRR_Train<K>(kernel,c),
-      basis(c),
-      desmat(kernel,c)
+  M_KRR(K &kernel, Config &c):
+    M_KRR_Train<K>(kernel,c),
+    basis(c),
+    desmat(kernel,c)
   {
     norm = Normaliser(c);
   }
 
-    double epredict(const aed_type2 &aed) const {
-      return kernel.epredict(weights,aed);
-    };
+  double epredict(const aed_type2 &aed) const {
+    return kernel.epredict(weights,aed);
+  };
 
-    double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const {
-      return kernel.fpredict(weights,fdij,aedi,k);
+  double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const {
+    return kernel.fpredict(weights,fdij,aedi,k);
+  }
+
+  force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const {
+    return kernel.fpredict(weights,fdij,aedi);
+  }
+
+  void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+
+    if(config.template get<bool>("NORM"))
+      norm = Normaliser(config,st_desc_db);
+
+    desmat.build(st_desc_db,stdb);
+    train(desmat);
+  }
+
+  void train(StructureDB &stdb, DC_Base &dc) {
+    int modelN;
+    try {
+      modelN=config.template get<int>("MODEL",2);
     }
-
-    force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const {
-      return kernel.fpredict(weights,fdij,aedi);
+    catch(std::runtime_error &e) {
+      // use default model
+      modelN=1;
+      config.add("MODEL", modelN);
     }
-
-    void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
-
-      if(config.template get<bool>("NORM"))
-        norm = Normaliser(config,st_desc_db);
-
-      desmat.build(st_desc_db,stdb);
-      train(desmat);
-    }
-
-    void train(StructureDB &stdb, DC_Base &dc) {
-      int modelN;
-      try {
-        modelN=config.template get<int>("MODEL",2);
-      }
-      catch(std::runtime_error &e) {
-        // use default model
-        modelN=1;
-        config.add("MODEL", modelN);
-      }
-      if (modelN==1)
-        train1(stdb,dc);
-      else if (modelN==2)
-        train2(stdb,dc);
-      else
-        throw
-          std::runtime_error(
-              "This KRR implementation does exist: "\
-              + std::to_string(modelN)+"\n");
-    }
-    void train1(StructureDB &stdb, DC_Base &dc) {
-      // KRR implementation using EKM
-      if(config.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
-        // either build basis or prep normaliser
-        std::string force=config.template get<std::string>("FORCE");
-        std::string stress=config.template get<std::string>("STRESS");
-
-        config.remove("FORCE");
-        config.remove("STRESS");
-        config.add("FORCE", "false");
-        config.add("STRESS", "false");
-
-        StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
-
-        if(config.template get<bool>("NORM")) {
-          norm = Normaliser(config);
-          norm.learn(st_desc_db_temp);
-          norm.normalise(st_desc_db_temp);
-        }
-
-        config.remove("FORCE");
-        config.remove("STRESS");
-        config.add("FORCE", force);
-        config.add("STRESS", stress);
-
-        if (kernel.get_label()!="Kern_Linear") {
-          basis.build_random_basis(config.template get<size_t>("SBASIS"),st_desc_db_temp);
-          desmat.f.set_basis(basis.b);
-          kernel.set_basis(basis.b);
-          // to configure ekm, we need basis vectors
-          ekm.configure(basis.b);
-        }
-      }
-      desmat.build(stdb,norm,dc);
-      train(desmat);
-    }
-
-    void train2(StructureDB &stdb, DC_Base &dc) {
-
-      // NEW (BASIC) IMPLEMENTATION OF KRR //
+    if (modelN==1)
+      train1(stdb,dc);
+    else if (modelN==2)
+      train2(stdb,dc);
+    else
+      throw
+    std::runtime_error(
+      "This KRR implementation does exist: "\
+      + std::to_string(modelN)+"\n");
+  }
+  void train1(StructureDB &stdb, DC_Base &dc) {
+    // KRR implementation using EKM
+    if(config.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
+      // either build basis or prep normaliser
       std::string force=config.template get<std::string>("FORCE");
       std::string stress=config.template get<std::string>("STRESS");
+
       config.remove("FORCE");
       config.remove("STRESS");
       config.add("FORCE", "false");
       config.add("STRESS", "false");
+
       StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
+
       if(config.template get<bool>("NORM")) {
         norm = Normaliser(config);
         norm.learn(st_desc_db_temp);
         norm.normalise(st_desc_db_temp);
       }
+
       config.remove("FORCE");
       config.remove("STRESS");
       config.add("FORCE", force);
       config.add("STRESS", stress);
-      basis.prep_basis_for_krr(st_desc_db_temp,stdb);
-      kernel.set_basis(basis.b);
-      M_KRR_Train<K>::train2(basis.b, basis.T);
-    }
 
-    Structure predict(const Config &c, StDescriptors &std, const Structure &st) {
-      if(config.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
-        norm.normalise(std);
-      return M_Tadah_Base::predict(c,std,st);
-    }
-
-    StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc) {
-      return M_Tadah_Base::predict(c,stdb,dc);
-    }
-
-    Config get_param_file() {
-      Config c = config;
-      c.remove("ALPHA");
-      c.remove("BETA");
-      c.remove("DBFILE");
-      c.remove("FORCE");
-      c.remove("STRESS");
-      c.remove("VERBOSE");
-      c.add("VERBOSE", 0);
-
-      c.clear_internal_keys();
-      c.remove("MODEL");
-      c.add("MODEL", label);
-      c.add("MODEL", kernel.get_label());
-      int modelN=config.template get<int>("MODEL",2);
-      c.add("MODEL", modelN);
-
-      for (size_t i=0;i<weights.size();++i) {
-        c.add("WEIGHTS", weights(i));
-      }
-
-      if(config.template get<bool>("NORM")) {
-        for (size_t i=0;i<norm.mean.size();++i) {
-          c.add("NMEAN", norm.mean[i]);
-        }
-        for (size_t i=0;i<norm.std_dev.size();++i) {
-          c.add("NSTDEV", norm.std_dev[i]);
-        }
-      }
       if (kernel.get_label()!="Kern_Linear") {
-        // dump basis to the config file file
-        // make sure keys are not accidently assigned
-        if (c.exist("SBASIS"))
-          c.remove("SBASIS");
-        if (c.exist("BASIS"))
-          c.remove("BASIS");
-        c.add("SBASIS", basis.b.cols());
-        for (size_t i=0;i<basis.b.cols();++i) {
-          for (size_t j=0;j<basis.b.rows();++j) {
-            c.add("BASIS", basis.b(j,i));
-          }
-        }
+        basis.build_random_basis(config.template get<size_t>("SBASIS"),st_desc_db_temp);
+        desmat.f.set_basis(basis.b);
+        kernel.set_basis(basis.b);
+        // to configure ekm, we need basis vectors
+        ekm.configure(basis.b);
       }
-      return c;
     }
-    StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-        aed_type2 &predicted_error) {
+    desmat.build(stdb,norm,dc);
+    train(desmat);
+  }
 
-      LinearRegressor::read_sigma(config_pred,Sigma);
-      DesignMatrix<K> dm(kernel,config_pred);
-      dm.scale=false; // do not scale energy, forces and stresses
-      dm.build(stdb,norm,dc);
+  void train2(StructureDB &stdb, DC_Base &dc) {
 
-      // compute error
-      predicted_error = T_MDMT_diag(dm.Phi, Sigma);
-      double pmean = sqrt(predicted_error.mean());
-
-      // compute energy, forces and stresses
-      aed_type2 Tpred = T_dgemv(dm.Phi, weights);
-
-      // Construct StructureDB object with predicted values
-      StructureDB stdb_;
-      stdb_.structures.resize(stdb.size());
-      size_t i=0;
-      for (size_t s=0; s<stdb.size(); ++s) {
-        stdb_(s) = Structure(stdb(s));
-
-        stdb_(s).energy = Tpred(i++);
-        predicted_error(i) = (sqrt(predicted_error(i))-pmean)/stdb(s).natoms();
-        if (config_pred.get<bool>("FORCE")) {
-          for (size_t a=0; a<stdb(s).natoms(); ++a) {
-            for (size_t k=0; k<3; ++k) {
-              stdb_(s).atoms[a].force[k] = Tpred(i++);
-              predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-            }
-          }
-        }
-        if (config_pred.get<bool>("STRESS")) {
-          for (size_t x=0; x<3; ++x) {
-            for (size_t y=x; y<3; ++y) {
-              predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-              stdb_(s).stress(x,y) = Tpred(i++);
-              if (x!=y)
-                stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-            }
-          }
-        }
-      }
-      return stdb_;
+    // NEW (BASIC) IMPLEMENTATION OF KRR //
+    std::string force=config.template get<std::string>("FORCE");
+    std::string stress=config.template get<std::string>("STRESS");
+    config.remove("FORCE");
+    config.remove("STRESS");
+    config.add("FORCE", "false");
+    config.add("STRESS", "false");
+    StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
+    if(config.template get<bool>("NORM")) {
+      norm = Normaliser(config);
+      norm.learn(st_desc_db_temp);
+      norm.normalise(st_desc_db_temp);
     }
-    StructureDB predict(StructureDB &stdb) {
-      if(!trained) throw std::runtime_error("This object is not trained!\n\
-          Hint: check different predict() methods.");
+    config.remove("FORCE");
+    config.remove("STRESS");
+    config.add("FORCE", force);
+    config.add("STRESS", stress);
+    basis.prep_basis_for_krr(st_desc_db_temp,stdb);
+    kernel.set_basis(basis.b);
+    M_KRR_Train<K>::train2(basis.b, basis.T);
+  }
 
-      phi_type &Phi = desmat.Phi;
+  Structure predict(const Config &c, StDescriptors &std, const Structure &st) {
+    if(config.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
+      norm.normalise(std);
+    return M_Tadah_Base::predict(c,std,st);
+  }
 
-      // compute energy, forces and stresses
-      aed_type2 Tpred = T_dgemv(Phi, weights);
+  StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc) {
+    return M_Tadah_Base::predict(c,stdb,dc);
+  }
 
-      double eweightglob=config.template get<double>("EWEIGHT");
-      double fweightglob=config.template get<double>("FWEIGHT");
-      double sweightglob=config.template get<double>("SWEIGHT");
+  Config get_param_file() {
+    Config c = config;
+    c.remove("ALPHA");
+    c.remove("BETA");
+    c.remove("DBFILE");
+    c.remove("FORCE");
+    c.remove("STRESS");
+    c.remove("VERBOSE");
+    c.add("VERBOSE", 0);
 
-      // Construct StructureDB object with predicted values
-      StructureDB stdb_;
-      stdb_.structures.resize(stdb.size());
-      size_t s=0;
-      size_t i=0;
-      while (i<Phi.rows()) {
+    c.clear_internal_keys();
+    c.remove("MODEL");
+    c.add("MODEL", label);
+    c.add("MODEL", kernel.get_label());
+    int modelN=config.template get<int>("MODEL",2);
+    c.add("MODEL", modelN);
 
-        stdb_(s).energy = Tpred(i++)*stdb(s).natoms()/eweightglob/stdb(s).eweight;
-        if (config.template get<bool>("FORCE")) {
-          stdb_(s).atoms.resize(stdb(s).natoms());
-          for (size_t a=0; a<stdb(s).natoms(); ++a) {
-            for (size_t k=0; k<3; ++k) {
-              stdb_(s).atoms[a].force[k] = Tpred(i++)/fweightglob/stdb(s).fweight;
-            }
-          }
-        }
-        if (config.template get<bool>("STRESS")) {
-          for (size_t x=0; x<3; ++x) {
-            for (size_t y=x; y<3; ++y) {
-              stdb_(s).stress(x,y) = Tpred(i++)/sweightglob/stdb(s).sweight;
-              if (x!=y)
-                stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-            }
-          }
-        }
-        s++;
-      }
-      return stdb_;
+    for (size_t i=0;i<weights.size();++i) {
+      c.add("WEIGHTS", weights(i));
     }
 
-  private:
-    std::string label="M_KRR";
-    Basis<K> basis;
-    DesignMatrix<K> desmat;
-
-    t_type convert_to_nweights(const t_type &weights) const {
-      if(kernel.get_label()!="Kern_Linear") {
-        throw std::runtime_error("Cannot convert weights to nweights for\n\
-            non linear kernel\n");
+    if(config.template get<bool>("NORM")) {
+      for (size_t i=0;i<norm.mean.size();++i) {
+        c.add("NMEAN", norm.mean[i]);
       }
-      t_type kw(weights.rows());
-      if(config.template get<bool>("NORM") && kernel.get_label()=="Kern_Linear") {
-        // normalise weights such that when predict is called
-        // we can supply it with a non-normalised descriptor
-        kw.resize(weights.rows());
-        kw(0) = weights(0);
-        for (size_t i=1; i<weights.size(); ++i) {
-
-          if (norm.std_dev[i] > std::numeric_limits<double>::min())
-            kw(i) = weights(i) / norm.std_dev[i];
-          else
-            kw(i) = weights(i);
-
-          kw(0) -= norm.mean[i]*kw(i);
-
+      for (size_t i=0;i<norm.std_dev.size();++i) {
+        c.add("NSTDEV", norm.std_dev[i]);
+      }
+    }
+    if (kernel.get_label()!="Kern_Linear") {
+      // dump basis to the config file file
+      // make sure keys are not accidently assigned
+      if (c.exist("SBASIS"))
+        c.remove("SBASIS");
+      if (c.exist("BASIS"))
+        c.remove("BASIS");
+      c.add("SBASIS", basis.b.cols());
+      for (size_t i=0;i<basis.b.cols();++i) {
+        for (size_t j=0;j<basis.b.rows();++j) {
+          c.add("BASIS", basis.b(j,i));
         }
       }
-      return kw;
     }
-    // The opposite of convert_to_nweights()
-    t_type convert_to_weights(const t_type &kw) const {
-      if(kernel.get_label()!="Kern_Linear") {
-        throw std::runtime_error("Cannot convert nweights to weights for\n\
-            non linear kernel\n");
+    return c;
+  }
+  StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
+                      aed_type2 &predicted_error) {
+
+    LinearRegressor::read_sigma(config_pred,Sigma);
+    DesignMatrix<K> dm(kernel,config_pred);
+    dm.scale=false; // do not scale energy, forces and stresses
+    dm.build(stdb,norm,dc);
+
+    // compute error
+    predicted_error = T_MDMT_diag(dm.Phi, Sigma);
+    double pmean = sqrt(predicted_error.mean());
+
+    // compute energy, forces and stresses
+    aed_type2 Tpred = T_dgemv(dm.Phi, weights);
+
+    // Construct StructureDB object with predicted values
+    StructureDB stdb_;
+    stdb_.structures.resize(stdb.size());
+    size_t i=0;
+    for (size_t s=0; s<stdb.size(); ++s) {
+      stdb_(s) = Structure(stdb(s));
+
+      stdb_(s).energy = Tpred(i++);
+      predicted_error(i) = (sqrt(predicted_error(i))-pmean)/stdb(s).natoms();
+      if (config_pred.get<bool>("FORCE")) {
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          for (size_t k=0; k<3; ++k) {
+            stdb_(s).atoms[a].force[k] = Tpred(i++);
+            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
+          }
+        }
       }
-      // convert normalised weights back to "normal"
-      t_type w(kw.rows());
-      w(0) = kw(0);
-      for (size_t i=1; i<kw.size(); ++i) {
+      if (config_pred.get<bool>("STRESS")) {
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
+            stdb_(s).stress(x,y) = Tpred(i++);
+            if (x!=y)
+              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
+          }
+        }
+      }
+    }
+    return stdb_;
+  }
+  StructureDB predict(StructureDB &stdb) {
+    if(!trained) throw std::runtime_error("This object is not trained!\n\
+Hint: check different predict() methods.");
+
+    phi_type &Phi = desmat.Phi;
+
+    // compute energy, forces and stresses
+    aed_type2 Tpred = T_dgemv(Phi, weights);
+
+    double eweightglob=config.template get<double>("EWEIGHT");
+    double fweightglob=config.template get<double>("FWEIGHT");
+    double sweightglob=config.template get<double>("SWEIGHT");
+
+    // Construct StructureDB object with predicted values
+    StructureDB stdb_;
+    stdb_.structures.resize(stdb.size());
+    size_t s=0;
+    size_t i=0;
+    while (i<Phi.rows()) {
+
+      stdb_(s).energy = Tpred(i++)*stdb(s).natoms()/eweightglob/stdb(s).eweight;
+      if (config.template get<bool>("FORCE")) {
+        stdb_(s).atoms.resize(stdb(s).natoms());
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          for (size_t k=0; k<3; ++k) {
+            stdb_(s).atoms[a].force[k] = Tpred(i++)/fweightglob/stdb(s).fweight;
+          }
+        }
+      }
+      if (config.template get<bool>("STRESS")) {
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            stdb_(s).stress(x,y) = Tpred(i++)/sweightglob/stdb(s).sweight;
+            if (x!=y)
+              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
+          }
+        }
+      }
+      s++;
+    }
+    return stdb_;
+  }
+
+private:
+  std::string label="M_KRR";
+  Basis<K> basis;
+  DesignMatrix<K> desmat;
+
+  t_type convert_to_nweights(const t_type &weights) const {
+    if(kernel.get_label()!="Kern_Linear") {
+      throw std::runtime_error("Cannot convert weights to nweights for\n\
+non linear kernel\n");
+    }
+    t_type kw(weights.rows());
+    if(config.template get<bool>("NORM") && kernel.get_label()=="Kern_Linear") {
+      // normalise weights such that when predict is called
+      // we can supply it with a non-normalised descriptor
+      kw.resize(weights.rows());
+      kw(0) = weights(0);
+      for (size_t i=1; i<weights.size(); ++i) {
+
         if (norm.std_dev[i] > std::numeric_limits<double>::min())
-          w(i) = kw(i) * norm.std_dev[i];
+          kw(i) = weights(i) / norm.std_dev[i];
         else
-          w(i) = kw(i);
+          kw(i) = weights(i);
 
-        w(0) += kw(i)*norm.mean[i];
+        kw(0) -= norm.mean[i]*kw(i);
+
       }
-      return w;
     }
+    return kw;
+  }
+  // The opposite of convert_to_nweights()
+  t_type convert_to_weights(const t_type &kw) const {
+    if(kernel.get_label()!="Kern_Linear") {
+      throw std::runtime_error("Cannot convert nweights to weights for\n\
+non linear kernel\n");
+    }
+    // convert normalised weights back to "normal"
+    t_type w(kw.rows());
+    w(0) = kw(0);
+    for (size_t i=1; i<kw.size(); ++i) {
+      if (norm.std_dev[i] > std::numeric_limits<double>::min())
+        w(i) = kw(i) * norm.std_dev[i];
+      else
+        w(i) = kw(i);
 
-    template <typename D>
-      void train(D &desmat) {
-        // TODO see comments in M_BLR
-        phi_type Phi = desmat.Phi;
-        t_type T = desmat.T;
-        M_KRR_Train<K>::train(Phi,T);
+      w(0) += kw(i)*norm.mean[i];
+    }
+    return w;
+  }
 
-        if (config.template get<bool>("NORM") &&
-            kernel.get_label()=="Kern_Linear") {
-          weights = convert_to_nweights(weights);
-        }
-      }
+  template <typename D>
+  void train(D &desmat) {
+    // TODO see comments in M_BLR
+    phi_type Phi = desmat.Phi;
+    t_type T = desmat.T;
+    M_KRR_Train<K>::train(Phi,T);
 
-    // Do we want to confuse user with those and make them public?
-    // Either way they must be stated as below to silence clang warning
-    using M_KRR_Train<K>::predict;
-    using M_KRR_Train<K>::train;
-    using M_KRR_Train<K>::trained;
-    using M_KRR_Train<K>::weights;
-    using M_KRR_Train<K>::Sigma;
-    using M_KRR_Train<K>::config;
-    using M_KRR_Train<K>::kernel;
-    using M_KRR_Train<K>::ekm;
+    if (config.template get<bool>("NORM") &&
+      kernel.get_label()=="Kern_Linear") {
+      weights = convert_to_nweights(weights);
+    }
+  }
+
+  // Do we want to confuse user with those and make them public?
+  // Either way they must be stated as below to silence clang warning
+  using M_KRR_Train<K>::predict;
+  using M_KRR_Train<K>::train;
+  using M_KRR_Train<K>::trained;
+  using M_KRR_Train<K>::weights;
+  using M_KRR_Train<K>::Sigma;
+  using M_KRR_Train<K>::config;
+  using M_KRR_Train<K>::kernel;
+  using M_KRR_Train<K>::ekm;
 };
 #endif

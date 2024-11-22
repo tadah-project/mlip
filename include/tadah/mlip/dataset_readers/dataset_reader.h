@@ -41,7 +41,7 @@ public:
   virtual void parse_data() = 0;
 
   /**
-   * @brief Prints or returns a summary of the data.
+   * @brief Prints a summary of the data.
    *
    * This pure virtual function must be implemented by derived classes
    * to provide a summary of the dataset.
@@ -49,6 +49,16 @@ public:
    * @param stdb Reference to a StructureDB object for data summary.
    */
   virtual void print_summary() const = 0;
+
+  /**
+   * @brief Returns a summary of the data.
+   *
+   * This pure virtual function must be implemented by derived classes
+   * to provide a summary of the dataset.
+   *
+   * @param stdb Reference to a StructureDB object for data summary.
+   */
+  virtual std::string get_summary() const = 0;
 
   /**
    * @brief Constructor initializing the reference.
@@ -69,5 +79,8 @@ public:
 protected:
   StructureDB& stdb; /**< Reference to store parsed data. */
   std::string filename; /**< Filename for data reading. */
+private:
+  virtual std::string get_first_label(std::string &);
+  virtual std::string get_label(std::string &);
 };
 #endif // DATASET_READER_H

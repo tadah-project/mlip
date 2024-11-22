@@ -63,7 +63,9 @@ predict(const Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
+#ifdef _OPENMP
   #pragma omp parallel for
+#endif
   for (size_t i=0; i<stdb.size(); ++i) {
     stdb_(i) = predict(c,st_desc_db(i), stdb(i));
   }
@@ -75,7 +77,9 @@ predict(Config &c, const StructureDB &stdb, DC_Base &dc)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
+#ifdef _OPENMP
   #pragma omp parallel for
+#endif
   for (size_t i=0; i<stdb.size(); ++i) {
     StDescriptors st_d = dc.calc(stdb(i));
     stdb_(i) = predict(c,st_d, stdb(i));
@@ -105,6 +109,7 @@ void M_Tadah_Base::
 spredict(const size_t a, stress_type &s,
          const StDescriptors &std, const Structure &st)
 {
+  double V_inv = 1/st.get_volume();
   const Vec3d &ri = st.atoms[a].position;
   const aed_type2 &aedi = std.get_aed(a);
   for (size_t jj=0; jj<st.nn_size(a); ++jj) {
@@ -122,7 +127,7 @@ spredict(const size_t a, stress_type &s,
     // resutling from the pairwise i-j interaction.
     for (size_t x=0; x<3; ++x) {
       for (size_t y=x; y<3; ++y) {
-        s(x,y) -= 0.5*(ri[x]-rj[x])*(fij[y]-fji[y]);
+        s(x,y) -= V_inv*0.5*(ri[x]-rj[x])*(fij[y]-fji[y]);
       }
     }
   }

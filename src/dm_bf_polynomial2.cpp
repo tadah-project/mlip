@@ -64,6 +64,7 @@ void DM_BF_Polynomial2::calc_phi_stress_rows(phi_type &Phi,
                                              const Structure &st, 
                                              const StDescriptors &st_d)
 {
+  double V_inv = 1/st.get_volume();
   for (size_t a=0; a<st.natoms(); ++a) {
     const Vec3d &ri = st(a).position;
     const aed_type2& aedi = st_d.get_aed(a);
@@ -80,7 +81,7 @@ void DM_BF_Polynomial2::calc_phi_stress_rows(phi_type &Phi,
           size_t b=0;
           for (size_t i=0; i<fdij.rows(); ++i) {
             for (size_t ii=i; ii<fdij.rows(); ++ii) {
-              Phi(row+mn,b) += 0.5*fac[mn]*(ri(x)-rj(x))
+              Phi(row+mn,b) += V_inv*0.5*fac[mn]*(ri(x)-rj(x))
                 *(fdij(i,y)*aedi(ii) + fdij(ii,y)*aedi(i)
                 - fdji(i,y)*aedj(ii) - fdji(ii,y)*aedj(i));
               b++;

@@ -1,6 +1,6 @@
 #include <string>
-#include <filesystem>
 #include "catch2/catch.hpp"
+#include "tadah/core/element.h"
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/structure.h>
 
@@ -8,6 +8,9 @@
 double fac = 1602.1766208;
 
 
+TEST_CASE("Testing Structure PeriodicTable Initialization") {
+    PeriodicTable::initialize();
+}
 TEST_CASE( "Testing Structure class volume", "[structure_volume]" ) {
   //using vec=Eigen::Vector3d;
 
@@ -54,7 +57,6 @@ TEST_CASE( "Testing Structure virial pressure calculations", "[structure_virial_
 
 }
 TEST_CASE( "Testing Structure read and write", "[structure_read_write]" ) {
-  PeriodicTable::initialize();
   Structure st;
   st.read("tests_data/structure_1.dat");
 
@@ -82,7 +84,6 @@ TEST_CASE( "Testing Structure read and write", "[structure_read_write]" ) {
 
 }
 TEST_CASE( "Testing Structure compare", "[structure_compare]" ) {
-  PeriodicTable::initialize();
   Structure st;
   st.read("tests_data/structure_1.dat");
   std::string tempfile = std::tmpnam(nullptr);
@@ -114,9 +115,13 @@ TEST_CASE( "Testing Structure compare", "[structure_compare]" ) {
   std::remove(tempfile.c_str());
 }
 TEST_CASE( "Testing Structure copy", "[structure_copy]" ) {
-  PeriodicTable::initialize();
   Structure st;
   st.read("tests_data/structure_1.dat");
   Structure st2=st;
   REQUIRE(st==st2);
+}
+TEST_CASE("Testing Structure Unique Element") {
+  Structure st;
+  st.add_atom(Atom(Element("Ta"),0,0,0,0,0,0));
+  REQUIRE(st.get_unique_elements().size()==1);
 }

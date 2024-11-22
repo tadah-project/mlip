@@ -11,7 +11,6 @@ CastepCastepReader::CastepCastepReader(StructureDB& db) : DatasetReader(db) {}
 CastepCastepReader::CastepCastepReader(StructureDB& db, const std::string& filename) 
 : DatasetReader(db, filename) {
   read_data(filename);
-  parse_data();
 }
 
 void CastepCastepReader::read_data(const std::string& filename) {
@@ -36,24 +35,52 @@ void CastepCastepReader::parse_data() {
   bool stress_tensor_bool = false;
   bool constant_volume = false;
   bool complete_structure = false;
+  bool md_run = false;
+  bool go_run = false;
+  bool restart = false;
+  int scf_idx = 0;
 
   Structure s;
   std::string label;
+  size_t counter=0;
 
   while (std::getline(stream, line)) {
-    if (line.find("Unit Cell") != std::string::npos) {
+
+    if (line.find("type of calculation") != std::string::npos) {
+      stress_tensor_bool=false;
+      constant_volume=false;
+      md_run = false;
+      go_run = false;
+      restart=false;
+      if (line.find(": geometry optimization") != std::string::npos) {
+        go_run = true;
+      }
+      if (line.find(": molecular dynamics") != std::string::npos) {
+        md_run = true;
+      }
+    }
+    else if (line.find("Restarting MD") != std::string::npos) {
+      restart=true;
+    }
+    else if (line.find("Unit Cell") != std::string::npos) {
       if (!std::getline(stream, line) || !std::getline(stream, line)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading atom information" << std::endl;
       }
+      counter++;
+      counter++;
 
       s = Structure();
       for (int i = 0; i < 3; ++i) {
         if (!std::getline(stream, line)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << i << std::endl;
           break;
         }
+        counter++;
         std::istringstream iss(line);
         if (!(iss >> s.cell(0,i) >> s.cell(1,i) >> s.cell(2,i))) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << i << std::endl;
           break;
         }
@@ -72,16 +99,16 @@ void CastepCastepReader::parse_data() {
       // Process the line to reach the 8th element
       while (iss >> temp) {
         if (++count == 7 && !(iss >> natoms)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Error: Failed to read number of atoms from line: " << line << std::endl;
         }
       }
 
       // Check if the line was too short
       if (count < 7) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Error: Line is too short to extract total number of ions in a cell. Line: " << line << std::endl;
       }
-      stress_tensor_bool=false;
-      constant_volume=false;
     }
 
     else if (line.find("so fixing cell parameters") != std::string::npos) {
@@ -98,25 +125,36 @@ void CastepCastepReader::parse_data() {
       label = "CASTEP MD, const. volume: " + oss.str() + ", step: " + step;
     }
 
+
     else if (constant_volume && line.find("Cell Contents") != std::string::npos) {
-      s = Structure();
-      s.cell = stdb.structures.back().cell;   // copy last cell as it is not repeated in castep for const. volume
+      if (restart) {
+        s.atoms.clear();
+      } else {
+        s = Structure();
+        s.cell = stdb.structures.back().cell;   // copy last cell as it is not repeated in castep for const. volume
+      }
     }
 
     else if (line.find("Fractional coordinates of atoms") != std::string::npos) {
       if (!std::getline(stream, line) || !std::getline(stream, line)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading atom information" << std::endl;
       }
+      counter++;
+      counter++;
 
       for (size_t i = 0; i < natoms; ++i) {
         if (!std::getline(stream, line)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading atomic coordinates at row " << i << std::endl;
           break;
         }
+        counter++;
         std::istringstream iss(line);
         std::string type, tmp;
         double px,py,pz;
         if (!(iss >> tmp >> type >> tmp >> px >> py >> pz)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading atomic coordiantes at row " << i << std::endl;
           break;
         }
@@ -126,18 +164,26 @@ void CastepCastepReader::parse_data() {
     }
 
     else if (line.find("Cartesian components (eV/A)") != std::string::npos) {
+      if (s.natoms()!=natoms) continue;
       if (!std::getline(stream, line) || !std::getline(stream, line) || !std::getline(stream, line)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading atom forces" << std::endl;
       }
+      counter++;
+      counter++;
+      counter++;
       for (size_t i = 0; i < natoms; ++i) {
         if (!std::getline(stream, line)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading atom forces: " << line << std::endl;
           break;
         }
+        counter++;
         std::istringstream iss(line);
         std::string tmp;
         double fx,fy,fz;
         if (!(iss >> tmp >> tmp >> tmp >> fx >> fy >> fz)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading atom forces: " << line << std::endl;
         } else {
           s.atoms[i].force = Vec3d(fx,fy,fz);
@@ -147,16 +193,23 @@ void CastepCastepReader::parse_data() {
 
     else if (line.find("Cartesian components (GPa)") != std::string::npos) {
       if (!std::getline(stream, line) || !std::getline(stream, line) || !std::getline(stream, line)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading stress tensor" << std::endl;
       }
+      counter++;
+      counter++;
+      counter++;
       for (size_t i = 0; i < 3; ++i) {
         if (!std::getline(stream, line)) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading stress tensor: " << line << std::endl;
           break;
         }
+        counter++;
         std::istringstream iss(line);
         std::string tmp;
         if (!(iss >> tmp >> tmp >> s.stress(i,0) >> s.stress(i,1) >> s.stress(i,2))) {
+          std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
           std::cerr << "Warning: Unexpected end of data when reading atom forces: " << line << std::endl;
         } 
       }
@@ -170,7 +223,13 @@ void CastepCastepReader::parse_data() {
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.energy)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
+      }
+      // scf only loop
+      if (!md_run && !go_run) {
+        s.label = "SCF run: " + std::to_string(scf_idx++);
+        complete_structure = true;
       }
     }
 
@@ -190,6 +249,7 @@ void CastepCastepReader::parse_data() {
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
       }
 
@@ -207,12 +267,15 @@ void CastepCastepReader::parse_data() {
       stdb.add(s);
       complete_structure = false;
     }
-
+    counter++;
   }
 
 }
 
 void CastepCastepReader::print_summary() const {
-  std::cout << stdb;
+  std::cout << get_summary();
 }
 
+std::string CastepCastepReader::get_summary() const {
+  return stdb.summary();
+}

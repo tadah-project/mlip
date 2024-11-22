@@ -44,6 +44,7 @@ void DM_BF_Linear::calc_phi_force_rows(phi_type &Phi, size_t &row,
 void DM_BF_Linear::calc_phi_stress_rows(phi_type &Phi, size_t &row,
                                         const double fac[6], const Structure &st, const StDescriptors &st_d)
 {
+  double V_inv = 1/st.get_volume();
   for (size_t i=0; i<st.natoms(); ++i) {
     const Vec3d &ri = st(i).position;
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
@@ -56,7 +57,7 @@ void DM_BF_Linear::calc_phi_stress_rows(phi_type &Phi, size_t &row,
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
           for (size_t d=0; d<fdij.rows(); ++d) {
-            Phi(row+mn,d) += (fdij(d,y)-fdji(d,y))*0.5*fac[mn]*(ri(x)-rj(x));
+            Phi(row+mn,d) += V_inv*(fdij(d,y)-fdji(d,y))*0.5*fac[mn]*(ri(x)-rj(x));
           }
           mn++;
         }

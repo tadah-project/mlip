@@ -443,7 +443,9 @@ template <typename D2, typename D3, typename DM, typename C2, typename C3, typen
 StDescriptorsDB DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const StructureDB &stdb) {
   StDescriptorsDB st_desc_db(stdb, config);
 
-#pragma omp parallel for
+#ifdef _OPENMP
+  #pragma omp parallel for
+#endif
   for(size_t i=0; i<stdb.size(); ++i)
     if (config.get<bool>("DIMER",0))
       calc_dimer(stdb(i),st_desc_db(i));

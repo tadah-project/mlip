@@ -109,8 +109,6 @@ struct Structure {
    */
   double sweight=1.0;
 
-  /** List of chemical elements in this structure. */
-  std::set<Element> unique_elements;
 
   /** @return a reference to the i-th Atom.
    *
@@ -271,9 +269,19 @@ struct Structure {
   std::vector<Atom>::const_iterator begin() const;
   std::vector<Atom>::const_iterator end() const;
 
+  /** Method to dump class content to a file */
+  void dump_to_file(std::ostream &file, size_t prec=12) const;
+
+  /** Method to dump class content to a file */
+  void dump_to_file(const std::string& filepath, size_t prec=12) const;
+
+  /** List of chemical elements in this structure. */
+  std::set<Element> get_unique_elements() const;
+
   private:
     const static size_t w=15;  // controls output width
     const static size_t p=6;   // controls output precision
+  
 
 };
 #endif

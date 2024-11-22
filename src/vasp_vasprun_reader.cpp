@@ -6,7 +6,6 @@ VaspVasprunReader::VaspVasprunReader(StructureDB& stdb)
 VaspVasprunReader::VaspVasprunReader(StructureDB& stdb, const std::string& filename)
 : DatasetReader(stdb, filename), stdb(stdb) {
   read_data(filename);
-  parse_data();
 }
 
 VaspVasprunReader::~VaspVasprunReader() {
@@ -141,6 +140,7 @@ void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) 
           _s.stress(r, 0) = x;
           _s.stress(r, 1) = y;
           _s.stress(r, 2) = z;
+          _s.stress *= s_conv;
         } else {
           std::cerr << "Error parsing stress tensor components." << std::endl;
         }
@@ -230,6 +230,9 @@ void VaspVasprunReader::extract_forces(rx::xml_node<> *calculation_node) {
 }
 
 void VaspVasprunReader::print_summary() const {
-  std::cout << stdb;
+  std::cout << get_summary();
 }
 
+std::string VaspVasprunReader::get_summary() const {
+  return stdb.summary();
+}

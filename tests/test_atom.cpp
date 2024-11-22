@@ -1,4 +1,5 @@
 #include "catch2/catch.hpp"
+#include "tadah/core/periodic_table.h"
 #include <tadah/mlip/atom.h>
 #include <string>
 
@@ -15,6 +16,10 @@ Vec3d pos2(-1.0,-2.0,-3.0);
 Vec3d force2(-4.0,-5.0,-6.0);
 Element element2(symbol2,Z2);
 
+TEST_CASE("Testing Atom PeriodicTable Initialization") {
+    PeriodicTable::initialize();
+}
+
 TEST_CASE( "Testing Atom class constructor", "[atom]" ) {
 
 
@@ -24,22 +29,19 @@ TEST_CASE( "Testing Atom class constructor", "[atom]" ) {
 
     REQUIRE( pos1 == a.position );
     REQUIRE( force1 == a.force );
-    REQUIRE( symbol1[0] == a.symbol[0] );
-    REQUIRE( symbol1[1] == a.symbol[1] );
+    REQUIRE( symbol1 == a.symbol );
     REQUIRE( Z1 == a.Z );
 
     // Trivial case 2/2
     Atom b;
     b.position = pos1;
     b.force = force1;
-    b.symbol[0] = symbol1[0];
-    b.symbol[1] = symbol1[1];
+    b.symbol = symbol1;
     b.Z = Z1;
 
     REQUIRE( pos1 == b.position );
     REQUIRE( force1 == b.force );
-    REQUIRE( symbol1[0] == b.symbol[0] );
-    REQUIRE( symbol1[1] == b.symbol[1] );
+    REQUIRE( symbol1 == b.symbol );
     REQUIRE( Z1 == b.Z );
 
     REQUIRE( a == b );

@@ -71,9 +71,9 @@ template
 <class BF=DM_Function_Base&>
 class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
 
-  public:
+public:
 
-    /** This constructor will preapare this object for either training
+  /** This constructor will preapare this object for either training
      *  or prediction (if potential is provides as a Config)
      *
      * Usage example:
@@ -84,16 +84,16 @@ class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
      * \endcode
      *
      */
-    using M_BLR_Train<BF>::config;
-    using M_BLR_Train<BF>::bf;
-    M_BLR(Config &c):
-      M_BLR_Train<BF>(c),
-      desmat(M_BLR_Train<BF>::bf,c)
+  using M_BLR_Train<BF>::config;
+  using M_BLR_Train<BF>::bf;
+  M_BLR(Config &c):
+    M_BLR_Train<BF>(c),
+    desmat(M_BLR_Train<BF>::bf,c)
   {
     norm = Normaliser(c);
   }
 
-    /** This constructor will preapare this object for either training
+  /** This constructor will preapare this object for either training
      *  or prediction (if potential is provides as a Config)
      *
      * Usage example:
@@ -105,260 +105,260 @@ class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
      * \endcode
      *
      */
-    M_BLR(BF &bf, Config &c):
-      M_BLR_Train<BF>(bf,c),
-      desmat(bf,c)
+  M_BLR(BF &bf, Config &c):
+    M_BLR_Train<BF>(bf,c),
+    desmat(bf,c)
   {
     norm = Normaliser(c);
   }
 
-    double epredict(const aed_type2 &aed) const{
-      return bf.epredict(weights,aed);
-    };
+  double epredict(const aed_type2 &aed) const{
+    return bf.epredict(weights,aed);
+  };
 
-    double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const{
-      return bf.fpredict(weights,fdij,aedi,k);
-    }
+  double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const{
+    return bf.fpredict(weights,fdij,aedi,k);
+  }
 
-    force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const{
-      return bf.fpredict(weights,fdij,aedi);
-    }
+  force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const{
+    return bf.fpredict(weights,fdij,aedi);
+  }
 
-    void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+  void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
 
-      if(config.template get<bool>("NORM"))
-        norm = Normaliser(config,st_desc_db);
+    if(config.template get<bool>("NORM"))
+      norm = Normaliser(config,st_desc_db);
 
-      desmat.build(st_desc_db,stdb);
-      train(desmat);
-    }
+    desmat.build(st_desc_db,stdb);
+    train(desmat);
+  }
 
-    void train(StructureDB &stdb, DC_Base &dc) {
+  void train(StructureDB &stdb, DC_Base &dc) {
 
-      if(config.template get<bool>("NORM")) {
+    if(config.template get<bool>("NORM")) {
 
-        std::string force=config.template get<std::string>("FORCE");
-        std::string stress=config.template get<std::string>("STRESS");
+      std::string force=config.template get<std::string>("FORCE");
+      std::string stress=config.template get<std::string>("STRESS");
 
-        config.remove("FORCE");
-        config.remove("STRESS");
-        config.add("FORCE", "false");
-        config.add("STRESS", "false");
+      config.remove("FORCE");
+      config.remove("STRESS");
+      config.add("FORCE", "false");
+      config.add("STRESS", "false");
 
-        StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
-
-        if(config.template get<bool>("NORM")) {
-          norm = Normaliser(config);
-          norm.learn(st_desc_db_temp);
-          // norm.normalise(st_desc_db_temp);
-        }
-
-        config.remove("FORCE");
-        config.remove("STRESS");
-        config.add("FORCE", force);
-        config.add("STRESS", stress);
-      }
-
-      desmat.build(stdb,norm,dc);
-      train(desmat);
-    }
-
-    Structure predict(const Config &c, StDescriptors &std, const Structure &st) {
-      if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
-        norm.normalise(std);
-      return M_Tadah_Base::predict(c,std,st);
-    }
-
-    StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc) {
-      return M_Tadah_Base::predict(c,stdb,dc);
-    }
-
-    Config get_param_file() {
-      Config c = config;
-      //c.remove("ALPHA");
-      //c.remove("BETA");
-      c.remove("DBFILE");
-      c.remove("FORCE");
-      c.remove("STRESS");
-      c.remove("VERBOSE");
-      c.add("VERBOSE", 0);
-
-      c.clear_internal_keys();
-      c.remove("MODEL");
-      c.add("MODEL", label);
-      c.add("MODEL", bf.get_label());
-
-      for (size_t i=0;i<weights.size();++i) {
-        c.add("WEIGHTS", weights(i));
-      }
+      StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
 
       if(config.template get<bool>("NORM")) {
-        for (size_t i=0;i<norm.mean.size();++i) {
-          c.add("NMEAN", norm.mean[i]);
-        }
-        for (size_t i=0;i<norm.std_dev.size();++i) {
-          c.add("NSTDEV", norm.std_dev[i]);
-        }
+        norm = Normaliser(config);
+        norm.learn(st_desc_db_temp);
+        // norm.normalise(st_desc_db_temp);
       }
-      return c;
+
+      config.remove("FORCE");
+      config.remove("STRESS");
+      config.add("FORCE", force);
+      config.add("STRESS", stress);
     }
-    StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-        aed_type2 &predicted_error) {
 
-      LinearRegressor::read_sigma(config_pred,Sigma);
-      DesignMatrix<BF> dm(bf,config_pred);
-      dm.scale=false; // do not scale energy, forces and stresses
-      dm.build(stdb,norm,dc);
+    desmat.build(stdb,norm,dc);
+    train(desmat);
+  }
 
-      predicted_error = T_MDMT_diag(dm.Phi, Sigma);
-      double pmean = sqrt(predicted_error.mean());
+  Structure predict(const Config &c, StDescriptors &std, const Structure &st) {
+    if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
+      norm.normalise(std);
+    return M_Tadah_Base::predict(c,std,st);
+  }
 
-      // compute energy, forces and stresses
-      aed_type2 Tpred = T_dgemv(dm.Phi, weights);
+  StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc) {
+    return M_Tadah_Base::predict(c,stdb,dc);
+  }
 
-      // Construct StructureDB object with predicted values
-      StructureDB stdb_;
-      stdb_.structures.resize(stdb.size());
-      size_t i=0;
-      for (size_t s=0; s<stdb.size(); ++s) {
-        stdb_(s) = Structure(stdb(s));
+  Config get_param_file() {
+    Config c = config;
+    //c.remove("ALPHA");
+    //c.remove("BETA");
+    c.remove("DBFILE");
+    c.remove("FORCE");
+    c.remove("STRESS");
+    c.remove("VERBOSE");
+    c.add("VERBOSE", 0);
 
-        predicted_error(i) = (sqrt(predicted_error(i))-pmean)/stdb(s).natoms();
-        stdb_(s).energy = Tpred(i++);
-        if (config_pred.get<bool>("FORCE")) {
-          for (size_t a=0; a<stdb(s).natoms(); ++a) {
-            for (size_t k=0; k<3; ++k) {
-              stdb_(s).atoms[a].force[k] = Tpred(i++);
-              predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-            }
+    c.clear_internal_keys();
+    c.remove("MODEL");
+    c.add("MODEL", label);
+    c.add("MODEL", bf.get_label());
+
+    for (size_t i=0;i<weights.size();++i) {
+      c.add("WEIGHTS", weights(i));
+    }
+
+    if(config.template get<bool>("NORM")) {
+      for (size_t i=0;i<norm.mean.size();++i) {
+        c.add("NMEAN", norm.mean[i]);
+      }
+      for (size_t i=0;i<norm.std_dev.size();++i) {
+        c.add("NSTDEV", norm.std_dev[i]);
+      }
+    }
+    return c;
+  }
+  StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
+                      aed_type2 &predicted_error) {
+
+    LinearRegressor::read_sigma(config_pred,Sigma);
+    DesignMatrix<BF> dm(bf,config_pred);
+    dm.scale=false; // do not scale energy, forces and stresses
+    dm.build(stdb,norm,dc);
+
+    predicted_error = T_MDMT_diag(dm.Phi, Sigma);
+    double pmean = sqrt(predicted_error.mean());
+
+    // compute energy, forces and stresses
+    aed_type2 Tpred = T_dgemv(dm.Phi, weights);
+
+    // Construct StructureDB object with predicted values
+    StructureDB stdb_;
+    stdb_.structures.resize(stdb.size());
+    size_t i=0;
+    for (size_t s=0; s<stdb.size(); ++s) {
+      stdb_(s) = Structure(stdb(s));
+
+      predicted_error(i) = (sqrt(predicted_error(i))-pmean)/stdb(s).natoms();
+      stdb_(s).energy = Tpred(i++);
+      if (config_pred.get<bool>("FORCE")) {
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          for (size_t k=0; k<3; ++k) {
+            stdb_(s).atoms[a].force[k] = Tpred(i++);
+            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
           }
         }
-        if (config_pred.get<bool>("STRESS")) {
-          for (size_t x=0; x<3; ++x) {
-            for (size_t y=x; y<3; ++y) {
-              stdb_(s).stress(x,y) = Tpred(i++);
-              predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-              if (x!=y)
-                stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-            }
+      }
+      if (config_pred.get<bool>("STRESS")) {
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            stdb_(s).stress(x,y) = Tpred(i++);
+            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
+            if (x!=y)
+              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
           }
         }
       }
-      return stdb_;
     }
-    StructureDB predict(StructureDB &stdb) {
-      if(!trained) throw std::runtime_error("This object is not trained!\n\
-          Hint: check different predict() methods.");
+    return stdb_;
+  }
+  StructureDB predict(StructureDB &stdb) {
+    if(!trained) throw std::runtime_error("This object is not trained!\n\
+Hint: check different predict() methods.");
 
-      phi_type &Phi = desmat.Phi;
-      //std::cout << Phi.row(0) << std::endl;
+    phi_type &Phi = desmat.Phi;
+    //std::cout << Phi.row(0) << std::endl;
 
-      // compute energy, forces and stresses
-      aed_type2 Tpred = T_dgemv(Phi, weights);
+    // compute energy, forces and stresses
+    aed_type2 Tpred = T_dgemv(Phi, weights);
 
-      double eweightglob=config.template get<double>("EWEIGHT");
-      double fweightglob=config.template get<double>("FWEIGHT");
-      double sweightglob=config.template get<double>("SWEIGHT");
+    double eweightglob=config.template get<double>("EWEIGHT");
+    double fweightglob=config.template get<double>("FWEIGHT");
+    double sweightglob=config.template get<double>("SWEIGHT");
 
-      // Construct StructureDB object with predicted values
-      StructureDB stdb_;
-      stdb_.structures.resize(stdb.size());
-      size_t s=0;
-      size_t i=0;
-      while (i<Phi.rows()) {
+    // Construct StructureDB object with predicted values
+    StructureDB stdb_;
+    stdb_.structures.resize(stdb.size());
+    size_t s=0;
+    size_t i=0;
+    while (i<Phi.rows()) {
 
-        stdb_(s).energy = Tpred(i++)*stdb(s).natoms()/eweightglob/stdb(s).eweight;
-        if (config.template get<bool>("FORCE")) {
-          stdb_(s).atoms.resize(stdb(s).natoms());
-          for (size_t a=0; a<stdb(s).natoms(); ++a) {
-            for (size_t k=0; k<3; ++k) {
-              stdb_(s).atoms[a].force[k] = Tpred(i++)/fweightglob/stdb(s).fweight;
-            }
+      stdb_(s).energy = Tpred(i++)*stdb(s).natoms()/eweightglob/stdb(s).eweight;
+      if (config.template get<bool>("FORCE")) {
+        stdb_(s).atoms.resize(stdb(s).natoms());
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          for (size_t k=0; k<3; ++k) {
+            stdb_(s).atoms[a].force[k] = Tpred(i++)/fweightglob/stdb(s).fweight;
           }
         }
-        if (config.template get<bool>("STRESS")) {
-          for (size_t x=0; x<3; ++x) {
-            for (size_t y=x; y<3; ++y) {
-              stdb_(s).stress(x,y) = Tpred(i++)/sweightglob/stdb(s).sweight;
-              if (x!=y)
-                stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-            }
+      }
+      if (config.template get<bool>("STRESS")) {
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            stdb_(s).stress(x,y) = Tpred(i++)/sweightglob/stdb(s).sweight;
+            if (x!=y)
+              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
           }
         }
-        s++;
       }
-      return stdb_;
+      s++;
     }
+    return stdb_;
+  }
 
-  private:
-    std::string label="M_BLR";
-    DesignMatrix<BF> desmat;
+private:
+  std::string label="M_BLR";
+  DesignMatrix<BF> desmat;
 
-    // normalise weights such that when predict is called
-    // we can supply it with a non-normalised descriptor
-    t_type convert_to_nweights(const t_type &weights) const {
-      if(bf.get_label()!="BF_Linear") {
-        throw std::runtime_error("Cannot convert weights to nweights for\n\
-            non linear basis function\n");
-      }
-      t_type nw(weights.rows());
-      nw(0) = weights(0);
-      for (size_t i=1; i<weights.size(); ++i) {
-
-        if (norm.std_dev[i] > std::numeric_limits<double>::min())
-          nw(i) = weights(i) / norm.std_dev[i];
-        else
-          nw(i) = weights(i);
-
-        nw(0) -= norm.mean[i]*nw(i);
-
-      }
-      return nw;
+  // normalise weights such that when predict is called
+  // we can supply it with a non-normalised descriptor
+  t_type convert_to_nweights(const t_type &weights) const {
+    if(bf.get_label()!="BF_Linear") {
+      throw std::runtime_error("Cannot convert weights to nweights for\n\
+non linear basis function\n");
     }
-    // The opposite of convert_to_nweights()
-    t_type convert_to_weights(const t_type &nw) const {
-      if(bf.get_label()!="BF_Linear") {
-        throw std::runtime_error("Cannot convert nweights to weights for\n\
-            non linear basis function\n");
-      }
-      // convert normalised weights back to "normal"
-      t_type w(nw.rows());
-      w(0) = nw(0);
-      for (size_t i=1; i<nw.size(); ++i) {
-        if (norm.std_dev[i] > std::numeric_limits<double>::min())
-          w(i) = nw(i) * norm.std_dev[i];
-        else
-          w(i) = nw(i);
+    t_type nw(weights.rows());
+    nw(0) = weights(0);
+    for (size_t i=1; i<weights.size(); ++i) {
 
-        w(0) += nw(i)*norm.mean[i];
-      }
-      return w;
+      if (norm.std_dev[i] > std::numeric_limits<double>::min())
+        nw(i) = weights(i) / norm.std_dev[i];
+      else
+        nw(i) = weights(i);
+
+      nw(0) -= norm.mean[i]*nw(i);
+
     }
+    return nw;
+  }
+  // The opposite of convert_to_nweights()
+  t_type convert_to_weights(const t_type &nw) const {
+    if(bf.get_label()!="BF_Linear") {
+      throw std::runtime_error("Cannot convert nweights to weights for\n\
+non linear basis function\n");
+    }
+    // convert normalised weights back to "normal"
+    t_type w(nw.rows());
+    w(0) = nw(0);
+    for (size_t i=1; i<nw.size(); ++i) {
+      if (norm.std_dev[i] > std::numeric_limits<double>::min())
+        w(i) = nw(i) * norm.std_dev[i];
+      else
+        w(i) = nw(i);
 
-    template <typename D>
-      void train(D &desmat) {
-        // TODO 
-        // the train method destroys the Phi matrix
-        // In consequence, we cannot use it for quick prediction
-        // The simple solution, for now, is to make a copy of the Phi matrix
-        //phi_type &Phi = desmat.Phi;
-        phi_type Phi = desmat.Phi;
-        t_type T = desmat.T;
-        //t_type &T = desmat.T;
-        M_BLR_Train<BF>::train(Phi,T);
+      w(0) += nw(i)*norm.mean[i];
+    }
+    return w;
+  }
 
-        if (config.template get<bool>("NORM") &&
-            bf.get_label()=="BF_Linear") {
-          weights = convert_to_nweights(weights);
-        }
-      }
+  template <typename D>
+  void train(D &desmat) {
+    // TODO 
+    // the train method destroys the Phi matrix
+    // In consequence, we cannot use it for quick prediction
+    // The simple solution, for now, is to make a copy of the Phi matrix
+    //phi_type &Phi = desmat.Phi;
+    phi_type Phi = desmat.Phi;
+    t_type T = desmat.T;
+    //t_type &T = desmat.T;
+    M_BLR_Train<BF>::train(Phi,T);
 
-    // Do we want to confuse user with those and make them public?
-    // Either way they must be stated as below to silence clang warning
-    using M_BLR_Train<BF>::predict;
-    using M_BLR_Train<BF>::train;
-    using M_BLR_Train<BF>::trained;
-    using M_BLR_Train<BF>::weights;
-    using M_BLR_Train<BF>::Sigma;
+    if (config.template get<bool>("NORM") &&
+      bf.get_label()=="BF_Linear") {
+      weights = convert_to_nweights(weights);
+    }
+  }
+
+  // Do we want to confuse user with those and make them public?
+  // Either way they must be stated as below to silence clang warning
+  using M_BLR_Train<BF>::predict;
+  using M_BLR_Train<BF>::train;
+  using M_BLR_Train<BF>::trained;
+  using M_BLR_Train<BF>::weights;
+  using M_BLR_Train<BF>::Sigma;
 };
 #endif

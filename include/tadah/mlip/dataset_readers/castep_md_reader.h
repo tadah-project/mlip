@@ -67,6 +67,7 @@ public:
    * @brief Prints a summary of the parsed .md data.
    */
   virtual void print_summary() const override;
+  virtual std::string get_summary() const override;
 
   /**
    * @brief Checks if a string ends with a given suffix.
@@ -107,8 +108,9 @@ protected:
   double T = 0; /**< Temperature in atomic units (Hartree/k_B) */
   bool stress_tensor_bool = false; /**< Indicates presence of a stress tensor */
 
-  virtual std::string get_first_label(std::string &);
-  virtual std::string get_label(std::string &);
+private:
+  virtual std::string get_first_label(std::string &) override;
+  virtual std::string get_label(std::string &) override;
 
 };
 
