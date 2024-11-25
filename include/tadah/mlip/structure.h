@@ -251,9 +251,22 @@ struct Structure {
    * This operator compares cell, stress tensor, number of atoms,
    * eweight, fweight and sweight, all atom positions and forces.
    *
-   * It does NOT compare labels/
+   * Assumes atoms have the same order.
+   *
+   * It does NOT compare labels.
    */
   bool operator==(const Structure& st) const;
+
+  /** Return true if both structures are the same.
+   *
+   * This method compares cell vectors, number of atoms,
+   * species and atomic coordinates
+   *
+   * Order ot atoms does not matter.
+   *
+   * It does NOT compare energies, stresses, forces and labels.
+   */
+  bool is_the_same(const Structure& st, double thr=1e-6) const;
 
   // move iterator forward to the next structure
   // return number of atoms in the structure

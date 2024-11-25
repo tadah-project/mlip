@@ -192,6 +192,23 @@ bool Structure::operator==(const Structure& st) const
   }
   return result;
 }
+bool Structure::is_the_same(const Structure& st, double thr) const
+{
+  bool result =
+    cell.isApprox(st.cell, thr)
+    && natoms()==st.natoms();
+  if (!result) return result;
+
+  size_t count=0;;
+  for (size_t i=0;i<natoms();++i) {
+    for (size_t j=i;j<natoms();++j) {
+      result = atoms[i].is_the_same(st.atoms[j], thr);
+      if (result) count++;
+    }
+  }
+
+  return count==natoms() ? true : false;
+}
 int Structure::next_structure(std::ifstream &ifs) {
   std::string line;
   std::getline(ifs,line);
