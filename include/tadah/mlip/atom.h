@@ -79,5 +79,11 @@ struct Atom: public Element {
      */
     bool operator==(const Atom &) const;
 
+    /** Return true if both atoms have the same position and type.
+     *
+     * This method compares chemical type and position only
+     */
+    bool is_the_same(const Atom &, double thr=1e-6) const;
+
 };
 #endif
