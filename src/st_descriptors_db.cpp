@@ -15,3 +15,6 @@ StDescriptors &StDescriptorsDB::operator()(const size_t s) {
 size_t StDescriptorsDB::size() const {
     return st_descs.size();
 }
+void StDescriptorsDB::add(const StDescriptors &st_d) {
+  st_descs.push_back(st_d);
+}
