@@ -15,33 +15,26 @@
 #include <type_traits>
 #include <iostream>
 
-/** Kernel Ridge Regression.
+/**
+ * @class M_KRR
+ * @brief Kernel Ridge Regression (KRR) with Empirical Kernel Map (EKM).
  *
- * Usage:
+ * This class performs Kernel Ridge Regression using an Empirical Kernel Map 
+ * to efficiently handle high-dimensional data. EKM is used to map objects into a kernel feature space, where linear methods can be applied.
  *
- *   M_KRR KERNEL ALGO
+ * **Empirical Kernel Map (EKM)**:
+ * - Maps sample objects into finite-dimensional vectors in the kernel feature space.
+ * - Requires a kernel and basis samples to project new samples into the space defined by these bases.
+ * - Facilitates the kernelization of algorithms traditionally operating on vectors.
+ * - Supports basis sample selection through methods like random sampling or finding linearly independent subsets.
  *
- * Example:
+ * **Usage**:
+ * - **Kernels**: Use kernel functions (e.g., linear, RBF) to transform data for effective modeling in higher-dimensional spaces.
  *
- *   M_KRR Kern_RBF 1
+ * **Configuration Options**:
+ * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares, positive values for manual setting, or `-1` for automatic tuning.
+ * - **SBASIS**: Defines the number of basis functions for nonlinear kernels.
  *
- * KERNEL is any kernel defined in Kernels, for example:
- *
- *    Kern_Linear
- *    Kern_RBF
- *    ...
- *
- * ALGO specify which implementation to use:
- *
- *    ALGO = 1 (default) uses empirical kernel map to achieve sparse model
- *    ALGO = 2 standard with the the covariane matrix
- *
- * **Optional Config keys**:
- *
- *  - \ref LAMBDA = 0  -> use OLS
- *  - \ref LAMBDA > 0  -> manually set to given value
- *  - \ref LAMBDA = -1 -> use evidence approximation to find \f$\lambda\f$
- *  - \ref SBASIS N    -> Use N basis functions when nonlinear K is used
  *
  * @tparam K DM_Kern_Base child, Kernel function
  */
@@ -49,21 +42,20 @@ template
 <class K=DM_Function_Base&>
 class M_KRR: public M_Tadah_Base,
   public M_KRR_Train<K>
-//public M_KRR_Predict<K>
 {
 
 public:
 
-  /** This constructor will preapare this object for either training
-     *  or prediction (if potential is provides as a Config)
-     *
-     * Usage example:
-     *
-     * \code{.cpp}
-     * Config config("Config");
-     * M_KRR<Kern_Linear> krr(config);
-     * \endcode
-     *
+  /** 
+     * @brief Initializes for training or prediction using a configuration.
+     * 
+   * **Example**:
+   * \code{.cpp}
+   * Config config("Config");
+   * M_KRR<Kern_Linear> krr(config);
+   * \endcode
+   *
+     * @param c Configuration object.
      */
   M_KRR(Config &c):
     M_KRR_Train<K>(c),
@@ -73,18 +65,12 @@ public:
     norm = Normaliser(c);
   }
 
-  /** This constructor will preapare this object for either training
-     *  or prediction (if potential is provides as a Config)
-     *
-     * Usage example:
-
-     * \code{.cpp}
-     * Config config("Config");
-     * Kern_Linear kernel(config);
-     * M_KRR<> krr(kernel, config);
-     * \endcode
-     *
-     */
+  /** 
+   * @brief Initializes for training or prediction using a kernel and configuration.
+   * 
+   * @param kernel Kernel function.
+   * @param c Configuration object.
+   */
   M_KRR(K &kernel, Config &c):
     M_KRR_Train<K>(kernel,c),
     basis(c),
