@@ -14,78 +14,48 @@
 #include <type_traits>
 #include <iostream>
 
-/** Bayesian Linear Regression
+/**
+ * @class M_BLR
+ * @brief Bayesian Linear Regression (BLR).
  *
- * Model supported training modes:
+ * This class implements Bayesian Linear Regression, a statistical method to make predictions using linear models with both linear and nonlinear features.
  *
- *  - LINEAR:     Ordinary Least Squares or Ridge Regression (Regularised Least Squares)
- *
- *  - NONLINEAR:  Linear in parameters but nonlinear in an input space.
- *                Each row of a matrix \f$\Phi\f$ is a vector-valued function
- *                of the original input descriptor \f$ \mathbf{\phi(x)}^T \f$
- *                e.g. BF_Polynomial2:
- *                (1, x_1, x_2) -> (1, x_1, x_2, x_1x_2, x_1^2, x_2^2)
+ * **Model Supported Training Modes**:
+ * - **LINEAR**: Uses Ordinary Least Squares or Ridge Regression for linear relationships.
+ * - **NONLINEAR**: Utilizes basis functions to handle nonlinear input spaces, transforming input descriptors into higher-dimensional feature spaces. For example, polynomial transformations.
  *
  * **Prediction**:
- *
- * \f[
- * y(\mathbf{x}, \mathbf{w}) = \sum_{j=0}^{M-1} w_j \phi_j(\mathbf(x))
- * \f]
- *
- * where M is a number of parameters, **w** are machine learned weights
- * and **x** is a vector of input variables.
-
+ * - Computes predictions as a weighted sum of basis functions applied to input vectors.
  *
  * **Training**:
+ * - Employs regularized least squares, allowing for optional regularization through the \f$\lambda\f$ parameter.
+ * - Ordinary Least Squares (OLS) is a special case when \f$\lambda = 0\f$.
  *
- * \f[
- * \mathbf{w} = (\lambda \mathbf{I} + \mathbf{X}^T \mathbf{X})^{-1} \mathbf{X}^T \mathbf{y}
- * \f]
- *
- * for \f$\lambda=0\f$ this reduces to Ordinary Last Squares (OLS) aka
- * Linear Least Squares with the normal equation:
- *
- * \f[
- * \mathbf{w} = (\mathbf{X}^T \mathbf{X})^{-1} \mathbf{X}^T \mathbf{y}
- * \f]
- *
- * This model is always a linear function of its parameters \f$w_i\f$.
- *
- * When used with linear basis function \f$\phi\f$ (here BF_Linear)
- * it is also linear wrt to the input variables (here descriptors).
- *
- * When nonlinear basis function \f$\phi\f$ is used
- * the function \f$y(\mathbf{x}, \mathbf{w})\f$ becomes nonlinear wrt to **x**
- * but still linear wrt to **w**.
- *
- * **Optional Config keys**:
- *
- *  - \ref LAMBDA = 0  -> use OLS
- *  - \ref LAMBDA > 0  -> manually set to given value
- *  - \ref LAMBDA = -1 -> use evidence approximation to find \f$\lambda\f$
+ * **Configuration Options**:
+ * - **LAMBDA**: Set to `0` for OLS, a positive value for specified regularization, or `-1` for automatic tuning using evidence approximation.
  *
  * @tparam BF DM_BF_Base child, Basis function
  */
-
 template
 <class BF=DM_Function_Base&>
 class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
 
 public:
 
-  /** This constructor will preapare this object for either training
-     *  or prediction (if potential is provides as a Config)
-     *
-     * Usage example:
-     *
-     * \code{.cpp}
-     * Config config("Config");
-     * M_BLR<BF_Linear> blr(config);
-     * \endcode
-     *
-     */
   using M_BLR_Train<BF>::config;
   using M_BLR_Train<BF>::bf;
+
+  /** 
+   * @brief Initializes for training or prediction using a configuration.
+   *
+   * **Example**:
+   * \code{.cpp}
+   * Config config("Config");
+   * M_BLR<BF_Linear> blr(config);
+   * \endcode
+   * 
+   * @param c Configuration object.
+   */
   M_BLR(Config &c):
     M_BLR_Train<BF>(c),
     desmat(M_BLR_Train<BF>::bf,c)
@@ -93,18 +63,12 @@ public:
     norm = Normaliser(c);
   }
 
-  /** This constructor will preapare this object for either training
-     *  or prediction (if potential is provides as a Config)
-     *
-     * Usage example:
-
-     * \code{.cpp}
-     * Config config("Config");
-     * BF_Linear bf(config);
-     * M_BLR<> blr(bf, config);
-     * \endcode
-     *
-     */
+  /** 
+   * @brief Initializes for training or prediction using a basis function and configuration.
+   * 
+   * @param bf Basis function.
+   * @param c Configuration object.
+   */
   M_BLR(BF &bf, Config &c):
     M_BLR_Train<BF>(bf,c),
     desmat(bf,c)
