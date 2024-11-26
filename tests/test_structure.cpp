@@ -56,63 +56,84 @@ TEST_CASE( "Testing Structure virial pressure calculations", "[structure_virial_
   REQUIRE(fac*st.get_virial_pressure() == Approx(499.93));
 
 }
-TEST_CASE( "Testing Structure read and write", "[structure_read_write]" ) {
-  Structure st;
-  st.read("tests_data/structure_1.dat");
+TEST_CASE("Testing Structure read and write", "[structure_read_write]") {
+    Structure st;
+    st.read("tests_data/structure_1.dat");
 
-  REQUIRE(st.get_volume() == Approx(989.521812));
+    REQUIRE(st.get_volume() == Approx(989.521812));
 
-  REQUIRE(fac*st.get_virial_pressure() == Approx(26.705578));
-  REQUIRE(fac*st.get_pressure(300) == Approx(28.965914));
-  REQUIRE(fac*st.get_pressure(0) == Approx(26.705578));
+    REQUIRE(fac * st.get_virial_pressure() == Approx(26.705578));
+    REQUIRE(fac * st.get_pressure(300) == Approx(28.965914));
+    REQUIRE(fac * st.get_pressure(0) == Approx(26.705578));
 
-  std::string tempfile = std::tmpnam(nullptr);
-  st.save(tempfile);
+    // Create a temporary file
+    std::FILE* tmpFile = std::tmpfile();
+    if (!tmpFile) {
+        FAIL("Unable to create temporary file");
+    }
 
-  Structure st_temp;
-  st_temp.read(tempfile);
+    const int fd = fileno(tmpFile);
+    REQUIRE(fd != -1);
 
-  REQUIRE(st_temp.get_volume() == Approx(989.521812));
+    char tempfile[256];
+    snprintf(tempfile, sizeof(tempfile), "/proc/self/fd/%d", fd);
 
-  REQUIRE(fac*st_temp.get_virial_pressure() == Approx(26.705578));
-  REQUIRE(fac*st_temp.get_pressure(300) == Approx(28.965914));
-  REQUIRE(fac*st_temp.get_pressure(0) == Approx(26.705578));
+    st.save(tempfile);
 
-  REQUIRE(st==st_temp);
+    Structure st_temp;
+    st_temp.read(tempfile);
 
-  std::remove(tempfile.c_str());
+    REQUIRE(st_temp.get_volume() == Approx(989.521812));
+    REQUIRE(fac * st_temp.get_virial_pressure() == Approx(26.705578));
+    REQUIRE(fac * st_temp.get_pressure(300) == Approx(28.965914));
+    REQUIRE(fac * st_temp.get_pressure(0) == Approx(26.705578));
 
+    REQUIRE(st == st_temp);
+
+    // Temporary file will be closed automatically
 }
-TEST_CASE( "Testing Structure compare", "[structure_compare]" ) {
-  Structure st;
-  st.read("tests_data/structure_1.dat");
-  std::string tempfile = std::tmpnam(nullptr);
-  st.save(tempfile);
+TEST_CASE("Testing Structure compare", "[structure_compare]") {
+    Structure st;
+    st.read("tests_data/structure_1.dat");
 
-  Structure st_temp;
-  st_temp.read(tempfile);
+    // Create a temporary file
+    std::FILE* tmpFile = std::tmpfile();
+    if (!tmpFile) {
+        FAIL("Unable to create temporary file");
+    }
 
-  SECTION("Compare unchanged") {
-    REQUIRE(st==st_temp);
-  }
-  SECTION("Compare symbols") {
-    REQUIRE(st==st_temp);
-    st_temp.atoms[0].symbol[0]='X';
-    st_temp.atoms[0].symbol[1]='X';
-    REQUIRE(!(st==st_temp));
-  }
-  SECTION("Compare position") {
-    REQUIRE(st==st_temp);
-    st_temp.atoms[0].position(0.12,0.13,10.14);
-    REQUIRE(!(st==st_temp));
-  }
-  SECTION("Compare force") {
-    REQUIRE(st==st_temp);
-    st_temp.atoms[0].force(1.12, 0.13, 0.134);
-    REQUIRE(!(st==st_temp));
-  }
+    const int fd = fileno(tmpFile);
+    REQUIRE(fd != -1);
 
-  std::remove(tempfile.c_str());
+    char tempfile[256];
+    snprintf(tempfile, sizeof(tempfile), "/proc/self/fd/%d", fd);
+
+    st.save(tempfile);
+
+    Structure st_temp;
+    st_temp.read(tempfile);
+
+    SECTION("Compare unchanged") {
+        REQUIRE(st == st_temp);
+    }
+    SECTION("Compare symbols") {
+        REQUIRE(st == st_temp);
+        st_temp.atoms[0].symbol[0] = 'X';
+        st_temp.atoms[0].symbol[1] = 'X';
+        REQUIRE(!(st == st_temp));
+    }
+    SECTION("Compare position") {
+        REQUIRE(st == st_temp);
+        st_temp.atoms[0].position(0.12, 0.13, 10.14);
+        REQUIRE(!(st == st_temp));
+    }
+    SECTION("Compare force") {
+        REQUIRE(st == st_temp);
+        st_temp.atoms[0].force(1.12, 0.13, 0.134);
+        REQUIRE(!(st == st_temp));
+    }
+
+    // Temporary file will be closed automatically
 }
 TEST_CASE( "Testing Structure copy", "[structure_copy]" ) {
   Structure st;

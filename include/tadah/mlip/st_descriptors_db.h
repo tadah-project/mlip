@@ -15,25 +15,34 @@
  *
  */
 struct StDescriptorsDB {
-    std::vector<StDescriptors> st_descs;
-    StDescriptorsDB() {};
+  std::vector<StDescriptors> st_descs;
+  StDescriptorsDB() {};
 
-    /** This constructor fully initialise this object
+  /** This constructor fully initialise this object
      *
      * Requires:
      * - StructureDB st to have all nearest neighbours calculated
      * - Config to contain keys: \ref FORCE, \ref STRESS
      *   and \ref INTERNAL_KEY \ref DSIZE
      */
-    StDescriptorsDB(const StructureDB &stdb, Config &config);
+  StDescriptorsDB(const StructureDB &stdb, Config &config);
 
-    /** Return reference to the n-th StDescriptors
+  /** Return reference to the n-th StDescriptors
      * stored by this object
      */
-    StDescriptors& operator()(const size_t n);
+  StDescriptors& operator()(const size_t n);
 
-    /** Return number of StDescriptors stored */
-    size_t size() const;
+  /** Return number of StDescriptors stored */
+  size_t size() const;
+
+  /** Add StDescriptors to DB */
+  void add(const StDescriptors &st_d);
+
+  // Methods to enable range-based for loop
+  std::vector<StDescriptors>::iterator begin();
+  std::vector<StDescriptors>::iterator end();
+  std::vector<StDescriptors>::const_iterator begin() const;
+  std::vector<StDescriptors>::const_iterator end() const;
 
 };
 #endif
