@@ -38,5 +38,11 @@ struct StDescriptorsDB {
   /** Add StDescriptors to DB */
   void add(const StDescriptors &st_d);
 
+  // Methods to enable range-based for loop
+  std::vector<StDescriptors>::iterator begin();
+  std::vector<StDescriptors>::iterator end();
+  std::vector<StDescriptors>::const_iterator begin() const;
+  std::vector<StDescriptors>::const_iterator end() const;
+
 };
 #endif

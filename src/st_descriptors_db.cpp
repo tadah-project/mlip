@@ -18,3 +18,18 @@ size_t StDescriptorsDB::size() const {
 void StDescriptorsDB::add(const StDescriptors &st_d) {
   st_descs.push_back(st_d);
 }
+std::vector<StDescriptors>::iterator StDescriptorsDB::begin() { 
+    return st_descs.begin(); 
+}
+
+std::vector<StDescriptors>::iterator StDescriptorsDB::end() { 
+    return st_descs.end(); 
+}
+
+std::vector<StDescriptors>::const_iterator StDescriptorsDB::begin() const { 
+    return st_descs.cbegin(); 
+}
+
+std::vector<StDescriptors>::const_iterator StDescriptorsDB::end() const { 
+    return st_descs.cend(); 
+}
