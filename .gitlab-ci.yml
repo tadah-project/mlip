@@ -63,10 +63,3 @@ trigger_job:
   trigger:
     project: tadah/tadah.mlip
     branch: $CI_COMMIT_REF_NAME
-  # GitLab bug:
-  # https://gitlab.com/gitlab-org/gitlab/-/issues/220047
-  # Workaround:
-  inherit:
-    variables: false # this job won't inherit any variables
-  variables: # variables set by this job will still be passed to the child-pipeline
-    inherit: "This comes from the parent pipeline"
