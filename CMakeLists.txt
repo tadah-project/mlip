@@ -7,8 +7,8 @@ project(Tadah.MLIP)
 get_filename_component(MODULE_TEST ${CMAKE_BINARY_DIR} NAME)
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR}
         OR ${MODULE_TEST} STREQUAL "MLIP"
-        )
-    message(FATAL_ERROR "
+)
+  message(FATAL_ERROR "
     In-source builds not allowed.
     Please make a new directory (called a build directory) and run CMake from there.
     You may need to remove CMakeCache.txt and CMakeFiles dir. ")
@@ -19,48 +19,51 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(BUILD_SHARED_LIBS)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if (BUILD_SHARED_LIBS)
-    # Always full RPATH
-    # use, i.e. don't skip the full RPATH for the build tree
-    set(CMAKE_SKIP_BUILD_RPATH FALSE)
+  # Always full RPATH
+  # use, i.e. don't skip the full RPATH for the build tree
+  set(CMAKE_SKIP_BUILD_RPATH FALSE)
 
-    # when building, don't use the install RPATH already
-    # (but later on when installing)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+  # when building, don't use the install RPATH already
+  # (but later on when installing)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 
+  set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
+  # add the automatically determined parts of the RPATH
+  # which point to directories outside the build tree to the install RPATH
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+  # the RPATH to be used when installing, but only if it's not a system directory
+  list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+  if("${isSystemDir}" STREQUAL "-1")
     set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-
-    # add the automatically determined parts of the RPATH
-    # which point to directories outside the build tree to the install RPATH
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-    # the RPATH to be used when installing, but only if it's not a system directory
-    list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
-    if("${isSystemDir}" STREQUAL "-1")
-        set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-    endif("${isSystemDir}" STREQUAL "-1")
+  endif("${isSystemDir}" STREQUAL "-1")
 endif()
 
 include(FetchContent)
 
 if(DEFINED ENV{CI_COMMIT_REF_NAME})
-    set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
+  set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
+elseif(DEFINED ENV{READTHEDOCS})
+  set(GIT_BRANCH "$ENV{READTHEDOCS_VERSION}")
 else()
-    execute_process(
+  execute_process(
     COMMAND git rev-parse --symbolic-full-name --abbrev-ref HEAD
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     OUTPUT_VARIABLE GIT_BRANCH
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
+message(STATUS "${TADAH}.MLIP Using GIT_BRANCH:  ${GIT_BRANCH}.")
 
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
     GIT_TAG origin/${GIT_BRANCH}
-    )
+)
 
 FetchContent_MakeAvailable(Tadah.MODELS)
 
@@ -75,20 +78,20 @@ target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/include)
 target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/external/toml11)
 
 if(TADAH_ENABLE_OPENMP)
-    find_package(OpenMP REQUIRED)
-    target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
+  find_package(OpenMP REQUIRED)
+  target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 if (TADAH_BUILD_MPI)
-    find_package(MPI REQUIRED)
-    target_link_libraries(tadah.mlip PUBLIC MPI::MPI_CXX)
-    add_compile_definitions(TADAH_BUILD_MPI)
+  find_package(MPI REQUIRED)
+  target_link_libraries(tadah.mlip PUBLIC MPI::MPI_CXX)
+  add_compile_definitions(TADAH_BUILD_MPI)
 endif()
 
 
 if(TADAH_BUILD_TESTS)
-    include(CTest) 
-    add_subdirectory(tests)
+  include(CTest) 
+  add_subdirectory(tests)
 endif()
 
 # Installation rules
