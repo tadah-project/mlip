@@ -62,6 +62,7 @@ trigger_job:
   needs: [run-tests-1, build-release-shared, build-release-static]
   trigger:
     project: tadah/tadah.mlip
+    branch: $CI_COMMIT_REF_NAME
   # GitLab bug:
   # https://gitlab.com/gitlab-org/gitlab/-/issues/220047
   # Workaround:
