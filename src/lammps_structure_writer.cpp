@@ -58,6 +58,13 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
 
   // BEGIN LAMMPS BODY
   file << std::endl;
+  file << "Masses" << std::endl;
+  file << std::endl;
+  for (const auto &t: type) {
+    file << t.second << " " << PeriodicTable::get_mass(t.first) << "    # " << t.first << std::endl;
+  }
+
+  file << std::endl;
   file << "Atoms # atomic" << std::endl;
   file << std::endl;
   // atomic: atom-ID [int, 1-Natoms]    atom-type [int, 1-Ntype]    x y z
