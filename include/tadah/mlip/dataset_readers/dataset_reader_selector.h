@@ -15,11 +15,11 @@ public:
   /**
    * @brief Factory method to create specific DatasetReader objects.
    *
-   * @param type The type of the dataset reader to create.
+   * @param filepath File path to check the content.
    * @param db Reference to a StructureDB object to store parsed data.
    * @return A unique pointer to a DatasetReader object.
    */
-  static std::unique_ptr<DatasetReader> get_reader(const std::string& type, StructureDB& db);
+  static std::unique_ptr<DatasetReader> get_reader(const std::string& filepath, StructureDB& db);
 
   /**
    * @brief Determines the file type based on its content.
