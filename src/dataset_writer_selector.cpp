@@ -3,9 +3,6 @@
 #include <tadah/mlip/dataset_writers/vasp_poscar_writer.h>
 #include <tadah/mlip/dataset_writers/lammps_structure_writer.h>
 
-#include <fstream>
-#include <iostream>
-
 // Factory method implementation
 std::unique_ptr<DatasetWriter> DatasetWriterSelector::get_writer(const std::string& type, StructureDB& db) {
 
