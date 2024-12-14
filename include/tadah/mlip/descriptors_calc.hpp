@@ -27,10 +27,10 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &t1, T2 &t2, T
     if (config.get<bool>("BIAS"))
       bias++;
     if (config.get<bool>("INIT2B")) {
-      d2.fidx=bias;
+      d2.set_fidx(bias);
     }
     if (config.get<bool>("INITMB")) {
-      dm.fidx=bias+d2.size();
+      dm.set_fidx(bias+d2.size());
     }
   }
 }
@@ -112,7 +112,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
     if (!config.exist("TYPE2B"))
       config.add("TYPE2B",d2.label());
     dsize+=d2.size();
-    d2.fidx=bias;
+    d2.set_fidx(bias);
   }
   else {
     config.add("SIZE2B",0);
@@ -133,7 +133,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
     if (!config.exist("TYPEMB"))
       config.add("TYPEMB",dm.label());
     dsize+=dm.size();
-    dm.fidx=bias+d2.size();
+    dm.set_fidx(bias+d2.size());
   }
   else {
     config.add("SIZEMB",0);
