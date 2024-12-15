@@ -34,27 +34,42 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2B"));
-    if (!config.exist("RCTYPE2B"))
+    if (!config.exist("RCTYPE2B")) {
       config.add("RCTYPE2B",c2.label());
+      d2.set_fcut(&c2,false);
+    }
   }
   else {
     c2 = C2(0);
+    if (!config.exist("RCTYPE2B")) {
+      d2.set_fcut(&c2,false);
+    }
   }
   if (c.get<bool>("INIT3B")) {
     c3 = C3(c.get<double>("RCUT3B"));
-    if (!config.exist("RCTYPE3B"))
+    if (!config.exist("RCTYPE3B")) {
       config.add("RCTYPE3B",c3.label());
+      d3.set_fcut(&c3,false);
+    }
   }
   else {
     c3 = C3(0);
+    if (!config.exist("RCTYPE3B")) {
+      d3.set_fcut(&c3,false);
+    }
   }
   if (c.get<bool>("INITMB")) {
     cm = CM(c.get<double>("RCUTMB"));
-    if (!config.exist("RCTYPEMB"))
+    if (!config.exist("RCTYPEMB")) {
       config.add("RCTYPEMB",cm.label());
+      dm.set_fcut(&cm,false);
+    }
   }
   else {
     cm = CM(0);
+    if (!config.exist("RCTYPEMB")) {
+      dm.set_fcut(&cm,false);
+    }
   }
 }
 
@@ -70,16 +85,22 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &d2, T2 &d3, T
   dm(dm)
 {
   if (c.get<bool>("INIT2B")) {
-    if (!config.exist("RCTYPE2B"))
+    if (!config.exist("RCTYPE2B")) {
       config.add("RCTYPE2B",c2.label());
+      d2.set_fcut(&c2,false);
+    }
   }
   if (c.get<bool>("INIT3B")) {
-    if (!config.exist("RCTYPE3B"))
+    if (!config.exist("RCTYPE3B")) {
       config.add("RCTYPE3B",c3.label());
+      d3.set_fcut(&c3,false);
+    }
   }
   if (c.get<bool>("INITMB")) {
-    if (!config.exist("RCTYPEMB"))
+    if (!config.exist("RCTYPEMB")) {
       config.add("RCTYPEMB",cm.label());
+      dm.set_fcut(&cm,false);
+    }
   }
 
   if (!config.exist("DSIZE"))
