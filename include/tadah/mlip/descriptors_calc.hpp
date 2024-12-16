@@ -272,18 +272,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
         // CALCULATE MANY-BODY TERM
         if (rij_sq <= rcut_mb_sq && initmb) {
           rho_type& rhoi = st_d.get_rho(i);
-          int mode = dm.calc_dXijdri(Zj,rij,rij_sq,delij,rhoi,fd_ij);
-          if (mode==0) {
-            // some dm compute x-dir only, similarly to d2 above
-            for (size_t n=size2b+bias; n<size2b+sizemb+bias; ++n) {
-              fd_ij(n,0) *= rij_inv;
-              fd_ij(n,1) = fd_ij(n,0);
-              fd_ij(n,2) = fd_ij(n,0);
-              fd_ij(n,0) *= delij[0];
-              fd_ij(n,1) *= delij[1];
-              fd_ij(n,2) *= delij[2];
-            }
-          }
+          dm.calc_dXijdri(Zj,rij,rij_sq,delij,rhoi,fd_ij);
         }
       }
       else {
