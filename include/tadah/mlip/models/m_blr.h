@@ -147,7 +147,6 @@ public:
     c.remove("VERBOSE");
     c.add("VERBOSE", 0);
 
-    c.clear_internal_keys();
     c.remove("MODEL");
     c.add("MODEL", label);
     c.add("MODEL", bf.get_label());
@@ -164,6 +163,7 @@ public:
         c.add("NSTDEV", norm.std_dev[i]);
       }
     }
+    c.clear_internal_keys();
     return c;
   }
   StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,

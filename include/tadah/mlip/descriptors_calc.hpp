@@ -33,7 +33,7 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
   DescriptorsCalc(c,c,c,c)
 {
   if (c.get<bool>("INIT2B")) {
-    c2 = C2(c.get<double>("RCUT2B"));
+    c2 = C2(c.get<double>("RCUT2BMAX"));
     if (!config.exist("RCTYPE2B")) {
       config.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
@@ -46,7 +46,7 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
     }
   }
   if (c.get<bool>("INIT3B")) {
-    c3 = C3(c.get<double>("RCUT3B"));
+    c3 = C3(c.get<double>("RCUT3BMAX"));
     if (!config.exist("RCTYPE3B")) {
       config.add("RCTYPE3B",c3.label());
       d3.set_fcut(&c3,false);
@@ -59,7 +59,7 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
     }
   }
   if (c.get<bool>("INITMB")) {
-    cm = CM(c.get<double>("RCUTMB"));
+    cm = CM(c.get<double>("RCUTMBMAX"));
     if (!config.exist("RCTYPEMB")) {
       config.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
@@ -158,7 +158,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
-  double rcut_mb_sq = pow(config.get<double>("RCUTMB"),2);
+  double rcut_mb_sq = pow(config.get<double>("RCUTMBMAX"),2);
   rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
   rhos.resize(s,st.natoms());
