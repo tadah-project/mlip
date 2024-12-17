@@ -5,7 +5,7 @@
 
 DM_Kern_Base::~DM_Kern_Base() {}
 DM_Kern_Base::DM_Kern_Base() {}
-DM_Kern_Base::DM_Kern_Base(const Config &c): DM_Function_Base(c), Kern_Base(c) {}
+DM_Kern_Base::DM_Kern_Base(const Config &c): Kern_Base(c), DM_Function_Base(c) {}
 size_t DM_Kern_Base::get_phi_cols(const Config &)
 {
   return basis.cols();
