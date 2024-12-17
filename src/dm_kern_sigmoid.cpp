@@ -6,6 +6,7 @@
 DM_Kern_Sigmoid::DM_Kern_Sigmoid()
 {}
 DM_Kern_Sigmoid::DM_Kern_Sigmoid(const Config &c):
+  Function_Base(c), 
   DM_Kern_Base(c),
   Kern_Sigmoid(c)
 {}

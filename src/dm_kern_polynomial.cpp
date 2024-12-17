@@ -6,6 +6,7 @@
 DM_Kern_Polynomial::DM_Kern_Polynomial()
 {}
 DM_Kern_Polynomial::DM_Kern_Polynomial(const Config &c):
+  Function_Base(c), 
   DM_Kern_Base(c),
   Kern_Polynomial(c)
 {}

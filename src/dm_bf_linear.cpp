@@ -4,7 +4,10 @@
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
 
 DM_BF_Linear::DM_BF_Linear() {}
-DM_BF_Linear::DM_BF_Linear(const Config &c): DM_BF_Base(c), BF_Linear(c)
+DM_BF_Linear::DM_BF_Linear(const Config &c): 
+  Function_Base(c), 
+  DM_BF_Base(c),
+  BF_Linear(c)
 {}
 size_t DM_BF_Linear::get_phi_cols(const Config &config)
 {

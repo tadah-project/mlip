@@ -1,11 +1,15 @@
 #include "tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h"
+#include "tadah/models/functions/function_base.h"
 #include <tadah/mlip/design_matrix/functions/basis_functions/dm_bf_polynomial2.h>
 
 //CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "BF_Polynomial2" );
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "BF_Polynomial2" );
 
 DM_BF_Polynomial2::DM_BF_Polynomial2() {}
-DM_BF_Polynomial2::DM_BF_Polynomial2(const Config &c): DM_BF_Base(c), BF_Polynomial2(c)
+DM_BF_Polynomial2::DM_BF_Polynomial2(const Config &c): 
+  Function_Base(c),
+  DM_BF_Base(c),
+  BF_Polynomial2(c)
 {}
 size_t DM_BF_Polynomial2::get_phi_cols(const Config &config)
 {

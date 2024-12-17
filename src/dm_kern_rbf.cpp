@@ -6,6 +6,7 @@
 DM_Kern_RBF::DM_Kern_RBF()
 {}
 DM_Kern_RBF::DM_Kern_RBF(const Config &c):
+  Function_Base(c), 
   DM_Kern_Base(c),
   Kern_RBF(c)
 {}
