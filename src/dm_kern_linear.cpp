@@ -1,10 +1,11 @@
+#include "tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h"
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_linear.h>
 
 //CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "Kern_Linear" );
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "Kern_Linear" );
 
 DM_Kern_Linear::DM_Kern_Linear() {}
-DM_Kern_Linear::DM_Kern_Linear (const Config &c): Kern_Linear(c)
+DM_Kern_Linear::DM_Kern_Linear (const Config &c): DM_Kern_Base(c), Kern_Linear(c)
 {}
 size_t DM_Kern_Linear::get_phi_cols(const Config &config)
 {
