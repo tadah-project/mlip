@@ -216,7 +216,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 
   // zero all aeds and set bias
   for (size_t i=0; i<st.natoms(); ++i) {
-    aed_type2 &aed = st_d.get_aed(i);
+    aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -226,7 +226,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   // can be calculated
   if (initmb) {
     for (size_t i=0; i<st.natoms(); ++i) {
-      aed_type2 &aed = st_d.get_aed(i);
+      aed_type &aed = st_d.get_aed(i);
       rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }
@@ -238,7 +238,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
     const Atom &a1 = st(i);
-    aed_type2 &aed = st_d.get_aed(i);
+    aed_type &aed = st_d.get_aed(i);
 
     for (size_t jj=0; jj<st.nn_size(i); ++jj) {
       const Vec3d &a2pos = st.nn_pos(i,jj);
@@ -356,7 +356,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
   // zero all aeds+rho and set bias
   for (size_t i=0; i<4; ++i) {
-    aed_type2 &aed = st_d.get_aed(i);
+    aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -401,7 +401,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   // calculate many-body aed
   if (initmb) {
     for (size_t i=0; i<4; ++i) {
-      aed_type2 &aed = st_d.get_aed(i);
+      aed_type &aed = st_d.get_aed(i);
       rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }

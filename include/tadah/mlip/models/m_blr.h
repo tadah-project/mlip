@@ -76,15 +76,15 @@ public:
     norm = Normaliser(c);
   }
 
-  double epredict(const aed_type2 &aed) const{
+  double epredict(const aed_type &aed) const{
     return bf.epredict(weights,aed);
   };
 
-  double fpredict(const fd_type &fdij, const aed_type2 &aedi, const size_t k) const{
+  double fpredict(const fd_type &fdij, const aed_type &aedi, const size_t k) const{
     return bf.fpredict(weights,fdij,aedi,k);
   }
 
-  force_type fpredict(const fd_type &fdij, const aed_type2 &aedi) const{
+  force_type fpredict(const fd_type &fdij, const aed_type &aedi) const{
     return bf.fpredict(weights,fdij,aedi);
   }
 
@@ -167,7 +167,7 @@ public:
     return c;
   }
   StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-                      aed_type2 &predicted_error) {
+                      aed_type &predicted_error) {
 
     LinearRegressor::read_sigma(config_pred,Sigma);
     DesignMatrix<BF> dm(bf,config_pred);
@@ -178,7 +178,7 @@ public:
     double pmean = sqrt(predicted_error.mean());
 
     // compute energy, forces and stresses
-    aed_type2 Tpred = T_dgemv(dm.Phi, weights);
+    aed_type Tpred = T_dgemv(dm.Phi, weights);
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -218,7 +218,7 @@ Hint: check different predict() methods.");
     //std::cout << Phi.row(0) << std::endl;
 
     // compute energy, forces and stresses
-    aed_type2 Tpred = T_dgemv(Phi, weights);
+    aed_type Tpred = T_dgemv(Phi, weights);
 
     double eweightglob=config.template get<double>("EWEIGHT");
     double fweightglob=config.template get<double>("FWEIGHT");

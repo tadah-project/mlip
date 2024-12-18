@@ -5,7 +5,7 @@
 
 /** Some basis statistical tools */
 class Statistics {
-    using vec = aed_type2;
+    using vec = aed_type;
     public:
         /** Residual sum of squares. */
         static double res_sum_sq(const vec &obs, const vec &pred);

@@ -56,7 +56,7 @@ larger than the amount of available AEDs\n");
     for (size_t i=1; i<s; ++i) {
       size_t st = std::get<0>(indices[i]);
       size_t a = std::get<1>(indices[i]);
-      const aed_type2 &aed = st_desc_db(st).get_aed(a);
+      const aed_type &aed = st_desc_db(st).get_aed(a);
       for (size_t j=0; j<aed.size(); ++j) {
         b(j,i)=aed[j];
       }
@@ -97,7 +97,7 @@ larger than the amount of available AEDs\n");
       const size_t st = indices[i];
       T(i)=stdb(st).energy/st_desc_db(st).naed();
       for( size_t a=0; a<st_desc_db(st).naed(); a++ ) {
-        const aed_type2 &aed = st_desc_db(st).get_aed(a);
+        const aed_type &aed = st_desc_db(st).get_aed(a);
         for (size_t j=0; j<aed.size(); ++j) {
           b(j,i)+=aed[j]/st_desc_db(st).naed();
         }

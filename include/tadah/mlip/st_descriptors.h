@@ -69,8 +69,8 @@ struct StDescriptors {
 
     rhos_type rhos;
 
-    aed_type2 & get_aed(const size_t i);
-    const aed_type2 &get_aed(const size_t i) const;
+    aed_type & get_aed(const size_t i);
+    const aed_type &get_aed(const size_t i) const;
     rho_type& get_rho(const size_t i);
 
     size_t naed() const;

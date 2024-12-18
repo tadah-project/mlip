@@ -27,13 +27,13 @@ void  DM_Kern_Base::calc_phi_energy_row(phi_type &Phi, size_t &row, const double
 void  DM_Kern_Base::calc_phi_force_rows(phi_type &Phi, size_t &row, const double fac,
                                         const Structure &st, const StDescriptors &st_d) {
   for (size_t i=0; i<st.natoms(); ++i) {
-    const aed_type2& aedi = st_d.get_aed(i);
+    const aed_type& aedi = st_d.get_aed(i);
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
       size_t j=st.near_neigh_idx[i][jj];
       size_t ii = st.get_nn_iindex(i,j,jj);
       const fd_type &fdji = st_d.fd[j][ii];
       const fd_type &fdij = st_d.fd[i][jj];
-      const aed_type2& aedj = st_d.get_aed(j);
+      const aed_type& aedj = st_d.get_aed(j);
       for (size_t b=0; b<basis.cols(); ++b) {
         for (size_t k=0; k<3; ++k) {
           Phi(row+k,b) -= fac*((*this).prime(basis.col(b), aedi,fdij(k)) -
@@ -50,13 +50,13 @@ void  DM_Kern_Base::calc_phi_stress_rows(phi_type &Phi, size_t &row, const doubl
   double V_inv = 1/st.get_volume();
   for (size_t i=0; i<st.natoms(); ++i) {
     const Vec3d &ri = st(i).position;
-    const aed_type2& aedi = st_d.get_aed(i);
+    const aed_type& aedi = st_d.get_aed(i);
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
       size_t j=st.near_neigh_idx[i][jj];
       size_t ii = st.get_nn_iindex(i,j,jj);
       const fd_type &fdji = st_d.fd[j][ii];
       const fd_type &fdij = st_d.fd[i][jj];
-      const aed_type2& aedj = st_d.get_aed(j);
+      const aed_type& aedj = st_d.get_aed(j);
       const Vec3d &rj = st.nn_pos(i,jj);
       size_t mn=0;
       for (size_t x=0; x<3; ++x) {
