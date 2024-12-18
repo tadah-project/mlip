@@ -258,12 +258,12 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
       if (use_force || use_stress) {
         fd_type &fd_ij = st_d.fd[i][jj];
         if (rij_sq <= rcut_2b_sq && init2b) {
-          d2.calc_all(Zj,rij,rij_sq,aed,fd_ij);
+          d2.calc_all(Zj,rij,rij_sq,aed,fd_ij,0.5);
           // Two-body descriptor calculates x-direction only - fd_ij(n,0)
           // so we have to copy x-dir to y- and z-dir
           // and scale them by the unit directional vector delij/rij.
           for (size_t n=bias; n<size2b+bias; ++n) {
-            fd_ij(n,0) *= 0.5*rij_inv;
+            fd_ij(n,0) *= rij_inv;
             fd_ij(n,1) = fd_ij(n,0)*delij[1];
             fd_ij(n,2) = fd_ij(n,0)*delij[2];
             fd_ij(n,0) *= delij[0];
@@ -277,19 +277,19 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
       }
       else {
         if (rij_sq <= rcut_2b_sq && init2b) {
-          d2.calc_aed(Zj,rij,rij_sq,aed);
+          d2.calc_aed(Zj,rij,rij_sq,aed,0.5);
         }
       }
 
     }
   }
-  if (init2b) {
-    for (size_t n=0; n<st.natoms(); ++n) {
-      for(size_t s=bias; s<bias+d2.size(); ++s) {
-        st_d.get_aed(n)(s) *= 0.5;
-      }
-    }
-  }
+  // if (init2b) {
+  //   for (size_t n=0; n<st.natoms(); ++n) {
+  //     for(size_t s=bias; s<bias+d2.size(); ++s) {
+  //       st_d.get_aed(n)(s) *= 0.5;
+  //     }
+  //   }
+  // }
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
