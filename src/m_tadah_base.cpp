@@ -153,8 +153,8 @@ stress_force_predict(const StDescriptors &std, Structure &st_)
       const force_type fij = fpredict(fdij,aedi);
       const force_type fji = fpredict(fdji,aedj);
 
-      v += fpredict(fdij,aedi);
-      v -= fpredict(fdji,aedj);
+      v += fij;
+      v -= fji;
 
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
