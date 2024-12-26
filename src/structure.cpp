@@ -53,8 +53,17 @@ int Structure::read(std::ifstream &ifs) {
     stream.clear();
     stream.seekg(0, std::ios::beg);
     stream >> eweight >> fweight >> sweight;
-    // energy
-    ifs >> energy;
+    std::getline(ifs,line);
+    std::stringstream stream2(line);
+    // energy and T
+    stream2 >> energy;
+    if(stream2) stream2 >> T;
+  }
+  else if (count == 2) {
+    stream.clear();
+    stream.seekg(0, std::ios::beg);
+    // energy and T
+    stream >> energy >> T;
   }
   else {
     energy = std::stod(line);
@@ -262,7 +271,7 @@ void Structure::dump_to_file(std::ostream& file, size_t prec) const {
   file << label << std::endl;
   file << std::fixed << std::setprecision(prec);
   file << eweight << " " << fweight << " " << sweight << std::endl;
-  file << energy << std::endl;
+  file << energy << " " << T << std::endl;
 
   file
     << std::setw(prec+n) << cell(0,0) << " "

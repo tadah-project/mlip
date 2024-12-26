@@ -41,12 +41,11 @@ std::string DatasetReaderSelector::determine_file_type_by_content(const std::str
   std::string line;
   while (std::getline(file, line)) {
 
-    if (line.find("vasp") != std::string::npos) {
-      if (line.find("incar:") != std::string::npos || line.find("outcar") != std::string::npos) {
-        return "VASP.OUTCAR";
-      } else if (line.find("<modeling>") != std::string::npos || line.find("<calculation>") != std::string::npos) {
-        return "VASP.VASPRUN";
-      }
+    if (line.find("incar:") != std::string::npos ||  line.find("OUTCAR:") != std::string::npos ||
+      line.find("outcar") != std::string::npos || line.find("POTCAR:") != std::string::npos) {
+      return "VASP.OUTCAR";
+    } else if (line.find("<modeling>") != std::string::npos || line.find("<calculation>") != std::string::npos) {
+      return "VASP.VASPRUN";
     }
     else if (line.find("<-- c") != std::string::npos) {
       return "CASTEP.GEOM";

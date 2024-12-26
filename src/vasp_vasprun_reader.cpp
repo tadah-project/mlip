@@ -25,6 +25,8 @@ void VaspVasprunReader::read_data(const std::string& filename) {
   } catch (std::exception &e) {
     std::cerr << "Error reading file: " << e.what() << std::endl;
   }
+
+  _s.label = filename + " ";
 }
 
 void VaspVasprunReader::parse_data() {
@@ -83,6 +85,7 @@ void VaspVasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
 }
 
 void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
+  size_t counter=0;
   for (auto calculation_node = root_node->first_node("calculation");
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
@@ -102,6 +105,7 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
 
     extract_forces(calculation_node);
 
+    _s.label += "Structure " + std::to_string(++counter);
     stdb.add(_s);
     _s = Structure(); // reset
   }
@@ -140,12 +144,12 @@ void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) 
           _s.stress(r, 0) = x;
           _s.stress(r, 1) = y;
           _s.stress(r, 2) = z;
-          _s.stress *= s_conv;
         } else {
           std::cerr << "Error parsing stress tensor components." << std::endl;
         }
         r++;
       }
+      _s.stress *= s_conv;
       break;
     }
     varray_node = varray_node->next_sibling("varray");

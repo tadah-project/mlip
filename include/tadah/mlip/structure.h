@@ -62,6 +62,12 @@ struct Structure {
   /** Container for atoms which belong to this structure */
   std::vector<Atom> atoms;
 
+  /** Temperature of this structure.
+   *
+   * Default is 0.0
+   */
+  double T=0;
+
   /**
    * Container for nearest neighbour atoms for every atom in the structure.
    */
