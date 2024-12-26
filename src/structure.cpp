@@ -173,6 +173,14 @@ size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj)
 double Structure::get_volume() const {
   return cell.row(0)*(cell.row(1).cross(cell.row(2)));
 }
+double Structure::get_density() const {
+  double V = cell.row(0)*(cell.row(1).cross(cell.row(2)));
+  V*=1e-24; // convert to cm^3
+  double amu = 1.66053906660e-24; // g
+  double mass = 0;
+  for (const auto& a:atoms) mass += PeriodicTable::get_mass(a.Z);
+  return amu*mass/V;
+}
 
 double Structure::get_virial_pressure() const {
   return stress.trace()/get_volume()/3;

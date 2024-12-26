@@ -137,6 +137,9 @@ struct Structure {
   /** @return volume of this structure. */
   double get_volume() const;
 
+  /** @return density of this structure in g/cm^3 */
+  double get_density() const;
+
   /** @return virial pressure calculated from the stress tensor.
    *
    *  Units: energy/distance^3
