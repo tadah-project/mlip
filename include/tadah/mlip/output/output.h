@@ -45,7 +45,7 @@ class Output {
 
             out_unc.close();
         }
-        void print_predict_all(StructureDB &stdb, StructureDB &stpred, aed_type2 & predicted_error) {
+        void print_predict_all(StructureDB &stdb, StructureDB &stpred, aed_type & predicted_error) {
             std::ofstream out_error("error.pred");
             std::ofstream out_energy("energy.pred");
             std::ofstream out_force("forces.pred");

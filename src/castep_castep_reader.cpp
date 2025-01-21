@@ -245,12 +245,20 @@ void CastepCastepReader::parse_data() {
     }
 
     else if (line.find("Potential Energy:") != std::string::npos) {
-      // MD: end of iteration
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
+      }
+    }
+    else if (line.find("Temperature:") != std::string::npos) {
+      // MD: end of iteration
+      std::istringstream iss(line);
+      std::string tmp;
+      if (!(iss >> tmp >> tmp >> s.T)) {
+        std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
+        std::cerr << "Warning: Unexpected end of data when reading temperature" << std::endl;
       }
 
       if (!label.size())label = "CASTEP MD, const. volume: false, step: 0"; // the last option

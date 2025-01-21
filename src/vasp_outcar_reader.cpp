@@ -10,7 +10,7 @@
 VaspOutcarReader::VaspOutcarReader(StructureDB& db) : DatasetReader(db) {}
 
 VaspOutcarReader::VaspOutcarReader(StructureDB& db, const std::string& filename) 
-: DatasetReader(db, filename) {
+: DatasetReader(db, filename), filename_(filename) {
   read_data(filename);
 }
 
@@ -38,14 +38,21 @@ void VaspOutcarReader::parse_data() {
   size_t natoms;;
   bool stress_tensor_bool = false;
   bool complete_structure = false;
+  bool is_md = false;
 
   Structure s;
+  size_t counter=0;
 
   while (std::getline(stream, line)) {
-    if (line.find("VRHFIN") != std::string::npos) {
+    if (line.find("molecular dynamics") != std::string::npos) {
+      is_md = true;
+      s.label += "MD ";
+    }
+    else if (line.find("VRHFIN") != std::string::npos) {
       std::string type = line.substr(line.find("=") + 1);
       type = type.substr(0, type.find(":"));
       atom_types.push_back(type);
+      s.label += filename_ + " ";
     }
 
     else if (line.find("NIONS") != std::string::npos) {
@@ -164,8 +171,20 @@ void VaspOutcarReader::parse_data() {
       if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
         std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
       }
+      else if (!is_md) {
+        complete_structure = true;
+        s.label += "Structure " + std::to_string(++counter);
+      }
+    }
+    else if (line.find("EKIN_LAT=") != std::string::npos) {
+      std::istringstream iss(line);
+      std::string tmp;
+      if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.T)) {
+        std::cerr << "Warning: Unexpected end of data when reading temperature" << std::endl;
+      }
       else {
         complete_structure = true;
+        s.label += "Structure " + std::to_string(++counter);
       }
     }
 

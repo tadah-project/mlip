@@ -4,7 +4,10 @@
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
 
 DM_BF_Linear::DM_BF_Linear() {}
-DM_BF_Linear::DM_BF_Linear(const Config &c): BF_Linear(c)
+DM_BF_Linear::DM_BF_Linear(const Config &c): 
+  Function_Base(c), 
+  DM_BF_Base(c),
+  BF_Linear(c)
 {}
 size_t DM_BF_Linear::get_phi_cols(const Config &config)
 {
@@ -15,7 +18,7 @@ void DM_BF_Linear::calc_phi_energy_row(phi_type &Phi, size_t &row,
                                        const double fac, const Structure &, const StDescriptors &st_d)
 {
   for (size_t i=0; i<st_d.naed(); ++i) {
-    const aed_type2 &aed = st_d.get_aed(i);
+    const aed_type &aed = st_d.get_aed(i);
     for (size_t j=0; j<aed.size(); ++j) {
       Phi(row,j)+=aed[j]*fac;
     }

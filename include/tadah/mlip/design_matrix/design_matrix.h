@@ -294,7 +294,7 @@ private:
     if (stress) {
       for (size_t j=0; j<6; ++j) {
         s_std_dev[j] = svec.col(j).std_dev(svec.col(j).mean(), svec.col(j).size()-1);
-        if (verbose) std::cout << "Stress standard deviation (eV): " << s_std_dev[j] << std::endl;
+        if (verbose) std::cout << "Stress standard deviation (eV/A^3): " << s_std_dev[j] << std::endl;
       }
     }
 
@@ -314,7 +314,7 @@ private:
       // e_std_dev has units of energy
       // f_std_dev has units of inverse distance
       f_std_dev = fvec.std_dev(fvec.mean(),fvec.size()-1);
-      if (verbose) std::cout << "Force standard deviation (1/A): " << f_std_dev << std::endl;
+      if (verbose) std::cout << "Force standard deviation (A^-1): " << f_std_dev << std::endl;
     }
 
     config.add("ESTDEV",e_std_dev);

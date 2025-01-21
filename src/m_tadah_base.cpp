@@ -9,8 +9,8 @@ fpredict(const size_t a, force_type &v,
     const size_t aa = st.get_nn_iindex(a,j,jj);
     const fd_type &fdji = std.fd[j][aa];
     const fd_type &fdij = std.fd[a][jj];
-    const aed_type2 &aedi = std.get_aed(a);
-    const aed_type2 &aedj = std.get_aed(j);
+    const aed_type &aedi = std.get_aed(a);
+    const aed_type &aedj = std.get_aed(j);
     v += fpredict(fdij,aedi);
     v -= fpredict(fdji,aedj);
   }
@@ -111,14 +111,14 @@ spredict(const size_t a, stress_type &s,
 {
   double V_inv = 1/st.get_volume();
   const Vec3d &ri = st.atoms[a].position;
-  const aed_type2 &aedi = std.get_aed(a);
+  const aed_type &aedi = std.get_aed(a);
   for (size_t jj=0; jj<st.nn_size(a); ++jj) {
     size_t j=st.near_neigh_idx[a][jj];
     const size_t aa = st.get_nn_iindex(a,j,jj);
     const Vec3d &rj = st.nn_pos(a,jj);
     const fd_type &fdij = std.fd[a][jj];
     const fd_type &fdji = std.fd[j][aa];
-    const aed_type2 &aedj = std.get_aed(j);
+    const aed_type &aedj = std.get_aed(j);
     const force_type fij = fpredict(fdij,aedi);
     const force_type fji = fpredict(fdji,aedj);
 
@@ -142,19 +142,19 @@ stress_force_predict(const StDescriptors &std, Structure &st_)
   for (size_t a=0; a<st_.natoms(); ++a) {
     force_type v;
     const Vec3d &ri = st_.atoms[a].position;
-    const aed_type2 &aedi = std.get_aed(a);
+    const aed_type &aedi = std.get_aed(a);
     for (size_t jj=0; jj<st_.nn_size(a); ++jj) {
       size_t j=st_.near_neigh_idx[a][jj];
       const size_t aa = st_.get_nn_iindex(a,j,jj);
       const Vec3d &rj = st_.nn_pos(a,jj);
       const fd_type &fdij = std.fd[a][jj];
       const fd_type &fdji = std.fd[j][aa];
-      const aed_type2 &aedj = std.get_aed(j);
+      const aed_type &aedj = std.get_aed(j);
       const force_type fij = fpredict(fdij,aedi);
       const force_type fji = fpredict(fdji,aedj);
 
-      v += fpredict(fdij,aedi);
-      v -= fpredict(fdji,aedj);
+      v += fij;
+      v -= fji;
 
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {

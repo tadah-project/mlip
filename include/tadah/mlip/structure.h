@@ -62,6 +62,12 @@ struct Structure {
   /** Container for atoms which belong to this structure */
   std::vector<Atom> atoms;
 
+  /** Temperature of this structure.
+   *
+   * Default is 0.0
+   */
+  double T=0;
+
   /**
    * Container for nearest neighbour atoms for every atom in the structure.
    */
@@ -130,6 +136,9 @@ struct Structure {
 
   /** @return volume of this structure. */
   double get_volume() const;
+
+  /** @return density of this structure in g/cm^3 */
+  double get_density() const;
 
   /** @return virial pressure calculated from the stress tensor.
    *

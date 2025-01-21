@@ -1,10 +1,14 @@
+#include "tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h"
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_linear.h>
 
 //CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "Kern_Linear" );
 //CONFIG::Registry<DM_Function_Base,Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "Kern_Linear" );
 
 DM_Kern_Linear::DM_Kern_Linear() {}
-DM_Kern_Linear::DM_Kern_Linear (const Config &c): Kern_Linear(c)
+DM_Kern_Linear::DM_Kern_Linear (const Config &c): 
+  Function_Base(c),
+  DM_Kern_Base(c),
+  Kern_Linear(c)
 {}
 size_t DM_Kern_Linear::get_phi_cols(const Config &config)
 {
@@ -15,7 +19,7 @@ void DM_Kern_Linear::calc_phi_energy_row(phi_type &Phi, size_t &row,
                                          const double fac, const Structure &, const StDescriptors &st_d)
 {
   for (size_t a=0; a<st_d.naed();++a) {
-    const aed_type2 &aed = st_d.get_aed(a);  // TODO
+    const aed_type &aed = st_d.get_aed(a);  // TODO
     for (size_t j=0; j<aed.size(); ++j) {
       Phi(row,j)+=aed[j]*fac;
     }
@@ -30,7 +34,7 @@ void DM_Kern_Linear::calc_phi_force_rows(phi_type &Phi, size_t &row,
       const size_t j=st.near_neigh_idx[a][jj];
       const size_t aa = st.get_nn_iindex(a,j,jj);
       for (size_t k=0; k<3; ++k) {
-        aed_type2 temp = (st_d.fd[a][jj](k)-
+        aed_type temp = (st_d.fd[a][jj](k)-
           st_d.fd[j][aa](k))*fac;
         for (size_t d=0; d<temp.size(); ++d) {
           Phi(row+k,d) -= temp[d];
@@ -56,7 +60,7 @@ void DM_Kern_Linear::calc_phi_stress_rows(phi_type &Phi, size_t &row,
       size_t mn=0;
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
-          aed_type2 temp = V_inv*(fdij(y)-fdji(y))*0.5*fac[mn]*(ri(x)-rj(x));
+          aed_type temp = V_inv*(fdij(y)-fdji(y))*0.5*fac[mn]*(ri(x)-rj(x));
           for (size_t d=0; d<temp.size(); ++d) {
             Phi(row+mn,d) += temp[d];
           }

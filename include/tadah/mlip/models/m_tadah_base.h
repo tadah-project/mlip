@@ -29,11 +29,11 @@ public:
   double epredict(const StDescriptors &std);
 
   ///** \brief Predict force between a pair of atoms in a k-direction. */
-  //virtual double fpredict(const fd_type &fdij, const aed_type2 &aedi, size_t k)=0;
+  //virtual double fpredict(const fd_type &fdij, const aed_type &aedi, size_t k)=0;
 
   ///** \brief Predict force between a pair of atoms. */
   //virtual force_type fpredict(const fd_type &fdij,
-  //        const aed_type2 &aedi)=0;
+  //        const aed_type &aedi)=0;
 
   /** \brief Predict total force on an atom a. */
   virtual void fpredict(const size_t a, force_type &v,
@@ -96,7 +96,7 @@ public:
   virtual void train(StDescriptorsDB &, const StructureDB &) {};
 
   virtual StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-                              aed_type2 &predicted_error)=0;
+                              aed_type &predicted_error)=0;
 
   virtual StructureDB predict(StructureDB &stdb)=0;
 

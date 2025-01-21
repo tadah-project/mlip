@@ -46,7 +46,7 @@ void CastepMDReader::postproc_structure(Structure &s) {
   // finish conversion
   s.cell *= d_conv;
   s.stress *= s_conv;
-  // T /= k_b;
+  s.T = T/k_b;
 
   // add to database
   stdb.add(s);
@@ -101,17 +101,18 @@ void CastepMDReader::parse_data() {
   int S_flag=0;
   bool R_flag=false;
   bool F_flag=false;
+  bool T_flag=false;
   bool complete_structure=false;
 
   while (std::getline(stream, line)) {
     if (ends_with(line,"<-- T")) {
-      if (/* T_flag || */ complete_structure) {
+      if (T_flag || complete_structure) {
         error=true;
         continue;
       }
       std::istringstream iss(line);
       iss >> T;
-      //T_flag=true;
+      T_flag=true;
     }
     else if (ends_with(line,"<-- E")) {
       if (/* T_flag || */ E_flag || complete_structure) {
@@ -187,7 +188,7 @@ void CastepMDReader::parse_data() {
         postproc_structure(s);
 
       error=false;
-      //T_flag=false;
+      T_flag=false;
       E_flag=false;
       H_flag=0;
       S_flag=0;

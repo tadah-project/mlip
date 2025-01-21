@@ -105,7 +105,6 @@ class DescriptorsCalc: public DC_Base {
         /** Calculate all descriptors in a StructureDB st_db */
         StDescriptorsDB calc(const StructureDB &st_db);
 
-
         /** Calculate density vector for the structure */
         void calc_rho(const Structure &st, StDescriptors &std);
 
@@ -122,8 +121,6 @@ class DescriptorsCalc: public DC_Base {
         void calc(const Structure &st, StDescriptors &std);
         void calc_dimer(const Structure &st, StDescriptors &std);
         void common_constructor();
-        double weights[119];  // ignore zero index; w[1]->H
-
 };
 
 #include "descriptors_calc.hpp"

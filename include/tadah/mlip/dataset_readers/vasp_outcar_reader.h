@@ -73,6 +73,7 @@ public:
 
 private:
   std::string raw_data_;  // Stores raw file data
+  std::string filename_;  // Stores raw file data
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 
