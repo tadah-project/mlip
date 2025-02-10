@@ -78,6 +78,26 @@ t_type Analytics::calc_s_mae() const {
     return smae_vec;
 }
 
+t_type Analytics::calc_e_rrmse() const {
+  t_type errmse_vec(st.dbidx.size()-1);
+  double errmse=0;
+  size_t dbidx=0;
+  size_t N=0;
+  for (size_t i=0; i<st.size(); ++i) {
+    if (st(i).energy != 0.0) {
+      errmse += std::pow((st(i).energy - stp(i).energy)/st(i).energy,2);
+      N++;
+    }
+    if (i+1==st.dbidx[dbidx+1]) {
+      errmse_vec(dbidx)=std::sqrt(errmse/N);
+      errmse=0;
+      N=0;
+      dbidx++;
+    }
+  }
+  return errmse_vec;
+}
+
 t_type Analytics::calc_e_rmse() const{
 
     t_type ermse_vec(st.dbidx.size()-1);

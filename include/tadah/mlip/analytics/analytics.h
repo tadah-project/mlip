@@ -28,6 +28,9 @@ class Analytics {
          */
         t_type calc_s_mae() const;
 
+        /** Return Energy/atom Relative Root Mean Square Error for each DBFILE. */
+        t_type calc_e_rrmse() const;
+
         /** Return Energy/atom Root Mean Square Error for each DBFILE. */
         t_type calc_e_rmse() const;
 
