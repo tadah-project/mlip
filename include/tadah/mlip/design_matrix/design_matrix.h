@@ -256,6 +256,9 @@ private:
       if (force) rows+=stdb(s).natoms()*3;
     }
 
+    // Add space for augmented matrix
+    rows += cols;
+
     T.resize(rows);
     Tlabels.resize(rows);
     Phi.resize(rows,cols);
