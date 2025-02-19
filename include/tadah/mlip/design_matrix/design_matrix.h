@@ -6,6 +6,9 @@
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/core/config.h>
+#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/MLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/DesignMatrixWorkspace.h>
 
 #include <stdexcept>
 
@@ -68,9 +71,7 @@ class DesignMatrix : public DesignMatrixBase {
 public:
 
   F f;
-  phi_type Phi;
-  t_type T;
-  t_type Tlabels; // 0-Energy, 1-Force, 2-Stress  // TODO should be array of int not double
+  tadah::mlip::memory::DesignMatrixWorkspace *ws;
   bool scale=true;    // Control escale,fscale,sscale
 
   double e_std_dev=1;
@@ -89,24 +90,40 @@ public:
      *
      * \endcode
      */
-  DesignMatrix(F &f, Config &c):
-    f(f),
-    config(c),
-    force(config.get<bool>("FORCE")),
-    stress(config.get<bool>("STRESS")),
-    verbose(config.get<int>("VERBOSE")),
-    eweightglob(config.get<double>("EWEIGHT")),
-    fweightglob(config.get<double>("FWEIGHT")),
-    sweightglob(config.get<double>("SWEIGHT"))
-  {
-    if (config.exist("ESTDEV"))
-      e_std_dev = config.get<double>("ESTDEV");
-    if (config.exist("FSTDEV"))
-      f_std_dev = config.get<double>("FSTDEV");
-    if (config.exist("SSTDEV"))
-      config.get<double[6]>("SSTDEV", s_std_dev);
-  }
+    DesignMatrix(F &f, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
+        : f(f),
+          workspaceManager_(&workspaceManager),
+          ownWorkspaceManager(false),
+          config(c),
+          force(config.get<bool>("FORCE")),
+          stress(config.get<bool>("STRESS")),
+          verbose(config.get<int>("VERBOSE")),
+          eweightglob(config.get<double>("EWEIGHT")),
+          fweightglob(config.get<double>("FWEIGHT")),
+          sweightglob(config.get<double>("SWEIGHT"))
+    {
+        if (config.exist("ESTDEV"))
+            e_std_dev = config.get<double>("ESTDEV");
+        if (config.exist("FSTDEV"))
+            f_std_dev = config.get<double>("FSTDEV");
+        if (config.exist("SSTDEV"))
+            config.get<double[6]>("SSTDEV", s_std_dev);
+    }
 
+    // Constructor without workspaceManager_ parameter (delegating constructor)
+    DesignMatrix(F &f, Config &c)
+        : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
+    {
+        ownWorkspaceManager = true;  // Set ownership flag
+    }
+
+    // Destructor
+    ~DesignMatrix() {
+        if (ownWorkspaceManager && workspaceManager_ != nullptr) {
+            delete workspaceManager_;
+            workspaceManager_ = nullptr;
+        }
+    }
 
   /** \brief Build design matrix from already calculated StDescriptorsDB
      *
@@ -115,7 +132,8 @@ public:
      * D2, D3 and DM calculators are not used.
      */
   void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
-    resize(stdb);
+    calc_mn(stdb);
+    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
     compute_stdevs(stdb);
     fill_T(stdb);
     std::vector<size_t> rows(stdb.size());
@@ -146,7 +164,8 @@ public:
   void build(const StructureDB &stdb, Normaliser &norm,
              DC &dc) {
     //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(config);
-    resize(stdb);   // call after dc set DSIZE key
+    calc_mn(stdb);
+    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
     compute_stdevs(stdb);
     fill_T(stdb);
     // for opm we need to find first rows for each structure
@@ -183,18 +202,18 @@ public:
 
     double escale = 1;
     if (scale) escale = st.eweight*eweightglob/st.natoms();
-    f.calc_phi_energy_row(Phi,row,escale,st,st_d);
+    f.calc_phi_energy_row(ws->Phi,row,escale,st,st_d);
     if (force) {
       double fscale = 1;
       if (scale) fscale = st.fweight*fweightglob/st.natoms()/3.0;///f_std_dev;
-      f.calc_phi_force_rows(Phi,row,fscale,st,st_d);
+      f.calc_phi_force_rows(ws->Phi,row,fscale,st,st_d);
     }
     if (stress) {
       double sscale_arr[6] {1,1,1,1,1,1};
       if (scale)
         for(size_t xy=0;xy<6;++xy)
           sscale_arr[xy] = st.sweight*sweightglob/6.0;///s_std_dev[xy];
-      f.calc_phi_stress_rows(Phi,row,sscale_arr,st,st_d);
+      f.calc_phi_stress_rows(ws->Phi,row,sscale_arr,st,st_d);
     }
   }
   void fill_T(const StructureDB &stdb, size_t start=0) {
@@ -203,19 +222,19 @@ public:
 
       double escale = 1;
       if (scale) escale = stdb(s).eweight*eweightglob/stdb(s).natoms();///e_std_dev;
-      Tlabels(j) = 0;
-      T(j++) = stdb(s).energy*escale;
+      ws->Tlabels(j) = 0;
+      ws->T(j++) = stdb(s).energy*escale;
 
       if (force) {
         double fscale = 1;
         if (scale) fscale = stdb(s).fweight*fweightglob/stdb(s).natoms()/3.0;///e_std_dev/f_std_dev;
         for (const Atom &a : stdb(s).atoms) {
-          Tlabels(j) = 1;
-          T(j++) = a.force(0)*fscale;
-          Tlabels(j) = 1;
-          T(j++) = a.force(1)*fscale;
-          Tlabels(j) = 1;
-          T(j++) = a.force(2)*fscale;
+          ws->Tlabels(j) = 1;
+          ws->T(j++) = a.force(0)*fscale;
+          ws->Tlabels(j) = 1;
+          ws->T(j++) = a.force(1)*fscale;
+          ws->Tlabels(j) = 1;
+          ws->T(j++) = a.force(2)*fscale;
         }
       }
       if (stress) {
@@ -226,18 +245,24 @@ public:
         size_t xy=0;
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            Tlabels(j) = 2;
-            T(j++)=stdb(s).stress(x,y)*sscale_arr[xy++];
+            ws->Tlabels(j) = 2;
+            ws->T(j++)=stdb(s).stress(x,y)*sscale_arr[xy++];
           }
         }
       }
     }
   }
 
+phi_type &getPhi() { return ws->Phi; }
+t_type &getT() { return ws->T; }
+t_type &getTlabels() { return ws->Tlabels; }
+
 private:
-  Config &config;
-  size_t rows=0;
-  size_t cols=0;
+  tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
+  bool ownWorkspaceManager = false;
+  Config & config;
+  size_t rows = 0;
+  size_t cols = 0;
   bool force;
   bool stress;
   int verbose;
@@ -246,7 +271,7 @@ private:
   double sweightglob;
 
   // resize Phi and T and set all elements to zero
-  void resize(const StructureDB &stdb) {
+  void calc_mn(const StructureDB &stdb) {
     rows=0;
     cols = f.get_phi_cols(config);
 
@@ -259,18 +284,10 @@ private:
     // Add space for augmented matrix
     rows += cols;
 
-    T.resize(rows);
-    Tlabels.resize(rows);
-    Phi.resize(rows,cols);
-
     if (verbose) {
-      std::cout << "Phi rows: "<< Phi.rows() << std::endl;
-      std::cout << "Phi cols: "<< Phi.cols() << std::endl;
+      std::cout << "Phi rows: "<< rows << std::endl;
+      std::cout << "Phi cols: "<< cols << std::endl;
     }
-
-    T.set_zero();
-    Phi.set_zero();
-
   }
 
   void compute_stdevs(const StructureDB &stdb) {

@@ -9,7 +9,7 @@
 #include <tadah/models/m_krr_train.h>
 #include <tadah/core/config.h>
 #include <tadah/mlip/models/basis.h>
-#include <tadah/models/memory/IModelsWorkspaceManager.h>
+#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 
 #include <limits>
 #include <stdexcept>
@@ -80,7 +80,7 @@ public:
     norm = Normaliser(c);
   }
 
-  M_KRR(K &kernel, Config &c, tadah::models::memory::IModelsWorkspaceManager& workspaceManager):
+  M_KRR(K &kernel, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     M_KRR_Train<K>(kernel,c,workspaceManager),
     basis(c),
     desmat(kernel,c)
@@ -253,11 +253,11 @@ public:
     dm.build(stdb,norm,dc);
 
     // compute error
-    predicted_error = T_MDMT_diag(dm.Phi, Sigma);
+    predicted_error = T_MDMT_diag(dm.getPhi(), Sigma);
     double pmean = sqrt(predicted_error.mean());
 
     // compute energy, forces and stresses
-    aed_type Tpred = T_dgemv(dm.Phi, weights);
+    aed_type Tpred = T_dgemv(dm.getPhi(), weights);
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -293,7 +293,7 @@ public:
     if(!trained) throw std::runtime_error("This object is not trained!\n\
 Hint: check different predict() methods.");
 
-    phi_type &Phi = desmat.Phi;
+    phi_type &Phi = desmat.getPhi();
 
     // compute energy, forces and stresses
     aed_type Tpred = T_dgemv(Phi, weights);
@@ -384,8 +384,8 @@ non linear kernel\n");
   template <typename D>
   void train(D &desmat) {
     // TODO see comments in M_BLR
-    phi_type Phi = desmat.Phi;
-    t_type T = desmat.T;
+    phi_type Phi = desmat.getPhi();
+    t_type T = desmat.getT();
     M_KRR_Train<K>::train(Phi,T);
 
     if (config.template get<bool>("NORM") &&

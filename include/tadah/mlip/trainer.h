@@ -8,7 +8,7 @@
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/core/config.h>
 #include <tadah/models/dc_selector.h>
-#include <tadah/models/memory/IModelsWorkspaceManager.h>
+#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 
 #include <iostream>
 
@@ -28,7 +28,7 @@ class Trainer {
       if(fb)
         delete fb;
     }
-    Trainer (Config &c, tadah::models::memory::IModelsWorkspaceManager& workspaceManager):
+    Trainer (Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
       config(c),
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
@@ -36,10 +36,10 @@ class Trainer {
       nnf(config),
       fb(CONFIG::factory<DM_Function_Base,Config&>(
             config.get<std::string>("MODEL",1),config)),
-      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&,tadah::models::memory::IModelsWorkspaceManager&>
+      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&,tadah::mlip::memory::IMLIPWorkspaceManager&>
           (config.get<std::string>("MODEL",0),*fb,config,workspaceManager)),
           //(config.get<std::string>("MODEL",0),*fb,config)),
-      dm(*fb, config)
+      dm(*fb, config, workspaceManager)
   {
     config.postprocess();
     config.check_for_training();

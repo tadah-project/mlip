@@ -26,6 +26,7 @@ public:
   /** \brief Predict total energy for a set of atoms. */
   using M_Predict::epredict;
   using M_Predict::fpredict;
+  using M_Core::predict;
   double epredict(const StDescriptors &std);
 
   ///** \brief Predict force between a pair of atoms in a k-direction. */

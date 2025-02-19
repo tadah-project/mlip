@@ -8,7 +8,7 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_blr_train.h>
 #include <tadah/core/config.h>
-#include <tadah/models/memory/IModelsWorkspaceManager.h>
+#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 
 #include <limits>
 #include <stdexcept>
@@ -77,7 +77,7 @@ public:
     norm = Normaliser(c);
   }
 
-  M_BLR(BF &bf, Config &c, tadah::models::memory::IModelsWorkspaceManager& workspaceManager):
+  M_BLR(BF &bf, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     M_BLR_Train<BF>(bf,c,workspaceManager),
     desmat(bf,c)
   {
@@ -182,11 +182,11 @@ public:
     dm.scale=false; // do not scale energy, forces and stresses
     dm.build(stdb,norm,dc);
 
-    predicted_error = T_MDMT_diag(dm.Phi, Sigma);
+    predicted_error = T_MDMT_diag(dm.getPhi(), Sigma);
     double pmean = sqrt(predicted_error.mean());
 
     // compute energy, forces and stresses
-    aed_type Tpred = T_dgemv(dm.Phi, weights);
+    aed_type Tpred = T_dgemv(dm.getPhi(), weights);
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -222,7 +222,7 @@ public:
     if(!trained) throw std::runtime_error("This object is not trained!\n\
 Hint: check different predict() methods.");
 
-    phi_type &Phi = desmat.Phi;
+    phi_type &Phi = desmat.getPhi();
     //std::cout << Phi.row(0) << std::endl;
 
     // compute energy, forces and stresses
@@ -314,8 +314,8 @@ non linear basis function\n");
     // In consequence, we cannot use it for quick prediction
     // The simple solution, for now, is to make a copy of the Phi matrix
     //phi_type &Phi = desmat.Phi;
-    phi_type Phi = desmat.Phi;
-    t_type T = desmat.T;
+    phi_type Phi = desmat.getPhi();
+    t_type T = desmat.getT();
     //t_type &T = desmat.T;
     M_BLR_Train<BF>::train(Phi,T);
 
