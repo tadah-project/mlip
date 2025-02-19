@@ -8,6 +8,7 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_blr_train.h>
 #include <tadah/core/config.h>
+#include <tadah/models/memory/IModelsWorkspaceManager.h>
 
 #include <limits>
 #include <stdexcept>
@@ -71,6 +72,13 @@ public:
    */
   M_BLR(BF &bf, Config &c):
     M_BLR_Train<BF>(bf,c),
+    desmat(bf,c)
+  {
+    norm = Normaliser(c);
+  }
+
+  M_BLR(BF &bf, Config &c, tadah::models::memory::IModelsWorkspaceManager& workspaceManager):
+    M_BLR_Train<BF>(bf,c,workspaceManager),
     desmat(bf,c)
   {
     norm = Normaliser(c);

@@ -36,7 +36,7 @@ class Trainer {
       nnf(config),
       fb(CONFIG::factory<DM_Function_Base,Config&>(
             config.get<std::string>("MODEL",1),config)),
-      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
+      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&,tadah::models::memory::IModelsWorkspaceManager&>
           (config.get<std::string>("MODEL",0),*fb,config,workspaceManager)),
           //(config.get<std::string>("MODEL",0),*fb,config)),
       dm(*fb, config)

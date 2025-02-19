@@ -9,6 +9,7 @@
 #include <tadah/models/m_krr_train.h>
 #include <tadah/core/config.h>
 #include <tadah/mlip/models/basis.h>
+#include <tadah/models/memory/IModelsWorkspaceManager.h>
 
 #include <limits>
 #include <stdexcept>
@@ -79,6 +80,13 @@ public:
     norm = Normaliser(c);
   }
 
+  M_KRR(K &kernel, Config &c, tadah::models::memory::IModelsWorkspaceManager& workspaceManager):
+    M_KRR_Train<K>(kernel,c,workspaceManager),
+    basis(c),
+    desmat(kernel,c)
+  {
+    norm = Normaliser(c);
+  }
   double epredict(const aed_type &aed) const {
     return kernel.epredict(weights,aed);
   };
