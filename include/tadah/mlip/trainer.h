@@ -9,6 +9,7 @@
 #include <tadah/core/config.h>
 #include <tadah/models/dc_selector.h>
 #include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/MLIPWorkspaceManager.h>
 
 #include <iostream>
 
@@ -38,23 +39,7 @@ class Trainer {
             config.get<std::string>("MODEL",1),config)),
       model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&,tadah::mlip::memory::IMLIPWorkspaceManager&>
           (config.get<std::string>("MODEL",0),*fb,config,workspaceManager)),
-          //(config.get<std::string>("MODEL",0),*fb,config)),
       dm(*fb, config, workspaceManager)
-  {
-    config.postprocess();
-    config.check_for_training();
-  }
-    Trainer (Config &c):
-      config(c),
-      DCS(config),
-      dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
-          *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config),
-      fb(CONFIG::factory<DM_Function_Base,Config&>(
-            config.get<std::string>("MODEL",1),config)),
-      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&>
-          (config.get<std::string>("MODEL",0),*fb,config)),
-      dm(*fb, config)
   {
     config.postprocess();
     config.check_for_training();

@@ -134,6 +134,9 @@ public:
   void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
+    ws->Phi.set_zero();
+    ws->T.set_zero();
+    ws->Tlabels.set_zero();
     compute_stdevs(stdb);
     fill_T(stdb);
     std::vector<size_t> rows(stdb.size());
@@ -166,6 +169,9 @@ public:
     //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(config);
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
+    ws->Phi.set_zero();
+    ws->T.set_zero();
+    ws->Tlabels.set_zero();
     compute_stdevs(stdb);
     fill_T(stdb);
     // for opm we need to find first rows for each structure

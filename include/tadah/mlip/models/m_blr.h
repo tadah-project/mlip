@@ -79,7 +79,7 @@ public:
 
   M_BLR(BF &bf, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     M_BLR_Train<BF>(bf,c,workspaceManager),
-    desmat(bf,c)
+    desmat(bf,c,workspaceManager)
   {
     norm = Normaliser(c);
   }
@@ -223,7 +223,6 @@ public:
 Hint: check different predict() methods.");
 
     phi_type &Phi = desmat.getPhi();
-    //std::cout << Phi.row(0) << std::endl;
 
     // compute energy, forces and stresses
     aed_type Tpred = T_dgemv(Phi, weights);
