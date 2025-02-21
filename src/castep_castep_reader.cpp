@@ -44,6 +44,8 @@ void CastepCastepReader::parse_data() {
   std::string label;
   size_t counter=0;
 
+  bool debug = false;
+
   while (std::getline(stream, line)) {
 
     if (line.find("type of calculation") != std::string::npos) {
@@ -53,6 +55,7 @@ void CastepCastepReader::parse_data() {
       go_run = false;
       restart=false;
       if (line.find(": geometry optimization") != std::string::npos) {
+        if (debug) std::cout << "GO run" << std::endl;
         go_run = true;
       }
       if (line.find(": molecular dynamics") != std::string::npos) {
@@ -63,6 +66,7 @@ void CastepCastepReader::parse_data() {
       restart=true;
     }
     else if (line.find("Unit Cell") != std::string::npos) {
+      if (debug) std::cout << "Unit Cell" << std::endl;
       if (!std::getline(stream, line) || !std::getline(stream, line)) {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading atom information" << std::endl;
@@ -88,6 +92,7 @@ void CastepCastepReader::parse_data() {
 
       if (constant_volume) label.clear();
       constant_volume = false;
+      if (debug) std::cout << s.cell << std::endl;
     }
 
     else if (line.find("Total number of ions in cell") != std::string::npos) {
@@ -109,14 +114,17 @@ void CastepCastepReader::parse_data() {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Error: Line is too short to extract total number of ions in a cell. Line: " << line << std::endl;
       }
+      if (debug) std::cout << "Number of atoms: " << natoms << std::endl;
     }
 
     else if (line.find("so fixing cell parameters") != std::string::npos) {
+      if (debug) std::cout << "so fixing cell parameters" << std::endl;
       constant_volume=true;
       label = "CASTEP MD, const. volume: true, step: 0";
     }
 
     else if (line.find("Starting MD iteration") != std::string::npos) {
+      if (debug) std::cout << "Starting MD iteration" << std::endl;
       std::istringstream iss(line);
       std::string step;
       iss >> step >> step >> step >> step;
@@ -127,15 +135,23 @@ void CastepCastepReader::parse_data() {
 
 
     else if (constant_volume && line.find("Cell Contents") != std::string::npos) {
+      if (debug) std::cout << "Cell Contents" << std::endl;
       if (restart) {
+        if (debug) std::cout << "Cell Contents restart" << std::endl;
         s.atoms.clear();
       } else {
+        if (debug) std::cout << "Cell Contents no restart" << std::endl;
+        if (debug) std::cout << line << std::endl;
         s = Structure();
         s.cell = stdb.structures.back().cell;   // copy last cell as it is not repeated in castep for const. volume
       }
     }
 
     else if (line.find("Fractional coordinates of atoms") != std::string::npos) {
+      if (debug) std::cout << "Fractional coordinates of atoms" << std::endl;
+      // Ideally st.natoms() should be zero by now. However for constant volum GO this is not the case.
+      // Therfore we need to clear the atoms vector but we keep the st.cell as it is.
+      s.atoms.clear();
       if (!std::getline(stream, line) || !std::getline(stream, line)) {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading atom information" << std::endl;
@@ -161,9 +177,11 @@ void CastepCastepReader::parse_data() {
         s.add_atom(Atom(Element(type),px,py,pz,0,0,0));
         s.atoms[i].position = s.cell * s.atoms[i].position;  // convert to abs
       }
+      if (debug) std::cout << "natoms: " << s.natoms() << std::endl;
     }
 
     else if (line.find("Cartesian components (eV/A)") != std::string::npos) {
+      if (debug) std::cout << "Cartesian components (eV/A)" << std::endl;
       if (s.natoms()!=natoms) continue;
       if (!std::getline(stream, line) || !std::getline(stream, line) || !std::getline(stream, line)) {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
@@ -192,6 +210,7 @@ void CastepCastepReader::parse_data() {
     }
 
     else if (line.find("Cartesian components (GPa)") != std::string::npos) {
+      if (debug) std::cout << "Cartesian components (GPa)" << std::endl;
       if (!std::getline(stream, line) || !std::getline(stream, line) || !std::getline(stream, line)) {
         std::cerr << "Warning, file" << filename << " line: " << counter << std::endl;
         std::cerr << "Warning: Unexpected end of data when reading stress tensor" << std::endl;
@@ -220,6 +239,7 @@ void CastepCastepReader::parse_data() {
     // enthalpy=  indicates end of iteration for GO
 
     else if (line.find("Final free energy (E-TS)") != std::string::npos) {
+      if (debug) std::cout << "Final free energy (E-TS)" << std::endl;
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.energy)) {
@@ -234,6 +254,7 @@ void CastepCastepReader::parse_data() {
     }
 
     else if (line.find("enthalpy=") != std::string::npos) {
+      if (debug) std::cout << "enthalpy=" << std::endl;
       // GO: the last extracted free energy is correct one!
       std::istringstream iss(line);
       std::string step;
@@ -245,6 +266,7 @@ void CastepCastepReader::parse_data() {
     }
 
     else if (line.find("Potential Energy:") != std::string::npos) {
+      if (debug) std::cout << "Potential Energy:" << std::endl;
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
@@ -253,6 +275,7 @@ void CastepCastepReader::parse_data() {
       }
     }
     else if (line.find("Temperature:") != std::string::npos) {
+      if (debug) std::cout << "Temperature:" << std::endl;
       // MD: end of iteration
       std::istringstream iss(line);
       std::string tmp;
