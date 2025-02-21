@@ -68,10 +68,6 @@ struct Structure {
    */
   double T=0;
 
-  /**
-   * Container for nearest neighbour atoms for every atom in the structure.
-   */
-  std::vector<std::vector<Atom>> near_neigh_atoms;
 
   /** Periodic image flag for neigherest neighbours.
    *
@@ -162,8 +158,17 @@ struct Structure {
    */
   double get_pressure(const double T, const double kB=8.617333262145e-5) const;
 
-  /** @return position of the n-th nearest neighbour of the i-th Atom. */
-  const Vec3d& nn_pos(const size_t i, const size_t n) const;
+/**
+ * Return the position of the n-th neighbor of atom i,
+ * computed via the neighbor's global index and periodic shifts.
+ *
+ * Assumes:
+ *   near_neigh_idx[i][n]  -> global index of neighbor
+ *   near_neigh_shift[i][n] -> integer triple (n1, n2, n3) OR real shift
+ *
+ * Returns by value (Vec3d) so we don't reference a temporary.
+ */
+  Vec3d nn_pos(const size_t i, const size_t n) const;
 
   /** @return a number of nearest neighbours of the i-th Atom. */
   size_t nn_size(const size_t i) const;

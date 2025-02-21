@@ -1,6 +1,7 @@
 #ifndef DESCRIPTORS_CALC_HPP
 #define DESCRIPTORS_CALC_HPP
 
+#include <cstddef>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/core/periodic_table.h>
 
@@ -179,7 +180,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescrip
       //double rij_sq = delij * delij;
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
       if (rij_sq > rcut_mb_sq) continue;
-      int Zj = st.near_neigh_atoms[i][jj].Z;
+      size_t neighIdx = st.near_neigh_idx[i][jj];
+      int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       dm.calc_rho(Zi,Zj,rij,rij_sq,delij,st_d.get_rho(i));
     }
@@ -252,7 +254,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
 
       if (rij_sq > rcut_max_sq) continue;
-      int Zj = st.near_neigh_atoms[i][jj].Z;
+      size_t neighIdx = st.near_neigh_idx[i][jj];
+      int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       double rij_inv = 1.0/rij;
 
@@ -343,7 +346,6 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
   // TODO weighting factors
   // For now assume all are the same type
-  //int Zj = st.near_neigh_atoms[0][0].Z;
   int Zi = 1;
   int Zj = 1;
 

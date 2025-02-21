@@ -19,8 +19,29 @@ void Structure::remove_atom(const size_t i) {
   atoms.erase(atoms.begin()+i);
 }
 
-const Vec3d& Structure::nn_pos(const size_t i, const size_t n) const {
-  return near_neigh_atoms[i][n].position;
+Vec3d Structure::nn_pos(const size_t i, const size_t n) const
+{
+    // (A) Global index of this neighbor
+    const size_t neighborIndex = near_neigh_idx[i][n];
+
+    // (B) Atom's original "unshifted" position:
+    const Vec3d &posNeighbor = atoms[neighborIndex].position;
+
+    // (C) Convert the stored shift -> real displacement shiftDisp
+    //     If near_neigh_shift[i][n] is an integer triple (n1, n2, n3),
+    //     multiply by the cell. Otherwise, if it's already in real space,
+    //     you can just do: Vec3d shiftDisp = near_neigh_shift[i][n].
+    Vec3d shift = near_neigh_shift[i][n]; // might be (n1, n2, n3)
+
+    // If shift is integer triple (n1, n2, n3), multiply with cell:
+    Vec3d shiftDisp;
+    shiftDisp[0] = shift[0]*cell(0,0) + shift[1]*cell(0,1) + shift[2]*cell(0,2);
+    shiftDisp[1] = shift[0]*cell(1,0) + shift[1]*cell(1,1) + shift[2]*cell(1,2);
+    shiftDisp[2] = shift[0]*cell(2,0) + shift[1]*cell(2,1) + shift[2]*cell(2,2);
+
+    // (D) Final neighbor position = unshifted position + shiftDisp
+    Vec3d posShifted = posNeighbor + shiftDisp;
+    return posShifted;
 }
 
 size_t Structure::natoms() const {
@@ -28,7 +49,7 @@ size_t Structure::natoms() const {
 }
 
 size_t Structure::nn_size(size_t i) const {
-  return near_neigh_atoms[i].size();
+  return near_neigh_idx[i].size();
 }
 
 int Structure::read(std::ifstream &ifs) {
@@ -258,7 +279,6 @@ int Structure::next_structure(std::ifstream &ifs) {
   return natoms;
 }
 void Structure::clear_nn() {
-  near_neigh_atoms.clear();
   near_neigh_shift.clear();
   near_neigh_idx.clear();
 }

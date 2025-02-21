@@ -2,6 +2,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/periodic_table.h>
 #include <cstdio>
+#include <cctype>   // For std::isspace
 
 StructureDB::StructureDB() {
   PeriodicTable::initialize();
@@ -16,6 +17,7 @@ void StructureDB::add(const std::string fn) {
   if (!ifs.is_open()) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
+  parseFile(fn);
   while (true) {
     structures.push_back(Structure());
     int t = structures.back().read(ifs);
@@ -276,4 +278,79 @@ std::string StructureDB::summary() const {
   for (const auto &e: ue) str+= e.symbol + " ";
   str+="\n";
   return str;
+}
+void StructureDB::parseFile(const std::string& filename)
+{
+    std::ifstream fin(filename, std::ios::in | std::ios::binary);
+    if (!fin.is_open())
+    {
+        std::cerr << "Error: could not open file " << filename << "\n";
+        return;
+    }
+
+  std::size_t header_size = 9;
+
+    // Increase buffer size to speed up I/O on large files.
+    static const size_t BUFSIZE = 100ULL << 20; // 100 MiB
+    char* buffer = new char[BUFSIZE];
+    fin.rdbuf()->pubsetbuf(buffer, BUFSIZE);
+
+    std::vector<size_t> blockLineCounts;
+    blockLineCounts.reserve(10000); // Pre-allocate to reduce repeated allocations
+
+    size_t currentBlockCount = 0;
+    std::string line;
+
+    while (true)
+    {
+        if (!std::getline(fin, line))
+        {
+            // End of file or read error
+            break;
+        }
+
+        if (isBlankLine(line))
+        {
+            // We reached the end of the current block
+            if (currentBlockCount > 0)
+            {
+                blockLineCounts.push_back(currentBlockCount-header_size);
+                currentBlockCount = 0;
+            }
+        }
+        else
+        {
+            // Non-empty line => belongs to the current block
+            currentBlockCount++;
+        }
+    }
+
+    // If the last block didn’t end with a blank line, close it out
+    if (currentBlockCount > 0)
+    {
+        blockLineCounts.push_back(currentBlockCount-header_size);
+    }
+
+    fin.close();
+    delete[] buffer;
+
+    // Print the results
+    std::cout << "Found " << blockLineCounts.size() << " blocks.\n";
+    for (size_t i = 0; i < blockLineCounts.size(); i+=1000)
+    {
+        std::cout << "Block " << i << " has "
+                  << blockLineCounts[i] << " atoms\n";
+    }
+}
+
+bool StructureDB::isBlankLine(const std::string& line) const
+{
+    for (char c : line)
+    {
+        if (!std::isspace(static_cast<unsigned char>(c)))
+        {
+            return false;
+        }
+    }
+    return true;
 }
