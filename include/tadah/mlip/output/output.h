@@ -190,5 +190,12 @@ class Output {
             out_force.close();
             out_stress.close();
         }
+  void set_numeric(size_t n) {
+    sigfig=n;
+    fmtw=sigfig+7;
+    emptyspace=5;
+    nw=emptyspace+fmtw;
+  }
+
 };
 #endif // !OUTPUT_H
