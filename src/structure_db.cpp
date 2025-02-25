@@ -256,16 +256,28 @@ std::vector<Structure>::const_iterator StructureDB::begin() const {
 std::vector<Structure>::const_iterator StructureDB::end() const { 
     return structures.cend(); 
 }
-void StructureDB::dump_to_file(const std::string& filepath, size_t prec) const {
-  std::ofstream file(filepath, std::ios::app);  // Open in append mode
-  if (!file.is_open()) {
-    std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-    return;
-  }
-  for (const auto &s : structures) {
-    s.dump_to_file(file,prec);
-  }
-  file.close();
+void StructureDB::dump_to_file(const std::string& filepath, bool append, size_t prec) const
+{
+    // Determines the file open mode based on append flag
+    //   - ios::out means file is opened in output mode
+    //   - ios::app means all write operations append at the end
+    //   - ios::trunc (the default if append is false) removes existing contents
+    std::ios_base::openmode mode = std::ios::out;
+    if (append) {
+        mode |= std::ios::app;
+    } else {
+        mode |= std::ios::trunc;
+    }
+
+    std::ofstream file(filepath, mode);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
+        return;
+    }
+    for (const auto &s : structures) {
+        s.dump_to_file(file, prec);  
+    }
+    file.close();
 }
 
 std::string StructureDB::summary() const {
@@ -335,12 +347,12 @@ void StructureDB::parseFile(const std::string& filename)
     delete[] buffer;
 
     // Print the results
-    std::cout << "Found " << blockLineCounts.size() << " blocks.\n";
-    for (size_t i = 0; i < blockLineCounts.size(); i+=1000)
-    {
-        std::cout << "Block " << i << " has "
-                  << blockLineCounts[i] << " atoms\n";
-    }
+    // std::cout << "Found " << blockLineCounts.size() << " blocks.\n";
+    // for (size_t i = 0; i < blockLineCounts.size(); i+=1000)
+    // {
+    //     std::cout << "Block " << i << " has "
+    //               << blockLineCounts[i] << " atoms\n";
+    // }
 }
 
 bool StructureDB::isBlankLine(const std::string& line) const

@@ -280,7 +280,7 @@ void NNFinder::calc(StructureDB &stdb)
   }
   auto t1 = std::chrono::steady_clock::now();
   double seconds = std::chrono::duration<double>(t1 - t0).count();
-  std::cout << "calc(StructureDB &stdb) for-loop took "
-            << seconds << " seconds\n";
+  // std::cout << "calc(StructureDB &stdb) for-loop took "
+  //           << seconds << " seconds\n";
 }
 

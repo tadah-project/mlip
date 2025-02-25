@@ -169,7 +169,7 @@ struct StructureDB {
   std::vector<Structure>::const_iterator end() const;
 
   /** Method to dump class content to a file */
-  void dump_to_file(const std::string& filepath, size_t prec=12) const;
+  void dump_to_file(const std::string& filepath, bool append, size_t prec=12) const;
 
   // Public method that reads the file, counts blocks and line counts per block,
   // then prints the results to std::cout.

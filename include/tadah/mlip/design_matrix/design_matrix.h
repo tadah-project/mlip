@@ -1,6 +1,7 @@
 #ifndef DESIGN_MATRIX_H
 #define DESIGN_MATRIX_H
 
+#include <cmath>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
@@ -178,9 +179,8 @@ public:
     compute_stdevs(stdb);
     fill_T(stdb);
     compute_wfactors(stdb); // call after fill_T
+
     // for opm we need to find first rows for each structure
-
-
     std::vector<size_t> rows(stdb.size());
     size_t row=0;
     for (size_t s=0; s<stdb.size(); ++s) {
@@ -216,19 +216,11 @@ public:
   }
   void build(size_t &row, const Structure &st, const StDescriptors &st_d) {
 
-    // double escale = 1;
-    // if (scale) escale = st.eweight*eweightglob/st.natoms(); // TODO
     f.calc_phi_energy_row(ws->Phi,row,st,st_d);
     if (force) {
-      // double fscale = 1;
-      // if (scale) fscale = st.fweight*fweightglob/st.natoms()/3.0; // TODO
       f.calc_phi_force_rows(ws->Phi,row,st,st_d);
     }
     if (stress) {
-      // double sscale_arr[6] {1,1,1,1,1,1};
-      // if (scale)
-      // for(size_t xy=0;xy<6;++xy)
-      // sscale_arr[xy] = st.sweight*sweightglob/6.0; // TODO
       f.calc_phi_stress_rows(ws->Phi,row,st,st_d);
     }
   }
@@ -236,13 +228,10 @@ public:
     size_t j=start;
     for (size_t s=0; s<stdb.size(); ++s) {
 
-      // double escale = 1;
       ws->Tlabels(j) = 0;
       ws->T(j++) = stdb(s).energy;
 
       if (force) {
-        // double fscale = 1;
-        // if (scale) fscale = stdb(s).fweight*fweightglob/stdb(s).natoms()/3.0;
         for (const Atom &a : stdb(s).atoms) {
           ws->Tlabels(j) = 1;
           ws->T(j++) = a.force(0);
@@ -253,11 +242,6 @@ public:
         }
       }
       if (stress) {
-        // double sscale_arr[6] {1,1,1,1,1,1};
-        // if (scale)
-        //   for(size_t xy=0;xy<6;++xy)
-        //     sscale_arr[xy] = stdb(s).sweight*sweightglob/6.0;
-        // size_t xy=0;
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             ws->Tlabels(j) = 2;
@@ -323,7 +307,6 @@ private:
       num_forces +=3*stdb(s).natoms();
     }
 
-    //e_std_dev = std::sqrt((evec - evec.mean()).square().sum()/(evec.size()-1));
     e_std_dev = evec.std_dev(evec.mean(), evec.size()-1);
     if (verbose) std::cout << "Energy standard deviation (eV/atom): " << e_std_dev << std::endl;
 
@@ -333,7 +316,6 @@ private:
         if (verbose) std::cout << "Stress standard deviation (eV/A^3): " << s_std_dev[j] << std::endl;
       }
     }
-
 
     if (force) {
       size_t j=0;
@@ -345,12 +327,8 @@ private:
           fvec(j++) = a.force(2);
         }
       }
-      //fvec /= e_std_dev;
-      //svec /= e_std_dev;
-      // e_std_dev has units of energy
-      // f_std_dev has units of inverse distance
       f_std_dev = fvec.std_dev(fvec.mean(),fvec.size()-1);
-      if (verbose) std::cout << "Force standard deviation (A^-1): " << f_std_dev << std::endl;
+      if (verbose) std::cout << "Force standard deviation (ev/A): " << f_std_dev << std::endl;
     }
 
     config.add("ESTDEV",e_std_dev);
@@ -362,10 +340,9 @@ private:
   void compute_wfactors(const StructureDB &stdb) {
     size_t j=0;
     for (size_t s=0; s<stdb.size(); ++s) {
-      double escale = stdb(s).eweight*eweightglob;
-      ws->wfactors(j++) = escale;
+      ws->wfactors(j++) = std::sqrt(stdb(s).eweight*eweightglob);
       if (force) {
-        double fscale = stdb(s).fweight*fweightglob;
+        double fscale = std::sqrt(stdb(s).fweight*fweightglob);
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           ws->wfactors(j++) = fscale;
           ws->wfactors(j++) = fscale;
@@ -373,13 +350,9 @@ private:
         }
       }
       if (stress) {
-        double sscale_arr[6] {1,1,1,1,1,1};
-        for(size_t xy=0;xy<6;++xy)
-          sscale_arr[xy] = stdb(s).sweight*sweightglob/6.0;
-        int xy=0;
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            ws->wfactors(j++)=sscale_arr[xy++];
+            ws->wfactors(j++) = std::sqrt(stdb(s).sweight*sweightglob);
           }
         }
       }

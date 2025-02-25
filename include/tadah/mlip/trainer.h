@@ -2,7 +2,6 @@
 #define MPI_TRAINER_H
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
-#include <tadah/mlip/trainer.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/nn_finder.h>
