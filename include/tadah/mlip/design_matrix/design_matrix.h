@@ -72,7 +72,7 @@ public:
 
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws;
-  bool scale=true;    // Control escale,fscale,sscale
+  bool w_copy_=false;  // keep copy of Phi and T witoout weights
 
   double e_std_dev=1;
   double f_std_dev=1;
@@ -90,40 +90,40 @@ public:
      *
      * \endcode
      */
-    DesignMatrix(F &f, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
-        : f(f),
-          workspaceManager_(&workspaceManager),
-          ownWorkspaceManager(false),
-          config(c),
-          force(config.get<bool>("FORCE")),
-          stress(config.get<bool>("STRESS")),
-          verbose(config.get<int>("VERBOSE")),
-          eweightglob(config.get<double>("EWEIGHT")),
-          fweightglob(config.get<double>("FWEIGHT")),
-          sweightglob(config.get<double>("SWEIGHT"))
-    {
-        if (config.exist("ESTDEV"))
-            e_std_dev = config.get<double>("ESTDEV");
-        if (config.exist("FSTDEV"))
-            f_std_dev = config.get<double>("FSTDEV");
-        if (config.exist("SSTDEV"))
-            config.get<double[6]>("SSTDEV", s_std_dev);
-    }
+  DesignMatrix(F &f, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
+    : f(f),
+    workspaceManager_(&workspaceManager),
+    ownWorkspaceManager(false),
+    config(c),
+    force(config.get<bool>("FORCE")),
+    stress(config.get<bool>("STRESS")),
+    verbose(config.get<int>("VERBOSE")),
+    eweightglob(config.get<double>("EWEIGHT")),
+    fweightglob(config.get<double>("FWEIGHT")),
+    sweightglob(config.get<double>("SWEIGHT"))
+  {
+    if (config.exist("ESTDEV"))
+      e_std_dev = config.get<double>("ESTDEV");
+    if (config.exist("FSTDEV"))
+      f_std_dev = config.get<double>("FSTDEV");
+    if (config.exist("SSTDEV"))
+      config.get<double[6]>("SSTDEV", s_std_dev);
+  }
 
-    // Constructor without workspaceManager_ parameter (delegating constructor)
-    DesignMatrix(F &f, Config &c)
-        : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
-    {
-        ownWorkspaceManager = true;  // Set ownership flag
-    }
+  // Constructor without workspaceManager_ parameter (delegating constructor)
+  DesignMatrix(F &f, Config &c)
+  : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
+  {
+    ownWorkspaceManager = true;  // Set ownership flag
+  }
 
-    // Destructor
-    ~DesignMatrix() {
-        if (ownWorkspaceManager && workspaceManager_ != nullptr) {
-            delete workspaceManager_;
-            workspaceManager_ = nullptr;
-        }
+  // Destructor
+  ~DesignMatrix() {
+    if (ownWorkspaceManager && workspaceManager_ != nullptr) {
+      delete workspaceManager_;
+      workspaceManager_ = nullptr;
     }
+  }
 
   /** \brief Build design matrix from already calculated StDescriptorsDB
      *
@@ -131,14 +131,16 @@ public:
      * The vector of targets  **T** is build from StructureDB.
      * D2, D3 and DM calculators are not used.
      */
-  void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+  void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb, bool wcopy) {
+    w_copy_ = wcopy;
     calc_mn(stdb);
-    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
+    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
     compute_stdevs(stdb);
     fill_T(stdb);
+    compute_wfactors(stdb); // call after fill_T
     std::vector<size_t> rows(stdb.size());
     size_t row=0;
     for (size_t s=0; s<stdb.size(); ++s) {
@@ -165,15 +167,17 @@ public:
   /** \brief Calculate descriptors and build design matrix. */
   template <typename DC>
   void build(const StructureDB &stdb, Normaliser &norm,
-             DC &dc) {
+             DC &dc, bool wcopy) {
     //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(config);
+    w_copy_ = wcopy;
     calc_mn(stdb);
-    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols);
+    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
     compute_stdevs(stdb);
     fill_T(stdb);
+    compute_wfactors(stdb); // call after fill_T
     // for opm we need to find first rows for each structure
 
 
@@ -197,71 +201,77 @@ public:
     for (size_t s=0; s<stdb.size(); ++s) {
       StDescriptors st_d = dc.calc(stdb(s));
 
-      if(config.get<bool>("NORM"))
+      if(config.get<bool>("NORM"))  // TODO move to scale()
         norm.normalise(st_d);
 
       build(rows[s], stdb(s), st_d);
+    }
+    if (w_copy_) {
+      copyAndScale();
+    }
+    else {
+      scale();
     }
 
   }
   void build(size_t &row, const Structure &st, const StDescriptors &st_d) {
 
-    double escale = 1;
-    if (scale) escale = st.eweight*eweightglob/st.natoms();
-    f.calc_phi_energy_row(ws->Phi,row,escale,st,st_d);
+    // double escale = 1;
+    // if (scale) escale = st.eweight*eweightglob/st.natoms(); // TODO
+    f.calc_phi_energy_row(ws->Phi,row,st,st_d);
     if (force) {
-      double fscale = 1;
-      if (scale) fscale = st.fweight*fweightglob/st.natoms()/3.0;///f_std_dev;
-      f.calc_phi_force_rows(ws->Phi,row,fscale,st,st_d);
+      // double fscale = 1;
+      // if (scale) fscale = st.fweight*fweightglob/st.natoms()/3.0; // TODO
+      f.calc_phi_force_rows(ws->Phi,row,st,st_d);
     }
     if (stress) {
-      double sscale_arr[6] {1,1,1,1,1,1};
-      if (scale)
-        for(size_t xy=0;xy<6;++xy)
-          sscale_arr[xy] = st.sweight*sweightglob/6.0;///s_std_dev[xy];
-      f.calc_phi_stress_rows(ws->Phi,row,sscale_arr,st,st_d);
+      // double sscale_arr[6] {1,1,1,1,1,1};
+      // if (scale)
+      // for(size_t xy=0;xy<6;++xy)
+      // sscale_arr[xy] = st.sweight*sweightglob/6.0; // TODO
+      f.calc_phi_stress_rows(ws->Phi,row,st,st_d);
     }
   }
   void fill_T(const StructureDB &stdb, size_t start=0) {
     size_t j=start;
     for (size_t s=0; s<stdb.size(); ++s) {
 
-      double escale = 1;
-      if (scale) escale = stdb(s).eweight*eweightglob/stdb(s).natoms();///e_std_dev;
+      // double escale = 1;
       ws->Tlabels(j) = 0;
-      ws->T(j++) = stdb(s).energy*escale;
+      ws->T(j++) = stdb(s).energy;
 
       if (force) {
-        double fscale = 1;
-        if (scale) fscale = stdb(s).fweight*fweightglob/stdb(s).natoms()/3.0;///e_std_dev/f_std_dev;
+        // double fscale = 1;
+        // if (scale) fscale = stdb(s).fweight*fweightglob/stdb(s).natoms()/3.0;
         for (const Atom &a : stdb(s).atoms) {
           ws->Tlabels(j) = 1;
-          ws->T(j++) = a.force(0)*fscale;
+          ws->T(j++) = a.force(0);
           ws->Tlabels(j) = 1;
-          ws->T(j++) = a.force(1)*fscale;
+          ws->T(j++) = a.force(1);
           ws->Tlabels(j) = 1;
-          ws->T(j++) = a.force(2)*fscale;
+          ws->T(j++) = a.force(2);
         }
       }
       if (stress) {
-        double sscale_arr[6] {1,1,1,1,1,1};
-        if (scale)
-          for(size_t xy=0;xy<6;++xy)
-            sscale_arr[xy] = stdb(s).sweight*sweightglob/6.0;///e_std_dev/s_std_dev[xy];
-        size_t xy=0;
+        // double sscale_arr[6] {1,1,1,1,1,1};
+        // if (scale)
+        //   for(size_t xy=0;xy<6;++xy)
+        //     sscale_arr[xy] = stdb(s).sweight*sweightglob/6.0;
+        // size_t xy=0;
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             ws->Tlabels(j) = 2;
-            ws->T(j++)=stdb(s).stress(x,y)*sscale_arr[xy++];
+            ws->T(j++)=stdb(s).stress(x,y);
           }
         }
       }
     }
   }
 
-phi_type &getPhi() { return ws->Phi; }
-t_type &getT() { return ws->T; }
-t_type &getTlabels() { return ws->Tlabels; }
+  phi_type &getPhi() { return ws->Phi; }
+  t_type &getT() { return ws->T; }
+  t_type &getTlabels() { return ws->Tlabels; }
+  bool hasCopy() { return w_copy_; }
 
 private:
   tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
@@ -347,6 +357,60 @@ private:
     config.add("FSTDEV",f_std_dev);
     for (size_t j=0; j<6; ++j)
       config.add("SSTDEV",s_std_dev[j]);
+  }
+
+  void compute_wfactors(const StructureDB &stdb) {
+    size_t j=0;
+    for (size_t s=0; s<stdb.size(); ++s) {
+      double escale = stdb(s).eweight*eweightglob;
+      ws->wfactors(j++) = escale;
+      if (force) {
+        double fscale = stdb(s).fweight*fweightglob;
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          ws->wfactors(j++) = fscale;
+          ws->wfactors(j++) = fscale;
+          ws->wfactors(j++) = fscale;
+        }
+      }
+      if (stress) {
+        double sscale_arr[6] {1,1,1,1,1,1};
+        for(size_t xy=0;xy<6;++xy)
+          sscale_arr[xy] = stdb(s).sweight*sweightglob/6.0;
+        int xy=0;
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            ws->wfactors(j++)=sscale_arr[xy++];
+          }
+        }
+      }
+    }
+  }
+
+  void copyAndScale()
+  {
+    // first copy scalled Phi to Phi_cpy and T to T_cpy
+    // followed by swapping pointers
+    for (std::size_t j = 0; j < ws->Phi.cols(); ++j) {
+      for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {
+        ws->Phi_cpy(i,j) = ws->Phi(i,j)*ws->wfactors(i);
+      }
+    }
+    for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {
+      ws->T_cpy(i) = ws->T(i)*ws->wfactors(i);
+    }
+    std::swap(ws->Phi, ws->Phi_cpy);
+    std::swap(ws->T, ws->T_cpy);
+  }
+  void scale()
+  {
+    for (std::size_t j = 0; j < ws->Phi.cols(); ++j) {
+      for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {
+        ws->Phi(i,j) *= ws->wfactors(i);
+      }
+    }
+    for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {
+      ws->T(i) *= ws->wfactors(i);
+    }
   }
 };
 #endif

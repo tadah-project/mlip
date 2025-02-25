@@ -101,7 +101,8 @@ public:
     if(config.template get<bool>("NORM"))
       norm = Normaliser(config,st_desc_db);
 
-    desmat.build(st_desc_db,stdb);
+    bool wcopy=false;
+    desmat.build(st_desc_db,stdb, wcopy);
     train(desmat);
   }
 
@@ -131,7 +132,8 @@ public:
       config.add("STRESS", stress);
     }
 
-    desmat.build(stdb,norm,dc);
+    bool wcopy=false;
+    desmat.build(stdb,norm,dc,wcopy);
     train(desmat);
   }
 
@@ -179,8 +181,9 @@ public:
 
     LinearRegressor::read_sigma(config_pred,Sigma);
     DesignMatrix<BF> dm(bf,config_pred);
-    dm.scale=false; // do not scale energy, forces and stresses
-    dm.build(stdb,norm,dc);
+    // dm.scale=false; // do not scale energy, forces and stresses
+    bool wcopy=false;
+    dm.build(stdb,norm,dc,wcopy);
 
     predicted_error = T_MDMT_diag(dm.getPhi(), Sigma);
     double pmean = sqrt(predicted_error.mean());
@@ -227,9 +230,9 @@ Hint: check different predict() methods.");
     // compute energy, forces and stresses
     aed_type Tpred = T_dgemv(Phi, weights);
 
-    double eweightglob=config.template get<double>("EWEIGHT");
-    double fweightglob=config.template get<double>("FWEIGHT");
-    double sweightglob=config.template get<double>("SWEIGHT");
+    // double eweightglob=config.template get<double>("EWEIGHT");
+    // double fweightglob=config.template get<double>("FWEIGHT");
+    // double sweightglob=config.template get<double>("SWEIGHT");
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -238,19 +241,19 @@ Hint: check different predict() methods.");
     size_t i=0;
     while (i<Phi.rows()) {
 
-      stdb_(s).energy = Tpred(i++)*stdb(s).natoms()/eweightglob/stdb(s).eweight;
+      stdb_(s).energy = Tpred(i++)*stdb(s).natoms();
       if (config.template get<bool>("FORCE")) {
         stdb_(s).atoms.resize(stdb(s).natoms());
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
-            stdb_(s).atoms[a].force[k] = Tpred(i++)/fweightglob/stdb(s).fweight;
+            stdb_(s).atoms[a].force[k] = Tpred(i++);
           }
         }
       }
       if (config.template get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            stdb_(s).stress(x,y) = Tpred(i++)/sweightglob/stdb(s).sweight;
+            stdb_(s).stress(x,y) = Tpred(i++);
             if (x!=y)
               stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
           }

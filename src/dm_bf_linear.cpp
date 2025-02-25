@@ -15,18 +15,18 @@ size_t DM_BF_Linear::get_phi_cols(const Config &config)
   return cols;
 }
 void DM_BF_Linear::calc_phi_energy_row(phi_type &Phi, size_t &row,
-                                       const double fac, const Structure &, const StDescriptors &st_d)
+                                       const Structure &, const StDescriptors &st_d)
 {
   for (size_t i=0; i<st_d.naed(); ++i) {
     const aed_type &aed = st_d.get_aed(i);
     for (size_t j=0; j<aed.size(); ++j) {
-      Phi(row,j)+=aed[j]*fac;
+      Phi(row,j)+=aed[j];
     }
   }
   row++;
 }
 void DM_BF_Linear::calc_phi_force_rows(phi_type &Phi, size_t &row,
-                                       const double fac, const Structure &st, const StDescriptors &st_d)
+                                       const Structure &st, const StDescriptors &st_d)
 {
 
   for (size_t a=0; a<st.natoms(); ++a) {
@@ -37,7 +37,7 @@ void DM_BF_Linear::calc_phi_force_rows(phi_type &Phi, size_t &row,
       const fd_type &fji = st_d.fd[j][aa];
       for (size_t k=0; k<3; ++k) {
         for (size_t d=0; d<fij.rows(); ++d) {
-          Phi(row+k,d) -= fac*(fij(d,k)-fji(d,k));
+          Phi(row+k,d) -= (fij(d,k)-fji(d,k));
         }
       }
     }
@@ -45,7 +45,7 @@ void DM_BF_Linear::calc_phi_force_rows(phi_type &Phi, size_t &row,
   }
 }
 void DM_BF_Linear::calc_phi_stress_rows(phi_type &Phi, size_t &row,
-                                        const double fac[6], const Structure &st, const StDescriptors &st_d)
+                                        const Structure &st, const StDescriptors &st_d)
 {
   double V_inv = 1/st.get_volume();
   for (size_t i=0; i<st.natoms(); ++i) {
@@ -60,7 +60,7 @@ void DM_BF_Linear::calc_phi_stress_rows(phi_type &Phi, size_t &row,
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
           for (size_t d=0; d<fdij.rows(); ++d) {
-            Phi(row+mn,d) += V_inv*(fdij(d,y)-fdji(d,y))*0.5*fac[mn]*(ri(x)-rj(x));
+            Phi(row+mn,d) += V_inv*(fdij(d,y)-fdji(d,y))*0.5*(ri(x)-rj(x));
           }
           mn++;
         }

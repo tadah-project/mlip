@@ -24,9 +24,9 @@ class DM_Kern_Base: public DM_Function_Base, public virtual Kern_Base  {
         DM_Kern_Base(const Config&c);
         virtual ~DM_Kern_Base();
         virtual size_t get_phi_cols(const Config &config) override;
-        virtual void  calc_phi_energy_row(phi_type &Phi, size_t &row, const double fac, const Structure &st, const StDescriptors &st_d) override;
-        virtual void  calc_phi_force_rows(phi_type &Phi, size_t &row, const double fac, const Structure &st, const StDescriptors &st_d) override;
-        virtual void  calc_phi_stress_rows(phi_type &Phi, size_t &row, const double fac[6], const Structure &st, const StDescriptors &st_d) override;
+        virtual void  calc_phi_energy_row(phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
+        virtual void  calc_phi_force_rows(phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
+        virtual void  calc_phi_stress_rows(phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
 
 };
 #endif

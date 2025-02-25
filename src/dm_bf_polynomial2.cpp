@@ -18,7 +18,6 @@ size_t DM_BF_Polynomial2::get_phi_cols(const Config &config)
 }
 void DM_BF_Polynomial2::calc_phi_energy_row(phi_type &Phi,
                                             size_t &row,
-                                            const double fac,
                                             const Structure &,
                                             const StDescriptors &st_d)
 {
@@ -27,7 +26,7 @@ void DM_BF_Polynomial2::calc_phi_energy_row(phi_type &Phi,
     size_t b=0;
     for (size_t i=0; i<st_d.dim(); ++i) {
       for (size_t ii=i; ii<st_d.dim(); ++ii) {
-        Phi(row,b++) += aed(i)*aed(ii)*fac;
+        Phi(row,b++) += aed(i)*aed(ii);
       }
     }
   }
@@ -35,7 +34,6 @@ void DM_BF_Polynomial2::calc_phi_energy_row(phi_type &Phi,
 }
 void DM_BF_Polynomial2::calc_phi_force_rows(phi_type &Phi,
                                             size_t &row,
-                                            const double fac,
                                             const Structure &st,
                                             const StDescriptors &st_d)
 {
@@ -52,7 +50,7 @@ void DM_BF_Polynomial2::calc_phi_force_rows(phi_type &Phi,
         size_t b=0;
         for (size_t i=0; i<fdij.rows(); ++i) {
           for (size_t ii=i; ii<fdij.rows(); ++ii) {
-            Phi(row+k,b) -= fac*(fdij(i,k)*aedi(ii) + fdij(ii,k)*aedi(i)
+            Phi(row+k,b) -= (fdij(i,k)*aedi(ii) + fdij(ii,k)*aedi(i)
               - fdji(i,k)*aedj(ii) - fdji(ii,k)*aedj(i));
             b++;
           }
@@ -65,7 +63,6 @@ void DM_BF_Polynomial2::calc_phi_force_rows(phi_type &Phi,
 }
 void DM_BF_Polynomial2::calc_phi_stress_rows(phi_type &Phi,
                                              size_t &row,
-                                             const double fac[6],
                                              const Structure &st, 
                                              const StDescriptors &st_d)
 {
@@ -86,7 +83,7 @@ void DM_BF_Polynomial2::calc_phi_stress_rows(phi_type &Phi,
           size_t b=0;
           for (size_t i=0; i<fdij.rows(); ++i) {
             for (size_t ii=i; ii<fdij.rows(); ++ii) {
-              Phi(row+mn,b) += V_inv*0.5*fac[mn]*(ri(x)-rj(x))
+              Phi(row+mn,b) += V_inv*0.5*(ri(x)-rj(x))
                 *(fdij(i,y)*aedi(ii) + fdij(ii,y)*aedi(i)
                 - fdji(i,y)*aedj(ii) - fdji(ii,y)*aedj(i));
               b++;

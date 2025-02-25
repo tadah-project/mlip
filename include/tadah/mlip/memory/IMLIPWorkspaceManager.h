@@ -29,9 +29,10 @@ public:
      *
      * @param m Number of rows in the matrix.
      * @param n Number of columns in the matrix.
+     * @param wcopy Keep copy of Phi and T for weighted design matrix and target vector.
      * @return Pointer to an allocated DesignMatrixWorkspace.
      */
-    virtual DesignMatrixWorkspace* getDesignMatrixWorkspace(size_t m, size_t n) = 0;
+    virtual DesignMatrixWorkspace* getDesignMatrixWorkspace(size_t m, size_t n, bool wcopy) = 0;
 
     /**
      * @brief Release a DesignMatrix workspace.

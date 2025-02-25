@@ -20,7 +20,7 @@ public:
   /**
    * @brief Constructor.
    */
-  DesignMatrixWorkspace();
+  DesignMatrixWorkspace(bool wcopy);
 
   /**
    * @brief Destructor.
@@ -47,13 +47,14 @@ public:
    */
   bool isSufficient(size_t m_, size_t n_) const;
 
-  phi_type Phi;
-  t_type T;
+  phi_type Phi, Phi_cpy; // Design matrix and space for its copy
+  t_type T, T_cpy; // Target vector and space for its copy
   t_type Tlabels; // 0-Energy, 1-Force, 2-Stress  // TODO should be array of int not double
-
+  t_type wfactors; // Weighting factors for Phi
 
 private:
   // Disable copying
+  bool wcopy; // Keep copy of Phi and T for weighted design matrix and target vector
   DesignMatrixWorkspace(const DesignMatrixWorkspace &) = delete;
   DesignMatrixWorkspace &operator=(const DesignMatrixWorkspace &) = delete;
 };

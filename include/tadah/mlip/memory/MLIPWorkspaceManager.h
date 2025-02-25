@@ -36,7 +36,7 @@ class MLIPWorkspaceManager : public tadah::models::memory::ModelsWorkspaceManage
    * @param n Number of columns in the matrix.
    * @return Pointer to an allocated MLIPWorkspaceManager.
    */
-  DesignMatrixWorkspace *getDesignMatrixWorkspace(size_t m, size_t n) override;
+  DesignMatrixWorkspace *getDesignMatrixWorkspace(size_t m, size_t n, bool wcopy) override;
 
   /**
    * @brief Release a DesignMatrix workspace.

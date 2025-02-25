@@ -13,18 +13,17 @@ size_t DM_Kern_Base::get_phi_cols(const Config &)
 {
   return basis.cols();
 }
-void  DM_Kern_Base::calc_phi_energy_row(phi_type &Phi, size_t &row, const double fac,
+void  DM_Kern_Base::calc_phi_energy_row(phi_type &Phi, size_t &row,
                                         const Structure &, const StDescriptors &st_d)
 {
   for (size_t a=0; a<st_d.naed();++a) {
     for (size_t b=0; b<basis.cols(); ++b) {
-      Phi(row,b) += (*this)(basis.col(b),st_d.get_aed(a))*fac;
+      Phi(row,b) += (*this)(basis.col(b),st_d.get_aed(a));
     }
   }
   row++;
-  //Phi.row(row++) *= fac;
 }
-void  DM_Kern_Base::calc_phi_force_rows(phi_type &Phi, size_t &row, const double fac,
+void  DM_Kern_Base::calc_phi_force_rows(phi_type &Phi, size_t &row,
                                         const Structure &st, const StDescriptors &st_d) {
   for (size_t i=0; i<st.natoms(); ++i) {
     const aed_type& aedi = st_d.get_aed(i);
@@ -36,7 +35,7 @@ void  DM_Kern_Base::calc_phi_force_rows(phi_type &Phi, size_t &row, const double
       const aed_type& aedj = st_d.get_aed(j);
       for (size_t b=0; b<basis.cols(); ++b) {
         for (size_t k=0; k<3; ++k) {
-          Phi(row+k,b) -= fac*((*this).prime(basis.col(b), aedi,fdij(k)) -
+          Phi(row+k,b) -= ((*this).prime(basis.col(b), aedi,fdij(k)) -
             (*this).prime(basis.col(b),aedj,fdji(k)));
         }
       }
@@ -44,7 +43,7 @@ void  DM_Kern_Base::calc_phi_force_rows(phi_type &Phi, size_t &row, const double
     row+=3;
   }
 }
-void  DM_Kern_Base::calc_phi_stress_rows(phi_type &Phi, size_t &row, const double fac[6],
+void  DM_Kern_Base::calc_phi_stress_rows(phi_type &Phi, size_t &row,
                                          const Structure &st, const StDescriptors &st_d)
 {
   double V_inv = 1/st.get_volume();
@@ -62,7 +61,7 @@ void  DM_Kern_Base::calc_phi_stress_rows(phi_type &Phi, size_t &row, const doubl
       for (size_t x=0; x<3; ++x) {
         for (size_t y=x; y<3; ++y) {
           for (size_t b=0; b<basis.cols(); ++b) {
-            Phi(row+mn,b) += V_inv*0.5*fac[mn]*(ri(x)-rj(x))*
+            Phi(row+mn,b) += V_inv*0.5*(ri(x)-rj(x))*
               ((*this).prime(basis.col(b),aedi,fdij(y)) -
               (*this).prime(basis.col(b),aedj,fdji(y)));
           }
