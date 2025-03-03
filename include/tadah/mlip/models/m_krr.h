@@ -270,7 +270,7 @@ public:
       stdb_(s) = Structure(stdb(s));
 
       stdb_(s).energy = Tpred(i++);
-      predicted_error(i) = (sqrt(predicted_error(i))-pmean)/stdb(s).natoms();
+      predicted_error(i) = (sqrt(predicted_error(i))-pmean);
       if (config_pred.get<bool>("FORCE")) {
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
@@ -312,7 +312,7 @@ Hint: check different predict() methods.");
     size_t i=0;
     while (i<Phi.rows()) {
 
-      stdb_(s).energy = Tpred(i++)*stdb(s).natoms();
+      stdb_(s).energy = Tpred(i++);
       if (config.template get<bool>("FORCE")) {
         stdb_(s).atoms.resize(stdb(s).natoms());
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
