@@ -3,14 +3,14 @@
 
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
-#include <tadah/mlip/dataset_writers/dataset_writer.h>
+#include <tadah/mlip/structure_writers/structure_writer.h>
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <stdexcept>
-class CastepCellWriter : public DatasetWriter {
+class CastepCellWriter : public StructureWriter {
 public:
   CastepCellWriter(StructureDB& db);
 
