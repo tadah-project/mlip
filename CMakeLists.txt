@@ -134,8 +134,7 @@ FetchContent_Declare(
   GIT_TAG        v0.7.0
 )
 FetchContent_MakeAvailable(gemmi)
-# target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
-target_link_libraries(tadah.mlip PRIVATE gemmi::gemmi_cpp)
+target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
 
 FetchContent_Declare(
   json
