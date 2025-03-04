@@ -5,6 +5,7 @@ stages:
   - trigger
 
 cache:
+    key: "$CI_PIPELINE_ID"
     paths:
     - ${BUILD_DIR}
   
