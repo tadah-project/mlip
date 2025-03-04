@@ -1,8 +1,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
-#include <tadah/mlip/dataset_writers/lammps_structure_writer.h>
+#include <tadah/mlip/structure_writers/lammps_structure_writer.h>
 
-LammpsStructureWriter::LammpsStructureWriter(StructureDB& db) : DatasetWriter(db) {}
+LammpsStructureWriter::LammpsStructureWriter(StructureDB& db) : StructureWriter(db) {}
 
 void LammpsStructureWriter::write_data(const std::string& filename, const size_t i) {
 

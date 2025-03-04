@@ -1,8 +1,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
-#include <tadah/mlip/dataset_writers/castep_cell_writer.h>
+#include <tadah/mlip/structure_writers/castep_cell_writer.h>
 
-CastepCellWriter::CastepCellWriter(StructureDB& db) : DatasetWriter(db) {}
+CastepCellWriter::CastepCellWriter(StructureDB& db) : StructureWriter(db) {}
 
 void CastepCellWriter::write_data(const std::string& filename, const size_t i) {
 

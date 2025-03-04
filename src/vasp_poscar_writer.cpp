@@ -1,10 +1,10 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
-#include <tadah/mlip/dataset_writers/vasp_poscar_writer.h>
+#include <tadah/mlip/structure_writers/vasp_poscar_writer.h>
 
 #include <fstream>
 
-VaspPoscarWriter::VaspPoscarWriter(StructureDB& db) : DatasetWriter(db) {}
+VaspPoscarWriter::VaspPoscarWriter(StructureDB& db) : StructureWriter(db) {}
 
 void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
 
