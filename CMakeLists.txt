@@ -138,8 +138,8 @@ target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
 
 FetchContent_Declare(
   json
-  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-  DOWNLOAD_EXTRACT_TIMESTAMP true
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG        v3.11.3
 )
 FetchContent_MakeAvailable(json)
 target_link_libraries(tadah.mlip PRIVATE nlohmann_json::nlohmann_json)
