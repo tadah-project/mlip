@@ -62,7 +62,7 @@ private:
    * @brief Converts atomic fractional coordinates (fx, fy, fz) to absolute in Å
    *        using the current m_structure.cell matrix.
    */
-  void applyFractional(double fx, double fy, double fz, double &cx, double &cy,
+  void fracToAbs(double fx, double fy, double fz, double &cx, double &cy,
                        double &cz);
 
   /**
