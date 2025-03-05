@@ -24,7 +24,7 @@ void VaspPoscarReader::read(const std::string &path) {
   }
   if (lines.size() < 8) {
     throw std::runtime_error(
-        "VaspPoscarReader::read: Not enough lines for a POSCAR file.");
+      "VaspPoscarReader::read: Not enough lines for a POSCAR file.");
   }
 
   parsePoscar(lines);
@@ -78,7 +78,7 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   size_t countsLineIndex = hasElementSymbols ? 6 : 5;
   if (countsLineIndex >= lines.size()) {
     throw std::runtime_error(
-        "VaspPoscarReader: incomplete POSCAR (missing counts line).");
+      "VaspPoscarReader: incomplete POSCAR (missing counts line).");
   }
 
   std::vector<int> speciesCounts;
@@ -91,17 +91,17 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   size_t nextLineIndex = countsLineIndex + 1;
   if (nextLineIndex >= lines.size()) {
     throw std::runtime_error(
-        "VaspPoscarReader: incomplete POSCAR (no coords section).");
+      "VaspPoscarReader: incomplete POSCAR (no coords section).");
   }
 
   // Check if there's a "Selective Dynamics" line
-  bool selectiveDynamics = false;
+  // bool selectiveDynamics = false;
   bool directCoords = true; // or cart
   {
     std::string s = lines[nextLineIndex];
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
     if (s.find("selective") != std::string::npos) {
-      selectiveDynamics = true;
+      // selectiveDynamics = true;
       nextLineIndex++;
     }
   }
@@ -123,11 +123,11 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   // sum(speciesCounts) is total # of atoms
   int totalAtoms = 0;
   for (auto c : speciesCounts)
-    totalAtoms += c;
+  totalAtoms += c;
 
   if (nextLineIndex + totalAtoms > lines.size()) {
     throw std::runtime_error(
-        "VaspPoscarReader: Not enough lines for all atoms.");
+      "VaspPoscarReader: Not enough lines for all atoms.");
   }
 
   // If hasElementSymbols, we have e.g. line[5] = "Si O", line[6] = "2 4"
@@ -158,8 +158,8 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
     std::vector<std::string> cfields = split(lines[nextLineIndex + i]);
     if (cfields.size() < 3) {
       throw std::runtime_error(
-          "VaspPoscarReader: not enough coords for atom line " +
-          std::to_string(nextLineIndex + i));
+        "VaspPoscarReader: not enough coords for atom line " +
+        std::to_string(nextLineIndex + i));
     }
     double x = std::stod(cfields[0]);
     double y = std::stod(cfields[1]);
@@ -174,11 +174,11 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
     if (directCoords) {
       // Convert fractional -> cart
       double cx = x * m_structure.cell(0, 0) + y * m_structure.cell(1, 0) +
-                  z * m_structure.cell(2, 0);
+        z * m_structure.cell(2, 0);
       double cy = x * m_structure.cell(0, 1) + y * m_structure.cell(1, 1) +
-                  z * m_structure.cell(2, 1);
+        z * m_structure.cell(2, 1);
       double cz = x * m_structure.cell(0, 2) + y * m_structure.cell(1, 2) +
-                  z * m_structure.cell(2, 2);
+        z * m_structure.cell(2, 2);
       a.position[0] = cx;
       a.position[1] = cy;
       a.position[2] = cz;

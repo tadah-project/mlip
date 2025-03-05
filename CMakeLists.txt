@@ -128,13 +128,57 @@ target_include_directories(tadah.mlip PUBLIC ${Tadah.MODELS_SOURCE_DIR}/include)
 target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/include)
 target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/external/toml11)
 
+
+
+
+# 1) Temporarily store the original add_test() so we can call it.
+#    We name it "_original_add_test" internally.
+#
+#    NOTE: We must first verify that add_test is indeed available
+#    as a command to avoid scope issues.
+
+if(COMMAND add_test)
+  cmake_policy(PUSH)
+
+  # Create an internal function that calls the real add_test().
+  # By default, "add_test" is a built-in command in CMake. We are
+  # giving it a new name here: _original_add_test.
+  function(_original_add_test)
+    # Call the built-in add_test with all arguments passed in
+    _add_test(${ARGV})
+  endfunction()
+
+  # 2) Now we redefine add_test() so that it checks if the name is "cpptest".
+  #    If so, we skip registering the test. Otherwise, we hand off to original_add_test.
+  function(add_test)
+    # Common usage is: add_test(NAME <testname> COMMAND <exe> ...)
+    # So ARGV0 is "NAME", ARGV1 is the actual test name, etc.
+    if(NOT "${ARGV0}" STREQUAL "NAME" OR NOT "${ARGV1}" STREQUAL "cpptest")
+      # If it’s not "cpptest," just call the original
+      _original_add_test(${ARGV})
+    else()
+      message(STATUS "Skipping unwanted Gemmi cpptest.")
+    endif()
+  endfunction()
+
+  cmake_policy(POP)
+endif()
+
+###
+# Now fetch or add Gemmi in the usual way. For example:
+###
 FetchContent_Declare(
   gemmi
   GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
   GIT_TAG        v0.7.0
 )
 FetchContent_MakeAvailable(gemmi)
+
+
+
 target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
+
+
 
 FetchContent_Declare(
   json
