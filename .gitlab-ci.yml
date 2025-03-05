@@ -4,9 +4,9 @@ stages:
   - build_release
   - trigger
 
-#cache:
-    #paths:
-    #- ${BUILD_DIR}
+cache:
+    paths:
+    - ${BUILD_DIR}
   
 before_script:
   - mkdir -p ${DEBUG_DIR}
