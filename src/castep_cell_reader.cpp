@@ -122,8 +122,12 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
     // Now parse lines if in any recognized block
     if (inLatticeCart) {
       // read up to 3 lines for a,b,c
-      if (lcCount < 3) {
+      if (lcCount < 4) {
         auto toks = split_line(line);
+        if (toks.size() == 1) {
+          // skip optional units line
+          continue;
+        }
         if (toks.size() < 3) {
           throw std::runtime_error("CastepCellReader: LATTICE_CART line missing coords.");
         }
@@ -147,7 +151,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       // e.g. "Si 0.0 0.0 0.0"
       auto toks = split_line(line);
       if (toks.size() < 4) {
-        // possibly a comment or empty line, skip
+        // skip empty lines which should not be there...
         continue;
       }
 
@@ -160,7 +164,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       double fz = std::stod(toks[3]);
 
       double cx, cy, cz;
-      applyFractional(fx, fy, fz, cx, cy, cz);
+      fracToAbs(fx, fy, fz, cx, cy, cz);
 
       Atom a;  
       // Copy base element data into 'a'
@@ -172,9 +176,9 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       m_structure.atoms.push_back(a);
     }
     else if (inPosAbsBlock) {
-      // e.g. "O 1.2 3.4 5.6"
       auto toks = split_line(line);
       if (toks.size() < 4) {
+        // skip units line
         continue;
       }
 
@@ -274,9 +278,9 @@ void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines) {
 }
 
 //--------------------------------------------------------------------
-// applyFractional
+// fracToAbs
 //--------------------------------------------------------------------
-void CastepCellReader::applyFractional(double fx, double fy, double fz, 
+void CastepCellReader::fracToAbs(double fx, double fy, double fz, 
                                        double &cx, double &cy, double &cz) {
   // r_cart = fx*a + fy*b + fz*c
   //    a, b, c are rows of the 3×3 matrix in m_structure.cell
