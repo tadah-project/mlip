@@ -271,15 +271,15 @@ void NNFinder::calc(Structure &st)
 // Parallel loop over structure database
 void NNFinder::calc(StructureDB &stdb)
 {
-  auto t0 = std::chrono::steady_clock::now();
+  // auto t0 = std::chrono::steady_clock::now();
 #ifdef _OPENMP
   #pragma omp parallel for
 #endif
   for(size_t i = 0; i < stdb.size(); i++){
     calc(stdb(i));
   }
-  auto t1 = std::chrono::steady_clock::now();
-  double seconds = std::chrono::duration<double>(t1 - t0).count();
+  // auto t1 = std::chrono::steady_clock::now();
+  // double seconds = std::chrono::duration<double>(t1 - t0).count();
   // std::cout << "calc(StructureDB &stdb) for-loop took "
   //           << seconds << " seconds\n";
 }

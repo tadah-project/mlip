@@ -235,15 +235,23 @@ struct Structure {
   {
     os << "Structure  :    " << std::left << st.label << std::endl;
     os << "Weights    :    " << std::left
-      <<  "E: "<< st.eweight
+      << "E: "    << st.eweight
       << " | F: " << std::left << st.fweight
       << " | S: " << std::left << st.sweight << std::endl;
-    os << "# atoms    :    " << std::left << st.atoms.size() << std::endl;
+    os << "Atoms      :    " << std::left << st.atoms.size() << " | ";
+    for (const auto &el: st.get_unique_elements()) {  os << " " << el.symbol << std::left; }
+    os << std::endl;
     os << "Energy     :" << std::right << std::setw(w)
-      << std::setprecision(p) << std::fixed << st.energy << std::endl;
+      << std::setprecision(p) << std::fixed << st.energy << "     "
+       << "Temp   :" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_temperature() << std::endl;
+    os << "Volume     :" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_volume() << "     "
+       << "Density:" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_density() << std::endl;
     os << "Cell       :" << std::endl;
     for (int i=0; i<3; ++i) {
-      os << std::right << std::fixed << std::setw(w+10)
+      os << std::right << std::fixed << std::setw(w+12)
         << std::setprecision(p) << st.cell(i,0);
       os << std::right << std::fixed << std::setw(w)
         << std::setprecision(p) << st.cell(i,1);
@@ -253,7 +261,7 @@ struct Structure {
     }
     os << "Stress     :" << std::endl;
     for (int i=0; i<3; ++i) {
-      os << std::right << std::fixed << std::setw(w+10)
+      os << std::right << std::fixed << std::setw(w+12)
         << std::setprecision(p) << st.stress(i,0);
       os << std::right << std::fixed << std::setw(w)
         << std::setprecision(p) << st.stress(i,1);
@@ -309,7 +317,7 @@ struct Structure {
   std::set<Element> get_unique_elements() const;
 
   private:
-    const static size_t w=15;  // controls output width
+    const static size_t w=13;  // controls output width
     const static size_t p=6;   // controls output precision
   
 
