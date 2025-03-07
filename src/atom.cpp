@@ -11,6 +11,12 @@ Atom::Atom(const Element &element,
   position(px,py,pz),
   force(fx,fy,fz)
 {}
+Atom::Atom(const Element &element,
+           const double px, const double py, const double pz):
+  Element(element),
+  position(px,py,pz),
+  force(0,0,0)
+{}
 
 std::ostream& operator<<(std::ostream& os, const Atom& atom)
 {

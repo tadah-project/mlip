@@ -64,6 +64,15 @@ struct Atom: public Element {
             const double px, const double py, const double pz,
             const double fx, const double fy, const double fz);
 
+    /** This constructor fully initialise this object with zero force
+     *
+     * @param[in] element   Chemical Element
+     * @param[in] px,py,pz  Atomic coordinates
+     *
+     */
+    Atom(const Element &element,
+            const double px, const double py, const double pz);
+
     /** Hold position of the atom. */
     Vec3d position;
 
