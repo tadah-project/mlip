@@ -1,7 +1,7 @@
 #ifndef CIF_READER_H
 #define CIF_READER_H
 
-#include <tadah/mlip/structure_readers/structure_reader.h>
+#include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure.h>
 #include <string>
 
@@ -13,7 +13,7 @@
  * - Searches loop.tags for _atom_site_fract_x or _atom_site_cartn_x.
  * - Uses loop.get_s(row, col) to retrieve the data cells, converting to float/double.
  */
-class CifReader : public StructureReader {
+class CifReader : public IStructureReader {
 public:
   CifReader() = default;
 

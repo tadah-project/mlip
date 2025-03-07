@@ -1,62 +1,74 @@
 #ifndef COD_READER_H
 #define COD_READER_H
 
-#include <tadah/mlip/structure_readers/structure_reader.h>
+#include <memory>
+#include <string>
+
+#include <tadah/mlip/data_providers/imaterials_data_provider.h>
+#include <tadah/mlip/data_providers/cod_data_provider.h>
+#include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure_readers/cif_reader.h>
 #include <tadah/mlip/structure.h>
 
-#include <string>
-
 /**
  * @brief Reads a CIF file from the Crystallography Open Database (COD)
- *        in memory and parses its content using an existing CifReader.
+ *        and parses its content using CifReader.
  *
- * Inherits from StructureReader to provide a common interface
- * for reading structures from online sources.
+ * Delegates all network fetching to CODDataProvider, then uses CifReader
+ * to convert raw CIF text into a Structure.
  */
-class codReader : public StructureReader {
+class CODReader : public IStructureReader {
 public:
   /// Default constructor
-  codReader() = default;
+  CODReader();
 
   /**
-   * @brief Retrieves a CIF file from the COD database by constructing
-   *        a URL or using a direct URL and loads it into a Structure object.
+   * @brief Retrieves a CIF resource from the COD database by ID or by a full URL,
+   *        then parses it into a Structure.
    *
-   * If @p path does not start with "http://" or "https://", the URL is built
-   * from a COD ID (e.g., "1534932") by appending ".cif". If ".cif" is already 
-   * in @p path, it is appended as is. The downloaded content is parsed with CifReader.
+   * If @p path is recognized as a URL (e.g. starts with "http://" or "https://"),
+   * the code attempts to extract the COD material ID. Otherwise, it uses @p path
+   * directly as the COD ID. The returned raw content is parsed with CifReader.
    *
-   * @param path A COD entry ID or a fully qualified URL.
+   * @param path  A COD entry ID (e.g. "1534932") or a fully qualified URL
+   *              (e.g. "https://www.crystallography.net/cod/1534932.cif").
    */
   void read(const std::string &path) override;
 
   /**
-   * @brief Accesses the last successfully read Structure.
+   * @brief Returns the last successfully read Structure.
+   *
+   * @return A Structure with cell parameters and atomic coordinates in Cartesian.
    */
   Structure getStructure() const override;
 
 private:
   /**
-   * @brief A helper callback function that libcurl uses to write received bytes
-   *        into a std::string in memory.
+   * @brief Convenience method to check if a string is an HTTP/HTTPS URL.
    */
-  static size_t writeDataCallback(void* ptr, size_t size, size_t nmemb, void* userData);
+  bool isHttpUrl(const std::string &path) const;
 
   /**
-   * @brief Downloads data from the given URL and returns it as a single string.
-   *
-   * Uses libcurl's easy interface for making a GET request.
-   *
-   * @param url A valid URL that points to a CIF resource on COD.
-   * @return The complete content fetched from @p url.
+   * @brief Extracts a COD material ID (e.g. "1534932") from a full COD URL.
+   *        If parsing fails, returns an empty string.
    */
-  std::string fetchDataFromURL(const std::string &url) const;
+  std::string extractCodIdFromUrl(const std::string &url) const;
 
   /**
-   * @brief Internal buffer for storing the last read structure.
+   * @brief Uses CODDataProvider to fetch raw CIF text by ID (or returns an error if not found).
+   */
+  std::string fetchCifById(const std::string &codID) const;
+
+  /**
+   * @brief Internal buffer for storing the last parsed structure.
    */
   Structure m_structure;
+
+  /**
+   * @brief COD data provider for HTTP requests. No parsing is performed in the provider.
+   */
+  std::unique_ptr<IMaterialsDataProvider> m_dataProvider;
 };
 
 #endif // COD_READER_H
+
