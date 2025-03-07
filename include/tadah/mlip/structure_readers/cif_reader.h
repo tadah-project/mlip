@@ -20,13 +20,13 @@ public:
   void read(const std::string &path) override;
   Structure getStructure() const override;
 
-private:
-  Structure m_structure;
-
   /**
    * @brief Parses the entire CIF text, populating m_structure with cell & atoms.
    */
   void parseCifContents(const std::string &contents);
+
+private:
+  Structure m_structure;
 
   /**
    * @brief Creates a 3×3 matrix from (a,b,c, alpha,beta,gamma).

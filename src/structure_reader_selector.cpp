@@ -3,8 +3,8 @@
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 #include <tadah/mlip/structure_readers/vasp_poscar_reader.h>
 #include <tadah/mlip/structure_readers/materials_project_reader.h>
-/*#include <tadah/mlip/structure_readers/cod_reader.h>*/
-/*#include <tadah/mlip/structure_readers/aflow_reader.h>*/
+#include <tadah/mlip/structure_readers/cod_reader.h>
+#include <tadah/mlip/structure_readers/aflow_reader.h>
 #include <tadah/mlip/key_storage/key_manager.h>
 #include <tadah/mlip/structure_readers/nomad_reader.h>
 
@@ -33,12 +33,12 @@ StructureReaderSelector::getReader(const std::string &pathOrId) {
   } else if (format == "CELL") {
     return std::make_unique<CastepCellReader>();
   }
-  /*else if (format == "COD") {*/
-  /*    return std::make_unique<CODReader>();*/
-  /*}*/
-  /*else if (format == "AFLOW") {*/
-  /*    return std::make_unique<AflowReader>();*/
-  /*}*/
+  else if (format == "COD") {
+      return std::make_unique<codReader>();
+  }
+  else if (format == "AFLOW") {
+      return std::make_unique<AflowReader>();
+  }
   else if (format == "NOMAD") {
     return std::make_unique<NomadReader>();
   } else {

@@ -15,12 +15,13 @@ void CifReader::read(const std::string &path) {
     throw std::runtime_error("CifReader::read: Cannot open " + path);
   }
 
+  // Label the source
+  m_structure.label = "CIF file: " + path;
+
   std::ostringstream buffer;
   buffer << ifs.rdbuf();
   parseCifContents(buffer.str());
 
-  // Label the source
-  m_structure.label = "CIF file: " + path;
 }
 
 Structure CifReader::getStructure() const { return m_structure; }
@@ -41,6 +42,12 @@ void CifReader::parseCifContents(const std::string &fileContents) {
   struc.check_spacegroup();
 
   auto sites = struc.get_all_unit_cell_sites();
+
+  auto volume = struc.cell.volume;
+  auto symmetry = struc.spacegroup_hm;
+  auto elements = struc.atom_types;
+  m_structure.label += " | Symmetry: " + symmetry;
+  m_structure.label += " | Volume: " + std::to_string(volume);
 
   m_structure.atoms.reserve(sites.size());
   for (const auto &site : sites) {
