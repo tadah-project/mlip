@@ -1,7 +1,7 @@
 #ifndef VASP_POSCAR_READER_H
 #define VASP_POSCAR_READER_H
 
-#include <tadah/mlip/structure_readers/structure_reader.h>
+#include <tadah/mlip/structure_readers/istructure_reader.h>
 
 /**
  * @brief Reads a VASP POSCAR/CONTCAR file.
@@ -15,7 +15,7 @@
  *   8) "Direct" or "Cartesian"
  *   9+) Atomic coordinates
  */
-class VaspPoscarReader : public StructureReader {
+class VaspPoscarReader : public IStructureReader {
 public:
   VaspPoscarReader() = default;
 

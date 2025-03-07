@@ -3,10 +3,10 @@
 
 #include <memory>
 #include <string>
-#include <tadah/mlip/structure_readers/structure_reader.h>
+#include <tadah/mlip/structure_readers/istructure_reader.h>
 
 /**
- * @brief A factory that provides an appropriate StructureReader
+ * @brief A factory that provides an appropriate IStructureReader
  *        based on file extension or recognized online ID prefixes.
  */
 class StructureReaderSelector {
@@ -15,10 +15,10 @@ public:
    * @brief Creates a reader by analyzing the input path or ID.
    *
    * @param pathOrId File path or an online ID (e.g., "mp-149")
-   * @return A suitable StructureReader capable of parsing the structure.
+   * @return A suitable IStructureReader capable of parsing the structure.
    * @throws std::runtime_error if no suitable reader is found.
    */
-  static std::unique_ptr<StructureReader>
+  static std::unique_ptr<IStructureReader>
   getReader(const std::string &pathOrId);
 
 private:

@@ -1,131 +1,32 @@
 #include <tadah/mlip/structure_readers/aflow_reader.h>
-
-#include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sstream>
-#include <iostream>
 #include <cmath>
 #include <vector>
 
-/*
-  writeCallback(ptr, size, nmemb, userdata) gathers the data returned 
-  via cURL into an std::string. The cURL library calls this function 
-  repeatedly to deliver chunks of the HTTP response body.
-*/
-static size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
-  auto* response = static_cast<std::string*>(userdata);
-  size_t totalBytes = size * nmemb;
-  response->append(ptr, totalBytes);
-  return totalBytes;
+AflowReader::AflowReader()
+  : m_dataProvider(std::make_unique<AFLOWDataProvider>()) {
 }
 
-// No special authentication or configuration is required in AflowReader.
-AflowReader::AflowReader() {
-}
-
-/*
-  read(auid):
-    Reads AFLOW data corresponding to the input AUID (e.g. "aflow:e9c6d914c4b8d9ca"), 
-    then parses it into an internal Structure object for later retrieval.
-*/
 void AflowReader::read(const std::string &auid) {
   fetchAndParseAflowByAuid(auid);
 }
 
-// getStructure():
-//   Returns the most recently fetched AFLOW structure.
 Structure AflowReader::getStructure() const {
   return m_structure;
 }
 
-/*
-  convertAURLToURL(aurl):
-    Converts an AFLOW-style aurl, usually "server:PATH", 
-    into "server/PATH". This helps build a domain/path 
-    format recognized by HTTP requests. For example:
-
-      "aflowlib.duke.edu:AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152"
-
-    becomes:
-
-      "aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152".
-*/
-std::string convertAURLToURL(const std::string &aurl) {
-  const std::size_t pos = aurl.find(':');
-  if (pos != std::string::npos) {
-    std::string server = aurl.substr(0, pos);
-    std::string path   = aurl.substr(pos + 1);
-    return server + "/" + path;
-  }
-  return aurl;
-}
-
-/*
-  fetchAndParseAflowByAuid(auid):
-    Issues a two-step request:
-      1) Queries https://aflow.org/API/aflux/?auid('<AUID>')
-         -> Returns a JSON array which includes "aurl".
-      2) Converts aflow "aurl" to a standard URL adding "?format=json"
-         -> Retrieves the final JSON describing the structure.
-
-    Afterwards, parseAflowJson(response) 
-    populates the internal Structure object.
-*/
 void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
-  const std::string baseUrl = "https://aflow.org/API/aflux/?auid('";
-  std::string url = baseUrl + auid + "')";
-
-  std::string response0 = httpGet(url);
-
-  using json = nlohmann::json;
-  json root = json::parse(response0);
-
-  // The top-level JSON is an array. We only handle the first element.
-  if (!root.is_array() || root.empty()) {
-    std::cerr << "Error: Response is empty or not an array.\n";
-    return;
+  RawResponse rr = m_dataProvider->QueryByID(auid);
+  if (rr.httpStatus != 200) {
+    std::ostringstream oss;
+    oss << "AflowReader: HTTP " << rr.httpStatus
+        << " for AUID '" << auid << "'.";
+    throw std::runtime_error(oss.str());
   }
-
-  json firstObject = root[0];
-  std::string aurl = firstObject["aurl"].get<std::string>();
-  aurl = convertAURLToURL(aurl) + "?format=json";
-
-  std::string response = httpGet(aurl);
-  parseAflowJson(response);
+  parseAflowJson(rr.response);
 }
-
-/*
-  httpGet(url):
-    Performs a simple GET request using cURL, returning the 
-    response body as a std::string. Follows redirects automatically. 
-    Throws std::runtime_error if curl fails.
-*/
-std::string AflowReader::httpGet(const std::string &url) {
-  CURL* curl = curl_easy_init();
-  if (!curl) {
-    throw std::runtime_error("AflowReader::httpGet: Failed to init cURL.");
-  }
-
-  std::string response;
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, "AflowReader/1.0");
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-  CURLcode res = curl_easy_perform(curl);
-  if (res != CURLE_OK) {
-    curl_easy_cleanup(curl);
-    throw std::runtime_error(
-      "AflowReader::httpGet: " + std::string(curl_easy_strerror(res))
-    );
-  }
-
-  curl_easy_cleanup(curl);
-  return response;
-}
-
 /*
   parseAflowJson(jsonContent):
     Interprets the final AFLOW JSON, which includes 
@@ -360,4 +261,3 @@ void AflowReader::makeCellMatrix(double a, double b, double c,
   cell[2][2] = c * std::sqrt(term > 0.0 ? term : 0.0);
   // Remaining off-diagonal elements are zero-initialized by default.
 }
-

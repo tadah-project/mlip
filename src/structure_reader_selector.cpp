@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <sys/stat.h>
 
-std::unique_ptr<StructureReader>
+std::unique_ptr<IStructureReader>
 StructureReaderSelector::getReader(const std::string &pathOrId) {
   std::string format = guessFormat(pathOrId);
 
@@ -34,7 +34,7 @@ StructureReaderSelector::getReader(const std::string &pathOrId) {
     return std::make_unique<CastepCellReader>();
   }
   else if (format == "COD") {
-      return std::make_unique<codReader>();
+      return std::make_unique<CODReader>();
   }
   else if (format == "AFLOW") {
       return std::make_unique<AflowReader>();

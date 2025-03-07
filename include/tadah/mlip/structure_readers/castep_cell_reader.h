@@ -3,7 +3,7 @@
 
 #include <string>
 #include <tadah/mlip/structure.h>
-#include <tadah/mlip/structure_readers/structure_reader.h>
+#include <tadah/mlip/structure_readers/istructure_reader.h>
 
 /**
  * @brief Reads crystallographic and atomic data from a CASTEP .cell file.
@@ -25,7 +25,7 @@
  * This parser also extracts atomic species from the first token
  * in POSITIONS_* blocks.
  */
-class CastepCellReader : public StructureReader {
+class CastepCellReader : public IStructureReader {
 public:
   /**
    * @brief Default constructor.
