@@ -2,6 +2,8 @@
 #include <tadah/mlip/structure_writers/castep_cell_writer.h>
 #include <tadah/mlip/structure_writers/vasp_poscar_writer.h>
 #include <tadah/mlip/structure_writers/lammps_structure_writer.h>
+namespace tadah {
+namespace mlip {
 
 // Factory method implementation
 std::unique_ptr<StructureWriter> StructureWriterSelector::get_writer(const std::string& type, StructureDB& db) {
@@ -18,3 +20,5 @@ std::unique_ptr<StructureWriter> StructureWriterSelector::get_writer(const std::
   }
 
 }
+} // namespace mlip
+} // namespace tadah

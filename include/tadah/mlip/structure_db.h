@@ -12,6 +12,8 @@
 #include <vector>
 #include <set>
 
+namespace tadah {
+namespace mlip {
 /**
  * Container for a collection of Structure(s).
  *
@@ -51,7 +53,7 @@ struct StructureDB {
      * \note
      *      Required Config key: \ref DBFILE
      */
-  StructureDB(Config &config);
+  StructureDB(tadah::core::Config &config);
 
   /** Add structures listed in the config file
      *
@@ -59,7 +61,7 @@ struct StructureDB {
      *      Required Config key: \ref DBFILE
      *
      */
-  void add(Config &config);
+  void add(tadah::core::Config &config);
 
   /** Add all structures from a file */
   void add(const std::string fn);
@@ -140,16 +142,16 @@ struct StructureDB {
   size_t calc_natoms(size_t n) const;
 
   /** Return unique elements for all Structures. */
-  std::set<Element> get_unique_elements() const;
+  std::set<tadah::core::Element> get_unique_elements() const;
 
   /** Find unique elements in provided Config file */
-  static std::set<Element> find_unique_elements(const Config &c);
+  static std::set<tadah::core::Element> find_unique_elements(const tadah::core::Config &c);
 
   /** Find unique elements in provided file */
-  static std::set<Element> find_unique_elements(const std::string &fn);
+  static std::set<tadah::core::Element> find_unique_elements(const std::string &fn);
 
   /** Count number of structures and atoms in all datasets from the Config file. */
-  static std::pair<int,int> count(const Config &c);
+  static std::pair<int,int> count(const tadah::core::Config &c);
 
   /** Count number of structures and atoms in a single dataset. */
   static std::pair<int,int> count(const std::string fn);
@@ -157,10 +159,10 @@ struct StructureDB {
   void clear_nn();
 
   /** Check consistency of the ATOMS key. */
-  static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
+  static void check_atoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements);
 
   /** Check consistency of the WATOMS key. Add if missing*/
-  static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
+  static void check_watoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements);
 
   // Methods to enable range-based for loop
   std::vector<Structure>::iterator begin();
@@ -180,4 +182,6 @@ private:
   bool isBlankLine(const std::string& line) const;
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif

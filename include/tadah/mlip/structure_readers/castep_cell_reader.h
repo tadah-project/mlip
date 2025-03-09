@@ -4,6 +4,8 @@
 #include <string>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_readers/istructure_reader.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Reads crystallographic and atomic data from a CASTEP .cell file.
@@ -66,9 +68,11 @@ private:
                        double &cz);
 
   /**
-   * @brief Helper for mapping string species (e.g., "Si", "O") to Element enum.
+   * @brief Helper for mapping string species (e.g., "Si", "O") to tadah::core::Element enum.
    */
-  Element parseSpecies(const std::string &sym);
+  tadah::core::Element parseSpecies(const std::string &sym);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CASTEP_CELL_READER_H

@@ -4,6 +4,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <string>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 class StructureWriter {
   public:
@@ -20,4 +22,6 @@ class StructureWriter {
     double p = 10;  // output precision
     double w = p+6;  // column width
 };
+} // namespace mlip
+} // namespace tadah
 #endif // STRUCTURE_WRITER_H

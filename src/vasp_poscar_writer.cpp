@@ -3,6 +3,8 @@
 #include <tadah/mlip/structure_writers/vasp_poscar_writer.h>
 
 #include <fstream>
+namespace tadah {
+namespace mlip {
 
 VaspPoscarWriter::VaspPoscarWriter(StructureDB& db) : StructureWriter(db) {}
 
@@ -77,3 +79,5 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
 
   file.close();
 }
+} // namespace mlip
+} // namespace tadah

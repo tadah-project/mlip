@@ -3,12 +3,14 @@
 #include <tadah/core/periodic_table.h>
 #include <cstdio>
 #include <cctype>   // For std::isspace
+namespace tadah {
+namespace mlip {
 
 StructureDB::StructureDB() {
-  PeriodicTable::initialize();
+  tadah::core::PeriodicTable::initialize();
 }
-StructureDB::StructureDB(Config &config) {
-  PeriodicTable::initialize();
+StructureDB::StructureDB(tadah::core::Config &config) {
+  tadah::core::PeriodicTable::initialize();
   add(config);
 }
 
@@ -68,7 +70,7 @@ void StructureDB::remove(size_t i) {
   structures.erase(structures.begin()+i);
 }
 
-void StructureDB::add(Config &config) {
+void StructureDB::add(tadah::core::Config &config) {
   for (const std::string &s : config("DBFILE")) {
     dbidx.push_back(size());
     add(s);
@@ -109,16 +111,16 @@ size_t StructureDB::calc_natoms(size_t n) const {
   }
   return natoms;
 }
-std::set<Element> StructureDB::get_unique_elements() const {
-  std::set<Element> s;
+std::set<tadah::core::Element> StructureDB::get_unique_elements() const {
+  std::set<tadah::core::Element> s;
   for (const auto & st: structures) {
-    std::set<Element> u = st.get_unique_elements();
+    std::set<tadah::core::Element> u = st.get_unique_elements();
     s.insert(u.cbegin(),u.cend());
   }
   return s;
 }
-std::set<Element> StructureDB::find_unique_elements(const std::string &fn) {
-  std::set<Element> s;
+std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::string &fn) {
+  std::set<tadah::core::Element> s;
   std::ifstream ifs(fn);
   std::string line;
 
@@ -144,16 +146,16 @@ std::set<Element> StructureDB::find_unique_elements(const std::string &fn) {
     while (std::getline(ifs, line)) {
       if(line.empty()) break;
       sscanf(line.c_str(), "%2s", symbol);
-      s.insert(PeriodicTable::find_by_symbol(symbol));
+      s.insert(tadah::core::PeriodicTable::find_by_symbol(symbol));
     }
 
   }
   return s;
 }
-std::set<Element> StructureDB::find_unique_elements(const Config &c) {
-  std::set<Element> s;
+std::set<tadah::core::Element> StructureDB::find_unique_elements(const tadah::core::Config &c) {
+  std::set<tadah::core::Element> s;
   for (const auto& fn: c("DBFILE")) {
-    std::set<Element> temp = find_unique_elements(fn);
+    std::set<tadah::core::Element> temp = find_unique_elements(fn);
     s.insert(temp.begin(), temp.end());
   }
   return s;
@@ -163,7 +165,7 @@ template <typename T,typename U>
 std::pair<T,U> operator+(const std::pair<T,U>  &l,const std::pair<T,U>  &r) {   
   return {l.first+r.first,l.second+r.second};                                    
 }  
-std::pair<int,int> StructureDB::count(const Config &config) {
+std::pair<int,int> StructureDB::count(const tadah::core::Config &config) {
   std::pair<int, int> res=std::make_pair(0,0);  
   for (const std::string &fn : config("DBFILE")) {
     res = res + count(fn);
@@ -192,7 +194,7 @@ std::pair<int,int> StructureDB::count(const std::string fn){
 void StructureDB::clear_nn() {
   for (auto &struc: structures) struc.clear_nn();
 }
-void StructureDB::check_atoms_key(Config &config, std::set<Element> &unique_elements) {
+void StructureDB::check_atoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
   if (config.exist("ATOMS")) {
@@ -221,7 +223,7 @@ void StructureDB::check_atoms_key(Config &config, std::set<Element> &unique_elem
     for (const auto &s : unique_elements) config.add("ATOMS", s.symbol);
   }
 }
-void StructureDB::check_watoms_key(Config &config, std::set<Element> &unique_elements) {
+void StructureDB::check_watoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
   if (config.exist("WATOMS")) {
@@ -286,7 +288,7 @@ std::string StructureDB::summary() const {
   str +=  " | # of atoms : " + to_string(calc_natoms());
 
   str += " | Elements : ";
-  std::set<Element> ue = get_unique_elements(); 
+  std::set<tadah::core::Element> ue = get_unique_elements(); 
   for (const auto &e: ue) str+= e.symbol + " ";
   str+="\n";
   return str;
@@ -366,3 +368,5 @@ bool StructureDB::isBlankLine(const std::string& line) const
     }
     return true;
 }
+} // namespace mlip
+} // namespace tadah

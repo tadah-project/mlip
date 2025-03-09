@@ -2,6 +2,8 @@
 #define STRUCTURE_TRANSFORMATION_H
 
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class StructureTransformation
@@ -48,7 +50,7 @@ public:
    *   pos'  = R * pos.
    * Stress => S' = R * S * R^T.
    */
-  static void rotate(Structure &st, const Matrix3d &R);
+  static void rotate(Structure &st, const tadah::core::Matrix3d &R);
 
   /**
    * Shears cell and atoms by shearMatrix:
@@ -56,7 +58,7 @@ public:
    *   pos'  = shearMatrix * pos,
    *   S'    = shearMatrix * S * (shearMatrix^T).
    */
-  static void shear(Structure &st, const Matrix3d &shearMatrix);
+  static void shear(Structure &st, const tadah::core::Matrix3d &shearMatrix);
 
   /**
    * Replicates the structure nx, ny, nz times along cell vectors.
@@ -68,7 +70,7 @@ public:
   /**
    * Shifts all atomic positions by shiftVec. Cell and stress remain unchanged.
    */
-  static void shift(Structure &st, const Vec3d &shiftVec);
+  static void shift(Structure &st, const tadah::core::Vec3d &shiftVec);
 
   /**
    * Mirrors about origin => pos' = -pos.
@@ -81,7 +83,7 @@ public:
    * Reflects positions via p' = p - 2*(p·n_hat) * n_hat.
    * Then S' = M*S*M^T, M = (I - 2n_hat n_hat^T).
    */
-  static void mirrorPlane(Structure &st, const Vec3d &normalVec);
+  static void mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec);
 
   /**
    * Mirrors about a plane with Miller indices (h,k,l) through origin.
@@ -120,7 +122,7 @@ public:
    * Checks distance from all existing atoms. If below minDistance, prints warning.
    */
   static void addAtom(Structure &st, const Atom &atomTemplate, bool useRandomPosition = false,
-                      const Vec3d &pos = Vec3d(0.0, 0.0, 0.0), double minDistance = 0.8);
+                      const tadah::core::Vec3d &pos = tadah::core::Vec3d(0.0, 0.0, 0.0), double minDistance = 0.8);
 
   /**
    * Removes an atom with a given global index from the structure if valid.
@@ -137,7 +139,7 @@ public:
   static void shakeAtoms(Structure &st, double maxDisplacement);
 
 private:
-  static void transformStress(Structure &st, const Matrix3d &M);
+  static void transformStress(Structure &st, const tadah::core::Matrix3d &M);
   static void checkNearSingular(const Structure &st);
 
   /**
@@ -146,4 +148,6 @@ private:
   static double rand01();
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // STRUCTURE_TRANSFORMATION_H

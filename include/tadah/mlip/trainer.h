@@ -14,7 +14,7 @@
 
 class Trainer {
   public:
-    Config config;
+    tadah::core::Config config;
     DC_Selector DCS;
     DescriptorsCalc<> dc;
     NNFinder nnf;
@@ -28,15 +28,15 @@ class Trainer {
       if(fb)
         delete fb;
     }
-    Trainer (Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+    Trainer (tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
       config(c),
       DCS(config),
       dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
       nnf(config),
-      fb(CONFIG::factory<DM_Function_Base,Config&>(
+      fb(tadah::core::factory<DM_Function_Base,tadah::core::Config&>(
             config.get<std::string>("MODEL",1),config)),
-      model(CONFIG::factory<M_Tadah_Base,DM_Function_Base&,Config&,tadah::mlip::memory::IMLIPWorkspaceManager&>
+      model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Config&,tadah::mlip::memory::IMLIPWorkspaceManager&>
           (config.get<std::string>("MODEL",0),*fb,config,workspaceManager)),
       dm(*fb, config, workspaceManager)
   {
@@ -49,7 +49,7 @@ class Trainer {
       model->train(stdb,dc);
     }
 
-    Config get_param_file() {
+    tadah::core::Config get_param_file() {
       return model->get_param_file();
     }
 
@@ -58,6 +58,8 @@ class Trainer {
 #ifdef TADAH_BUILD_MPI
 
 #include <mpi.h>
+namespace tadah {
+namespace mlip {
 
 extern "C" void blacs_get_(int*, int*, int*);
 extern "C" void blacs_pinfo_(int*, int*);
@@ -111,7 +113,7 @@ class MPI_Trainer: public Trainer {
     int rank;
     int ncpu;
 
-    MPI_Trainer(Config &c, int &rank, int &ncpu):
+    MPI_Trainer(tadah::core::Config &c, int &rank, int &ncpu):
       Trainer(c),
       rank(rank),
       ncpu(ncpu)
@@ -284,7 +286,7 @@ class MPI_Trainer: public Trainer {
           dm.T.ptr(), &ione, &ione, descB, &context1);
 
       if (rank==0) {
-        t_type w(dm.T.ptr(), PHI_cols);
+        tadah::core::t_type w(dm.T.ptr(), PHI_cols);
         model->set_weights(w);
         // model->trained=true; // still can't train with this model
       }
@@ -302,7 +304,7 @@ class TrainerHost: public MPI_Trainer {
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
-    TrainerHost(Config &c, int &rank, int &ncpu):
+    TrainerHost(tadah::core::Config &c, int &rank, int &ncpu):
       MPI_Trainer(c, rank, ncpu)
   {}
 
@@ -461,7 +463,7 @@ class TrainerHost: public MPI_Trainer {
 class TrainerWorker: public MPI_Trainer {
 
   public:
-    TrainerWorker(Config &c, int &rank, int &ncpu):
+    TrainerWorker(tadah::core::Config &c, int &rank, int &ncpu):
       MPI_Trainer(c, rank, ncpu)
   {}
 
@@ -630,4 +632,6 @@ class TrainerWorker: public MPI_Trainer {
     }
 };
 #endif
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -4,13 +4,15 @@
 #include <iostream>
 #include <stdexcept>
 #include <cmath>
+namespace tadah {
+namespace mlip {
 
 namespace {
 
 /** Local utility function: multiply 3x3 matrices. */
-Matrix3d matMul(const Matrix3d &A, const Matrix3d &B)
+tadah::core::Matrix3d matMul(const tadah::core::Matrix3d &A, const tadah::core::Matrix3d &B)
 {
-  Matrix3d C;
+  tadah::core::Matrix3d C;
   for (int i=0; i<3; i++) {
     for (int j=0; j<3; j++) {
       C(i,j) = A(i,0)*B(0,j) + A(i,1)*B(1,j) + A(i,2)*B(2,j);
@@ -35,10 +37,10 @@ double StructureTransformation::rand01()
   return dist(globalRng());
 }
 
-void StructureTransformation::transformStress(Structure &st, const Matrix3d &M)
+void StructureTransformation::transformStress(Structure &st, const tadah::core::Matrix3d &M)
 {
-  Matrix3d tmp = matMul(M, st.stress);
-  Matrix3d Mt  = M.transpose();
+  tadah::core::Matrix3d tmp = matMul(M, st.stress);
+  tadah::core::Matrix3d Mt  = M.transpose();
   st.stress    = matMul(tmp, Mt);
 }
 
@@ -86,7 +88,7 @@ void StructureTransformation::scaleVolumeToDensity(Structure &st, double targetD
   // total mass in grams
   double totalMassAmu = 0.0;
   for (auto &atom : st.atoms) {
-    totalMassAmu += PeriodicTable::get_mass(atom.Z);
+    totalMassAmu += tadah::core::PeriodicTable::get_mass(atom.Z);
   }
   double totalMassGrams = totalMassAmu * 1.66053906660e-24; // amu->g
 
@@ -98,7 +100,7 @@ void StructureTransformation::scaleVolumeToDensity(Structure &st, double targetD
   scaleToVolume(st, volumeA3);
 }
 
-void StructureTransformation::rotate(Structure &st, const Matrix3d &R)
+void StructureTransformation::rotate(Structure &st, const tadah::core::Matrix3d &R)
 {
   st.cell = matMul(R, st.cell);
   for (auto &atom : st.atoms) {
@@ -108,7 +110,7 @@ void StructureTransformation::rotate(Structure &st, const Matrix3d &R)
   checkNearSingular(st);
 }
 
-void StructureTransformation::shear(Structure &st, const Matrix3d &shearMatrix)
+void StructureTransformation::shear(Structure &st, const tadah::core::Matrix3d &shearMatrix)
 {
   st.cell = matMul(shearMatrix, st.cell);
   for (auto &atom : st.atoms) {
@@ -126,7 +128,7 @@ void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
 
   size_t origNatoms = st.atoms.size();
   std::vector<Atom> originalAtoms = st.atoms;
-  Matrix3d oldCell = st.cell;
+  tadah::core::Matrix3d oldCell = st.cell;
 
   // Scale cell
   st.cell(0,0) *= nx; 
@@ -141,10 +143,10 @@ void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
     for (int iy=0; iy<ny; iy++) {
       for (int iz=0; iz<nz; iz++) {
         // shift vector in oldCell coords
-        Vec3d shiftVec = 
-           ix*Vec3d(oldCell(0,0), oldCell(1,0), oldCell(2,0)) +
-           iy*Vec3d(oldCell(0,1), oldCell(1,1), oldCell(2,1)) +
-           iz*Vec3d(oldCell(0,2), oldCell(1,2), oldCell(2,2));
+        tadah::core::Vec3d shiftVec = 
+           ix*tadah::core::Vec3d(oldCell(0,0), oldCell(1,0), oldCell(2,0)) +
+           iy*tadah::core::Vec3d(oldCell(0,1), oldCell(1,1), oldCell(2,1)) +
+           iz*tadah::core::Vec3d(oldCell(0,2), oldCell(1,2), oldCell(2,2));
         for (const auto &atom : originalAtoms) {
           Atom newAtom = atom;
           newAtom.position += shiftVec;
@@ -158,7 +160,7 @@ void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
   checkNearSingular(st);
 }
 
-void StructureTransformation::shift(Structure &st, const Vec3d &shiftVec)
+void StructureTransformation::shift(Structure &st, const tadah::core::Vec3d &shiftVec)
 {
   for (auto &atom : st.atoms) {
     atom.position += shiftVec;
@@ -174,9 +176,9 @@ void StructureTransformation::mirrorOrigin(Structure &st)
   // Reflection M = -I => S'=S. (No net effect if we do M*S*M^T.)
 }
 
-void StructureTransformation::mirrorPlane(Structure &st, const Vec3d &normalVec)
+void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec)
 {
-  Vec3d n = normalVec;
+  tadah::core::Vec3d n = normalVec;
   double len = n.norm();
   if (len < 1e-14) {
     throw std::invalid_argument("Plane normal is near zero length.");
@@ -189,7 +191,7 @@ void StructureTransformation::mirrorPlane(Structure &st, const Vec3d &normalVec)
   }
 
   // M = I - 2 n n^T
-  Matrix3d M = Matrix3d::Identity();
+  tadah::core::Matrix3d M = tadah::core::Matrix3d::Identity();
   for (int i=0; i<3; i++) {
     for (int j=0; j<3; j++) {
       M(i,j) -= 2.0 * n[i]*n[j];
@@ -204,28 +206,28 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
     throw std::invalid_argument("Miller indices (0,0,0) do not define a plane.");
   }
   // Build a1,a2,a3 from st.cell columns:
-  Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
-  Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
-  Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
+  tadah::core::Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
+  tadah::core::Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
+  tadah::core::Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
 
-  Vec3d crossA2A3 = a2.cross(a3);
+  tadah::core::Vec3d crossA2A3 = a2.cross(a3);
   double denomA1  = a1.dot(crossA2A3);
-  Vec3d b1        = crossA2A3 / denomA1;
+  tadah::core::Vec3d b1        = crossA2A3 / denomA1;
 
-  Vec3d crossA3A1 = a3.cross(a1);
+  tadah::core::Vec3d crossA3A1 = a3.cross(a1);
   double denomA2  = a2.dot(crossA3A1);
-  Vec3d b2        = crossA3A1 / denomA2;
+  tadah::core::Vec3d b2        = crossA3A1 / denomA2;
 
-  Vec3d crossA1A2 = a1.cross(a2);
+  tadah::core::Vec3d crossA1A2 = a1.cross(a2);
   double denomA3  = a3.dot(crossA1A2);
-  Vec3d b3        = crossA1A2 / denomA3;
+  tadah::core::Vec3d b3        = crossA1A2 / denomA3;
 
-  Vec3d g = (double)h*b1 + (double)k*b2 + (double)l*b3;
+  tadah::core::Vec3d g = (double)h*b1 + (double)k*b2 + (double)l*b3;
   double normG = g.norm();
   if (normG < 1e-14) {
     throw std::runtime_error("Plane normal is near zero. Check cell or (h,k,l).");
   }
-  Vec3d n = g / normG;
+  tadah::core::Vec3d n = g / normG;
 
   // reflection
   for (auto &atom : st.atoms) {
@@ -234,7 +236,7 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
   }
 
   // reflection matrix
-  Matrix3d M = Matrix3d::Identity();
+  tadah::core::Matrix3d M = tadah::core::Matrix3d::Identity();
   for (int i=0; i<3; i++) {
     for (int j=0; j<3; j++) {
       M(i,j) -= 2.0 * n[i]*n[j];
@@ -245,7 +247,7 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
 
 void StructureTransformation::center(Structure &st, bool useCenterOfMass, bool shiftCell)
 {
-  Vec3d c;
+  tadah::core::Vec3d c;
   if (useCenterOfMass) {
     c = StructureProperties::getCentreOfMass(st);
   } else {
@@ -281,10 +283,10 @@ void StructureTransformation::remapToCell(Structure &st)
   if (std::fabs(vol) < 1e-14) {
     throw std::runtime_error("Volume is near zero, cannot remap to cell.");
   }
-  Matrix3d invCell = st.cell.inverse();
+  tadah::core::Matrix3d invCell = st.cell.inverse();
 
   for (auto &atom : st.atoms) {
-    Vec3d frac = invCell * atom.position;
+    tadah::core::Vec3d frac = invCell * atom.position;
     for (int i=0; i<3; i++) {
       frac[i] -= std::floor(frac[i]);
     }
@@ -296,20 +298,20 @@ void StructureTransformation::addAtom(
   Structure &st,
   const Atom &atomTemplate,
   bool useRandomPosition,
-  const Vec3d &pos,
+  const tadah::core::Vec3d &pos,
   double minDistance
 ){
   Atom newAtom = atomTemplate;
 
   if (useRandomPosition) {
     // place randomly in [0,1) fractional, then convert => Cartesian
-    Matrix3d invCell = st.cell.inverse();
+    tadah::core::Matrix3d invCell = st.cell.inverse();
     double vol = StructureProperties::getVolume(st);
     if (std::fabs(vol) < 1e-14) {
       throw std::runtime_error("Cannot add atom randomly: volume near zero.");
     }
 
-    Vec3d frac(rand01(), rand01(), rand01());
+    tadah::core::Vec3d frac(rand01(), rand01(), rand01());
     newAtom.position = st.cell * frac;
   } else {
     newAtom.position = pos;
@@ -355,3 +357,5 @@ void StructureTransformation::shakeAtoms(Structure &st, double maxDisplacement)
   }
 }
 
+} // namespace mlip
+} // namespace tadah

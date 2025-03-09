@@ -6,6 +6,8 @@
 #include <tadah/mlip/key_storage/environment_key_storage.h>
 #include <cstdlib>  // getenv, setenv
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 std::string EnvironmentKeyStorage::retrieveKey(const std::string& keyName)
 {
@@ -28,3 +30,5 @@ bool EnvironmentKeyStorage::storeKey(const std::string& keyName, const std::stri
   return false;
 }
 
+} // namespace mlip
+} // namespace tadah

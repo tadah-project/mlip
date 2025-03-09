@@ -7,6 +7,8 @@
 
 #include <fstream>
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 // Factory method implementation
 std::unique_ptr<DatasetReader> DatasetReaderSelector::get_reader(const std::string& filepath, StructureDB& db) {
@@ -59,3 +61,5 @@ std::string DatasetReaderSelector::determine_file_type_by_content(const std::str
 
   return "Unknown file type";
 }
+} // namespace mlip
+} // namespace tadah

@@ -4,6 +4,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/dataset_reader.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class VaspOutcarReader
@@ -77,4 +79,6 @@ private:
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // VASP_OUTCAR_READER_H

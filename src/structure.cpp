@@ -10,18 +10,20 @@
 #include <sstream>
 #include <algorithm>
 #include <cstddef>
+namespace tadah {
+namespace mlip {
 
 /**
  * Creates and initializes a Structure object with default parameters.
  * Reason: Ensures all member variables are set to meaningful defaults.
- *         PeriodicTable is initialized to allow symbol lookups.
+ *         tadah::core::PeriodicTable is initialized to allow symbol lookups.
  *
  * Example usage:
  *     Structure st; // Creates an empty structure with zeroed data
  */
 Structure::Structure() {
-  // PeriodicTable is prepared for atomic symbol lookups
-  PeriodicTable::initialize();
+  // tadah::core::PeriodicTable is prepared for atomic symbol lookups
+  tadah::core::PeriodicTable::initialize();
 
   // Zero or default values assigned to all members so there are no uninitialized values
   label.clear();
@@ -53,7 +55,7 @@ const Atom& Structure::operator()(const size_t i) const {
  *
  * Example usage:
  *     Structure st;
- *     Atom a(Element("H"), 0.0, 0.1, 0.2);
+ *     Atom a(tadah::core::Element("H"), 0.0, 0.1, 0.2);
  *     st.add_atom(a);
  */
 void Structure::add_atom(Atom a) {
@@ -77,20 +79,20 @@ void Structure::remove_atom(const size_t i) {
  *
  * Example usage:
  *     // Retrieve the neighbor's position (the 2nd neighbor of atom 0)
- *     Vec3d neighborPos = st.nn_pos(0, 1);
+ *     tadah::core::Vec3d neighborPos = st.nn_pos(0, 1);
  */
-Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
+tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
   // (A) Global index of this neighbor
   const size_t neighborIndex = near_neigh_idx[i][n];
 
   // (B) Atom's original "unshifted" position
-  const Vec3d &posNeighbor = atoms[neighborIndex].position;
+  const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
 
   // (C) Convert the stored shift -> real displacement shiftDisp
   //     If near_neigh_shift[i][n] is an integer triple (n1, n2, n3),
   //     multiply by the cell. Otherwise, if it's already in real space, it may simply be added.
-  Vec3d shift = near_neigh_shift[i][n]; // Possibly an integer triple
-  Vec3d shiftDisp;
+  tadah::core::Vec3d shift = near_neigh_shift[i][n]; // Possibly an integer triple
+  tadah::core::Vec3d shiftDisp;
   shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(0,1) + shift[2] * cell(0,2);
   shiftDisp[1] = shift[0] * cell(1,0) + shift[1] * cell(1,1) + shift[2] * cell(1,2);
   shiftDisp[2] = shift[0] * cell(2,0) + shift[1] * cell(2,1) + shift[2] * cell(2,2);
@@ -190,7 +192,7 @@ int Structure::read(std::ifstream &ifs) {
     
     std::istringstream tmp(line);
     tmp >> symbol >> px >> py >> pz >> fx >> fy >> fz;
-    Element e = PeriodicTable::find_by_symbol(symbol);
+    tadah::core::Element e = tadah::core::PeriodicTable::find_by_symbol(symbol);
     atoms.push_back(Atom(e, px, py, pz, fx, fy, fz));
   }
   return 0;
@@ -283,7 +285,7 @@ void Structure::save(const std::string fn) const {
  *     size_t ii = get_nn_iindex(i, j, jj);
  */
 size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj) const {
-  Vec3d shift_ijj = -near_neigh_shift[i][jj];
+  tadah::core::Vec3d shift_ijj = -near_neigh_shift[i][jj];
   size_t ii = 0;
   for (size_t x = 0; x < near_neigh_idx[j].size(); ++x) {
     if (near_neigh_idx[j][x] == i) {
@@ -317,7 +319,7 @@ double Structure::get_density() const {
   double amu = 1.66053906660e-24; // 1 atomic mass unit in grams
   double mass = 0.0;
   for (const auto& a : atoms) {
-    mass += PeriodicTable::get_mass(a.Z); // sum of atomic masses
+    mass += tadah::core::PeriodicTable::get_mass(a.Z); // sum of atomic masses
   }
   return amu * mass / V;
 }
@@ -550,13 +552,15 @@ void Structure::dump_to_file(const std::string &filepath, size_t prec) const {
  * Reason: Identifies the chemical variety present in the structure.
  *
  * Example usage:
- *     std::set<Element> elements = st.get_unique_elements();
+ *     std::set<tadah::core::Element> elements = st.get_unique_elements();
  */
-std::set<Element> Structure::get_unique_elements() const {
-  std::set<Element> unique_elements;
+std::set<tadah::core::Element> Structure::get_unique_elements() const {
+  std::set<tadah::core::Element> unique_elements;
   for (const auto &a : atoms) {
     unique_elements.insert(a);
   }
   return unique_elements;
 }
 
+} // namespace mlip
+} // namespace tadah

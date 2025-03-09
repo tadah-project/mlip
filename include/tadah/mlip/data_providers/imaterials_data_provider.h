@@ -2,6 +2,8 @@
 #define TADAH_MLIP_DATA_PROVIDERS_IMATERIALS_DATA_PROVIDER_H
 
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Encapsulates the raw result of an HTTP request to a materials-database service.
@@ -68,5 +70,7 @@ public:
   // Additional placeholders can be added for asynchronous operations (6.5).
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_DATA_PROVIDERS_IMATERIALS_DATA_PROVIDER_H
 

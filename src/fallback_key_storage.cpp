@@ -4,6 +4,8 @@
  */
 
 #include <tadah/mlip/key_storage/fallback_key_storage.h>
+namespace tadah {
+namespace mlip {
 
 FallbackKeyStorage::FallbackKeyStorage(std::vector<std::unique_ptr<IKeyStorage>> storages)
   : m_storages(std::move(storages))
@@ -31,3 +33,5 @@ bool FallbackKeyStorage::storeKey(const std::string& keyName, const std::string&
   return m_storages.back()->storeKey(keyName, keyValue);
 }
 
+} // namespace mlip
+} // namespace tadah

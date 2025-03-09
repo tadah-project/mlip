@@ -7,6 +7,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 //--------------------------------------------------------------------
 // Helper to split a line by whitespace
@@ -156,7 +158,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       }
 
       // parse species
-      Element e = parseSpecies(toks[0]);
+      tadah::core::Element e = parseSpecies(toks[0]);
 
       // fractional coords
       double fx = std::stod(toks[1]);
@@ -168,7 +170,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
 
       Atom a;  
       // Copy base element data into 'a'
-      static_cast<Element&>(a) = e;
+      static_cast<tadah::core::Element&>(a) = e;
       // Now set the position
       a.position = {cx, cy, cz};
 
@@ -182,14 +184,14 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
         continue;
       }
 
-      Element e = parseSpecies(toks[0]);
+      tadah::core::Element e = parseSpecies(toks[0]);
 
       double x = std::stod(toks[1]);
       double y = std::stod(toks[2]);
       double z = std::stod(toks[3]);
 
       Atom a;
-      static_cast<Element&>(a) = e;
+      static_cast<tadah::core::Element&>(a) = e;
       a.position = {x, y, z};
 
       m_structure.atoms.push_back(a);
@@ -292,6 +294,8 @@ void CastepCellReader::fracToAbs(double fx, double fy, double fz,
 //--------------------------------------------------------------------
 // parseSpecies
 //--------------------------------------------------------------------
-Element CastepCellReader::parseSpecies(const std::string &sym) {
-  return PeriodicTable().find_by_symbol(sym);
+tadah::core::Element CastepCellReader::parseSpecies(const std::string &sym) {
+  return tadah::core::PeriodicTable().find_by_symbol(sym);
 }
+} // namespace mlip
+} // namespace tadah

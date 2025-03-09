@@ -2,6 +2,8 @@
 #include <curl/curl.h>
 #include <stdexcept>
 #include <sstream>
+namespace tadah {
+namespace mlip {
 
 size_t CODDataProvider::writeDataCallback(void* ptr, size_t size, size_t nmemb, void* userData)
 {
@@ -72,3 +74,5 @@ RawResponse CODDataProvider::fetchFromURL(const std::string &url)
   return rr;
 }
 
+} // namespace mlip
+} // namespace tadah

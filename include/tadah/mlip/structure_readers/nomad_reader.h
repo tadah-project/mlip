@@ -8,6 +8,8 @@
 #include <tadah/mlip/data_providers/nomad_data_provider.h>
 #include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class NomadReader
@@ -60,5 +62,7 @@ private:
                       double (&cell)[3][3]);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // NOMAD_READER_H
 

@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 class VaspPoscarWriter : public StructureWriter {
 public:
   VaspPoscarWriter(StructureDB& db);
@@ -18,4 +20,6 @@ public:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // VASP_POSCAR_WRITER_H

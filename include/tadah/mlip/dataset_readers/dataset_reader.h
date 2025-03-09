@@ -4,6 +4,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <string>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class DatasetReader
@@ -83,4 +85,6 @@ private:
   virtual std::string get_first_label(std::string &);
   virtual std::string get_label(std::string &);
 };
+} // namespace mlip
+} // namespace tadah
 #endif // DATASET_READER_H

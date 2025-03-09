@@ -12,11 +12,13 @@
 #include <tadah/mlip/memory/DesignMatrixWorkspace.h>
 
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 
 
 class DesignMatrixBase {
 public:
-  static int phi_rows_num(Config &c, int nstruct_tot, int natoms_tot) {
+  static int phi_rows_num(tadah::core::Config &c, int nstruct_tot, int natoms_tot) {
     bool force = c.get<bool>("FORCE");
     bool stress = c.get<bool>("STRESS");
     int rows = nstruct_tot;
@@ -27,7 +29,7 @@ public:
 };
 
 
-/** Design Matrix \f$ \Phi \f$ and the corresponding target vector \f$ \mathrm{T} \f$
+/** Design tadah::core::Matrix \f$ \Phi \f$ and the corresponding target vector \f$ \mathrm{T} \f$
  *
  * An aggregation matrix composed of \phi_i matrices
  *
@@ -81,17 +83,17 @@ public:
 
   /** \brief This constructor fully initialise this object
      *
-     * This class is used to build a Design Matrix.
+     * This class is used to build a Design tadah::core::Matrix.
      *
      * Usage example:
      * \code{.cpp}
-     * Config config("Config");
+     * tadah::core::Config config("tadah::core::Config");
      * BF_Linear bf(config);
      * DesignMatrix<LinearKernel> desmat(bf, config);
      *
      * \endcode
      */
-  DesignMatrix(F &f, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
+  DesignMatrix(F &f, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
     : f(f),
     workspaceManager_(&workspaceManager),
     ownWorkspaceManager(false),
@@ -112,7 +114,7 @@ public:
   }
 
   // Constructor without workspaceManager_ parameter (delegating constructor)
-  DesignMatrix(F &f, Config &c)
+  DesignMatrix(F &f, tadah::core::Config &c)
   : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
   {
     ownWorkspaceManager = true;  // Set ownership flag
@@ -252,15 +254,15 @@ public:
     }
   }
 
-  phi_type &getPhi() { return ws->Phi; }
-  t_type &getT() { return ws->T; }
-  t_type &getTlabels() { return ws->Tlabels; }
+  tadah::core::phi_type &getPhi() { return ws->Phi; }
+  tadah::core::t_type &getT() { return ws->T; }
+  tadah::core::t_type &getTlabels() { return ws->Tlabels; }
   bool hasCopy() { return w_copy_; }
 
 private:
   tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
   bool ownWorkspaceManager = false;
-  Config & config;
+  tadah::core::Config & config;
   size_t rows = 0;
   size_t cols = 0;
   bool force;
@@ -291,8 +293,8 @@ private:
   }
 
   void compute_stdevs(const StructureDB &stdb) {
-    t_type evec(stdb.size());
-    Matrix svec(stdb.size(),6);
+    tadah::core::t_type evec(stdb.size());
+    tadah::core::Matrix svec(stdb.size(),6);
     size_t num_forces=0;
     for (size_t s=0; s<stdb.size(); ++s) {
       evec(s) = stdb(s).energy/stdb(s).natoms();
@@ -319,7 +321,7 @@ private:
 
     if (force) {
       size_t j=0;
-      t_type fvec(num_forces);
+      tadah::core::t_type fvec(num_forces);
       for (size_t s=0; s<stdb.size(); ++s) {
         for (const Atom &a : stdb(s).atoms) {
           fvec(j++) = a.force(0);
@@ -386,4 +388,6 @@ private:
     }
   }
 };
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -3,6 +3,8 @@
 #include <curl/curl.h>
 #include <stdexcept>
 #include <sstream>
+namespace tadah {
+namespace mlip {
 
 size_t AFLOWDataProvider::writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
 {
@@ -124,3 +126,5 @@ RawResponse AFLOWDataProvider::fetchAndParseAflowByAuid(const std::string &auid)
   // Step 2) GET final data from 'aurl'
   return httpGet(aurl);
 }
+} // namespace mlip
+} // namespace tadah

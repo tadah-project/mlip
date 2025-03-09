@@ -8,6 +8,8 @@
 #include <tadah/mlip/data_providers/materials_project_data_provider.h>
 #include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Reads a Structure from the Materials Project via REST API.
@@ -52,4 +54,6 @@ private:
   void parseMpJson(const std::string &jsonContent);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // MATERIALS_PROJECT_READER_H

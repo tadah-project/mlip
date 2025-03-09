@@ -5,6 +5,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/castep_castep_reader.h>
+namespace tadah {
+namespace mlip {
 
 CastepCastepReader::CastepCastepReader(StructureDB& db) : DatasetReader(db) {}
 
@@ -334,7 +336,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
         // Create Atom, convert fractional to absolute using s.cell
-        Atom a(Element(species), px, py, pz, 0.0, 0.0, 0.0);
+        Atom a(tadah::core::Element(species), px, py, pz, 0.0, 0.0, 0.0);
         atoms.push_back(a); // keep it fractional for now
       }
       simLabel.positionsStopLine = line_counter;
@@ -377,7 +379,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
         if (i < atoms.size()) {
-          atoms[i].force = Vec3d(fx, fy, fz);
+          atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
         }
       }
       simLabel.forcesStopLine = line_counter;
@@ -507,3 +509,5 @@ void CastepCastepReader::print_summary() const {
 std::string CastepCastepReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <type_traits>
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class M_BLR
@@ -51,13 +53,13 @@ public:
    *
    * **Example**:
    * \code{.cpp}
-   * Config config("Config");
+   * tadah::core::Config config("tadah::core::Config");
    * M_BLR<BF_Linear> blr(config);
    * \endcode
    * 
    * @param c Configuration object.
    */
-  M_BLR(Config &c):
+  M_BLR(tadah::core::Config &c):
     M_BLR_Train<BF>(c),
     desmat(M_BLR_Train<BF>::bf,c)
   {
@@ -70,29 +72,29 @@ public:
    * @param bf Basis function.
    * @param c Configuration object.
    */
-  M_BLR(BF &bf, Config &c):
+  M_BLR(BF &bf, tadah::core::Config &c):
     M_BLR_Train<BF>(bf,c),
     desmat(bf,c)
   {
     norm = Normaliser(c);
   }
 
-  M_BLR(BF &bf, Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+  M_BLR(BF &bf, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     M_BLR_Train<BF>(bf,c,workspaceManager),
     desmat(bf,c,workspaceManager)
   {
     norm = Normaliser(c);
   }
 
-  double epredict(const aed_type &aed) const{
+  double epredict(const tadah::core::aed_type &aed) const{
     return bf.epredict(weights,aed);
   };
 
-  double fpredict(const fd_type &fdij, const aed_type &aedi, const size_t k) const{
+  double fpredict(const tadah::core::fd_type &fdij, const tadah::core::aed_type &aedi, const size_t k) const{
     return bf.fpredict(weights,fdij,aedi,k);
   }
 
-  force_type fpredict(const fd_type &fdij, const aed_type &aedi) const{
+  tadah::core::force_type fpredict(const tadah::core::fd_type &fdij, const tadah::core::aed_type &aedi) const{
     return bf.fpredict(weights,fdij,aedi);
   }
 
@@ -137,18 +139,18 @@ public:
     train(desmat);
   }
 
-  Structure predict(const Config &c, StDescriptors &std, const Structure &st) {
+  Structure predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st) {
     if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
 
-  StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc) {
+  StructureDB predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc) {
     return M_Tadah_Base::predict(c,stdb,dc);
   }
 
-  Config get_param_file() {
-    Config c = config;
+  tadah::core::Config get_param_file() {
+    tadah::core::Config c = config;
     //c.remove("ALPHA");
     //c.remove("BETA");
     c.remove("DBFILE");
@@ -176,8 +178,8 @@ public:
     c.clear_internal_keys();
     return c;
   }
-  StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-                      aed_type &predicted_error) {
+  StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
+                      tadah::core::aed_type &predicted_error) {
 
     LinearRegressor::read_sigma(config_pred,Sigma);
     DesignMatrix<BF> dm(bf,config_pred);
@@ -189,7 +191,7 @@ public:
     double pmean = sqrt(predicted_error.mean());
 
     // compute energy, forces and stresses
-    aed_type Tpred = T_dgemv(dm.getPhi(), weights);
+    tadah::core::aed_type Tpred = T_dgemv(dm.getPhi(), weights);
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -225,10 +227,10 @@ public:
     if(!trained) throw std::runtime_error("This object is not trained!\n\
 Hint: check different predict() methods.");
 
-    phi_type &Phi = desmat.getPhi();
+    tadah::core::phi_type &Phi = desmat.getPhi();
 
     // compute energy, forces and stresses
-    aed_type Tpred = T_dgemv(Phi, weights);
+    tadah::core::aed_type Tpred = T_dgemv(Phi, weights);
 
     // double eweightglob=config.template get<double>("EWEIGHT");
     // double fweightglob=config.template get<double>("FWEIGHT");
@@ -270,12 +272,12 @@ private:
 
   // normalise weights such that when predict is called
   // we can supply it with a non-normalised descriptor
-  t_type convert_to_nweights(const t_type &weights) const {
+  tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
     if(bf.get_label()!="BF_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear basis function\n");
     }
-    t_type nw(weights.rows());
+    tadah::core::t_type nw(weights.rows());
     nw(0) = weights(0);
     for (size_t i=1; i<weights.size(); ++i) {
 
@@ -290,13 +292,13 @@ non linear basis function\n");
     return nw;
   }
   // The opposite of convert_to_nweights()
-  t_type convert_to_weights(const t_type &nw) const {
+  tadah::core::t_type convert_to_weights(const tadah::core::t_type &nw) const {
     if(bf.get_label()!="BF_Linear") {
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear basis function\n");
     }
     // convert normalised weights back to "normal"
-    t_type w(nw.rows());
+    tadah::core::t_type w(nw.rows());
     w(0) = nw(0);
     for (size_t i=1; i<nw.size(); ++i) {
       if (norm.std_dev[i] > std::numeric_limits<double>::min())
@@ -315,10 +317,10 @@ non linear basis function\n");
     // the train method destroys the Phi matrix
     // In consequence, we cannot use it for quick prediction
     // The simple solution, for now, is to make a copy of the Phi matrix
-    //phi_type &Phi = desmat.Phi;
-    phi_type Phi = desmat.getPhi();
-    t_type T = desmat.getT();
-    //t_type &T = desmat.T;
+    //tadah::core::phi_type &Phi = desmat.Phi;
+    tadah::core::phi_type Phi = desmat.getPhi();
+    tadah::core::t_type T = desmat.getT();
+    //tadah::core::t_type &T = desmat.T;
     M_BLR_Train<BF>::train(Phi,T);
 
     if (config.template get<bool>("NORM") &&
@@ -335,4 +337,6 @@ non linear basis function\n");
   using M_BLR_Train<BF>::weights;
   using M_BLR_Train<BF>::Sigma;
 };
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -1,6 +1,8 @@
 #include <tadah/mlip/structure_readers/cod_reader.h>
 #include <stdexcept>
 #include <algorithm>
+namespace tadah {
+namespace mlip {
 
 CODReader::CODReader()
   : m_dataProvider(std::make_unique<CODDataProvider>()) {
@@ -71,3 +73,5 @@ void CODReader::read(const std::string &path) {
 Structure CODReader::getStructure() const {
   return m_structure;
 }
+} // namespace mlip
+} // namespace tadah

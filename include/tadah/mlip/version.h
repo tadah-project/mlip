@@ -7,5 +7,7 @@
 
 #define STRING(s) #s
 
+} // namespace mlip
+} // namespace tadah
 #endif
 

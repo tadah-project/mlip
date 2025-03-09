@@ -8,6 +8,8 @@
 #include <tadah/mlip/key_storage/fallback_key_storage.h>
 #include <tadah/mlip/key_storage/key_storage_factory.h>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 std::unique_ptr<IKeyStorage> KeyStorageFactory::createEnvThenFile()
 {
@@ -28,3 +30,5 @@ std::unique_ptr<IKeyStorage> KeyStorageFactory::createEnvironmentOnly()
   return std::make_unique<EnvironmentKeyStorage>();
 }
 
+} // namespace mlip
+} // namespace tadah

@@ -1,4 +1,6 @@
 #include <tadah/mlip/dataset_readers/vasp_vasprun_reader.h>
+namespace tadah {
+namespace mlip {
 
 VaspVasprunReader::VaspVasprunReader(StructureDB& stdb)
 : DatasetReader(stdb), stdb(stdb) {}
@@ -194,7 +196,7 @@ void VaspVasprunReader::extract_basis_vectors_and_positions(rx::xml_node<> *stru
         if (index < atom_types.size()) {
           std::stringstream ss(v_node->value());
           if (ss >> x >> y >> z) { // relative positions
-            _s.add_atom(Atom(Element(atom_types[index]), x, y, z, 0, 0, 0));
+            _s.add_atom(Atom(tadah::core::Element(atom_types[index]), x, y, z, 0, 0, 0));
             _s.atoms.back().position = _s.cell * _s.atoms.back().position;  // convert to abs
           } else {
             std::cerr << "Error parsing atom positions." << std::endl;
@@ -240,3 +242,5 @@ void VaspVasprunReader::print_summary() const {
 std::string VaspVasprunReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

@@ -3,10 +3,12 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sstream>
+namespace tadah {
+namespace mlip {
 
-static Element parse_element_mp(const std::string &elemName) {
+static tadah::core::Element parse_element_mp(const std::string &elemName) {
   // Same helper from your original code
-  return PeriodicTable().find_by_symbol(elemName);
+  return tadah::core::PeriodicTable().find_by_symbol(elemName);
 }
 
 MaterialsProjectReader::MaterialsProjectReader(const std::string &apiKey)
@@ -108,7 +110,7 @@ void MaterialsProjectReader::parseMpJson(const std::string &jsonContent) {
     double y = fx*m_structure.cell(0,1) + fy*m_structure.cell(1,1) + fz*m_structure.cell(2,1);
     double z = fx*m_structure.cell(0,2) + fy*m_structure.cell(1,2) + fz*m_structure.cell(2,2);
 
-    // Element from either "label" or "species[0].element"
+    // tadah::core::Element from either "label" or "species[0].element"
     std::string elemSymbol;
     if (st.contains("label") && st["label"].is_string()) {
       elemSymbol = st["label"].get<std::string>();
@@ -119,11 +121,13 @@ void MaterialsProjectReader::parseMpJson(const std::string &jsonContent) {
     }
 
     Atom a;
-    Element e = parse_element_mp(elemSymbol);
-    static_cast<Element&>(a) = e;
+    tadah::core::Element e = parse_element_mp(elemSymbol);
+    static_cast<tadah::core::Element&>(a) = e;
     a.position[0] = x;
     a.position[1] = y;
     a.position[2] = z;
     m_structure.atoms.push_back(a);
   }
 }
+} // namespace mlip
+} // namespace tadah

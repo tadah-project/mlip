@@ -2,13 +2,15 @@
 #include <tadah/core/periodic_table.h>
 #include <stdexcept>
 #include <cmath>
+namespace tadah {
+namespace mlip {
 
 double StructureProperties::getVolume(const Structure &st)
 {
   // Columns of st.cell => a1, a2, a3
-  Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
-  Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
-  Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
+  tadah::core::Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
+  tadah::core::Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
+  tadah::core::Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
 
   double volume = a1 * (a2.cross(a3));  // scalar triple product
   return volume; // [Å^3]
@@ -25,7 +27,7 @@ double StructureProperties::getDensity(const Structure &st)
   // Sum atomic mass in amu
   double totalMassAmu = 0.0;
   for (const auto &atom : st.atoms) {
-    totalMassAmu += PeriodicTable::get_mass(atom.Z);
+    totalMassAmu += tadah::core::PeriodicTable::get_mass(atom.Z);
   }
   // Convert Å^3 => cm^3
   double volumeCm3 = volumeA3 * 1.0e-24;
@@ -38,16 +40,16 @@ double StructureProperties::getDensity(const Structure &st)
   return rho;
 }
 
-Vec3d StructureProperties::getCentreOfMass(const Structure &st)
+tadah::core::Vec3d StructureProperties::getCentreOfMass(const Structure &st)
 {
   if (st.atoms.empty()) {
-    return Vec3d(0.0, 0.0, 0.0);
+    return tadah::core::Vec3d(0.0, 0.0, 0.0);
   }
   double totalMass = 0.0;
-  Vec3d com(0.0, 0.0, 0.0);
+  tadah::core::Vec3d com(0.0, 0.0, 0.0);
 
   for (const auto &atom : st.atoms) {
-    double mass = PeriodicTable::get_mass(atom.Z); // amu
+    double mass = tadah::core::PeriodicTable::get_mass(atom.Z); // amu
     com += atom.position * mass; 
     totalMass += mass;
   }
@@ -57,15 +59,17 @@ Vec3d StructureProperties::getCentreOfMass(const Structure &st)
   return com;
 }
 
-Vec3d StructureProperties::getGeometricCenter(const Structure &st)
+tadah::core::Vec3d StructureProperties::getGeometricCenter(const Structure &st)
 {
   if (st.atoms.empty()) {
-    return Vec3d(0.0, 0.0, 0.0);
+    return tadah::core::Vec3d(0.0, 0.0, 0.0);
   }
-  Vec3d c(0.0, 0.0, 0.0);
+  tadah::core::Vec3d c(0.0, 0.0, 0.0);
   for (auto &atom : st.atoms) {
     c += atom.position;
   }
   c /= (double)st.atoms.size();
   return c;
 }
+} // namespace mlip
+} // namespace tadah
