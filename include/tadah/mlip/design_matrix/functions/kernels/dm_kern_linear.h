@@ -14,9 +14,9 @@ namespace mlip {
  * K(\mathbf{x}, \mathbf{y}) = \mathbf{x}^T \mathbf{y} = \sum_i x^{(i)} y^{(i)}
  * \f]
  *
- *  @see Kern_Base BF_Linear
+ *  @see tadah::models::Kern_Base tadah::models::BF_Linear
  */
-class DM_Kern_Linear :  public DM_Kern_Base, public Kern_Linear {
+class DM_Kern_Linear :  public DM_Kern_Base, public tadah::models::Kern_Linear {
     public:
     DM_Kern_Linear ();
     DM_Kern_Linear (const tadah::core::Config &c);

@@ -6,7 +6,7 @@
 namespace tadah {
 namespace mlip {
 
-class DM_Kern_Polynomial :  public DM_Kern_Base, public Kern_Polynomial {
+class DM_Kern_Polynomial :  public DM_Kern_Base, public tadah::models::Kern_Polynomial {
     public:
         DM_Kern_Polynomial();
         DM_Kern_Polynomial(const tadah::core::Config &c);

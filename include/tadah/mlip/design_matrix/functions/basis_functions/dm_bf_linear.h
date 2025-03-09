@@ -6,7 +6,7 @@
 namespace tadah {
 namespace mlip {
 
-struct DM_BF_Linear: public DM_BF_Base, public BF_Linear
+struct DM_BF_Linear: public DM_BF_Base, public tadah::models::BF_Linear
 {
     DM_BF_Linear();
     DM_BF_Linear(const tadah::core::Config &c);

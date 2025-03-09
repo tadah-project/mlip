@@ -8,8 +8,8 @@ namespace mlip {
 DM_Kern_Base::~DM_Kern_Base() {}
 DM_Kern_Base::DM_Kern_Base() {}
 DM_Kern_Base::DM_Kern_Base(const tadah::core::Config &c): 
-  Function_Base(c), 
-  Kern_Base(c), 
+  tadah::models::Function_Base(c), 
+  tadah::models::Kern_Base(c), 
   DM_Function_Base(c) {}
 size_t DM_Kern_Base::get_phi_cols(const tadah::core::Config &)
 {

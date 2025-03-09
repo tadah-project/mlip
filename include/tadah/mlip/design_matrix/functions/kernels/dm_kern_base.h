@@ -19,7 +19,7 @@ namespace mlip {
  *  - ff = force descriptor
  *  - all derivatives are defined wrt to the second argument
  */
-class DM_Kern_Base: public DM_Function_Base, public virtual Kern_Base  {
+class DM_Kern_Base: public DM_Function_Base, public virtual tadah::models::Kern_Base  {
     public:
 
         DM_Kern_Base();

@@ -44,7 +44,7 @@ namespace mlip {
 template
 <class K=DM_Function_Base&>
 class M_KRR: public M_Tadah_Base,
-  public M_KRR_Train<K>
+  public tadah::models::M_KRR_Train<K>
 {
 
 public:
@@ -55,13 +55,13 @@ public:
    * **Example**:
    * \code{.cpp}
    * tadah::core::Config config("tadah::core::Config");
-   * M_KRR<Kern_Linear> krr(config);
+   * M_KRR<tadah::models::Kern_Linear> krr(config);
    * \endcode
    *
      * @param c Configuration object.
      */
   M_KRR(tadah::core::Config &c):
-    M_KRR_Train<K>(c),
+    tadah::models::M_KRR_Train<K>(c),
     basis(c),
     desmat(kernel,c)
   {
@@ -75,7 +75,7 @@ public:
    * @param c Configuration object.
    */
   M_KRR(K &kernel, tadah::core::Config &c):
-    M_KRR_Train<K>(kernel,c),
+    tadah::models::M_KRR_Train<K>(kernel,c),
     basis(c),
     desmat(kernel,c)
   {
@@ -83,7 +83,7 @@ public:
   }
 
   M_KRR(K &kernel, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-    M_KRR_Train<K>(kernel,c,workspaceManager),
+    tadah::models::M_KRR_Train<K>(kernel,c,workspaceManager),
     basis(c),
     desmat(kernel,c)
   {
@@ -133,7 +133,7 @@ public:
   }
   void train1(StructureDB &stdb, DC_Base &dc) {
     // KRR implementation using EKM
-    if(config.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
+    if(config.template get<bool>("NORM") || kernel.get_label()!="tadah::models::Kern_Linear") {
       // either build basis or prep normaliser
       std::string force=config.template get<std::string>("FORCE");
       std::string stress=config.template get<std::string>("STRESS");
@@ -156,7 +156,7 @@ public:
       config.add("FORCE", force);
       config.add("STRESS", stress);
 
-      if (kernel.get_label()!="Kern_Linear") {
+      if (kernel.get_label()!="tadah::models::Kern_Linear") {
         basis.build_random_basis(config.template get<size_t>("SBASIS"),st_desc_db_temp);
         desmat.f.set_basis(basis.b);
         kernel.set_basis(basis.b);
@@ -190,11 +190,11 @@ public:
     config.add("STRESS", stress);
     basis.prep_basis_for_krr(st_desc_db_temp,stdb);
     kernel.set_basis(basis.b);
-    M_KRR_Train<K>::train2(basis.b, basis.T);
+    tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
   }
 
   Structure predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st) {
-    if(config.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
+    if(config.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="tadah::models::Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
@@ -231,7 +231,7 @@ public:
         c.add("NSTDEV", norm.std_dev[i]);
       }
     }
-    if (kernel.get_label()!="Kern_Linear") {
+    if (kernel.get_label()!="tadah::models::Kern_Linear") {
       // dump basis to the config file file
       // make sure keys are not accidently assigned
       if (c.exist("SBASIS"))
@@ -251,7 +251,7 @@ public:
   StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
-    LinearRegressor::read_sigma(config_pred,Sigma);
+    tadah::models::LinearRegressor::read_sigma(config_pred,Sigma);
     DesignMatrix<K> dm(kernel,config_pred);
     // dm.scale=false; // do not scale energy, forces and stresses
     bool wcopy=false;
@@ -343,12 +343,12 @@ private:
   DesignMatrix<K> desmat;
 
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
-    if(kernel.get_label()!="Kern_Linear") {
+    if(kernel.get_label()!="tadah::models::Kern_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear kernel\n");
     }
     tadah::core::t_type kw(weights.rows());
-    if(config.template get<bool>("NORM") && kernel.get_label()=="Kern_Linear") {
+    if(config.template get<bool>("NORM") && kernel.get_label()=="tadah::models::Kern_Linear") {
       // normalise weights such that when predict is called
       // we can supply it with a non-normalised descriptor
       kw.resize(weights.rows());
@@ -368,7 +368,7 @@ non linear kernel\n");
   }
   // The opposite of convert_to_nweights()
   tadah::core::t_type convert_to_weights(const tadah::core::t_type &kw) const {
-    if(kernel.get_label()!="Kern_Linear") {
+    if(kernel.get_label()!="tadah::models::Kern_Linear") {
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear kernel\n");
     }
@@ -391,24 +391,24 @@ non linear kernel\n");
     // TODO see comments in M_BLR
     tadah::core::phi_type Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
-    M_KRR_Train<K>::train(Phi,T);
+    tadah::models::M_KRR_Train<K>::train(Phi,T);
 
     if (config.template get<bool>("NORM") &&
-      kernel.get_label()=="Kern_Linear") {
+      kernel.get_label()=="tadah::models::Kern_Linear") {
       weights = convert_to_nweights(weights);
     }
   }
 
   // Do we want to confuse user with those and make them public?
   // Either way they must be stated as below to silence clang warning
-  using M_KRR_Train<K>::predict;
-  using M_KRR_Train<K>::train;
-  using M_KRR_Train<K>::trained;
-  using M_KRR_Train<K>::weights;
-  using M_KRR_Train<K>::Sigma;
-  using M_KRR_Train<K>::config;
-  using M_KRR_Train<K>::kernel;
-  using M_KRR_Train<K>::ekm;
+  using tadah::models::M_KRR_Train<K>::predict;
+  using tadah::models::M_KRR_Train<K>::train;
+  using tadah::models::M_KRR_Train<K>::trained;
+  using tadah::models::M_KRR_Train<K>::weights;
+  using tadah::models::M_KRR_Train<K>::Sigma;
+  using tadah::models::M_KRR_Train<K>::config;
+  using tadah::models::M_KRR_Train<K>::kernel;
+  using tadah::models::M_KRR_Train<K>::ekm;
 };
 } // namespace mlip
 } // namespace tadah

@@ -16,7 +16,7 @@ namespace tadah {
 namespace mlip {
 
 /** Base class for Kernels and Basis Functions */
-struct DM_Function_Base: public virtual Function_Base {
+struct DM_Function_Base: public virtual tadah::models::Function_Base {
 
   // Derived classes must implement Derived() and Derived(tadah::core::Config)
   DM_Function_Base();

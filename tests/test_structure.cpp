@@ -4,6 +4,8 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/structure.h>
 
+using namespace tadah::core;
+using namespace tadah::mlip;
 // Conversion factor from eV/A^3 to kbar;
 double fac = 1602.1766208;
 

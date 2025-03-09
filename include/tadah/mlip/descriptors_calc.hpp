@@ -162,7 +162,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
   double rcut_mb_sq = pow(config.get<double>("RCUTMBMAX"),2);
-  tadah::core::tadah::core::rhos_type &rhos = st_d.rhos;
+  tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
   rhos.resize(s,st.natoms());
   rhos.set_zero();
@@ -336,7 +336,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
   // Not that this differ to how lammps implements this
   // TODO make it consistent between those two
-  Mat6R3C delM;  //i1-j1,i2-j1,i1-j2,i2-j2,i1-i2,j1-j2
+  tadah::core::Mat6R3C delM;  //i1-j1,i2-j1,i1-j2,i2-j2,i1-i2,j1-j2
   double r_sq[6];
   double r[6];
 

@@ -4,14 +4,14 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "BF_Polynomial2" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "BF_Polynomial2" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "tadah::models::BF_Polynomial2" );
+//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "tadah::models::BF_Polynomial2" );
 
 DM_BF_Polynomial2::DM_BF_Polynomial2() {}
 DM_BF_Polynomial2::DM_BF_Polynomial2(const tadah::core::Config &c): 
-  Function_Base(c),
+  tadah::models::Function_Base(c),
   DM_BF_Base(c),
-  BF_Polynomial2(c)
+  tadah::models::BF_Polynomial2(c)
 {}
 size_t DM_BF_Polynomial2::get_phi_cols(const tadah::core::Config &config)
 {
