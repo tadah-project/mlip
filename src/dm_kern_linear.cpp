@@ -3,14 +3,14 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "Kern_Linear" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "Kern_Linear" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Linear> DM_Kern_Linear_1( "tadah::models::Kern_Linear" );
+//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_Kern_Linear> DM_Kern_Linear_2( "tadah::models::Kern_Linear" );
 
 DM_Kern_Linear::DM_Kern_Linear() {}
 DM_Kern_Linear::DM_Kern_Linear (const tadah::core::Config &c): 
-  Function_Base(c),
+  tadah::models::Function_Base(c),
   DM_Kern_Base(c),
-  Kern_Linear(c)
+  tadah::models::Kern_Linear(c)
 {}
 size_t DM_Kern_Linear::get_phi_cols(const tadah::core::Config &config)
 {

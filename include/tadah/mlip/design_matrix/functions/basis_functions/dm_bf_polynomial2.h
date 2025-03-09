@@ -6,7 +6,7 @@
 namespace tadah {
 namespace mlip {
 
-struct DM_BF_Polynomial2: public DM_BF_Base, public BF_Polynomial2
+struct DM_BF_Polynomial2: public DM_BF_Base, public tadah::models::BF_Polynomial2
 {
     DM_BF_Polynomial2();
     DM_BF_Polynomial2(const tadah::core::Config &c);

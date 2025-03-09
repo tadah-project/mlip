@@ -6,7 +6,7 @@
 namespace tadah {
 namespace mlip {
 
-class DM_Kern_Quadratic :  public DM_Kern_Base, public Kern_Quadratic {
+class DM_Kern_Quadratic :  public DM_Kern_Base, public tadah::models::Kern_Quadratic {
     public:
         DM_Kern_Quadratic();
         DM_Kern_Quadratic(const tadah::core::Config &c);

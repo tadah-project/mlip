@@ -10,6 +10,8 @@
 #include <vector>
 #include <iostream>
 
+using namespace tadah::core;
+using namespace tadah::mlip;
 // Helper function to build a simple 2×2×2 box with two atoms.
 static Structure makeSimpleStructure()
 {

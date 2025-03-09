@@ -41,12 +41,12 @@ namespace mlip {
  */
 template
 <class BF=DM_Function_Base&>
-class M_BLR: public M_Tadah_Base, public M_BLR_Train<BF> {
+class M_BLR: public M_Tadah_Base, public tadah::models::M_BLR_Train<BF> {
 
 public:
 
-  using M_BLR_Train<BF>::config;
-  using M_BLR_Train<BF>::bf;
+  using tadah::models::M_BLR_Train<BF>::config;
+  using tadah::models::M_BLR_Train<BF>::bf;
 
   /** 
    * @brief Initializes for training or prediction using a configuration.
@@ -54,14 +54,14 @@ public:
    * **Example**:
    * \code{.cpp}
    * tadah::core::Config config("tadah::core::Config");
-   * M_BLR<BF_Linear> blr(config);
+   * M_BLR<tadah::models::BF_Linear> blr(config);
    * \endcode
    * 
    * @param c Configuration object.
    */
   M_BLR(tadah::core::Config &c):
-    M_BLR_Train<BF>(c),
-    desmat(M_BLR_Train<BF>::bf,c)
+    tadah::models::M_BLR_Train<BF>(c),
+    desmat(tadah::models::M_BLR_Train<BF>::bf,c)
   {
     norm = Normaliser(c);
   }
@@ -73,14 +73,14 @@ public:
    * @param c Configuration object.
    */
   M_BLR(BF &bf, tadah::core::Config &c):
-    M_BLR_Train<BF>(bf,c),
+    tadah::models::M_BLR_Train<BF>(bf,c),
     desmat(bf,c)
   {
     norm = Normaliser(c);
   }
 
   M_BLR(BF &bf, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-    M_BLR_Train<BF>(bf,c,workspaceManager),
+    tadah::models::M_BLR_Train<BF>(bf,c,workspaceManager),
     desmat(bf,c,workspaceManager)
   {
     norm = Normaliser(c);
@@ -140,7 +140,7 @@ public:
   }
 
   Structure predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st) {
-    if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
+    if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="tadah::models::BF_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
@@ -181,7 +181,7 @@ public:
   StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
-    LinearRegressor::read_sigma(config_pred,Sigma);
+    tadah::models::LinearRegressor::read_sigma(config_pred,Sigma);
     DesignMatrix<BF> dm(bf,config_pred);
     // dm.scale=false; // do not scale energy, forces and stresses
     bool wcopy=false;
@@ -273,7 +273,7 @@ private:
   // normalise weights such that when predict is called
   // we can supply it with a non-normalised descriptor
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
-    if(bf.get_label()!="BF_Linear") {
+    if(bf.get_label()!="tadah::models::BF_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear basis function\n");
     }
@@ -293,7 +293,7 @@ non linear basis function\n");
   }
   // The opposite of convert_to_nweights()
   tadah::core::t_type convert_to_weights(const tadah::core::t_type &nw) const {
-    if(bf.get_label()!="BF_Linear") {
+    if(bf.get_label()!="tadah::models::BF_Linear") {
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear basis function\n");
     }
@@ -321,21 +321,21 @@ non linear basis function\n");
     tadah::core::phi_type Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
     //tadah::core::t_type &T = desmat.T;
-    M_BLR_Train<BF>::train(Phi,T);
+    tadah::models::M_BLR_Train<BF>::train(Phi,T);
 
     if (config.template get<bool>("NORM") &&
-      bf.get_label()=="BF_Linear") {
+      bf.get_label()=="tadah::models::BF_Linear") {
       weights = convert_to_nweights(weights);
     }
   }
 
   // Do we want to confuse user with those and make them public?
   // Either way they must be stated as below to silence clang warning
-  using M_BLR_Train<BF>::predict;
-  using M_BLR_Train<BF>::train;
-  using M_BLR_Train<BF>::trained;
-  using M_BLR_Train<BF>::weights;
-  using M_BLR_Train<BF>::Sigma;
+  using tadah::models::M_BLR_Train<BF>::predict;
+  using tadah::models::M_BLR_Train<BF>::train;
+  using tadah::models::M_BLR_Train<BF>::trained;
+  using tadah::models::M_BLR_Train<BF>::weights;
+  using tadah::models::M_BLR_Train<BF>::Sigma;
 };
 } // namespace mlip
 } // namespace tadah

@@ -2,14 +2,14 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "BF_Linear" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
+//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "tadah::models::BF_Linear" );
+//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "tadah::models::BF_Linear" );
 
 DM_BF_Linear::DM_BF_Linear() {}
 DM_BF_Linear::DM_BF_Linear(const tadah::core::Config &c): 
-  Function_Base(c), 
+  tadah::models::Function_Base(c), 
   DM_BF_Base(c),
-  BF_Linear(c)
+  tadah::models::BF_Linear(c)
 {}
 size_t DM_BF_Linear::get_phi_cols(const tadah::core::Config &config)
 {

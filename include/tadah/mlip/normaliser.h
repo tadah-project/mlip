@@ -11,7 +11,9 @@
 namespace tadah {
 namespace mlip {
 
-class Normaliser: public Normaliser_Core {
+using tadah::core::operator<<;
+
+class Normaliser: public tadah::core::Normaliser_Core {
     public:
         using Normaliser_Core::normalise;
 

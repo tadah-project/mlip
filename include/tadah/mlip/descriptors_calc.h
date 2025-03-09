@@ -47,7 +47,7 @@ namespace mlip {
  *  @tparam C3 Cut_Base child, three-body cutoff function.
  *  @tparam CM Cut_Base child, many-body cutoff function.
  */
-template <typename D2=D2_Base&, typename D3=D3_Base&, typename DM=DM_Base&, typename C2=Cut_Base&, typename C3=Cut_Base&, typename CM=Cut_Base&>
+template <typename D2=tadah::models::D2_Base&, typename D3=tadah::models::D3_Base&, typename DM=tadah::models::DM_Base&, typename C2=tadah::models::Cut_Base&, typename C3=tadah::models::Cut_Base&, typename CM=tadah::models::Cut_Base&>
 class DescriptorsCalc: public DC_Base {
 
     public:

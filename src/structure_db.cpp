@@ -283,9 +283,9 @@ void StructureDB::dump_to_file(const std::string& filepath, bool append, size_t 
 }
 
 std::string StructureDB::summary() const {
-  std::string str =  "# of structures : " + to_string(structures.size());
+  std::string str =  "# of structures : " + std::to_string(structures.size());
 
-  str +=  " | # of atoms : " + to_string(calc_natoms());
+  str +=  " | # of atoms : " + std::to_string(calc_natoms());
 
   str += " | Elements : ";
   std::set<tadah::core::Element> ue = get_unique_elements(); 

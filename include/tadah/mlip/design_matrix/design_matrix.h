@@ -65,7 +65,7 @@ public:
  *  - Stresses are scaled by 1/6.
  *  - Energies are scaled by 1/N_i
  *
- * @tparam F Function_Base child -> BF_Base or Kern_Base
+ * @tparam F tadah::models::Function_Base child -> tadah::models::BF_Base or tadah::models::Kern_Base
  *
  */
 template <typename F>
@@ -88,7 +88,7 @@ public:
      * Usage example:
      * \code{.cpp}
      * tadah::core::Config config("tadah::core::Config");
-     * BF_Linear bf(config);
+     * tadah::models::BF_Linear bf(config);
      * DesignMatrix<LinearKernel> desmat(bf, config);
      *
      * \endcode

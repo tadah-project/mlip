@@ -11,7 +11,7 @@
 namespace tadah {
 namespace mlip {
 
-struct DM_BF_Base: public DM_Function_Base, public virtual BF_Base {
+struct DM_BF_Base: public DM_Function_Base, public virtual tadah::models::BF_Base {
    
     DM_BF_Base();
     DM_BF_Base(const tadah::core::Config &c);

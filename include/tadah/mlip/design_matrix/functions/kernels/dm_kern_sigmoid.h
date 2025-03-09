@@ -6,7 +6,7 @@
 namespace tadah {
 namespace mlip {
 
-class DM_Kern_Sigmoid :  public DM_Kern_Base, public Kern_Sigmoid {
+class DM_Kern_Sigmoid :  public DM_Kern_Base, public tadah::models::Kern_Sigmoid {
     public:
         DM_Kern_Sigmoid();
         DM_Kern_Sigmoid(const tadah::core::Config &c);

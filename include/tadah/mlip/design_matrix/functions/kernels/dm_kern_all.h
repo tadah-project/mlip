@@ -7,3 +7,5 @@
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_quadratic.h>
 namespace tadah {
 namespace mlip {
+} // namespace mlip
+} // namespace tadah

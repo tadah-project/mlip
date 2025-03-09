@@ -4,6 +4,8 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/core/periodic_table.h>
 
+using namespace tadah::core;
+using namespace tadah::mlip;
 // Helper to create an element from symbol
 static Element makeElement(const std::string& sym) {
     return PeriodicTable::find_by_symbol(sym);
