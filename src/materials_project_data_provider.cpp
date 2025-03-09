@@ -2,6 +2,8 @@
 #include <curl/curl.h>
 #include <stdexcept>
 #include <sstream>
+namespace tadah {
+namespace mlip {
 
 MaterialsProjectDataProvider::MaterialsProjectDataProvider(const std::string &apiKey)
   : m_apiKey(apiKey)
@@ -91,3 +93,5 @@ RawResponse MaterialsProjectDataProvider::httpGet(const std::string &url)
   return rr;
 }
 
+} // namespace mlip
+} // namespace tadah

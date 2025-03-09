@@ -12,13 +12,15 @@
 #include <tadah/models/descriptors/dm/dm_base.h>
 #include <tadah/models/cutoffs.h>
 
+namespace tadah {
+namespace mlip {
 /** \brief Descriptors calculator
  *
  * This object does not store any data.
  *
  * Usage example:
  * \code{.cpp}
- * # Build calculator using Config object.
+ * # Build calculator using tadah::core::Config object.
  * DescriptorsCalc<D2_LJ, D3_Dummy, DM_Dummy> dc(config);
  *
  * # Calculate all descriptors in a Structure st
@@ -29,7 +31,7 @@
  * \endcode
  *
  *  This object sets the following \ref INTERNAL_KEYS
- *  to the provided Config object:
+ *  to the provided tadah::core::Config object:
  *
  *  \ref SIZE2B,\ref SIZE3B,\ref SIZEMB,\ref DSIZE
  *
@@ -49,7 +51,7 @@ template <typename D2=D2_Base&, typename D3=D3_Base&, typename DM=DM_Base&, type
 class DescriptorsCalc: public DC_Base {
 
     public:
-        Config &config;
+        tadah::core::Config &config;
         /** Constructor to fully initialise this object.
          *
          *  REQUIRED CONFIG KEYS:
@@ -57,7 +59,7 @@ class DescriptorsCalc: public DC_Base {
          *  at least one of: \ref RCUT2B, \ref RCUT3B,\ref RCUTMB
          *
          */
-        DescriptorsCalc(Config &c);
+        DescriptorsCalc(tadah::core::Config &c);
 
         /** This constructor is equivalent to the main constructor above.
          *
@@ -72,7 +74,7 @@ class DescriptorsCalc: public DC_Base {
          *
          * Usage example:
          * \code{.cpp}
-         * # Build calculator using Config object.
+         * # Build calculator using tadah::core::Config object.
          * D2_Base *d2 = new D2_LJ(config);
          * D2_Base *d3 = new D3_Dummy(config);
          * D2_Base *dm = new DM_Dummy(config);
@@ -97,7 +99,7 @@ class DescriptorsCalc: public DC_Base {
          *
          */
         template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-        DescriptorsCalc(Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm);
+        DescriptorsCalc(tadah::core::Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm);
 
         /** Calculate all descriptors in a Structure st */
         StDescriptors calc(const Structure &st);
@@ -116,12 +118,14 @@ class DescriptorsCalc: public DC_Base {
         DM dm;
     private:
         template <typename T1, typename T2, typename T3>
-        DescriptorsCalc(Config &c,T1 &t1,T2 &t2,T3 &t3);
+        DescriptorsCalc(tadah::core::Config &c,T1 &t1,T2 &t2,T3 &t3);
 
         void calc(const Structure &st, StDescriptors &std);
         void calc_dimer(const Structure &st, StDescriptors &std);
         void common_constructor();
 };
+} // namespace mlip
+} // namespace tadah
 
 #include "descriptors_calc.hpp"
 #endif

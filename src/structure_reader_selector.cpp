@@ -13,6 +13,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <sys/stat.h>
+namespace tadah {
+namespace mlip {
 
 std::unique_ptr<IStructureReader>
 StructureReaderSelector::getReader(const std::string &pathOrId) {
@@ -129,7 +131,7 @@ bool isLikelyPoscar(const std::string &filepath) {
   // 3) Lattice vector line #1
   // 4) Lattice vector line #2
   // 5) Lattice vector line #3
-  // 6) Element symbols or counts
+  // 6) tadah::core::Element symbols or counts
   // 7) Possibly more lines (atom counts / Selective Dynamics / coordinates, etc.)
 
   std::string line;
@@ -327,3 +329,5 @@ StructureReaderSelector::guessFormatFromContent(const std::string &filePath) {
 
   return "UNKNOWN";
 }
+} // namespace mlip
+} // namespace tadah

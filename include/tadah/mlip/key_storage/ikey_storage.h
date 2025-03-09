@@ -7,6 +7,8 @@
 #define IKEYSTORAGE_H
 
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class IKeyStorage
@@ -35,4 +37,6 @@ public:
   virtual bool storeKey(const std::string& keyName, const std::string& keyValue) = 0;
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // IKEYSTORAGE_H

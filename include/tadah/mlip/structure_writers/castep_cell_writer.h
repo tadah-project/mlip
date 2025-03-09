@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 class CastepCellWriter : public StructureWriter {
 public:
   CastepCellWriter(StructureDB& db);
@@ -18,6 +20,8 @@ public:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CASTEP_CELL_WRITER_H
 
 

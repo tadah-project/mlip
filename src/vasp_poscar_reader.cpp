@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <tadah/mlip/structure_readers/vasp_poscar_reader.h>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 // A small helper to parse each line into tokens
 static std::vector<std::string> split(const std::string &str);
@@ -168,8 +170,8 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
     Atom a;
     // parse element from atomSymbols[i] if you maintain a map
     // For brevity, store minimal approach:
-    Element e = PeriodicTable().find_by_symbol(atomSymbols[i]);
-    static_cast<Element &>(a) = e;
+    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(atomSymbols[i]);
+    static_cast<tadah::core::Element &>(a) = e;
 
     if (directCoords) {
       // Convert fractional -> cart
@@ -202,3 +204,5 @@ static std::vector<std::string> split(const std::string &str) {
   }
   return tokens;
 }
+} // namespace mlip
+} // namespace tadah

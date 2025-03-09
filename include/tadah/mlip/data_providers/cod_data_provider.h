@@ -3,6 +3,8 @@
 
 #include <tadah/mlip/data_providers/imaterials_data_provider.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Provides raw CIF data from the Crystallography Open Database (COD)
@@ -58,5 +60,7 @@ private:
   RawResponse fetchFromURL(const std::string &url);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_DATA_PROVIDERS_COD_DATA_PROVIDER_H
 

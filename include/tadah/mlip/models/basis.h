@@ -10,22 +10,24 @@
 #include <numeric>
 #include <stdexcept>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 template <typename K>
 class Basis {
 private:
-  Config &config;
+  tadah::core::Config &config;
   int verbose;
 public:
-  Matrix b;
-  t_type T;    // Vectors corresponding to basis vectors
-  Basis(Config &c):
+  tadah::core::Matrix b;
+  tadah::core::t_type T;    // Vectors corresponding to basis vectors
+  Basis(tadah::core::Config &c):
     config(c),
     verbose(c.get<int>("VERBOSE"))
 
   {}
 
-  void set_basis(Matrix &b_) {
+  void set_basis(tadah::core::Matrix &b_) {
     b=b_;
   }
   void build_random_basis(size_t s, StDescriptorsDB &st_desc_db) {
@@ -56,7 +58,7 @@ larger than the amount of available AEDs\n");
     for (size_t i=1; i<s; ++i) {
       size_t st = std::get<0>(indices[i]);
       size_t a = std::get<1>(indices[i]);
-      const aed_type &aed = st_desc_db(st).get_aed(a);
+      const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);
       for (size_t j=0; j<aed.size(); ++j) {
         b(j,i)=aed[j];
       }
@@ -97,7 +99,7 @@ larger than the amount of available AEDs\n");
       const size_t st = indices[i];
       T(i)=stdb(st).energy/st_desc_db(st).naed();
       for( size_t a=0; a<st_desc_db(st).naed(); a++ ) {
-        const aed_type &aed = st_desc_db(st).get_aed(a);
+        const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);
         for (size_t j=0; j<aed.size(); ++j) {
           b(j,i)+=aed[j]/st_desc_db(st).naed();
         }
@@ -105,4 +107,6 @@ larger than the amount of available AEDs\n");
     }
   }
 };
+} // namespace mlip
+} // namespace tadah
 #endif

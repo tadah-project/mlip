@@ -13,6 +13,8 @@
 
 #include <tadah/mlip/key_storage/ikey_storage.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class EnvironmentKeyStorage
@@ -40,4 +42,6 @@ public:
                 const std::string &keyValue) override;
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // ENVIRONMENTKEYSTORAGE_H

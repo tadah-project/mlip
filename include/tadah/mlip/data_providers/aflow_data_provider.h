@@ -3,6 +3,8 @@
 
 #include <tadah/mlip/data_providers/imaterials_data_provider.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Provides raw JSON data from AFLOW by an AUID query.
@@ -53,5 +55,7 @@ private:
   RawResponse fetchAndParseAflowByAuid(const std::string &auid);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_DATA_PROVIDERS_AFLOW_DATA_PROVIDER_H
 

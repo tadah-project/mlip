@@ -8,6 +8,8 @@
 #define KEYMANAGER_H
 
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @enum ServiceType
@@ -82,4 +84,6 @@ private:
    */
   static void showShellExportInstructions(const std::string& keyName, const std::string& keyValue);
 };
+} // namespace mlip
+} // namespace tadah
 #endif // KEYMANAGER_H

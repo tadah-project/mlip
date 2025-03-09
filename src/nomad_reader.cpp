@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <sstream>
 #include <cmath>
+namespace tadah {
+namespace mlip {
 
 NomadReader::NomadReader()
   : m_dataProvider(std::make_unique<NomadDataProvider>()) {
@@ -113,8 +115,8 @@ void NomadReader::parseNomadJson(const std::string &jsonContent) {
     double z = pos[2].get<double>();
 
     Atom atom;
-    Element e = PeriodicTable().find_by_symbol(speciesSites[i].get<std::string>());
-    static_cast<Element &>(atom) = e;
+    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(speciesSites[i].get<std::string>());
+    static_cast<tadah::core::Element &>(atom) = e;
     atom.position[0] = x;
     atom.position[1] = y;
     atom.position[2] = z;
@@ -141,3 +143,5 @@ void NomadReader::makeCellMatrix(double a, double b, double c,
 
   cell[2][2] = c * std::sqrt(term > 0.0 ? term : 0.0);
 }
+} // namespace mlip
+} // namespace tadah

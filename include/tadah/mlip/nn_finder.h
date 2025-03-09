@@ -5,6 +5,8 @@
 #include <tadah/core/lapack.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class NNFinder
@@ -143,7 +145,7 @@ public:
     /**
      * Construct with cutoff from config("RCUTMAX").
      */
-    NNFinder(Config &config);
+    NNFinder(tadah::core::Config &config);
 
     /**
      * Build nearest neighbors for all atoms in one Structure.
@@ -157,6 +159,8 @@ public:
     void calc(StructureDB &stdb);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // NN_FINDER_H
 
 

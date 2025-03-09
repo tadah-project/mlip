@@ -1,6 +1,8 @@
 #include <tadah/mlip/st_descriptors_db.h>
+namespace tadah {
+namespace mlip {
 
-StDescriptorsDB::StDescriptorsDB(const StructureDB &stdb, Config &config):
+StDescriptorsDB::StDescriptorsDB(const StructureDB &stdb, tadah::core::Config &config):
     st_descs(stdb.size())
 {
     // init all StDescriptors
@@ -33,3 +35,5 @@ std::vector<StDescriptors>::const_iterator StDescriptorsDB::begin() const {
 std::vector<StDescriptors>::const_iterator StDescriptorsDB::end() const { 
     return st_descs.cend(); 
 }
+} // namespace mlip
+} // namespace tadah

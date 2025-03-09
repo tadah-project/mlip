@@ -3,6 +3,8 @@
 
 #include <tadah/mlip/data_providers/imaterials_data_provider.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Provides raw data from NOMAD by making HTTP POST requests to:
@@ -60,5 +62,7 @@ private:
   RawResponse httpPost(const std::string &url, const std::string &jsonBody);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_DATA_PROVIDERS_NOMAD_DATA_PROVIDER_H
 

@@ -11,6 +11,8 @@
 #include <iomanip>
 #include <vector>
 #include <set>
+namespace tadah {
+namespace mlip {
 
 /**
  * Container for a collection of Atom(s).
@@ -54,10 +56,10 @@ struct Structure {
   double energy;
 
   /** Lattice vectors. */
-  Matrix3d cell;
+  tadah::core::Matrix3d cell;
 
   /** Virial stress tensor. */
-  stress_type stress;
+  tadah::core::stress_type stress;
 
   /** Container for atoms which belong to this structure */
   std::vector<Atom> atoms;
@@ -88,7 +90,7 @@ struct Structure {
    * Note that there might be more than one periodic image in each direction.
    * This depends on the box size and the cutoff distance used.
    */
-  std::vector<std::vector<Vec3d>> near_neigh_shift;
+  std::vector<std::vector<tadah::core::Vec3d>> near_neigh_shift;
 
   /** List of global indices for nearest neighbours for every atom */
   std::vector<std::vector<size_t>> near_neigh_idx;
@@ -166,9 +168,9 @@ struct Structure {
  *   near_neigh_idx[i][n]  -> global index of neighbor
  *   near_neigh_shift[i][n] -> integer triple (n1, n2, n3) OR real shift
  *
- * Returns by value (Vec3d) so we don't reference a temporary.
+ * Returns by value (tadah::core::Vec3d) so we don't reference a temporary.
  */
-  Vec3d nn_pos(const size_t i, const size_t n) const;
+  tadah::core::Vec3d nn_pos(const size_t i, const size_t n) const;
 
   /** @return a number of nearest neighbours of the i-th Atom. */
   size_t nn_size(const size_t i) const;
@@ -314,7 +316,7 @@ struct Structure {
   void dump_to_file(const std::string& filepath, size_t prec=12) const;
 
   /** List of chemical elements in this structure. */
-  std::set<Element> get_unique_elements() const;
+  std::set<tadah::core::Element> get_unique_elements() const;
 
   private:
     const static size_t w=13;  // controls output width
@@ -322,4 +324,6 @@ struct Structure {
   
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif

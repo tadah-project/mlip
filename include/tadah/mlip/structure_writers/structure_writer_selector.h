@@ -5,6 +5,8 @@
 #include <tadah/mlip/structure_writers/structure_writer.h>
 #include <string>
 #include <memory>
+namespace tadah {
+namespace mlip {
 
 class StructureWriterSelector {
   public:
@@ -12,4 +14,6 @@ class StructureWriterSelector {
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // STRUCTURE_WRITER_SELECTOR_H

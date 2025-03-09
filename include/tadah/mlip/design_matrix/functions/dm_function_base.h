@@ -12,23 +12,27 @@
 #include <iostream>
 #include <limits>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 /** Base class for Kernels and Basis Functions */
 struct DM_Function_Base: public virtual Function_Base {
 
-  // Derived classes must implement Derived() and Derived(Config)
+  // Derived classes must implement Derived() and Derived(tadah::core::Config)
   DM_Function_Base();
-  DM_Function_Base(const Config &c);
+  DM_Function_Base(const tadah::core::Config &c);
   virtual ~DM_Function_Base();
 
-  virtual size_t get_phi_cols(const Config &)=0;
-  virtual void calc_phi_energy_row(phi_type &, size_t &,
+  virtual size_t get_phi_cols(const tadah::core::Config &)=0;
+  virtual void calc_phi_energy_row(tadah::core::phi_type &, size_t &,
                                    const Structure &, const StDescriptors &)=0;
-  virtual void calc_phi_force_rows(phi_type &, size_t &,
+  virtual void calc_phi_force_rows(tadah::core::phi_type &, size_t &,
                                    const Structure &, const StDescriptors &)=0;
-  virtual void calc_phi_stress_rows(phi_type &, size_t &,
+  virtual void calc_phi_stress_rows(tadah::core::phi_type &, size_t &,
                                    const Structure &, const StDescriptors &)=0;
 };
 //template<> inline CONFIG::Registry<DM_Function_Base>::Map CONFIG::Registry<DM_Function_Base>::registry{};
-//template<> inline CONFIG::Registry<DM_Function_Base,Config&>::Map CONFIG::Registry<DM_Function_Base,Config&>::registry{};
+//template<> inline CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Map CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::registry{};
+} // namespace mlip
+} // namespace tadah
 #endif

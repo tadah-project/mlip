@@ -6,10 +6,12 @@
 #include <tadah/core/periodic_table.h>
 
 #include <cstdio>
+namespace tadah {
+namespace mlip {
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 template <typename T1, typename T2, typename T3>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &t1, T2 &t2, T3 &t3):
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c, T1 &t1, T2 &t2, T3 &t3):
   config(c),
   d2(t1),
   d3(t2),
@@ -30,7 +32,7 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &t1, T2 &t2, T
   }
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c):
   DescriptorsCalc(c,c,c,c)
 {
   if (c.get<bool>("INIT2B")) {
@@ -76,7 +78,7 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
   config(c),
   c2(c2),
   c3(c3),
@@ -160,18 +162,18 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
   double rcut_mb_sq = pow(config.get<double>("RCUTMBMAX"),2);
-  rhos_type &rhos = st_d.rhos;
+  tadah::core::tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
   rhos.resize(s,st.natoms());
   rhos.set_zero();
 
-  Vec3d delij;
+  tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
     const Atom &a1 = st(i);
 
     int Zi = a1.Z;
     for (size_t jj=0; jj<st.nn_size(i); ++jj) {
-      const Vec3d &a2pos = st.nn_pos(i,jj);
+      const tadah::core::Vec3d &a2pos = st.nn_pos(i,jj);
       //delij = a1.position - a2pos;
       delij[0] = a1.position[0] - a2pos[0];
       delij[1] = a1.position[1] - a2pos[1];
@@ -219,7 +221,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 
   // zero all aeds and set bias
   for (size_t i=0; i<st.natoms(); ++i) {
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -229,8 +231,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   // can be calculated
   if (initmb) {
     for (size_t i=0; i<st.natoms(); ++i) {
-      aed_type &aed = st_d.get_aed(i);
-      rho_type& rhoi = st_d.get_rho(i);
+      tadah::core::aed_type &aed = st_d.get_aed(i);
+      tadah::core::rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }
   }
@@ -238,14 +240,14 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   bool use_force = config.get<bool>("FORCE");
   bool use_stress = config.get<bool>("STRESS");
 
-  Vec3d delij;
+  tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
     const Atom &a1 = st(i);
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
 
     int Zi = a1.Z;
     for (size_t jj=0; jj<st.nn_size(i); ++jj) {
-      const Vec3d &a2pos = st.nn_pos(i,jj);
+      const tadah::core::Vec3d &a2pos = st.nn_pos(i,jj);
 
       delij[0] = a1.position[0] - a2pos[0];
       delij[1] = a1.position[1] - a2pos[1];
@@ -261,7 +263,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 
       // CALCULATE TWO-BODY TERM
       if (use_force || use_stress) {
-        fd_type &fd_ij = st_d.fd[i][jj];
+        tadah::core::fd_type &fd_ij = st_d.fd[i][jj];
         if (rij_sq <= rcut_2b_sq && init2b) {
           d2.calc_all(Zi,Zj,rij,rij_sq,aed,fd_ij,0.5);
           // Two-body descriptor calculates x-direction only - fd_ij(n,0)
@@ -276,7 +278,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
         }
         // CALCULATE MANY-BODY TERM
         if (rij_sq <= rcut_mb_sq && initmb) {
-          rho_type& rhoi = st_d.get_rho(i);
+          tadah::core::rho_type& rhoi = st_d.get_rho(i);
           dm.calc_dXijdri(Zi,Zj,rij,rij_sq,delij,rhoi,fd_ij);
         }
       }
@@ -361,7 +363,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
   // zero all aeds+rho and set bias
   for (size_t i=0; i<4; ++i) {
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -371,10 +373,10 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
     st_d.rhos.set_zero();
   }
 
-  Vec3d xicom = 0.5*(atoms[0].position + atoms[1].position);
-  Vec3d xjcom = 0.5*(atoms[2].position + atoms[3].position);
+  tadah::core::Vec3d xicom = 0.5*(atoms[0].position + atoms[1].position);
+  tadah::core::Vec3d xjcom = 0.5*(atoms[2].position + atoms[3].position);
 
-  Vec3d del_com = xicom-xjcom;;
+  tadah::core::Vec3d del_com = xicom-xjcom;;
   double r_com_sq = del_com * del_com;
   if (r_com_sq > rcut_com_sq) {
     return;
@@ -406,8 +408,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   // calculate many-body aed
   if (initmb) {
     for (size_t i=0; i<4; ++i) {
-      aed_type &aed = st_d.get_aed(i);
-      rho_type& rhoi = st_d.get_rho(i);
+      tadah::core::aed_type &aed = st_d.get_aed(i);
+      tadah::core::rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }
   }
@@ -445,4 +447,6 @@ StDescriptorsDB DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const StructureDB &stdb
       calc(stdb(i),st_desc_db(i));
   return st_desc_db;
 }
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -10,6 +10,8 @@
 #include <tadah/mlip/key_storage/ikey_storage.h>
 #include <vector>
 #include <memory>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class FallbackKeyStorage
@@ -47,5 +49,7 @@ private:
   std::vector<std::unique_ptr<IKeyStorage>> m_storages; 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // FALLBACKKEYSTORAGE_H
 

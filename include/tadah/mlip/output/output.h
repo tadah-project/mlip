@@ -10,10 +10,12 @@
 #include <iostream>
 #include <iomanip>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 class Output {
     private:
-        Config &pot_config;
+        tadah::core::Config &pot_config;
         bool pred_err_bool;
         //size_t sigfig;
         //size_t nw;
@@ -22,11 +24,11 @@ class Output {
         size_t emptyspace=5;
         size_t nw=emptyspace+fmtw;   // width of numeric column
     public:
-        Output (Config &c, bool peb):
+        Output (tadah::core::Config &c, bool peb):
             pot_config(c),
             pred_err_bool(peb)
     {}
-        void print_train_unc(t_type &weights, t_type &unc) {
+        void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
             std::string index_str="Index";
 
             size_t iwe=(size_t)unc.size() > max_number(index_str.size()) ?
@@ -45,7 +47,7 @@ class Output {
 
             out_unc.close();
         }
-        void print_predict_all(StructureDB &stdb, StructureDB &stpred, aed_type & predicted_error) {
+        void print_predict_all(StructureDB &stdb, StructureDB &stpred, tadah::core::aed_type & predicted_error) {
             std::ofstream out_error("error.pred");
             std::ofstream out_energy("energy.pred");
             std::ofstream out_force("forces.pred");
@@ -143,8 +145,8 @@ class Output {
                     if (newline)
                         out_force << std::endl << std::endl;
                     for (size_t a=0; a<stdb(i).natoms(); ++a) {
-                        Vec3d &f = stdb(i).atoms[a].force;
-                        Vec3d &fp = stpred(i).atoms[a].force;
+                        tadah::core::Vec3d &f = stdb(i).atoms[a].force;
+                        tadah::core::Vec3d &fp = stpred(i).atoms[a].force;
                         for (size_t k=0; k<3; ++k) {
                             out_force << std::setw(iwf) << fidx++ << std::setw(nw)
                                 << f[k] << std::setw(nw) << fp[k];
@@ -163,8 +165,8 @@ class Output {
                     double max_serr=0.0;
                     if (newline)
                         out_stress << std::endl << std::endl;
-                    stress_type &s = stdb(i).stress;
-                    stress_type &sp = stpred(i).stress;
+                    tadah::core::stress_type &s = stdb(i).stress;
+                    tadah::core::stress_type &sp = stpred(i).stress;
                     for (size_t x=0; x<3; ++x) {
                         for (size_t y=x; y<3; ++y) {
                             out_stress << std::setw(iws) << sidx++ << std::setw(nw) << s(x,y)
@@ -198,4 +200,6 @@ class Output {
   }
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif // !OUTPUT_H

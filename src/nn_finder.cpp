@@ -7,9 +7,11 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 // Constructor
-NNFinder::NNFinder(Config &config)
+NNFinder::NNFinder(tadah::core::Config &config)
 {
   cutoff     = config.get<double>("RCUTMAX");
   cutoff_sq  = cutoff * cutoff;
@@ -32,7 +34,7 @@ bool NNFinder::check_box(Structure &st)
 
 // ---------------------------------------------------------------------------
 void NNFinder::num_shifts(Structure &st, int N[3]) {
-  Matrix3d cell_inv = st.cell.inverse();
+  tadah::core::Matrix3d cell_inv = st.cell.inverse();
 
   double l1 = cell_inv.col(0).norm();
   double l2 = cell_inv.col(1).norm();
@@ -67,20 +69,20 @@ void NNFinder::calc_naive(Structure &st)
   num_shifts(st, N);
 
   // Precompute shifts (both real displacement and integer triple if needed)
-  std::vector<Vec3d> shifts;
-  std::vector<Vec3d> shiftIdx;
+  std::vector<tadah::core::Vec3d> shifts;
+  std::vector<tadah::core::Vec3d> shiftIdx;
   shifts.reserve((2*N[0]+1)*(2*N[1]+1)*(2*N[2]+1));
   shiftIdx.reserve((2*N[0]+1)*(2*N[1]+1)*(2*N[2]+1));
 
   for (int n1 = -N[0]; n1 <= N[0]; n1++) {
     for (int n2 = -N[1]; n2 <= N[1]; n2++) {
       for (int n3 = -N[2]; n3 <= N[2]; n3++) {
-        Vec3d disp;
+        tadah::core::Vec3d disp;
         disp[0] = st.cell(0,0)*n1 + st.cell(1,0)*n2 + st.cell(2,0)*n3;
         disp[1] = st.cell(0,1)*n1 + st.cell(1,1)*n2 + st.cell(2,1)*n3;
         disp[2] = st.cell(0,2)*n1 + st.cell(1,2)*n2 + st.cell(2,2)*n3;
         shifts.push_back(disp);
-        shiftIdx.push_back(Vec3d(n1, n2, n3));
+        shiftIdx.push_back(tadah::core::Vec3d(n1, n2, n3));
       }
     }
   }
@@ -96,8 +98,8 @@ void NNFinder::calc_naive(Structure &st)
 
   // Distance checks
   for (size_t s = 0; s < shifts.size(); s++) {
-    const Vec3d &disp = shifts[s];
-    const Vec3d &dispIdxVal = shiftIdx[s];
+    const tadah::core::Vec3d &disp = shifts[s];
+    const tadah::core::Vec3d &dispIdxVal = shiftIdx[s];
     bool selfShift = (dispIdxVal[0] == 0 && dispIdxVal[1] == 0 && dispIdxVal[2] == 0);
     size_t startA2 = (selfShift ? 1ul : 0ul);
 
@@ -220,7 +222,7 @@ void NNFinder::calc_binned(Structure &st)
                   double fracZ = double(dC)/double(nBinsC);
 
                   // Real shift
-                  Vec3d shiftDisp(
+                  tadah::core::Vec3d shiftDisp(
                     st.cell(0,0)*fracX + st.cell(0,1)*fracY + st.cell(0,2)*fracZ,
                     st.cell(1,0)*fracX + st.cell(1,1)*fracY + st.cell(1,2)*fracZ,
                     st.cell(2,0)*fracX + st.cell(2,1)*fracY + st.cell(2,2)*fracZ
@@ -234,11 +236,11 @@ void NNFinder::calc_binned(Structure &st)
                   if (dist2 < cutSQ) {
                     // forward
                     st.near_neigh_idx[idxA].push_back(idxB);
-                    st.near_neigh_shift[idxA].push_back(Vec3d(dA, dB, dC));
+                    st.near_neigh_shift[idxA].push_back(tadah::core::Vec3d(dA, dB, dC));
 
                     // reverse
                     st.near_neigh_idx[idxB].push_back(idxA);
-                    st.near_neigh_shift[idxB].push_back(Vec3d(-dA, -dB, -dC));
+                    st.near_neigh_shift[idxB].push_back(tadah::core::Vec3d(-dA, -dB, -dC));
                   }
                 }
               }
@@ -284,3 +286,5 @@ void NNFinder::calc(StructureDB &stdb)
   //           << seconds << " seconds\n";
 }
 
+} // namespace mlip
+} // namespace tadah

@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 #include <tadah/mlip/structure_readers/istructure_reader.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief A factory that provides an appropriate IStructureReader
@@ -26,4 +28,6 @@ private:
   static std::string guessFormatFromContent(const std::string &filePath);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // STRUCTURE_READER_SELECTOR_H

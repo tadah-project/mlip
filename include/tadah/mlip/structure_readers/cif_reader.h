@@ -4,6 +4,8 @@
 #include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Reads Structure data from a CIF file using older Gemmi APIs.
@@ -47,5 +49,7 @@ private:
   static double deg2rad(double deg);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CIF_READER_H
 

@@ -3,6 +3,8 @@
 
 #include <tadah/mlip/data_providers/imaterials_data_provider.h>
 #include <string>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Retrieves raw JSON from the Materials Project API (v2 / v3).
@@ -45,5 +47,7 @@ private:
   RawResponse httpGet(const std::string &url);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_DATA_PROVIDERS_MATERIALS_PROJECT_DATA_PROVIDER_H
 

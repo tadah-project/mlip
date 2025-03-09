@@ -3,7 +3,6 @@
 #include <stdexcept>
 #include <tadah/core/lapack.h>
 #include <tadah/mlip/memory/DesignMatrixWorkspace.h>
-
 namespace tadah {
 namespace mlip {
 namespace memory {
@@ -30,4 +29,3 @@ bool DesignMatrixWorkspace::isSufficient(size_t m_, size_t n_) const {
 } // namespace memory
 } // namespace mlip
 } // namespace tadah
-

@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 class LammpsStructureWriter : public StructureWriter {
 public:
   LammpsStructureWriter(StructureDB& db);
@@ -18,4 +20,6 @@ public:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // LAMMPS_STRUCTURE_WRITER_H

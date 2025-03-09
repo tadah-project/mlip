@@ -9,6 +9,8 @@
 #include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure_readers/cif_reader.h>
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Reads a CIF file from the Crystallography Open Database (COD)
@@ -70,5 +72,7 @@ private:
   std::unique_ptr<IMaterialsDataProvider> m_dataProvider;
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // COD_READER_H
 

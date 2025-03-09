@@ -8,6 +8,8 @@
 
 #include <tadah/mlip/key_storage/ikey_storage.h>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class PlainTextKeyStorage
@@ -56,5 +58,7 @@ private:
   bool writeAllKeys(const std::vector<std::pair<std::string, std::string>>& kvPairs);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // PLAINTEXTKEYSTORAGE_H
 

@@ -1,6 +1,5 @@
 #include <tadah/mlip/memory/MLIPWorkspaceManager.h>
 #include <tadah/mlip/memory/DesignMatrixWorkspace.h>
-
 namespace tadah {
 namespace mlip {
 namespace memory {

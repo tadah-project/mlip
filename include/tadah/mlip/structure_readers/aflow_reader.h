@@ -8,6 +8,8 @@
 #include <tadah/mlip/data_providers/aflow_data_provider.h>
 #include <tadah/mlip/structure_readers/istructure_reader.h>
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class AflowReader
@@ -50,4 +52,6 @@ private:
                       double (&cell)[3][3]);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // AFLOW_READER_H

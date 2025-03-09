@@ -4,6 +4,8 @@
 #include <sstream>
 #include <cmath>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 AflowReader::AflowReader()
   : m_dataProvider(std::make_unique<AFLOWDataProvider>()) {
@@ -190,8 +192,8 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
     // If mismatch, label everything "X".
     for (auto &coord : positions) {
       Atom atom;
-      auto unknown = PeriodicTable().find_by_symbol("X");
-      static_cast<Element &>(atom) = unknown;
+      auto unknown = tadah::core::PeriodicTable().find_by_symbol("X");
+      static_cast<tadah::core::Element &>(atom) = unknown;
       atom.position[0] = coord[0];
       atom.position[1] = coord[1];
       atom.position[2] = coord[2];
@@ -203,10 +205,10 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   // Distribute species among positions in order.
   size_t idxPos = 0;
   for (size_t iSpec = 0; iSpec < speciesList.size(); ++iSpec) {
-    Element e = PeriodicTable().find_by_symbol(speciesList[iSpec]);
+    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(speciesList[iSpec]);
     for (int rep = 0; rep < stoichCount[iSpec]; ++rep) {
       Atom atom;
-      static_cast<Element &>(atom) = e;
+      static_cast<tadah::core::Element &>(atom) = e;
       atom.position[0] = positions[idxPos][0];
       atom.position[1] = positions[idxPos][1];
       atom.position[2] = positions[idxPos][2];
@@ -261,3 +263,5 @@ void AflowReader::makeCellMatrix(double a, double b, double c,
   cell[2][2] = c * std::sqrt(term > 0.0 ? term : 0.0);
   // Remaining off-diagonal elements are zero-initialized by default.
 }
+} // namespace mlip
+} // namespace tadah

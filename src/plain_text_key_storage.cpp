@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+namespace tadah {
+namespace mlip {
 
 PlainTextKeyStorage::PlainTextKeyStorage()
 {
@@ -138,3 +140,5 @@ bool PlainTextKeyStorage::writeAllKeys(const std::vector<std::pair<std::string, 
   return true;
 }
 
+} // namespace mlip
+} // namespace tadah

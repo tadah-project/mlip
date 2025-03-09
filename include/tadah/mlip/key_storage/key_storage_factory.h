@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 #include <tadah/mlip/key_storage/ikey_storage.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class KeyStorageFactory
@@ -36,5 +38,7 @@ public:
   static std::unique_ptr<IKeyStorage> createEnvironmentOnly();
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // KEYSTORAGEFACTORY_H
 

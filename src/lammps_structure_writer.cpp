@@ -1,6 +1,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_writers/lammps_structure_writer.h>
+namespace tadah {
+namespace mlip {
 
 LammpsStructureWriter::LammpsStructureWriter(StructureDB& db) : StructureWriter(db) {}
 
@@ -61,7 +63,7 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
   file << "Masses" << std::endl;
   file << std::endl;
   for (const auto &t: type) {
-    file << t.second << " " << PeriodicTable::get_mass(t.first) << "    # " << t.first << std::endl;
+    file << t.second << " " << tadah::core::PeriodicTable::get_mass(t.first) << "    # " << t.first << std::endl;
   }
 
   file << std::endl;
@@ -86,3 +88,5 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
   
   file.close();
 }
+} // namespace mlip
+} // namespace tadah

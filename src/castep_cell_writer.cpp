@@ -1,6 +1,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_writers/castep_cell_writer.h>
+namespace tadah {
+namespace mlip {
 
 CastepCellWriter::CastepCellWriter(StructureDB& db) : StructureWriter(db) {}
 
@@ -51,3 +53,5 @@ void CastepCellWriter::write_data(const std::string& filename, const size_t i) {
   file << "%ENDBLOCK POSITIONS_ABS	" << std::endl;
   file.close();
 }
+} // namespace mlip
+} // namespace tadah

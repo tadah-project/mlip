@@ -3,6 +3,8 @@
 
 #include <string>
 #include <tadah/mlip/structure.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Abstract base class for reading a Structure from a file or remote source.
@@ -33,4 +35,6 @@ public:
   virtual Structure getStructure() const = 0;
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // TADAH_MLIP_STRUCTURE_READERS_ISTRUCTURE_READER_H

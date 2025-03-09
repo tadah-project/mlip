@@ -2,6 +2,8 @@
 #define VASP_POSCAR_READER_H
 
 #include <tadah/mlip/structure_readers/istructure_reader.h>
+namespace tadah {
+namespace mlip {
 
 /**
  * @brief Reads a VASP POSCAR/CONTCAR file.
@@ -10,7 +12,7 @@
  *   1) Comment line
  *   2) Scaling factor
  *   3-5) Lattice vectors
- *   6) Element symbols or counts
+ *   6) tadah::core::Element symbols or counts
  *   7) Possibly "Selective dynamics" line
  *   8) "Direct" or "Cartesian"
  *   9+) Atomic coordinates
@@ -27,4 +29,6 @@ private:
   void parsePoscar(const std::vector<std::string> &lines);
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // VASP_POSCAR_READER_H

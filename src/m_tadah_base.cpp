@@ -1,24 +1,26 @@
 #include <tadah/mlip/models/m_tadah_base.h>
+namespace tadah {
+namespace mlip {
 
 void M_Tadah_Base::
-fpredict(const size_t a, force_type &v,
+fpredict(const size_t a, tadah::core::force_type &v,
          const StDescriptors &std, const Structure &st)
 {
   for (size_t jj=0; jj<st.nn_size(a); ++jj) {
     size_t j=st.near_neigh_idx[a][jj];
     const size_t aa = st.get_nn_iindex(a,j,jj);
-    const fd_type &fdji = std.fd[j][aa];
-    const fd_type &fdij = std.fd[a][jj];
-    const aed_type &aedi = std.get_aed(a);
-    const aed_type &aedj = std.get_aed(j);
+    const tadah::core::fd_type &fdji = std.fd[j][aa];
+    const tadah::core::fd_type &fdij = std.fd[a][jj];
+    const tadah::core::aed_type &aedi = std.get_aed(a);
+    const tadah::core::aed_type &aedj = std.get_aed(j);
     v += fpredict(fdij,aedi);
     v -= fpredict(fdji,aedj);
   }
 }
-force_type M_Tadah_Base::
+tadah::core::force_type M_Tadah_Base::
 fpredict(const size_t a, const StDescriptors &std, const Structure &st)
 {
-  force_type v;
+  tadah::core::force_type v;
   fpredict(a,v,std,st);
   return v;
 }
@@ -33,7 +35,7 @@ epredict(const StDescriptors &std)
 }
 
 Structure M_Tadah_Base::
-predict(const Config &c, StDescriptors &std, const Structure &st)
+predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st)
 {
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)
@@ -59,7 +61,7 @@ predict(const Config &c, StDescriptors &std, const Structure &st)
 }
 
 StructureDB M_Tadah_Base::
-predict(const Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
+predict(const tadah::core::Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
@@ -73,7 +75,7 @@ predict(const Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
 }
 
 StructureDB M_Tadah_Base::
-predict(Config &c, const StructureDB &stdb, DC_Base &dc)
+predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
@@ -87,40 +89,40 @@ predict(Config &c, const StructureDB &stdb, DC_Base &dc)
   return stdb_;
 }
 
-stress_type M_Tadah_Base::
+tadah::core::stress_type M_Tadah_Base::
 spredict(const StDescriptors &std, const Structure &st)
 {
-  stress_type s;
+  tadah::core::stress_type s;
   s.set_zero();
   for (size_t a=0; a<st.natoms(); ++a) {
     s += spredict(a,std,st);
   }
   return s;
 }
-stress_type M_Tadah_Base::
+tadah::core::stress_type M_Tadah_Base::
 spredict(const size_t a, const StDescriptors &std, const Structure &st)
 {
-  stress_type s;
+  tadah::core::stress_type s;
   s.set_zero();
   spredict(a,s,std,st);
   return s;
 }
 void M_Tadah_Base::
-spredict(const size_t a, stress_type &s,
+spredict(const size_t a, tadah::core::stress_type &s,
          const StDescriptors &std, const Structure &st)
 {
   double V_inv = 1/st.get_volume();
-  const Vec3d &ri = st.atoms[a].position;
-  const aed_type &aedi = std.get_aed(a);
+  const tadah::core::Vec3d &ri = st.atoms[a].position;
+  const tadah::core::aed_type &aedi = std.get_aed(a);
   for (size_t jj=0; jj<st.nn_size(a); ++jj) {
     size_t j=st.near_neigh_idx[a][jj];
     const size_t aa = st.get_nn_iindex(a,j,jj);
-    const Vec3d &rj = st.nn_pos(a,jj);
-    const fd_type &fdij = std.fd[a][jj];
-    const fd_type &fdji = std.fd[j][aa];
-    const aed_type &aedj = std.get_aed(j);
-    const force_type fij = fpredict(fdij,aedi);
-    const force_type fji = fpredict(fdji,aedj);
+    const tadah::core::Vec3d &rj = st.nn_pos(a,jj);
+    const tadah::core::fd_type &fdij = std.fd[a][jj];
+    const tadah::core::fd_type &fdji = std.fd[j][aa];
+    const tadah::core::aed_type &aedj = std.get_aed(j);
+    const tadah::core::force_type fij = fpredict(fdij,aedi);
+    const tadah::core::force_type fji = fpredict(fdji,aedj);
 
     // S_xy = (\sum nn of i) r_i[x]f_i(y) + rj[x]f_j(y)
     // where f_i and f_j are the forces on the atom i and j respectively
@@ -136,22 +138,22 @@ spredict(const size_t a, stress_type &s,
 void M_Tadah_Base::
 stress_force_predict(const StDescriptors &std, Structure &st_)
 {
-  stress_type s;
+  tadah::core::stress_type s;
   s.set_zero();
   double V_inv = 1/st_.get_volume();
   for (size_t a=0; a<st_.natoms(); ++a) {
-    force_type v;
-    const Vec3d &ri = st_.atoms[a].position;
-    const aed_type &aedi = std.get_aed(a);
+    tadah::core::force_type v;
+    const tadah::core::Vec3d &ri = st_.atoms[a].position;
+    const tadah::core::aed_type &aedi = std.get_aed(a);
     for (size_t jj=0; jj<st_.nn_size(a); ++jj) {
       size_t j=st_.near_neigh_idx[a][jj];
       const size_t aa = st_.get_nn_iindex(a,j,jj);
-      const Vec3d &rj = st_.nn_pos(a,jj);
-      const fd_type &fdij = std.fd[a][jj];
-      const fd_type &fdji = std.fd[j][aa];
-      const aed_type &aedj = std.get_aed(j);
-      const force_type fij = fpredict(fdij,aedi);
-      const force_type fji = fpredict(fdji,aedj);
+      const tadah::core::Vec3d &rj = st_.nn_pos(a,jj);
+      const tadah::core::fd_type &fdij = std.fd[a][jj];
+      const tadah::core::fd_type &fdji = std.fd[j][aa];
+      const tadah::core::aed_type &aedj = std.get_aed(j);
+      const tadah::core::force_type fij = fpredict(fdij,aedi);
+      const tadah::core::force_type fji = fpredict(fdji,aedj);
 
       v += fij;
       v -= fji;
@@ -166,3 +168,5 @@ stress_force_predict(const StDescriptors &std, Structure &st_)
   }
   st_.stress = s;
 }
+} // namespace mlip
+} // namespace tadah

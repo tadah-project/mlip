@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class CastepMDReader
@@ -114,5 +116,7 @@ private:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CASTEP_MD_READER_H
 

@@ -8,6 +8,8 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 
 void CifReader::read(const std::string &path) {
   std::ifstream ifs(path);
@@ -53,7 +55,7 @@ void CifReader::parseCifContents(const std::string &fileContents) {
   for (const auto &site : sites) {
     auto p = struc.cell.orthogonalize(site.fract);
     auto label = site.element.name();
-    Element e = PeriodicTable().find_by_symbol(label);
+    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(label);
     Atom a(e, p.x, p.y, p.z, 0, 0, 0);
     m_structure.atoms.push_back(a);
   }
@@ -64,3 +66,5 @@ void CifReader::parseCifContents(const std::string &fileContents) {
     }
   }
 }
+} // namespace mlip
+} // namespace tadah

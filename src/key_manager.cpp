@@ -9,6 +9,8 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>   // setenv on Unix-likes
+namespace tadah {
+namespace mlip {
 
 std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
 {
@@ -160,3 +162,5 @@ void KeyManager::showShellExportInstructions(const std::string &keyName, const s
             << "Then re-run this program, and it will see that environment variable.\n\n";
 }
 
+} // namespace mlip
+} // namespace tadah

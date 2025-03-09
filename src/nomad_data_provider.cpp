@@ -2,6 +2,8 @@
 #include <curl/curl.h>
 #include <stdexcept>
 #include <sstream>
+namespace tadah {
+namespace mlip {
 
 size_t NomadDataProvider::writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
 {
@@ -88,3 +90,5 @@ RawResponse NomadDataProvider::httpPost(const std::string &url, const std::strin
   return rr;
 }
 
+} // namespace mlip
+} // namespace tadah
