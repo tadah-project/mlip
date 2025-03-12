@@ -11,11 +11,13 @@
 #include <tadah/mlip/memory/MLIPWorkspaceManager.h>
 
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 class Trainer {
   public:
     tadah::core::Config config;
-    DC_Selector DCS;
+    tadah::models::DC_Selector DCS;
     DescriptorsCalc<> dc;
     NNFinder nnf;
     DM_Function_Base *fb;
@@ -54,6 +56,8 @@ class Trainer {
     }
 
 };
+} // namespace mlip
+} // namespace tadah
 
 #ifdef TADAH_BUILD_MPI
 
@@ -631,7 +635,7 @@ class TrainerWorker: public MPI_Trainer {
       }
     }
 };
-#endif
 } // namespace mlip
 } // namespace tadah
-#endif
+#endif  // TADAH_BUILD_MPI
+#endif  // MPI_TRAINER_H

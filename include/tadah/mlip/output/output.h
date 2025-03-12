@@ -31,8 +31,8 @@ class Output {
         void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
             std::string index_str="Index";
 
-            size_t iwe=(size_t)unc.size() > max_number(index_str.size()) ?
-                number_of_digits(unc.size()) : index_str.size();
+            size_t iwe=(size_t)unc.size() > tadah::core::max_number(index_str.size()) ?
+                tadah::core::number_of_digits(unc.size()) : index_str.size();
             std::ofstream out_unc("weights.tadah");
             out_unc << std::scientific << std::setprecision(sigfig);
             out_unc << std::setw(iwe) << index_str
@@ -76,14 +76,14 @@ class Output {
 
             // Grow width of the index column if necessary
             // width of energy index column
-            size_t iwe=stdb.size() > max_number(index_str.size()) ?
-                number_of_digits(stdb.size()) : index_str.size();
+            size_t iwe=stdb.size() > tadah::core::max_number(index_str.size()) ?
+                tadah::core::number_of_digits(stdb.size()) : index_str.size();
             // width of force index column, 3 for xyz
-            size_t iwf=stdb.calc_natoms()*3 > max_number(index_str.size()) ?
-                number_of_digits(stdb.calc_natoms()*3) : index_str.size();
+            size_t iwf=stdb.calc_natoms()*3 > tadah::core::max_number(index_str.size()) ?
+                tadah::core::number_of_digits(stdb.calc_natoms()*3) : index_str.size();
             // width of energy index column, 6 components of stress tensor
-            size_t iws=stdb.size()*6 > max_number(index_str.size()) ?
-                number_of_digits(stdb.size()*6) : index_str.size();
+            size_t iws=stdb.size()*6 > tadah::core::max_number(index_str.size()) ?
+                tadah::core::number_of_digits(stdb.size()*6) : index_str.size();
 
 
             out_error << std::scientific << std::setprecision(sigfig);
