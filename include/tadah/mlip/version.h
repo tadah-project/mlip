@@ -3,7 +3,7 @@
 
 #define TADAH_WORLD_VERSION 0
 #define TADAH_MAJOR_VERSION 11
-#define TADAH_MINOR_VERSION 0
+#define TADAH_MINOR_VERSION 1
 
 #define STRING(s) #s
 
