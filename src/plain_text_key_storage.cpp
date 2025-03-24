@@ -16,7 +16,7 @@ namespace mlip {
 
 PlainTextKeyStorage::PlainTextKeyStorage()
 {
-  m_configDir = prepareConfigDirectory();
+  m_contextDir = prepareContextDirectory();
 }
 
 std::string PlainTextKeyStorage::retrieveKey(const std::string& keyName)
@@ -44,7 +44,7 @@ bool PlainTextKeyStorage::storeKey(const std::string& keyName, const std::string
   return writeAllKeys(pairs);
 }
 
-std::string PlainTextKeyStorage::prepareConfigDirectory()
+std::string PlainTextKeyStorage::prepareContextDirectory()
 {
   const char* homeDir = std::getenv("HOME");
   if (!homeDir) {
@@ -52,28 +52,28 @@ std::string PlainTextKeyStorage::prepareConfigDirectory()
     return ".";
   }
 
-  std::string configDir = std::string(homeDir) + "/.config/tadah";
+  std::string contextDir = std::string(homeDir) + "/.context/tadah";
   struct stat sb;
-  if (stat(configDir.c_str(), &sb) != 0) {
+  if (stat(contextDir.c_str(), &sb) != 0) {
     // Directory does not exist -> mkdir
-    if (mkdir(configDir.c_str(), 0700) != 0) {
-      std::cerr << "Error: Could not create config directory: " << configDir
+    if (mkdir(contextDir.c_str(), 0700) != 0) {
+      std::cerr << "Error: Could not create context directory: " << contextDir
                 << "\nFalling back to current directory.\n";
       return ".";
     }
   } else if (!S_ISDIR(sb.st_mode)) {
     // Path exists but is not a directory
-    std::cerr << "Error: " << configDir << " is not a directory.\n"
+    std::cerr << "Error: " << contextDir << " is not a directory.\n"
               << "Falling back to current directory.\n";
     return ".";
   }
 
-  return configDir;
+  return contextDir;
 }
 
 std::string PlainTextKeyStorage::getKeysFilePath() const
 {
-  return m_configDir + "/keys";
+  return m_contextDir + "/keys";
 }
 
 std::string PlainTextKeyStorage::readKeyFromFile(const std::string& keyName)

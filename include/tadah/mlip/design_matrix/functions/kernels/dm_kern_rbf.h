@@ -9,7 +9,7 @@ namespace mlip {
 class DM_Kern_RBF :  public DM_Kern_Base, public tadah::models::Kern_RBF {
     public:
         DM_Kern_RBF();
-        DM_Kern_RBF(const tadah::core::Config &c);
+        DM_Kern_RBF(const tadah::core::Context &c);
 };
 } // namespace mlip
 } // namespace tadah

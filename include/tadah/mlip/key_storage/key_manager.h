@@ -28,10 +28,10 @@ enum class ServiceType {
  *
  * Uses "EnvThenFile" fallback:
  *   1) Environment variable (e.g. MP_REST_API_KEY)
- *   2) Plain-text config in ~/.config/tadah/keys
+ *   2) Plain-text context in ~/.context/tadah/keys
  *
  * If still missing, shows four options:
- *   [1] Store key in config file (persistent)
+ *   [1] Store key in context file (persistent)
  *   [2] Temporarily set environment variable for this run only
  *   [3] Show how to export it in the shell (so it can be used across multiple runs)
  *   [4] Abort (no key)
@@ -41,9 +41,9 @@ public:
   /**
    * @brief Retrieves the API key for the specified service.
    *
-   * If the key is not found in environment or config, and @p allowPrompt is true,
+   * If the key is not found in environment or context, and @p allowPrompt is true,
    * an interactive menu of four options is displayed:
-   *   1) Store key in config file (persist for future runs),
+   *   1) Store key in context file (persist for future runs),
    *   2) Temporarily set the environment variable for *this* run only,
    *   3) Show instructions on how to export for the shell (useful across runs),
    *   4) Abort (do nothing, return empty).
@@ -77,7 +77,7 @@ private:
    * @brief Shows instructions for exporting in the user’s shell so the 
    *        variable persists across multiple runs *in that same terminal session.*
    *
-   * Also hints how to place it in shell configuration (e.g. ~/.bashrc) if desired.
+   * Also hints how to place it in shell contexturation (e.g. ~/.bashrc) if desired.
    *
    * @param keyName  The env variable name.
    * @param keyValue The key value to be exported.

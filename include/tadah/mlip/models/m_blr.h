@@ -7,7 +7,7 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_blr_train.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 
 #include <limits>
@@ -34,7 +34,7 @@ namespace mlip {
  * - Employs regularized least squares, allowing for optional regularization through the \f$\lambda\f$ parameter.
  * - Ordinary Least Squares (OLS) is a special case when \f$\lambda = 0\f$.
  *
- * **Configuration Options**:
+ * **Contexturation Options**:
  * - **LAMBDA**: Set to `0` for OLS, a positive value for specified regularization, or `-1` for automatic tuning using evidence approximation.
  *
  * @tparam BF DM_BF_Base child, Basis function
@@ -45,21 +45,21 @@ class M_BLR: public M_Tadah_Base, public tadah::models::M_BLR_Train<BF> {
 
 public:
 
-  using tadah::models::M_BLR_Train<BF>::config;
+  using tadah::models::M_BLR_Train<BF>::context;
   using tadah::models::M_BLR_Train<BF>::bf;
 
   /** 
-   * @brief Initializes for training or prediction using a configuration.
+   * @brief Initializes for training or prediction using a contexturation.
    *
    * **Example**:
    * \code{.cpp}
-   * tadah::core::Config config("tadah::core::Config");
-   * M_BLR<tadah::models::BF_Linear> blr(config);
+   * tadah::core::Context context("tadah::core::Context");
+   * M_BLR<tadah::models::BF_Linear> blr(context);
    * \endcode
    * 
-   * @param c Configuration object.
+   * @param c Contexturation object.
    */
-  M_BLR(tadah::core::Config &c):
+  M_BLR(tadah::core::Context &c):
     tadah::models::M_BLR_Train<BF>(c),
     desmat(tadah::models::M_BLR_Train<BF>::bf,c)
   {
@@ -67,19 +67,19 @@ public:
   }
 
   /** 
-   * @brief Initializes for training or prediction using a basis function and configuration.
+   * @brief Initializes for training or prediction using a basis function and contexturation.
    * 
    * @param bf Basis function.
-   * @param c Configuration object.
+   * @param c Contexturation object.
    */
-  M_BLR(BF &bf, tadah::core::Config &c):
+  M_BLR(BF &bf, tadah::core::Context &c):
     tadah::models::M_BLR_Train<BF>(bf,c),
     desmat(bf,c)
   {
     norm = Normaliser(c);
   }
 
-  M_BLR(BF &bf, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+  M_BLR(BF &bf, tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     tadah::models::M_BLR_Train<BF>(bf,c,workspaceManager),
     desmat(bf,c,workspaceManager)
   {
@@ -100,8 +100,8 @@ public:
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
 
-    if(config.template get<bool>("NORM"))
-      norm = Normaliser(config,st_desc_db);
+    if(context.template get<bool>("NORM"))
+      norm = Normaliser(context,st_desc_db);
 
     bool wcopy=false;
     desmat.build(st_desc_db,stdb, wcopy);
@@ -110,28 +110,28 @@ public:
 
   void train(StructureDB &stdb, DC_Base &dc) {
 
-    if(config.template get<bool>("NORM")) {
+    if(context.template get<bool>("NORM")) {
 
-      std::string force=config.template get<std::string>("FORCE");
-      std::string stress=config.template get<std::string>("STRESS");
+      std::string force=context.template get<std::string>("FORCE");
+      std::string stress=context.template get<std::string>("STRESS");
 
-      config.remove("FORCE");
-      config.remove("STRESS");
-      config.add("FORCE", "false");
-      config.add("STRESS", "false");
+      context.remove("FORCE");
+      context.remove("STRESS");
+      context.add("FORCE", "false");
+      context.add("STRESS", "false");
 
       StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
 
-      if(config.template get<bool>("NORM")) {
-        norm = Normaliser(config);
+      if(context.template get<bool>("NORM")) {
+        norm = Normaliser(context);
         norm.learn(st_desc_db_temp);
         // norm.normalise(st_desc_db_temp);
       }
 
-      config.remove("FORCE");
-      config.remove("STRESS");
-      config.add("FORCE", force);
-      config.add("STRESS", stress);
+      context.remove("FORCE");
+      context.remove("STRESS");
+      context.add("FORCE", force);
+      context.add("STRESS", stress);
     }
 
     bool wcopy=false;
@@ -139,25 +139,23 @@ public:
     train(desmat);
   }
 
-  Structure predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st) {
-    if(config.template get<bool>("NORM") && !std.normalised && bf.get_label()!="tadah::models::BF_Linear")
+  Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
+    if(context.template get<bool>("NORM") && !std.normalised && bf.get_label()!="tadah::models::BF_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
 
-  StructureDB predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc) {
+  StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc) {
     return M_Tadah_Base::predict(c,stdb,dc);
   }
 
-  tadah::core::Config get_param_file() {
-    tadah::core::Config c = config;
+  tadah::core::Context get_param_file() {
+    tadah::core::Context c = context;
     //c.remove("ALPHA");
     //c.remove("BETA");
     c.remove("DBFILE");
     c.remove("FORCE");
     c.remove("STRESS");
-    c.remove("VERBOSE");
-    c.add("VERBOSE", 0);
 
     c.remove("MODEL");
     c.add("MODEL", label);
@@ -167,7 +165,7 @@ public:
       c.add("WEIGHTS", weights(i));
     }
 
-    if(config.template get<bool>("NORM")) {
+    if(context.template get<bool>("NORM")) {
       for (size_t i=0;i<norm.mean.size();++i) {
         c.add("NMEAN", norm.mean[i]);
       }
@@ -175,14 +173,13 @@ public:
         c.add("NSTDEV", norm.std_dev[i]);
       }
     }
-    c.clear_internal_keys();
     return c;
   }
-  StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
+  StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
-    tadah::models::LinearRegressor::read_sigma(config_pred,Sigma);
-    DesignMatrix<BF> dm(bf,config_pred);
+    tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
+    DesignMatrix<BF> dm(bf,context_pred);
     // dm.scale=false; // do not scale energy, forces and stresses
     bool wcopy=false;
     dm.build(stdb,norm,dc,wcopy);
@@ -202,7 +199,7 @@ public:
 
       predicted_error(i) = (sqrt(predicted_error(i))-pmean);
       stdb_(s).energy = Tpred(i++);
-      if (config_pred.get<bool>("FORCE")) {
+      if (context_pred.get<bool>("FORCE")) {
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
             stdb_(s).atoms[a].force[k] = Tpred(i++);
@@ -210,7 +207,7 @@ public:
           }
         }
       }
-      if (config_pred.get<bool>("STRESS")) {
+      if (context_pred.get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             stdb_(s).stress(x,y) = Tpred(i++);
@@ -232,9 +229,9 @@ Hint: check different predict() methods.");
     // compute energy, forces and stresses
     tadah::core::aed_type Tpred = T_dgemv(Phi, weights);
 
-    // double eweightglob=config.template get<double>("EWEIGHT");
-    // double fweightglob=config.template get<double>("FWEIGHT");
-    // double sweightglob=config.template get<double>("SWEIGHT");
+    // double eweightglob=context.template get<double>("EWEIGHT");
+    // double fweightglob=context.template get<double>("FWEIGHT");
+    // double sweightglob=context.template get<double>("SWEIGHT");
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -244,7 +241,7 @@ Hint: check different predict() methods.");
     while (i<Phi.rows()) {
 
       stdb_(s).energy = Tpred(i++);
-      if (config.template get<bool>("FORCE")) {
+      if (context.template get<bool>("FORCE")) {
         stdb_(s).atoms.resize(stdb(s).natoms());
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
@@ -252,7 +249,7 @@ Hint: check different predict() methods.");
           }
         }
       }
-      if (config.template get<bool>("STRESS")) {
+      if (context.template get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             stdb_(s).stress(x,y) = Tpred(i++);
@@ -323,7 +320,7 @@ non linear basis function\n");
     //tadah::core::t_type &T = desmat.T;
     tadah::models::M_BLR_Train<BF>::train(Phi,T);
 
-    if (config.template get<bool>("NORM") &&
+    if (context.template get<bool>("NORM") &&
       bf.get_label()=="tadah::models::BF_Linear") {
       weights = convert_to_nweights(weights);
     }

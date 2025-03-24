@@ -2,12 +2,12 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Polynomial> DM_Kern_Polynomial_1( "tadah::models::Kern_Polynomial" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_Kern_Polynomial> DM_Kern_Polynomial_2( "tadah::models::Kern_Polynomial" );
+//context::Registry<DM_Function_Base>::Register<DM_Kern_Polynomial> DM_Kern_Polynomial_1( "tadah::models::Kern_Polynomial" );
+//context::Registry<DM_Function_Base,tadah::core::Context&>::Register<DM_Kern_Polynomial> DM_Kern_Polynomial_2( "tadah::models::Kern_Polynomial" );
 
 DM_Kern_Polynomial::DM_Kern_Polynomial()
 {}
-DM_Kern_Polynomial::DM_Kern_Polynomial(const tadah::core::Config &c):
+DM_Kern_Polynomial::DM_Kern_Polynomial(const tadah::core::Context &c):
   tadah::models::Function_Base(c), 
   DM_Kern_Base(c),
   tadah::models::Kern_Polynomial(c)

@@ -2,7 +2,7 @@
 namespace tadah {
 namespace mlip {
 
-StDescriptors::StDescriptors(const Structure &s, const tadah::core::Config &c):
+StDescriptors::StDescriptors(const Structure &s, const tadah::core::Context &c):
     // fully initialize aed
     aeds(c.get<size_t>("DSIZE"), s.natoms()),
     // partially init fd

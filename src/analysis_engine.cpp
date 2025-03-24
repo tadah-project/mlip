@@ -21,7 +21,7 @@ int AnalysisEngine::descriptor(const std::vector<std::string>& datasets, const s
  * multiplied by 0.5 if scale is enabled.
  * Writes output to the specified file.
  */
-int AnalysisEngine::bfunc(const std::string &config_file, const std::string &outfile,
+int AnalysisEngine::bfunc(const std::string &context_file, const std::string &outfile,
   const std::vector<double>& range, const std::vector<std::string>& types,
   bool derivative, bool scale, int numeric_precision) {
   std::ofstream ofs(outfile);

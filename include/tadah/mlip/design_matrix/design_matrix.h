@@ -6,7 +6,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/normaliser.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
+#include <tadah/core/logger.h>
 #include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 #include <tadah/mlip/memory/MLIPWorkspaceManager.h>
 #include <tadah/mlip/memory/DesignMatrixWorkspace.h>
@@ -18,7 +19,7 @@ namespace mlip {
 
 class DesignMatrixBase {
 public:
-  static int phi_rows_num(tadah::core::Config &c, int nstruct_tot, int natoms_tot) {
+  static int phi_rows_num(tadah::core::Context &c, int nstruct_tot, int natoms_tot) {
     bool force = c.get<bool>("FORCE");
     bool stress = c.get<bool>("STRESS");
     int rows = nstruct_tot;
@@ -87,34 +88,33 @@ public:
      *
      * Usage example:
      * \code{.cpp}
-     * tadah::core::Config config("tadah::core::Config");
-     * tadah::models::BF_Linear bf(config);
-     * DesignMatrix<LinearKernel> desmat(bf, config);
+     * tadah::core::Context context("tadah::core::Context");
+     * tadah::models::BF_Linear bf(context);
+     * DesignMatrix<LinearKernel> desmat(bf, context);
      *
      * \endcode
      */
-  DesignMatrix(F &f, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
+  DesignMatrix(F &f, tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
     : f(f),
     workspaceManager_(&workspaceManager),
     ownWorkspaceManager(false),
-    config(c),
-    force(config.get<bool>("FORCE")),
-    stress(config.get<bool>("STRESS")),
-    verbose(config.get<int>("VERBOSE")),
-    eweightglob(config.get<double>("EWEIGHT")),
-    fweightglob(config.get<double>("FWEIGHT")),
-    sweightglob(config.get<double>("SWEIGHT"))
+    context(c),
+    force(context.get<bool>("FORCE")),
+    stress(context.get<bool>("STRESS")),
+    eweightglob(context.get<double>("EWEIGHT")),
+    fweightglob(context.get<double>("FWEIGHT")),
+    sweightglob(context.get<double>("SWEIGHT"))
   {
-    if (config.exist("ESTDEV"))
-      e_std_dev = config.get<double>("ESTDEV");
-    if (config.exist("FSTDEV"))
-      f_std_dev = config.get<double>("FSTDEV");
-    if (config.exist("SSTDEV"))
-      config.get<double[6]>("SSTDEV", s_std_dev);
+    if (context.contains("ESTDEV"))
+      e_std_dev = context.get<double>("ESTDEV");
+    if (context.contains("FSTDEV"))
+      f_std_dev = context.get<double>("FSTDEV");
+    if (context.contains("SSTDEV"))
+      context.get<double[6]>("SSTDEV", s_std_dev);
   }
 
   // Constructor without workspaceManager_ parameter (delegating constructor)
-  DesignMatrix(F &f, tadah::core::Config &c)
+  DesignMatrix(F &f, tadah::core::Context &c)
   : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
   {
     ownWorkspaceManager = true;  // Set ownership flag
@@ -171,7 +171,7 @@ public:
   template <typename DC>
   void build(const StructureDB &stdb, Normaliser &norm,
              DC &dc, bool wcopy) {
-    //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(config);
+    //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(context);
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
@@ -203,7 +203,7 @@ public:
     for (size_t s=0; s<stdb.size(); ++s) {
       StDescriptors st_d = dc.calc(stdb(s));
 
-      if(config.get<bool>("NORM"))  // TODO move to scale()
+      if(context.get<bool>("NORM"))  // TODO move to scale()
         norm.normalise(st_d);
 
       build(rows[s], stdb(s), st_d);
@@ -262,12 +262,11 @@ public:
 private:
   tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
   bool ownWorkspaceManager = false;
-  tadah::core::Config & config;
+  tadah::core::Context & context;
   size_t rows = 0;
   size_t cols = 0;
   bool force;
   bool stress;
-  int verbose;
   double eweightglob;
   double fweightglob;
   double sweightglob;
@@ -275,7 +274,7 @@ private:
   // resize Phi and T and set all elements to zero
   void calc_mn(const StructureDB &stdb) {
     rows=0;
-    cols = f.get_phi_cols(config);
+    cols = f.get_phi_cols(context);
 
     for (size_t s=0; s<stdb.size(); ++s) {
       rows++;
@@ -286,10 +285,7 @@ private:
     // Add space for augmented matrix
     rows += cols;
 
-    if (verbose) {
-      std::cout << "Phi rows: "<< rows << std::endl;
-      std::cout << "Phi cols: "<< cols << std::endl;
-    }
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
   }
 
   void compute_stdevs(const StructureDB &stdb) {
@@ -310,13 +306,13 @@ private:
     }
 
     e_std_dev = evec.std_dev(evec.mean(), evec.size()-1);
-    if (verbose) std::cout << "Energy standard deviation (eV/atom): " << e_std_dev << std::endl;
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Energy standard deviation (eV/atom): ", e_std_dev);
 
     if (stress) {
       for (size_t j=0; j<6; ++j) {
         s_std_dev[j] = svec.col(j).std_dev(svec.col(j).mean(), svec.col(j).size()-1);
-        if (verbose) std::cout << "Stress standard deviation (eV/A^3): " << s_std_dev[j] << std::endl;
       }
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Stress standard deviation (eV/A^3): ", s_std_dev);
     }
 
     if (force) {
@@ -330,13 +326,13 @@ private:
         }
       }
       f_std_dev = fvec.std_dev(fvec.mean(),fvec.size()-1);
-      if (verbose) std::cout << "Force standard deviation (ev/A): " << f_std_dev << std::endl;
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Force standard deviation (ev/A): ", f_std_dev);
     }
 
-    config.add("ESTDEV",e_std_dev);
-    config.add("FSTDEV",f_std_dev);
+    context.add("ESTDEV",e_std_dev);
+    context.add("FSTDEV",f_std_dev);
     for (size_t j=0; j<6; ++j)
-      config.add("SSTDEV",s_std_dev[j]);
+      context.add("SSTDEV",s_std_dev[j]);
   }
 
   void compute_wfactors(const StructureDB &stdb) {

@@ -9,7 +9,7 @@ namespace mlip {
 class DM_Kern_Sigmoid :  public DM_Kern_Base, public tadah::models::Kern_Sigmoid {
     public:
         DM_Kern_Sigmoid();
-        DM_Kern_Sigmoid(const tadah::core::Config &c);
+        DM_Kern_Sigmoid(const tadah::core::Context &c);
 };
 } // namespace mlip
 } // namespace tadah

@@ -2,18 +2,18 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "tadah::models::BF_Linear" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Linear> DM_BF_Linear_2( "tadah::models::BF_Linear" );
+//context::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "tadah::models::BF_Linear" );
+//context::Registry<DM_Function_Base,tadah::core::Context&>::Register<DM_BF_Linear> DM_BF_Linear_2( "tadah::models::BF_Linear" );
 
 DM_BF_Linear::DM_BF_Linear() {}
-DM_BF_Linear::DM_BF_Linear(const tadah::core::Config &c): 
+DM_BF_Linear::DM_BF_Linear(const tadah::core::Context &c): 
   tadah::models::Function_Base(c), 
   DM_BF_Base(c),
   tadah::models::BF_Linear(c)
 {}
-size_t DM_BF_Linear::get_phi_cols(const tadah::core::Config &config)
+size_t DM_BF_Linear::get_phi_cols(const tadah::core::Context &context)
 {
-  size_t cols = config.get<size_t>("DSIZE");
+  size_t cols = context.get<size_t>("DSIZE");
   return cols;
 }
 void DM_BF_Linear::calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row,

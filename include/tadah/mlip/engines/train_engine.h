@@ -1,7 +1,7 @@
 #ifndef TADAH_MLIP_ENGINES_TRAIN_ENGINE_H
 #define TADAH_MLIP_ENGINES_TRAIN_ENGINE_H
 
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 
 namespace tadah {
 namespace mlip {
@@ -12,12 +12,12 @@ namespace engines {
  *
  * Delegates model training to the underlying Trainer.
  *
- * @param config The configuration object.
+ * @param context The contexturation object.
  * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
 class TrainEngine {
 public:
-  static int train(tadah::core::Config &config);
+  static int train(tadah::core::Context &context);
 };
 
 } // namespace engines

@@ -47,19 +47,19 @@ public:
                               const Structure &st);
 
   /** \brief Predict energy, forces and stresses for the Structure st. */
-  virtual Structure predict(const tadah::core::Config &c,
+  virtual Structure predict(const tadah::core::Context &c,
                             /*not const*/ StDescriptors &std, const Structure &st);
 
   /** \brief Predict energy, forces and stresses for a set of Structures.
          *
          * Use precalculated descriptors.
          */
-  virtual StructureDB predict(const tadah::core::Config &c,
+  virtual StructureDB predict(const tadah::core::Context &c,
                               /*not const*/ StDescriptorsDB &st_desc_db,
                               const StructureDB &stdb);
 
   /** \brief Predict energy, forces and stresses for a set of Structures. */
-  virtual StructureDB predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc);
+  virtual StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc);
 
   /** \brief Predict virial stresses in a Structure st. */
   virtual tadah::core::stress_type spredict(const StDescriptors &std, const Structure &st);
@@ -77,7 +77,7 @@ public:
 
 
   /** Return potential file. */
-  virtual tadah::core::Config get_param_file()=0;
+  virtual tadah::core::Context get_param_file()=0;
 
   // TRAINING
 
@@ -98,13 +98,13 @@ public:
          */
   virtual void train(StDescriptorsDB &, const StructureDB &) {};
 
-  virtual StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
+  virtual StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                               tadah::core::aed_type &predicted_error)=0;
 
   virtual StructureDB predict(StructureDB &stdb)=0;
 
 };
-//template<> inline Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Config&>::Map Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Config&>::registry{};
+//template<> inline Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::Map Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::registry{};
 } // namespace mlip
 } // namespace tadah
 #endif

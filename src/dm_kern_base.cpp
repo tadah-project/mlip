@@ -1,4 +1,4 @@
-#include "tadah/core/config.h"
+#include "tadah/core/context.h"
 #include "tadah/mlip/design_matrix/functions/dm_function_base.h"
 #include "tadah/models/functions/kernels/kern_base.h"
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h>
@@ -7,11 +7,11 @@ namespace mlip {
 
 DM_Kern_Base::~DM_Kern_Base() {}
 DM_Kern_Base::DM_Kern_Base() {}
-DM_Kern_Base::DM_Kern_Base(const tadah::core::Config &c): 
+DM_Kern_Base::DM_Kern_Base(const tadah::core::Context &c): 
   tadah::models::Function_Base(c), 
   tadah::models::Kern_Base(c), 
   DM_Function_Base(c) {}
-size_t DM_Kern_Base::get_phi_cols(const tadah::core::Config &)
+size_t DM_Kern_Base::get_phi_cols(const tadah::core::Context &)
 {
   return basis.cols();
 }

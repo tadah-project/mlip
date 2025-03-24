@@ -1,13 +1,11 @@
 #ifndef TADAH_VERSION_H
 #define TADAH_VERSION_H
 
-#define TADAH_WORLD_VERSION 0
-#define TADAH_MAJOR_VERSION 11
+#define TADAH_WORLD_VERSION 1
+#define TADAH_MAJOR_VERSION 0
 #define TADAH_MINOR_VERSION 0
 
 #define STRING(s) #s
 
-} // namespace mlip
-} // namespace tadah
 #endif
 

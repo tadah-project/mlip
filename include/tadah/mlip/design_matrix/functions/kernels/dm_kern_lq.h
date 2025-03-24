@@ -9,7 +9,7 @@ namespace mlip {
 class DM_Kern_LQ :  public DM_Kern_Base, public tadah::models::Kern_LQ {
     public:
         DM_Kern_LQ();
-        DM_Kern_LQ(const tadah::core::Config &c);
+        DM_Kern_LQ(const tadah::core::Context &c);
 };
 } // namespace mlip
 } // namespace tadah

@@ -9,7 +9,7 @@ namespace mlip {
 class DM_Kern_Quadratic :  public DM_Kern_Base, public tadah::models::Kern_Quadratic {
     public:
         DM_Kern_Quadratic();
-        DM_Kern_Quadratic(const tadah::core::Config &c);
+        DM_Kern_Quadratic(const tadah::core::Context &c);
 };
 } // namespace mlip
 } // namespace tadah

@@ -5,7 +5,7 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/nn_finder.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/models/dc_selector.h>
 #include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 #include <tadah/mlip/memory/MLIPWorkspaceManager.h>
@@ -16,7 +16,7 @@ namespace mlip {
 
 class Trainer {
   public:
-    tadah::core::Config config;
+    tadah::core::Context context;
     tadah::models::DC_Selector DCS;
     DescriptorsCalc<> dc;
     NNFinder nnf;
@@ -30,20 +30,18 @@ class Trainer {
       if(fb)
         delete fb;
     }
-    Trainer (tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      config(c),
-      DCS(config),
-      dc(config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
+    Trainer (tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+      context(c),
+      DCS(context),
+      dc(context,*DCS.d2b,*DCS.d3b,*DCS.dmb,
           *DCS.c2b,*DCS.c3b,*DCS.cmb),
-      nnf(config),
-      fb(tadah::core::factory<DM_Function_Base,tadah::core::Config&>(
-            config.get<std::string>("MODEL",1),config)),
-      model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Config&,tadah::mlip::memory::IMLIPWorkspaceManager&>
-          (config.get<std::string>("MODEL",0),*fb,config,workspaceManager)),
-      dm(*fb, config, workspaceManager)
+      nnf(context),
+      fb(tadah::core::factory<DM_Function_Base,tadah::core::Context&>(
+            context.get<std::string>("MODEL",1),context)),
+      model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
+          (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),
+      dm(*fb, context, workspaceManager)
   {
-    config.postprocess();
-    config.check_for_training();
   }
 
     void train(StructureDB &stdb) {
@@ -51,7 +49,7 @@ class Trainer {
       model->train(stdb,dc);
     }
 
-    tadah::core::Config get_param_file() {
+    tadah::core::Context get_param_file() {
       return model->get_param_file();
     }
 
@@ -86,7 +84,7 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
 
 class MPI_Trainer: public Trainer {
   public:
-    const static int CONFIG_TAG = 4;
+    const static int context_TAG = 4;
     const static int WAIT_TAG = 3;
     const static int RELEASE_TAG = 2;
     const static int DATA_TAG = 1;
@@ -117,16 +115,16 @@ class MPI_Trainer: public Trainer {
     int rank;
     int ncpu;
 
-    MPI_Trainer(tadah::core::Config &c, int &rank, int &ncpu):
+    MPI_Trainer(tadah::core::Context &c, int &rank, int &ncpu):
       Trainer(c),
       rank(rank),
       ncpu(ncpu)
   {
     if (rank==0) {
-      int nstruct_tot = StructureDB::count(config).first;
-      int natoms_tot = StructureDB::count(config).second;
-      PHI_cols = fb->get_phi_cols(config);
-      PHI_rows = DesignMatrixBase::phi_rows_num(config, nstruct_tot, natoms_tot);
+      int nstruct_tot = StructureDB::count(context).first;
+      int natoms_tot = StructureDB::count(context).second;
+      PHI_cols = fb->get_phi_cols(context);
+      PHI_rows = DesignMatrixBase::phi_rows_num(context, nstruct_tot, natoms_tot);
     }
     MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -138,9 +136,9 @@ class MPI_Trainer: public Trainer {
     blacs_pinfo_(&b_rank, &ncpu) ; // BLACS rank and world size
 
     rnb1 = ceil(PHI_rows/ncpu);
-    rnb2 = config.get<int>("MBLOCK");   // Row block size
+    rnb2 = context.get<int>("MBLOCK");   // Row block size
     cnb1 = PHI_cols;
-    cnb2 = config.get<int>("NBLOCK");   // Column block size
+    cnb2 = context.get<int>("NBLOCK");   // Column block size
 
     b_ncols1 = 1;      //  b_ncols2 = 2;
     b_nrows1 = ncpu;   //  b_nrows2 = ncpu/b_ncols2;
@@ -200,7 +198,7 @@ class MPI_Trainer: public Trainer {
     // once we know the size of local phi, we can allocate memory to it
     // including host as well. The host will collect excees computations from
     // workers.
-    //DesignMatrix<DM_Function_Base&> dm(*fb, config);
+    //DesignMatrix<DM_Function_Base&> dm(*fb, context);
     dm.Phi.resize(phi_rows1,phi_cols1);
     //int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
     dm.T.resize(phi_rows1);
@@ -237,7 +235,7 @@ class MPI_Trainer: public Trainer {
       }
       if(info2 != 0) {
         printf("Error in descinit 2a, info = %d\n", info2);
-        printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
+        printf("HINT: Check these context parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
 
       descinit_( descB,   &PHI_rows, &ione, &rnb1, &cnb1, &izero, 
@@ -250,7 +248,7 @@ class MPI_Trainer: public Trainer {
       }
       if(info2 != 0) {
         printf("Error in descinit 2b, info = %d\n", info2);
-        printf("HINT: Check these CONFIG parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
+        printf("HINT: Check these context parameters: MPIWPCKG, MBLOCK, NBLOCK\n");
       }
 
       char trans= 'N';
@@ -261,7 +259,7 @@ class MPI_Trainer: public Trainer {
       int ib = 1;
       int jb = 1;
       // Distribute data in 2D block cyclic 
-      DesignMatrix<DM_Function_Base&> dm2(*fb, config);
+      DesignMatrix<DM_Function_Base&> dm2(*fb, context);
       dm2.Phi.resize(phi_rows2,phi_cols2);
       dm2.T.resize(phi_rows2);
       dm2.Tlabels.resize(phi_rows2);
@@ -308,15 +306,15 @@ class TrainerHost: public MPI_Trainer {
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
-    TrainerHost(tadah::core::Config &c, int &rank, int &ncpu):
+    TrainerHost(tadah::core::Context &c, int &rank, int &ncpu):
       MPI_Trainer(c, rank, ncpu)
   {}
 
     void prep_wpckgs() {
       // HOST: prepare work packages
       // filename, first structure index, number of structures to read
-      int nstruc = config.get<int>("MPIWPCKG");
-      for (const std::string &fn : config("DBFILE")) {
+      int nstruc = context.get<int>("MPIWPCKG");
+      for (const std::string &fn : context("DBFILE")) {
         // get number of structures
         int dbsize = StructureDB::count(fn).first;
         int first=0;
@@ -421,13 +419,13 @@ class TrainerHost: public MPI_Trainer {
             MPI_Trainer::WAIT_TAG, MPI_COMM_WORLD);
       }
     }
-    void config_tag() {
+    void context_tag() {
       int ready;
       MPI_Recv (&ready, 1, MPI_INT, worker, 
-          MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD, &status);
+          MPI_Trainer::context_TAG, MPI_COMM_WORLD, &status);
       ready=1;
       MPI_Send (&ready, 1, MPI_INT, worker, 
-          MPI_Trainer::CONFIG_TAG, MPI_COMM_WORLD);
+          MPI_Trainer::context_TAG, MPI_COMM_WORLD);
     }
     void run() {
       prep_wpckgs();
@@ -467,7 +465,7 @@ class TrainerHost: public MPI_Trainer {
 class TrainerWorker: public MPI_Trainer {
 
   public:
-    TrainerWorker(tadah::core::Config &c, int &rank, int &ncpu):
+    TrainerWorker(tadah::core::Context &c, int &rank, int &ncpu):
       MPI_Trainer(c, rank, ncpu)
   {}
 
@@ -527,13 +525,13 @@ class TrainerWorker: public MPI_Trainer {
       int rows_needed = 0;
       for (size_t s=0; s<stdb.size(); ++s) {
         int natoms = stdb(s).natoms();
-        rows_needed += DesignMatrixBase::phi_rows_num(config, 1, natoms);
+        rows_needed += DesignMatrixBase::phi_rows_num(context, 1, natoms);
       }
 
       if (rows_available<rows_needed) {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
-        DesignMatrix<DM_Function_Base&> temp_dm(*fb, config);
+        DesignMatrix<DM_Function_Base&> temp_dm(*fb, context);
         temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
         temp_dm.T.resize(rows_needed);
         temp_dm.Tlabels.resize(rows_needed);

@@ -4,7 +4,7 @@
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/st_descriptors.h>
 #include <tadah/core/core_types.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 
 #include <algorithm>
 #include <numeric>
@@ -16,15 +16,12 @@ namespace mlip {
 template <typename K>
 class Basis {
 private:
-  tadah::core::Config &config;
-  int verbose;
+  tadah::core::Context &context;
 public:
   tadah::core::Matrix b;
   tadah::core::t_type T;    // Vectors corresponding to basis vectors
-  Basis(tadah::core::Config &c):
-    config(c),
-    verbose(c.get<int>("VERBOSE"))
-
+  Basis(tadah::core::Context &c):
+    context(c)
   {}
 
   void set_basis(tadah::core::Matrix &b_) {
@@ -67,7 +64,7 @@ larger than the amount of available AEDs\n");
   void prep_basis_for_krr(StDescriptorsDB &st_desc_db,
                           StructureDB &stdb) {
 
-    size_t s = config.get<size_t>("SBASIS");
+    size_t s = context.get<size_t>("SBASIS");
 
     if (stdb.size() != st_desc_db.size()) {
       throw std::runtime_error("The size of StructureDB is different \n \
@@ -94,7 +91,7 @@ larger than the amount of available AEDs\n");
     b.set_zero();
     b(0,0)=1;
     // Here we add all atomic energy descriptors into single
-    // descriptor which represents total energy of this configuration
+    // descriptor which represents total energy of this contexturation
     for (size_t i=1; i<s; ++i) {
       const size_t st = indices[i];
       T(i)=stdb(st).energy/st_desc_db(st).naed();

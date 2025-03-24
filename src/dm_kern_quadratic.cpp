@@ -3,12 +3,12 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_Quadratic> DM_Kern_Quadratic_1( "tadah::models::Kern_Quadratic" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_Kern_Quadratic> DM_Kern_Quadratic_2( "tadah::models::Kern_Quadratic" );
+//context::Registry<DM_Function_Base>::Register<DM_Kern_Quadratic> DM_Kern_Quadratic_1( "tadah::models::Kern_Quadratic" );
+//context::Registry<DM_Function_Base,tadah::core::Context&>::Register<DM_Kern_Quadratic> DM_Kern_Quadratic_2( "tadah::models::Kern_Quadratic" );
 
 DM_Kern_Quadratic::DM_Kern_Quadratic()
 {}
-DM_Kern_Quadratic::DM_Kern_Quadratic(const tadah::core::Config &c):
+DM_Kern_Quadratic::DM_Kern_Quadratic(const tadah::core::Context &c):
   tadah::models::Function_Base(c),
   DM_Kern_Base(c),
   tadah::models::Kern_Quadratic(c)

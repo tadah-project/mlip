@@ -1,7 +1,7 @@
 #ifndef NN_FINDER_H
 #define NN_FINDER_H
 
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/core/lapack.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
@@ -16,7 +16,7 @@ namespace mlip {
  *  - a **binned** (linked-cell) approach if every cell dimension ≥ cutoff,
  *  - a **naive** approach otherwise (fallback).
  *
- * The cutoff is from config("RCUTMAX").
+ * The cutoff is from context("RCUTMAX").
  */
 class NNFinder {
 private:
@@ -143,9 +143,9 @@ inline void inverse_3x3_direct(const double* inM, double* outM)
 
 public:
     /**
-     * Construct with cutoff from config("RCUTMAX").
+     * Construct with cutoff from context("RCUTMAX").
      */
-    NNFinder(tadah::core::Config &config);
+    NNFinder(tadah::core::Context &context);
 
     /**
      * Build nearest neighbors for all atoms in one Structure.

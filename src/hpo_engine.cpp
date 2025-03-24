@@ -5,7 +5,7 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-int HPOEngine::optimize(const tadah::core::Config &config) {
+int HPOEngine::optimize(const tadah::core::Context &context) {
   std::cout << "HPOEngine: Hyperparameter optimization stub executed." << std::endl;
   return EXIT_SUCCESS;
 }

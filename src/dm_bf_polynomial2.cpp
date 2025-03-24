@@ -4,18 +4,18 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "tadah::models::BF_Polynomial2" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "tadah::models::BF_Polynomial2" );
+//context::Registry<DM_Function_Base>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_1( "tadah::models::BF_Polynomial2" );
+//context::Registry<DM_Function_Base,tadah::core::Context&>::Register<DM_BF_Polynomial2> DM_BF_Polynomial2_2( "tadah::models::BF_Polynomial2" );
 
 DM_BF_Polynomial2::DM_BF_Polynomial2() {}
-DM_BF_Polynomial2::DM_BF_Polynomial2(const tadah::core::Config &c): 
+DM_BF_Polynomial2::DM_BF_Polynomial2(const tadah::core::Context &c): 
   tadah::models::Function_Base(c),
   DM_BF_Base(c),
   tadah::models::BF_Polynomial2(c)
 {}
-size_t DM_BF_Polynomial2::get_phi_cols(const tadah::core::Config &config)
+size_t DM_BF_Polynomial2::get_phi_cols(const tadah::core::Context &context)
 {
-  size_t cols = config.get<size_t>("DSIZE");
+  size_t cols = context.get<size_t>("DSIZE");
   return (cols*cols+cols)/2;
 }
 void DM_BF_Polynomial2::calc_phi_energy_row(tadah::core::phi_type &Phi,
