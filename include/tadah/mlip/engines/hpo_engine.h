@@ -17,7 +17,7 @@ namespace engines {
  */
 class HPOEngine {
 public:
-  static int optimize(const tadah::core::Context &context);
+  static int optimize(tadah::core::Context &context);
 };
 
 } // namespace engines
