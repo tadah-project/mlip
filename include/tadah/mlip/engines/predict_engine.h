@@ -19,7 +19,7 @@ namespace engines {
  */
 class PredictEngine {
 public:
-  static int predict(const tadah::core::Context &pot_context, const tadah::mlip::StructureDB &stdb);
+  static int predict(tadah::core::Context &pot_context, tadah::mlip::StructureDB &stdb);
 };
 
 } // namespace engines

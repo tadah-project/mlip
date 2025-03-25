@@ -33,8 +33,8 @@ class Trainer {
     Trainer (tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
       context(c),
       DCS(context),
-      dc(context,*DCS.d2b,*DCS.d3b,*DCS.dmb,
-          *DCS.c2b,*DCS.c3b,*DCS.cmb),
+      dc(context,*DCS.d2b,*DCS.dmb,
+          *DCS.c2b,*DCS.cmb),
       nnf(context),
       fb(tadah::core::factory<DM_Function_Base,tadah::core::Context&>(
             context.get<std::string>("MODEL",1),context)),

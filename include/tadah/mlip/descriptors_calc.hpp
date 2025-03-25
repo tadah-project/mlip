@@ -9,13 +9,12 @@
 namespace tadah {
 namespace mlip {
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-template <typename T1, typename T2, typename T3>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T2 &t2, T3 &t3):
+template <typename D2, typename DM, typename C2, typename CM>
+template <typename T1, typename T2>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T2 &t2):
   context(c),
   d2(t1),
-  d3(t2),
-  dm(t3)
+  dm(t2)
 {
   if (!context.contains("DSIZE"))
     common_constructor();
@@ -31,9 +30,9 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 
     }
   }
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c):
-  DescriptorsCalc(c,c,c,c)
+template <typename D2, typename DM, typename C2, typename CM>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
+  DescriptorsCalc(c,c,c)
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2BMAX"));
@@ -46,19 +45,6 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c):
     c2 = C2(0);
     if (!context.contains("RCTYPE2B")) {
       d2.set_fcut(&c2,false);
-    }
-  }
-  if (c.get<bool>("INIT3B")) {
-    c3 = C3(c.get<double>("RCUT3BMAX"));
-    if (!context.contains("RCTYPE3B")) {
-      context.add("RCTYPE3B",c3.label());
-      d3.set_fcut(&c3,false);
-    }
-  }
-  else {
-    c3 = C3(0);
-    if (!context.contains("RCTYPE3B")) {
-      d3.set_fcut(&c3,false);
     }
   }
   if (c.get<bool>("INITMB")) {
@@ -76,27 +62,19 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c):
   }
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
+template <typename D2, typename DM, typename C2, typename CM>
+template <typename T1, typename T2,typename T3, typename T4>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &dm, T3 &c2, T4 &cm):
   context(c),
   c2(c2),
-  c3(c3),
   cm(cm),
   d2(d2),
-  d3(d3),
   dm(dm)
 {
   if (c.get<bool>("INIT2B")) {
     if (!context.contains("RCTYPE2B")) {
       context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
-    }
-  }
-  if (c.get<bool>("INIT3B")) {
-    if (!context.contains("RCTYPE3B")) {
-      context.add("RCTYPE3B",c3.label());
-      d3.set_fcut(&c3,false);
     }
   }
   if (c.get<bool>("INITMB")) {
@@ -109,8 +87,8 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 
   if (!context.contains("DSIZE"))
     common_constructor();
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   size_t dsize=0;
 
   // Calculate total size of the descriptor.
@@ -128,16 +106,6 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
   }
   else {
     context.add("SIZE2B",0);
-  }
-
-  if (context.get<bool>("INIT3B")) {
-    context.add("SIZE3B",d3.size());
-    if (!context.contains("TYPE3B"))
-      context.add("TYPE3B",d3.label());
-    dsize+=d3.size();
-  }
-  else {
-    context.add("SIZE3B",0);
   }
 
   if (context.get<bool>("INITMB")) {
@@ -159,8 +127,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
 
   context.add("DSIZE",dsize);
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
   double rcut_mb_sq = pow(context.get<double>("RCUTMBMAX"),2);
   tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
@@ -190,8 +158,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescrip
   }
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors &st_d) {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) {
 
   bool init2b = context.get<bool>("INIT2B");
   bool initmb = context.get<bool>("INITMB");
@@ -298,8 +266,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   //   }
   // }
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
 
   double r_b = context.get<double>("DIMER",1);
   bool bond_bool = context.get<bool>("DIMER",2);
@@ -423,8 +391,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   //}
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-StDescriptors DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st) {
+template <typename D2, typename DM, typename C2, typename CM>
+StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) {
   StDescriptors st_d(st, context);
   if (context.get<bool>("DIMER",0))
     calc_dimer(st,st_d);
@@ -433,8 +401,8 @@ StDescriptors DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st) {
   return st_d;
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-StDescriptorsDB DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const StructureDB &stdb) {
+template <typename D2, typename DM, typename C2, typename CM>
+StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) {
   StDescriptorsDB st_desc_db(stdb, context);
 
 #ifdef _OPENMP
