@@ -49,32 +49,6 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
-if (CMAKE_BUILD_TYPE STREQUAL "DEVELOP")
-if(NOT DEFINED ENV{TADAH_PATH})
-  message(FATAL_ERROR "TADAH_PATH system variable is undefined for the ${CMAKE_BUILD_TYPE} build")
-endif()
-  function(find_directory_case_insensitive target_name search_dir result_var)
-    execute_process(
-        COMMAND find "${search_dir}" -maxdepth 1 -type d -iname "${target_name}"
-        OUTPUT_VARIABLE found_dir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(found_dir)
-      set(${result_var} "${found_dir}" PARENT_SCOPE)
-      message("${TADAH} Develop build: Found directory: ${found_dir}")
-    else()
-      set(${result_var} "" PARENT_SCOPE)
-      message("${TADAH} Develop build: Directory not found.")
-    endif()
-  endfunction()
-  # find_directory_case_insensitive("core" "$ENV{TADAH_PATH}" DEVELOP_CORE_DIR)
-  # set(FETCHCONTENT_SOURCE_DIR_TADAH.CORE "${DEVELOP_CORE_DIR}")
-  find_directory_case_insensitive("models" "$ENV{TADAH_PATH}" DEVELOP_MODELS_DIR)
-  set(FETCHCONTENT_SOURCE_DIR_TADAH.MODELS "${DEVELOP_MODELS_DIR}")
-endif()
-
-
 # Check is build supported
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 if (CMAKE_BUILD_TYPE STREQUAL "DEBUG" 
@@ -97,6 +71,29 @@ endif()
 set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING
   "Choose the type of build, options are: None Debug Release Profile."
   FORCE)
+
+string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+if (CMAKE_BUILD_TYPE STREQUAL "DEVELOP")
+if(NOT DEFINED ENV{TADAH_PATH})
+  message(FATAL_ERROR "TADAH_PATH system variable is undefined for the ${CMAKE_BUILD_TYPE} build")
+endif()
+  function(find_directory_case_insensitive target_name search_dir result_var)
+    execute_process(
+        COMMAND find "${search_dir}" -maxdepth 1 -type d -iname "${target_name}"
+        OUTPUT_VARIABLE found_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(found_dir)
+      set(${result_var} "${found_dir}" PARENT_SCOPE)
+      message("${TADAH} Develop build: Found directory: ${found_dir}")
+    else()
+      set(${result_var} "" PARENT_SCOPE)
+      message("${TADAH} Develop build: Directory not found.")
+    endif()
+  endfunction()
+  find_directory_case_insensitive("models" "$ENV{TADAH_PATH}" DEVELOP_MODELS_DIR)
+  set(FETCHCONTENT_SOURCE_DIR_TADAH.MODELS "${DEVELOP_MODELS_DIR}")
+endif()
 
 
 include(FetchContent)
@@ -169,10 +166,14 @@ endif()
 ###
 # Now fetch or add Gemmi in the usual way. For example:
 ###
+message(STATUS "Fetching Gemmi...")
 FetchContent_Declare(
   gemmi
   GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
   GIT_TAG        v0.7.0
+  GIT_SHALLOW 1
+  GIT_CONFIG core.progress=true
+  LOG_DOWNLOAD ON
 )
 FetchContent_MakeAvailable(gemmi)
 
@@ -180,12 +181,14 @@ FetchContent_MakeAvailable(gemmi)
 
 target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
 
-
-
+message(STATUS "Fetching nlohmann/json...")
 FetchContent_Declare(
   json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG        v3.11.3
+  GIT_SHALLOW 1
+  GIT_CONFIG core.progress=true
+  LOG_DOWNLOAD ON
 )
 FetchContent_MakeAvailable(json)
 target_link_libraries(tadah.mlip PRIVATE nlohmann_json::nlohmann_json)
