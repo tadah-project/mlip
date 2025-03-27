@@ -111,4 +111,3 @@ tadah::core::Context MLIPUserConfigParser::merge(const tadah::core::Context &bas
 
 } // namespace mlip
 } // namespace tadah
-
