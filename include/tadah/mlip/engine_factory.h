@@ -20,7 +20,7 @@ class EngineFactory {
 public:
   /**
    * @brief Creates an engine for a given dot-separated task name.
-   * @param taskName The uppercase or dot-notation name (e.g. "DATA.MERGE").
+   * @param taskName The lowercase or dot-notation name (e.g. "data.merge").
    * @return A unique_ptr to the newly created IEngine instance.
    * @throws std::runtime_error If no matching builder is found.
    */
@@ -28,7 +28,7 @@ public:
 
   /**
    * @brief Registers an engine builder for a given task name.
-   * @param taskName The dot-separated name (e.g. "DATA.MERGE").
+   * @param taskName The dot-separated name (e.g. "data.merge").
    * @param builder A callable returning a new IEngine instance.
    */
   static void registerEngine(const std::string &taskName,
