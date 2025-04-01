@@ -32,7 +32,7 @@ public:
   /**
    * @brief Parses a user configuration file and creates tasks.
    *
-   * This function reads the user_config file (format defined in the specification),
+   * This function reads the user_config file,
    * validates it against the blueprint, and spawns Task objects.
    *
    * @param filename The user configuration filename.
