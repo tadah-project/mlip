@@ -26,23 +26,6 @@ public:
   Task(const std::string &command, const tadah::core::Context &globalContext);
 
   /**
-   * @brief Sets an option in the task's context.
-   * @param key The option key.
-   * @param value The configuration value.
-   *
-   * For scalar keys, if a task-level substitution occurs a warning is logged.
-   * For array-like keys, values are appended.
-   */
-  void setOption(const std::string &key, const std::string &value);
-
-  /**
-   * @brief Retrieves an option's value.
-   * @param key The option key.
-   * @return The configuration value.
-   */
-  std::string getOption(const std::string &key) const;
-
-  /**
    * @brief Returns the effective Context (merged global and task-specific settings).
    * @return A constant reference to the Context.
    */
