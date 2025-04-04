@@ -1,137 +1,164 @@
+/**
+ * @file task.h
+ * @brief Declares the Task class which represents an individual task in Tadah!.
+ *
+ * A Task encapsulates:
+ *  - A command (e.g. "data.split")
+ *  - A unique task ID
+ *  - A timestamp (creation time)
+ *  - A priority
+ *  - A merged (effective) Context object
+ */
+
 #ifndef TADAH_MLIP_TASK_H
 #define TADAH_MLIP_TASK_H
 
 #include <string>
-#include <memory>
-#include <iostream>
+#include <vector>
 #include <tadah/core/context.h>
 
 namespace tadah {
 namespace mlip {
 
 /**
- * @brief Represents a task created from a user configuration.
+ * @class Task
+ * @brief Represents a user-defined operation in Tadah! with its own context.
  *
- * A Task stores a command, unique ID, timestamp, priority, and an effective Context
- * that merges global settings with task-specific overrides. Serialization is provided
- * in both plain-text and binary formats.
+ * A Task is created after merging user configs and CLI data into a single Context.
+ * It stores additional metadata like a unique identifier, timestamp, and priority.
+ * This metadata aids in scheduling, logging, and debugging.
  */
 class Task {
 public:
   /**
-   * @brief Constructs a Task with a command and global Context.
-   * @param command The task command (e.g., "data convert").
-   * @param globalContext The global configuration context.
+   * @brief Constructs a Task with a command (e.g., "data.split") and a final merged Context.
+   *
+   * @param command The name or type of the task, for example "data.split".
+   * @param globalContext The fully merged configuration context for this task.
    */
   Task(const std::string &command, const tadah::core::Context &globalContext);
 
   /**
-   * @brief Returns the effective Context (merged global and task-specific settings).
-   * @return A constant reference to the Context.
+   * @brief Default destructor.
    */
-  const tadah::core::Context& effectiveContext() const;
+  ~Task() = default;
 
   /**
-   * @brief Sets the task priority.
-   * @param p The priority (higher means higher priority).
+   * @brief Retrieves the effective (merged) Context for this task.
+   *
+   * @return A constant reference to the Context representing the task's settings.
+   */
+  const tadah::core::Context &effectiveContext() const;
+
+  /**
+   * @brief Sets the integer priority for this task, where a higher number denotes higher priority.
+   *
+   * @param p The new priority value.
    */
   void setPriority(int p);
 
   /**
-   * @brief Retrieves the task priority.
-   * @return The task priority.
+   * @brief Retrieves the current integer priority of this task.
+   *
+   * @return The task's priority.
    */
   int getPriority() const;
 
   /**
-   * @brief Retrieves the unique task ID.
-   * @return The task ID as a string.
+   * @brief Retrieves the unique ID generated for this task.
+   *
+   * @return A string containing the unique task ID.
    */
   std::string getID() const;
 
   /**
-   * @brief Retrieves the timestamp of task creation.
-   * @return The timestamp as a string.
+   * @brief Retrieves the timestamp at which this task was created.
+   *
+   * @return A string of the timestamp, e.g. "2023-10-05T14:23:59Z".
    */
   std::string getTimestamp() const;
 
   /**
-   * @brief Serializes the task to a plain-text string.
-   * @return Serialized task data.
+   * @brief Serializes the task data to a plain-text string.
+   *
+   * Useful for logging or storing tasks externally.
+   * @return A string containing task ID, command, timestamp, priority, and context data.
    */
   std::string serialize() const;
 
   /**
-   * @brief Serializes selected fields to a binary format.
-   *
-   * The binary format includes fields such as ID, task type, and timestamp.
-   * @return A vector of bytes representing the serialized data.
-   */
-  std::vector<char> serializeBinary() const;
-
-  /**
    * @brief Deserializes a Task from a plain-text string.
-   * @param data Serialized task data.
-   * @param globalContext Global context to merge with.
-   * @return The deserialized Task.
-   * @throws std::runtime_error on format errors.
+   *
+   * @param data A string containing the serialized task data (e.g. from serialize()).
+   * @param globalContext Optionally, a baseline context to be merged or ignored, depending on design.
+   * @return A newly constructed Task.
+   * @throws std::runtime_error if the format is invalid.
    */
   static Task deserialize(const std::string &data, const tadah::core::Context &globalContext);
 
   /**
-   * @brief Prints the task details to standard output.
+   * @brief Serializes selected fields to a binary representation (e.g. for HPC distribution).
+   *
+   * @return A vector of bytes representing ID, command, timestamp, etc.
+   */
+  std::vector<char> serializeBinary() const;
+
+  /**
+   * @brief Prints debug information about the task to standard output.
    */
   void print() const;
 
   /**
-   * @brief Overloads operator<< to output task information.
-   * @param os Output stream.
-   * @param t The Task object.
-   * @return The output stream.
+   * @brief Stream insertion operator, prints summary info.
+   * @param os Output stream
+   * @param t The Task object
+   * @return The output stream for chaining
    */
   friend std::ostream& operator<<(std::ostream &os, const Task &t);
 
   /**
-   * @brief Sets a dependency rule (stub). 
+   * @brief Retrieves the "task type," e.g. the first word or a substring of the command.
    *
-   * Dependency rules specify order relationships (e.g., "A>B").
-   * Currently a stub for future implementation.
+   * If your command is "data.split", this might return "data.split".
+   * In some designs, you might parse out just "data" or "split".
    *
-   * @param dependencyRule A string representing the dependency.
-   */
-  void setDependency(const std::string &dependencyRule);
-
-  /**
-   * @brief Retrieves the task type.
-   *
-   * The task type is extracted from the command (typically the first word).
-   * @return A string representing the task type.
+   * @return A string representing the type, e.g. "data.split".
    */
   std::string getTaskType() const;
 
-private:
-  std::string command_;
-  int priority_;
-  std::string taskID_;
-  std::string timestamp_;
-  tadah::core::Context context_; ///< Merged context
-  std::string dependencyRule_;    ///< Current dependency rule (stub)
-
   /**
-   * @brief Generates a unique task ID.
-   * @return A string representing a unique task ID.
+   * @brief Sets a dependency rule string for the task (e.g., "taskA > taskB").
+   *
+   * This is a placeholder for future dependency logic.
+   * @param dependencyRule A string specifying the dependency requirement.
+   */
+  void setDependency(const std::string &dependencyRule);
+
+private:
+  /**
+   * @brief Generates a unique task ID (e.g., a UUID or random string).
+   *
+   * @return A string representing a generated unique identifier.
    */
   std::string generateTaskID() const;
 
   /**
-   * @brief Generates the current timestamp.
-   * @return A string representing the timestamp.
+   * @brief Generates a timestamp (e.g. ISO8601) to mark when the task was created.
+   *
+   * @return A string representing the task creation timestamp.
    */
   std::string generateTimestamp() const;
+
+private:
+  std::string command_;         ///< The full command string (e.g. "data.split").
+  int priority_;                ///< The integer priority (default 0).
+  std::string taskID_;          ///< The unique ID for this task.
+  std::string timestamp_;       ///< The creation timestamp (ISO8601 or similar).
+  tadah::core::Context context_;///< The merged context data for this task.
+  std::string dependencyRule_;  ///< Future expansion for visualizing dependencies.
 };
 
 } // namespace mlip
 } // namespace tadah
 
 #endif // TADAH_MLIP_TASK_H
-

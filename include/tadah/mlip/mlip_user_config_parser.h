@@ -52,7 +52,7 @@ public:
    * @param filename The config file.
    * @param merge Whether to merge each section with the base Context.
    * @return A vector of Context objects representing each section.
-   *         The first element is the base Context.
+   *         The first element is the base Context even if empty.
    * @throws std::runtime_error if parsing fails.
    */
   std::vector<core::Context> parse(const std::string &filename, bool merge = true) const;
