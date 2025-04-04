@@ -23,7 +23,7 @@ MLIPUserConfigParser::MLIPUserConfigParser(const tadah::core::IUserConfigParser*
 
 MLIPUserConfigParser::~MLIPUserConfigParser() {
   if (backendParser_) {
-    delete backendParser_;
+    //delete backendParser_;
   }
 }
 
@@ -62,6 +62,8 @@ std::vector<tadah::core::Context> MLIPUserConfigParser::parse(const std::vector<
 
 std::vector<std::vector<std::string>> MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const {
   std::vector<std::vector<std::string>> sections;
+  // Always start with an empty "global" section, even if it remains empty.
+  sections.emplace_back();  // sections[0] is the global section
   std::vector<std::string> current;
   for (const auto &lineOrig : lines) {
     std::string line = lineOrig;
