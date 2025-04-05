@@ -27,7 +27,7 @@ MLIPUserConfigParser::~MLIPUserConfigParser() {
   }
 }
 
-std::vector<tadah::core::Context> MLIPUserConfigParser::parse(const std::string &filename, bool mergeFlag) const {
+std::unordered_map<std::string, tadah::core::Context> MLIPUserConfigParser::parse(const std::string &filename, bool mergeFlag) const {
   std::ifstream infile(filename);
   if (!infile.is_open()) {
     throw std::runtime_error("MLIPUserConfigParser::parse: Cannot open file: " + filename);
@@ -40,10 +40,10 @@ std::vector<tadah::core::Context> MLIPUserConfigParser::parse(const std::string 
   return parse(lines, mergeFlag);
 }
 
-std::vector<tadah::core::Context> MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFlag) const {
+std::unordered_map<std::string, tadah::core::Context> MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFlag) const {
   // First, split the lines into sections based on "TASK" delimiter.
   std::vector<std::vector<std::string>> sections = splitSections(lines);
-  std::vector<tadah::core::Context> contexts;
+  std::unordered_map<std::string, tadah::core::Context>  contexts;
   // For each section, use the backend parser to produce a Context.
   // The first section is considered the base Context.
   for (const auto &secLines : sections) {
