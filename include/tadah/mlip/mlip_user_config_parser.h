@@ -1,5 +1,5 @@
-#ifndef TADAH_MLIP_MLIP_user_config_parser_H
-#define TADAH_MLIP_MLIP_user_config_parser_H
+#ifndef TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
+#define TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
 
 #include <string>
 #include <vector>
@@ -14,32 +14,25 @@ namespace mlip {
  * @brief Advanced parser for user config that separates tasks sections.
  *
  * This parser uses an IUserConfigParser backend (by default,
- * a CoreUserConfigParser) to parse a user config file containing key/value pairs.
- * Then it examines the input (passed as a vector of strings) to detect section delimiters.
- * In this design, a section delimiter is any line starting with "TASK" (case-insensitive).
+ * a CoreUserConfigParser) to parse a user config file containing 
+ * key/value pairs. It then analyzes the input lines to detect section
+ * delimiters. In this design, any line starting with "TASK" (case-insensitive)
+ * is treated as the start of a new section with a name derived from the 
+ * text following "TASK".
  *
- * For example, a config file may look like:
- * ```
- * # This is a comment
- * # Global settings
- * RCUT2B  5.0
- * TASK data split
- * # Data split settings
- * DBFILE data.db
- * ...
- * TASK train model
- * # Training settings
- * MODEL M_KRR Kern_Linear
- * ...
- * ```
+ * - If lines appear before the first "TASK", they form a "GLOBAL" section
+ *   (returned only if that section has at least one key-value line).
+ * - Each discovered "TASK ..." line creates a new named section. If no tokens
+ *   follow "TASK", a runtime error is thrown.
+ * - A task can exist with zero subsequent lines, meaning an empty Context.
  *
- * Depending on the merge flag, the MLIP parser may merge the global configuration
- * with every subsequent section (where keys in the section override those in the global).
+ * Depending on the merge flag, each task section can optionally be merged 
+ * with the global context, if a global context exists, where task keys 
+ * override global ones.
  *
- * The parser returns an unordered_map of Context objects.
- * The global section key is GLOBAL, and the task sections are named after the
- * task name by capitalizing words after "TASK" keyword and concatenating with ".".
- * (e.g., TASK data split -> DATA.SPLIT).
+ * @note The parser returns an unordered map of <section-name, Context>.
+ *       "GLOBAL" is only included if it is non-empty. The user may have 
+ *       any number of tasks, each with or without lines.
  */
 class MLIPUserConfigParser {
 public:
@@ -50,14 +43,17 @@ public:
    * input formats in the future). The default is to use a CoreUserConfigParser.
    *
    * @param backend Pointer to a backend IUserConfigParser.
-   *                Ownership is not transferred; if none provided, a default instance is used.
+   *                If none provided, a default instance is created 
+   *                internally (and later destroyed), otherwise ownership
+   *                remains with the caller.
    */
   explicit MLIPUserConfigParser(const tadah::core::IUserConfigParser* backend = nullptr);
 
   /**
    * @brief Destructor.
    *
-   * Cleans up the backend parser if it was created internally.
+   * If constructed with a default backend, it is destroyed here. Otherwise 
+   * no action is taken.
    */
   ~MLIPUserConfigParser();
 
@@ -65,53 +61,76 @@ public:
    * @brief Parses a user config from a file.
    *
    * Splits the input into sections using "TASK" as a delimiter. If merge is true,
-   * then each section is merged with the global Context (keys in the section override global).
+   * each section is merged with a global Context (if it exists).
    *
-   * @param filename The config file.
+   * @param filename The config file path to parse.
    * @param merge Whether to merge each section with the global Context.
-   * @return A map of Context objects representing each section.
-   * @throws std::runtime_error if parsing fails.
+   * @return A map of <section-name, Context> for each section discovered. 
+   *         "GLOBAL" is included only if non-empty.
+   * @throws std::runtime_error if parsing fails or file cannot be opened.
    */
-  std::unordered_map<std::string,core::Context> parse(const std::string &filename, bool merge = true) const;
+  std::unordered_map<std::string, core::Context>
+  parse(const std::string &filename, bool merge = true) const;
 
   /**
    * @brief Parses a user config from a vector of strings.
    *
-   * @param lines The config file lines.
+   * @param lines The lines of the config file.
    * @param merge Whether to merge each section with the global Context.
-   * @return A map of Context objects representing each section.
-   * @throws std::runtime_error if parsing fails.
+   * @return A map of <section-name, Context> for each section discovered.
+   *         "GLOBAL" is included only if non-empty.
+   * @throws std::runtime_error if parsing fails, or if a "TASK" 
+   *         line has no name following it.
    */
-  std::unordered_map<std::string, core::Context> parse(const std::vector<std::string>& lines, bool merge = true) const;
-
-private:
-  const core::IUserConfigParser* backendParser_; ///< The backend parser used to read key/value pairs.
-
-  /**
-   * @brief Splits lines into sections based on delimiter.
-   *
-   * Returns a vector of vector<string>, each representing a section.
-   * Lines that start with "TASK" (case-insensitive) are treated as delimiters.
-   *
-   * @param lines The raw config file lines.
-   * @return A vector of sections (each section is a vector of strings).
-   */
-  std::vector<std::vector<std::string>> splitSections(const std::vector<std::string>& lines) const;
+  std::unordered_map<std::string, core::Context>
+  parse(const std::vector<std::string>& lines, bool merge = true) const;
 
   /**
    * @brief Merges two Context objects.
    *
-   * For keys that exist in both, values from the task context replace those in global.
+   * For each key in @p task, values replace/override those in @p global. 
+   * (Only keys recognized by BlueprintParser are overwritten.)
    *
-   * @param global The global Context.
+   * @param global The global/base Context.
    * @param task The Context with task settings.
-   * @return A merged Context.
+   * @return The merged Context.
    */
   core::Context merge(const core::Context &global, const core::Context &task) const;
+
+private:
+  const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
+
+  /**
+   * @brief Splits lines into named sections based on "TASK" delimiter.
+   *
+   * If lines exist before the first "TASK", they form a (sectionName="GLOBAL", lines).
+   * Each new "TASK some_name" creates a new section named by uppercasing 
+   * subsequent tokens and joining them with '.' (e.g. "TASK data split" -> 
+   * "DATA.SPLIT"). If there are no tokens following "TASK", a runtime_error 
+   * is thrown.
+   *
+   * @param lines The raw config file lines.
+   * @return A vector of (sectionName, vector-of-lines) for each section.
+   *         Will not return a "GLOBAL" pair if no lines existed before 
+   *         the first TASK (i.e. truly empty).
+   */
+  std::vector<std::pair<std::string, std::vector<std::string>>>
+  splitSections(const std::vector<std::string>& lines) const;
+
+
+  /**
+   * @brief Helper that merges each non-empty section with the global context 
+   *        if 'GLOBAL' is found and not empty.
+   *
+   * @param resultMap A map of <sectionName, Context>.
+   *                  On completion, every non-GLOBAL context is merged 
+   *                  with the global context (if present and non-empty).
+   */
+  void mergeAllSections(std::unordered_map<std::string, core::Context> &resultMap) const;
 };
 
 } // namespace mlip
 } // namespace tadah
 
-#endif // TADAH_MLIP_MLIP_user_config_parser_H
+#endif // TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
 
