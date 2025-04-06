@@ -22,24 +22,17 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // Definitions:
   // base context: the context built from the key-value data in the taskInput
   // global context: the non task section found in the optional user config file
-  // base_task context: the context built for each TASK section in the user config
-  // task context: merged base with optional if present global and task sections
+  // task context: the context built for each TASK section in the user config
+
   // The order of merging is important:
   // 1. base context has the highest priority
-  // 2. base_task context has the second priority
+  // 2. task context has the second priority
   // 3. global context has the lowest priority
 
-  // The final task context specifies the exact command to be run
-  // and all the required parameters.
-  //
-  // MLIPUserConfigParser
-  //
-  // TODO cases we want to consider:
-  // 1. If taskInput contains only a single config file:
-  //    - It is possible that the user config file contains no further task sections. In this case the taskInput.getTaskName() is the only and final task. In this case MLIPUserConfigParser returns a single context.
-  //    - If user config file contains multiple task sections, we need to create a task for each section. In this case getTaskName() is not used at all.  How do we get task names in this case?  In this case MLIPUserConfigParser returns a vector of contexts of size>=2. The first context could be either a task or a global section.
+  // prepare the result vector
+  std::vector<Task> tasksResult;
 
-  // validate the key-value data
+  // Step 0: Validate the key-value data against the blueprint schema.
   const auto &bpMap = tadah::core::BlueprintParser::getKeysMapRef();
   for (const auto &kvPair : taskInput.getKeyValueData()) {
     const std::string &key = kvPair.first;
@@ -52,10 +45,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid key-value pair: " + key + " -> " + core::concat(values));
     }
   }
-
-  // Prepare a result vector
-  // Depending on the task input, we may have multiple tasks to return.
-  std::vector<Task> result;
+  std::cout << "DEBUG: Step 0: Key-value data validated against blueprint schema.\n";
 
   // Step 1: Build a "base" context from the key-value data in the input.
   tadah::core::Context baseContext;
@@ -66,62 +56,106 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       baseContext.add<std::string>(upKey, val);
     }
   }
+  std::cout << "DEBUG: Step 1: Base context built from key-value data.\n";
 
   // Step 2: Check if a "MyTask.config" key is present in the context
-  std::string configKey = tadah::core::to_upper(taskInput.getTaskName() + ".config");
+  std::string configKey = "CONFIG";
   bool hasConfig = baseContext.contains(configKey);
-
-  // TODO modify from here
-  std::vector<Task> tasksFromConfigs;
+  std::cout << "DEBUG: Step 2: Checking for config key: " << configKey << "\n";
   if (hasConfig) {
-    // The user config file path is stored as the first string for that key.
-    std::string userConfigFile = baseContext.get<std::string>(configKey);
-
-    // Parse config sections via MLIPUserConfigParser
-    std::vector<tadah::core::Context> configSections;
-    try {
-      configSections = parser_.parse(userConfigFile, true /*merge*/);
-    } catch(const std::exception &e) {
-      throw std::runtime_error(std::string("TaskFactory::createTasksFromInput - ")
-                            + "Error parsing config file: " + e.what());
-    }
-
-    // If configSections is empty, possibly no valid sections found
-    if (configSections.empty()) {
-      throw std::runtime_error("TaskFactory::createTasksFromInput - No valid sections in the user config file.");
-    }
-
-    // Deal with global section if it exists
-    // followed by the task-specific sections.
-
-    // For each section, merge base & override with CLI again (if needed)
-    // TODO this is wrong order
-    for (auto &sectionCtx : configSections) {
-      // Overwrite with baseContext's key-value data
-      for (const auto &kvPair : baseContext.getMapRef()) {
-        const std::string &key = kvPair.first;
-        // Remove any existing references in the config section
-        sectionCtx.remove(key);
-        // Re-add from base
-        for (auto &val : kvPair.second) {
-          sectionCtx.add<std::string>(key, val);
-        }
-      }
-      // Create a Task out of this merged context
-      Task t(taskInput.getTaskName(), sectionCtx);
-      tasksFromConfigs.push_back(t);
-    }
-  }
-
-  // Step 3: If there was no config, or if config yielded no tasks, create a single Task.
-  if (tasksFromConfigs.empty()) {
-    Task singleTask(taskInput.getTaskName(), baseContext);
-    result.push_back(singleTask);
+    std::cout << "DEBUG: Step 2: Config key found.\n";
   } else {
-    result = std::move(tasksFromConfigs);
+    std::cout << "DEBUG: Step 2: No config key found.\n";
   }
 
-  return result;
+  // Step 3: If there is a user config file, parse it to obtain a map of contexts.
+  std::unordered_map<std::string, core::Context> configMap;
+  if (hasConfig) {
+    std::string userConfigFile = baseContext.get<std::string>(configKey);
+    std::cout << "DEBUG: Step 3: User config file found: " << userConfigFile << "\n";
+    configMap = parser_.parse(userConfigFile, /*mergeFlag=*/true);
+    // remove CONFIG key from the base context
+    baseContext.remove(configKey);
+  }
+  std::cout << "DEBUG: Step 3: User config file parsed. Number of sections: " << configMap.size() << "\n";
+
+  // Step 4: 
+  // check taskInput.getTaskName() against blueprint tasks if it is the highest level task.
+  // Iterate all possible task names in the blueprint if there is no task of higher level.
+  // We will add taskInput.getTaskName() to the tasksResult if it is a valid task.
+  // Also if taskInput.getTaskName() is in fact higher level task then we do not
+  // expect more tasks in the config file. We should throw in this case.
+  const auto &blueprintTasks = tadah::core::BlueprintParser::getTasksMapRef();
+  bool taskInputIsValidTask = true;
+  for (const auto &kv : blueprintTasks) {
+    const std::string &taskName = kv.second.taskName;
+    // if map contains taskInput.getTaskName()+"." then it is not a valid task
+    // i.e. there exist another task of higher level
+    if (taskName.find(taskInput.getTaskName() + ".") == 0) {
+      taskInputIsValidTask = false;
+      break;
+    }
+  }
+  std::cout << "DEBUG: Step 4: Task input is " << (taskInputIsValidTask ? "valid" : "invalid") << "\n";
+
+  // Step 5: if taskInputIsValidTask is true than we check configMap
+  // Map is either empty or contain a single GLOBAL section.
+  // If it contains anything else we throw an error.
+  if (taskInputIsValidTask) {
+    if (configMap.size() > 1) {
+      throw std::runtime_error("TaskFactory::createTasksFromInput - "
+                               "taskInput.getTaskName() is a valid task but configMap contains more than one section.");
+    }
+    if (configMap.size() == 1) {
+      auto it = configMap.find("GLOBAL");
+      if (it == configMap.end()) {
+        throw std::runtime_error("TaskFactory::createTasksFromInput - "
+                                 "taskInput.getTaskName() is a valid task but configMap contains no GLOBAL section.");
+      }
+    }
+    // If configMap is empty, we can skip the rest of the code and returns
+    // the taskInput.getTaskName() as a single task.
+    if (configMap.empty()) {
+      tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
+      return tasksResult;
+    }
+    // otherwise me merge the baseContext with the GLOBAL section and return.
+    const core::Context &globalCtx = configMap["GLOBAL"];
+    const core::Context mergedCtx = parser_.merge(globalCtx, baseContext);
+    tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
+    return tasksResult;
+  }
+  std::cout << "DEBUG: Step 5: Task input is not a valid task.\n";
+
+  // Step 6. If we got here, it means taskInput.getTaskName() is not a valid task.
+  // We simple merge the baseContext with each task section in the configMap except GLOBAL.
+  for (const auto &cm : configMap) {
+    if (cm.first == "GLOBAL") {
+      continue; // skip the GLOBAL section
+    }
+    std::string taskName = cm.first;
+    // check is higher level task (it should be!) throw otherwise!
+    for (const auto &bp : blueprintTasks) {
+      const std::string &bpTaskName = bp.second.taskName;
+      if (bpTaskName.find(taskName+ ".") == 0) {
+        throw std::runtime_error("TaskFactory::createTasksFromInput - "
+                                 "taskInput.getTaskName() is not a valid task but configMap contains a section for it.");
+      }
+    }
+
+    const core::Context mergedCtx = parser_.merge(cm.second, baseContext); 
+    tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
+  }
+  std::cout << "DEBUG: Step 6: Merged contexts for each task section in the configMap.\n";
+  if (tasksResult.empty()) {
+    // Possibly fallback to a single Task if no final-level tasks matched
+    // or throw an error
+    core::Logger::instance().log(core::LogLevel::WARNING,
+                                 "createTasksFromInput: No final-level tasks found. Returning empty list.");
+    throw std::runtime_error("TaskFactory::createTasksFromInput - No final-level tasks found.");
+  }
+  // Step 7: Return the tasksResult vector
+  return tasksResult;
 }
 
 } // namespace mlip
