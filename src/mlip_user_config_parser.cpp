@@ -78,11 +78,11 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
     // If sectionName is not "GLOBAL", confirm it exists in the blueprint tasks
     if (sectionName != "GLOBAL") {
       // The blueprint tasks are keyed by the exact string e.g. "TASK.TRAIN", etc.
-      std::cout << "DEBUG: MLIPUserConfigParser::parse: sectionName=" << sectionName << "\n";
+      // std::cout << "DEBUG: MLIPUserConfigParser::parse: sectionName=" << sectionName << "\n";
       // print all taskMap keys
-      for (const auto &kv : taskMap) {
-        std::cout << "DEBUG  " << kv.first << "\n";
-      }
+      // for (const auto &kv : taskMap) {
+      //   std::cout << "DEBUG  " << kv.first << "\n";
+      // }
       auto found = taskMap.find(sectionName);
       if (found == taskMap.end()) {
         // The user specified a "TASK..." that does not exist in the blueprint
@@ -99,7 +99,6 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
     if (!sectionLines.empty()) {
       ctx = backendParser_->parse(sectionLines);
     }
-    // It's valid for a section to have zero lines => empty context.
 
     // Put it in the map
     resultMap[sectionName] = ctx;
@@ -228,42 +227,8 @@ void MLIPUserConfigParser::mergeAllSections(
       continue;
     }
     // Overwrite keys in kv.second with keys in global
-    kv.second = merge(globalCtx, kv.second);
+    kv.second = core::Context::merge(globalCtx, kv.second);
   }
-}
-
-/**
- * @brief Merges two contexts, overwriting recognized keys from 'task' into 'global'.
- *        This is the same as the old merge code, but note we might 
- *        want to rename 'task' to 'overrideCtx' for clarity.
- */
-core::Context
-MLIPUserConfigParser::merge(const core::Context &global, const core::Context &task) const
-{
-  // Copy the global context
-  tadah::core::Context merged = global;
-
-  // Overwrite from task, for recognized (blueprint) keys
-  const auto &bpKeysMap = tadah::core::BlueprintParser::getKeysMapRef();
-  const auto &taskKeyValues = task.getMapRef();
-
-  for (const auto &pair : taskKeyValues) {
-    const std::string &key = pair.first;
-    bool allowed = (bpKeysMap.find(key) != bpKeysMap.end());
-    if (!allowed) {
-      // If not recognized by blueprint, skip
-      continue;
-    }
-
-    if (merged.contains(key)) {
-      core::Logger::instance().log(core::LogLevel::WARNING,
-         "MLIPUserConfigParser::merge -> Overwriting key: ", key);
-      merged.remove(key);
-    }
-    merged.add(key, pair.second);
-  }
-
-  return merged;
 }
 
 } // namespace mlip

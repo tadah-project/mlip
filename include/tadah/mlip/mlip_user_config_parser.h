@@ -85,18 +85,6 @@ public:
   std::unordered_map<std::string, core::Context>
   parse(const std::vector<std::string>& lines, bool merge = true) const;
 
-  /**
-   * @brief Merges two Context objects.
-   *
-   * For each key in @p task, values replace/override those in @p global. 
-   * (Only keys recognized by BlueprintParser are overwritten.)
-   *
-   * @param global The global/base Context.
-   * @param task The Context with task settings.
-   * @return The merged Context.
-   */
-  core::Context merge(const core::Context &global, const core::Context &task) const;
-
 private:
   const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
 
@@ -133,4 +121,3 @@ private:
 } // namespace tadah
 
 #endif // TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
-

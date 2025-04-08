@@ -36,73 +36,86 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   const auto &bpMap = tadah::core::BlueprintParser::getKeysMapRef();
   for (const auto &kvPair : taskInput.getKeyValueData()) {
     const std::string &key = kvPair.first;
+    // std::cout << "DEBUG: Step 0: Validating key-value pair: " << key << "\n";
     const std::vector<std::string> &values = kvPair.second;
     if (values.empty()) {
       continue; // skip empty values
     }
-    bool valid_schema = core::CoreUserConfigParser::validateWithBlueprint(key, values, bpMap.at(core::to_upper(key)));
+    bool valid_schema = false;
+    try {
+      valid_schema = core::CoreUserConfigParser::validateWithBlueprint(key, values, bpMap.at(core::to_upper(key)));
+    } catch (const std::out_of_range &e) {
+      throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid blueprint key: " + key);
+    }
     if (!valid_schema) {
       throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid key-value pair: " + key + " -> " + core::concat(values));
     }
   }
-  std::cout << "DEBUG: Step 0: Key-value data validated against blueprint schema.\n";
+  // std::cout << "DEBUG: Step 0: Key-value data validated against blueprint schema.\n";
 
   // Step 1: Build a "base" context from the key-value data in the input.
   tadah::core::Context baseContext;
   auto kvmap = taskInput.getKeyValueData();
   for (auto &kv : kvmap) {
     std::string upKey = tadah::core::to_upper(kv.first);
+    // if (upKey == "TASK") continue;
     for (auto &val : kv.second) {
       baseContext.add<std::string>(upKey, val);
     }
   }
-  std::cout << "DEBUG: Step 1: Base context built from key-value data.\n";
+  // std::cout << "DEBUG: Step 1: Base context built from key-value data.\n";
 
   // Step 2: Check if a "MyTask.config" key is present in the context
-  std::string configKey = "CONFIG";
-  bool hasConfig = baseContext.contains(configKey);
-  std::cout << "DEBUG: Step 2: Checking for config key: " << configKey << "\n";
-  if (hasConfig) {
-    std::cout << "DEBUG: Step 2: Config key found.\n";
-  } else {
-    std::cout << "DEBUG: Step 2: No config key found.\n";
-  }
+  // TODO Shouldn't this be MyTask.task key?
+  bool hasConfig = baseContext.contains("CONFIG");
+  bool hasTask = baseContext.contains("TASK");
+  // std::cout << "DEBUG: Step 2: Checking for config key: " << configKey << "\n";
+  // if (hasConfig) {
+    // std::cout << "DEBUG: Step 2: Config key found.\n";
+  // } else {
+    // std::cout << "DEBUG: Step 2: No config key found.\n";
+  // }
 
   // Step 3: If there is a user config file, parse it to obtain a map of contexts.
   std::unordered_map<std::string, core::Context> configMap;
-  if (hasConfig) {
-    std::string userConfigFile = baseContext.get<std::string>(configKey);
-    std::cout << "DEBUG: Step 3: User config file found: " << userConfigFile << "\n";
-    configMap = parser_.parse(userConfigFile, /*mergeFlag=*/true);
+  if (hasConfig || hasTask) {
+    std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
+    // std::cout << "DEBUG: Step 3: User config file found: " << userConfigFile << "\n";
+    configMap = parser_.parse(userFile, /*mergeFlag=*/true);
     // remove CONFIG key from the base context
-    baseContext.remove(configKey);
+    hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
   }
-  std::cout << "DEBUG: Step 3: User config file parsed. Number of sections: " << configMap.size() << "\n";
+  // std::cout << "DEBUG: Step 3: User config file parsed. Number of sections: " << configMap.size() << "\n";
 
   // Step 4: 
   // check taskInput.getTaskName() against blueprint tasks if it is the highest level task.
   // Iterate all possible task names in the blueprint if there is no task of higher level.
   // We will add taskInput.getTaskName() to the tasksResult if it is a valid task.
   // Also if taskInput.getTaskName() is in fact higher level task then we do not
-  // expect more tasks in the config file. We should throw in this case.
+  // expect more tasks in the config file. We should throw in this case?
   const auto &blueprintTasks = tadah::core::BlueprintParser::getTasksMapRef();
   bool taskInputIsValidTask = true;
-  for (const auto &kv : blueprintTasks) {
-    const std::string &taskName = kv.second.taskName;
-    // if map contains taskInput.getTaskName()+"." then it is not a valid task
-    // i.e. there exist another task of higher level
-    if (taskName.find(taskInput.getTaskName() + ".") == 0) {
-      taskInputIsValidTask = false;
-      break;
+
+  if (!hasTask) {
+    // TASKS in a --task file are validated by the MLIPUserConfigParser
+    for (const auto &kv : blueprintTasks) {
+      const std::string &taskName = kv.second.taskName;
+      // if map contains taskInput.getTaskName()+"." then it is not a valid task
+      // i.e. there exist another task of higher level
+      if (taskName.find(taskInput.getTaskName() + ".") == 0) {
+        // std::cout << "DEBUG: Step 4: Checking task name: " << taskName << "\n";
+        taskInputIsValidTask = false;
+        break;
+      }
     }
   }
-  std::cout << "DEBUG: Step 4: Task input is " << (taskInputIsValidTask ? "valid" : "invalid") << "\n";
+  // std::cout << "DEBUG: Step 4: Task input is " << (taskInputIsValidTask ? "valid" : "invalid") << "\n";
 
   // Step 5: if taskInputIsValidTask is true than we check configMap
   // Map is either empty or contain a single GLOBAL section.
   // If it contains anything else we throw an error.
   if (taskInputIsValidTask) {
-    if (configMap.size() > 1) {
+    if (!hasTask && configMap.size() > 1) {
       throw std::runtime_error("TaskFactory::createTasksFromInput - "
                                "taskInput.getTaskName() is a valid task but configMap contains more than one section.");
     }
@@ -120,12 +133,27 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       return tasksResult;
     }
     // otherwise me merge the baseContext with the GLOBAL section and return.
-    const core::Context &globalCtx = configMap["GLOBAL"];
-    const core::Context mergedCtx = parser_.merge(globalCtx, baseContext);
-    tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
+    if (hasTask) {
+      // remove the GLOBAL section from the configMap
+      configMap.erase("GLOBAL");
+      // baseContext should be empty by now, we can ignore it.
+      // iterate configMap and copy the contexts to the tasksResult
+      for (const auto &cm : configMap) {
+        const std::string &taskName = cm.first;
+        const core::Context &taskCtx = cm.second;
+        // std::cout << "DEBUG: Step 5: Adding task by: " << taskInput.getTaskName() << "\n";
+        // std::cout << "DEBUG: Step 5: Adding task: " << taskName << "\n";
+        // TODO only add the tasks allowed by the subcommand
+        tasksResult.emplace_back(Task(taskName, taskCtx));
+      }
+    } else {
+      const core::Context &globalCtx = configMap["GLOBAL"];
+      const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
+      tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
+    }
     return tasksResult;
   }
-  std::cout << "DEBUG: Step 5: Task input is not a valid task.\n";
+  // std::cout << "DEBUG: Step 5: Task input is not a valid task.\n";
 
   // Step 6. If we got here, it means taskInput.getTaskName() is not a valid task.
   // We simple merge the baseContext with each task section in the configMap except GLOBAL.
@@ -143,16 +171,14 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       }
     }
 
-    const core::Context mergedCtx = parser_.merge(cm.second, baseContext); 
+    const core::Context mergedCtx = core::Context::merge(cm.second, baseContext); 
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
   }
-  std::cout << "DEBUG: Step 6: Merged contexts for each task section in the configMap.\n";
+  // std::cout << "DEBUG: Step 6: Merged contexts for each task section in the configMap.\n";
   if (tasksResult.empty()) {
-    // Possibly fallback to a single Task if no final-level tasks matched
-    // or throw an error
-    core::Logger::instance().log(core::LogLevel::WARNING,
+    // No final-level tasks found, log a message and return an empty list.
+    core::Logger::instance().log(core::LogLevel::DEBUG,
                                  "createTasksFromInput: No final-level tasks found. Returning empty list.");
-    throw std::runtime_error("TaskFactory::createTasksFromInput - No final-level tasks found.");
   }
   // Step 7: Return the tasksResult vector
   return tasksResult;
