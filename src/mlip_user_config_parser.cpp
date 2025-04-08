@@ -222,11 +222,12 @@ void MLIPUserConfigParser::mergeAllSections(
 
   // Merge global into each other section
   for (auto &kv : resultMap) {
-    // skip the global section itself
+    // skip the global section
     if (kv.first == "GLOBAL") {
       continue;
     }
-    // Overwrite keys in kv.second with keys in global
+    // add keys from global to kv.second
+    // kv.second takes precedence over global
     kv.second = core::Context::merge(globalCtx, kv.second);
   }
 }
