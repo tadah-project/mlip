@@ -16,8 +16,8 @@
 /*  // Sort tasks by task type (grouping) and then by priority (descending order).*/
 /*  std::stable_sort(tasks_.begin(), tasks_.end(),*/
 /*    [](const std::shared_ptr<Task>& a, const std::shared_ptr<Task>& b) {*/
-/*      if (a->getTaskType() != b->getTaskType())*/
-/*        return a->getTaskType() < b->getTaskType();*/
+/*      if (a->getTaskName() != b->getTaskName())*/
+/*        return a->getTaskName() < b->getTaskName();*/
 /*      return a->getPriority() > b->getPriority();*/
 /*    });*/
 /*  // Stub: if dependency rules are set, adjust ordering accordingly.*/
@@ -27,7 +27,7 @@
 /*  for (const auto &task : tasks_) {*/
 /*    task->print();*/
 /*    std::cout << "---- Executing Task: " << task->getID() */
-/*              << " (" << task->getTaskType() << ")\n";*/
+/*              << " (" << task->getTaskName() << ")\n";*/
 /*  }*/
 /*}*/
 /**/

@@ -1,10 +1,12 @@
-#ifndef TADAH_MLIP_IENGINE_H
-#define TADAH_MLIP_IENGINE_H
+#ifndef TADAH_MLIP_ENGINES_IENGINE_H
+#define TADAH_MLIP_ENGINES_IENGINE_H
 
-#include <tadah/core/context.h>
+#include <tadah/core/logger.h>
+#include <tadah/mlip/task.h>
 
 namespace tadah {
 namespace mlip {
+namespace engines {
 
 /**
  * @brief Abstract interface for all engine classes.
@@ -19,7 +21,7 @@ public:
    * @param ctx A fully prepared Context (merged from CLI or files).
    * @throws std::runtime_error if validation fails.
    */
-  virtual void validate(const tadah::core::Context &ctx) = 0;
+  virtual void validate(const tadah::mlip::Task &task) = 0;
 
   /**
    * @brief Executes the engine logic using the provided Context.
@@ -27,7 +29,7 @@ public:
    * @return An integer status code (0 for success, non-zero for errors).
    * @throws std::runtime_error if runtime errors occur.
    */
-  virtual int run(const tadah::core::Context &ctx) = 0;
+  virtual int run(tadah::mlip::Task &task) = 0;
 
   /**
    * @brief Virtual destructor for interface compliance.
@@ -35,7 +37,8 @@ public:
   virtual ~IEngine() {}
 };
 
+} // namespace engines
 } // namespace mlip
 } // namespace tadah
 
-#endif // TADAH_MLIP_IENGINE_H
+#endif // TADAH_MLIP_ENGINES_IENGINE_H

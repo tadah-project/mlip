@@ -2,6 +2,7 @@
 #define TADAH_MLIP_ENGINES_TRAIN_ENGINE_H
 
 #include <tadah/core/context.h>
+#include <tadah/mlip/engines/iengine.h>
 
 namespace tadah {
 namespace mlip {
@@ -15,9 +16,10 @@ namespace engines {
  * @param context The contexturation object.
  * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
-class TrainEngine {
+class TrainEngine : public IEngine {
 public:
-  static int train(tadah::core::Context &context);
+  int run(tadah::mlip::Task &task) override;
+  void validate(const tadah::mlip::Task &task) override;
 };
 
 } // namespace engines

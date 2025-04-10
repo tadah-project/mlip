@@ -34,9 +34,9 @@ public:
    * @brief Constructs a Task with a command (e.g., "data.split") and a final merged Context.
    *
    * @param command The name or type of the task, for example "data.split".
-   * @param globalContext The fully merged configuration context for this task.
+   * @param context The fully merged configuration context for this task.
    */
-  Task(const std::string &command, const tadah::core::Context &globalContext);
+  Task(const std::string &command, const tadah::core::Context &context);
 
   /**
    * @brief Default destructor.
@@ -44,11 +44,11 @@ public:
   ~Task() = default;
 
   /**
-   * @brief Retrieves the effective (merged) Context for this task.
+   * @brief Retrieves the Context for this task.
    *
    * @return A constant reference to the Context representing the task's settings.
    */
-  const tadah::core::Context &effectiveContext() const;
+  const tadah::core::Context &getContext() const;
 
   /**
    * @brief Sets the integer priority for this task, where a higher number denotes higher priority.
@@ -90,11 +90,11 @@ public:
    * @brief Deserializes a Task from a plain-text string.
    *
    * @param data A string containing the serialized task data (e.g. from serialize()).
-   * @param globalContext Optionally, a baseline context to be merged or ignored, depending on design.
+   * @param context Optionally, a baseline context to be merged or ignored, depending on design.
    * @return A newly constructed Task.
    * @throws std::runtime_error if the format is invalid.
    */
-  static Task deserialize(const std::string &data, const tadah::core::Context &globalContext);
+  static Task deserialize(const std::string &data, const tadah::core::Context &context);
 
   /**
    * @brief Serializes selected fields to a binary representation (e.g. for HPC distribution).
@@ -119,12 +119,9 @@ public:
   /**
    * @brief Retrieves the "task type," e.g. the first word or a substring of the command.
    *
-   * If your command is "data.split", this might return "data.split".
-   * In some designs, you might parse out just "data" or "split".
-   *
    * @return A string representing the type, e.g. "data.split".
    */
-  std::string getTaskType() const;
+  std::string getTaskName() const;
 
   /**
    * @brief Sets a dependency rule string for the task (e.g., "taskA > taskB").

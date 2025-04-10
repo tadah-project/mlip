@@ -12,19 +12,19 @@ namespace mlip {
 //-------------------------------------------------------------------------
 // Constructor
 //-------------------------------------------------------------------------
-Task::Task(const std::string &command, const tadah::core::Context &effectiveContext)
+Task::Task(const std::string &command, const tadah::core::Context &context)
   : command_(command),
     priority_(0),
     taskID_(generateTaskID()),
     timestamp_(generateTimestamp()),
-    context_(effectiveContext) // copy the passed context
+    context_(context) // copy the passed context
 {
 }
 
 //-------------------------------------------------------------------------
 // Public getters
 //-------------------------------------------------------------------------
-const tadah::core::Context &Task::effectiveContext() const {
+const tadah::core::Context &Task::getContext() const {
   return context_;
 }
 
@@ -55,7 +55,7 @@ void Task::setDependency(const std::string &dependencyRule) {
 // generateTaskID(): simplistic ID generator
 //-------------------------------------------------------------------------
 std::string Task::generateTaskID() const {
-  static int counter = 0; // Not thread-safe: just demonstration
+  static int counter = 0;
   ++counter;
   std::ostringstream oss;
   oss << "TASK-" << counter << "-"
@@ -244,10 +244,9 @@ std::ostream &operator<<(std::ostream &os, const Task &t) {
 }
 
 //-------------------------------------------------------------------------
-// getTaskType()
+// getTaskName()
 //-------------------------------------------------------------------------
-std::string Task::getTaskType() const {
-  // Possibly parse command_ if needed. Here, return the entire string.
+std::string Task::getTaskName() const {
   return command_;
 }
 

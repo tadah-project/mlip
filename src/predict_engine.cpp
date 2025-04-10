@@ -18,7 +18,7 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-int PredictEngine::predict(core::Context &pot_context, StructureDB &stdb) {
+int PredictEngine::run(mlip::Task &task) {
   int rank = 0;
   #ifdef TADAH_BUILD_MPI
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -93,6 +93,10 @@ int PredictEngine::predict(core::Context &pot_context, StructureDB &stdb) {
   /**/
   /*return 0;*/
   return EXIT_SUCCESS;
+}
+void PredictEngine::validate(const tadah::mlip::Task &task) {
+  core::Logger::instance().log(core::LogLevel::INFO,
+      "PredictEngine validate() called. No mandatory keys in stub.");
 }
 
 } // namespace engines

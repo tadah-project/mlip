@@ -14,10 +14,12 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-int TrainEngine::train(tadah::core::Context &context) {
+int TrainEngine::run(tadah::mlip::Task &task) {
   try {
     int rank = 0;
     int ncpu = 1;
+
+    tadah::core::Context context = task.getContext();
 
 #ifdef TADAH_BUILD_MPI
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -32,7 +34,7 @@ int TrainEngine::train(tadah::core::Context &context) {
       }
 
       // The uncertainty flag is incompatible with MPI
-      if (context.exists(
+      if (context.contains(
               "--uncertainty")) { // TODO Context does not have this key
         std::cout << "-----------------------------------------------------"
                   << std::endl;
@@ -110,6 +112,11 @@ int TrainEngine::train(tadah::core::Context &context) {
   }
   return EXIT_SUCCESS;
 }
+void TrainEngine::validate(const tadah::mlip::Task &task) {
+  core::Logger::instance().log(core::LogLevel::INFO,
+      "TrainEngine validate() called. No mandatory keys in stub.");
+}
+
 
 } // namespace engines
 } // namespace mlip

@@ -2,7 +2,7 @@
 #define TADAH_MLIP_ENGINES_PREDICT_ENGINE_H
 
 #include <tadah/core/context.h>
-#include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/engines/iengine.h>
 
 namespace tadah {
 namespace mlip {
@@ -17,9 +17,10 @@ namespace engines {
  * @param stdb The structure database.
  * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
-class PredictEngine {
+class PredictEngine: public IEngine {
 public:
-  static int predict(tadah::core::Context &pot_context, tadah::mlip::StructureDB &stdb);
+  int run(tadah::mlip::Task &task) override;
+  void validate(const tadah::mlip::Task &task) override;
 };
 
 } // namespace engines
