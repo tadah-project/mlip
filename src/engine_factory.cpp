@@ -1,8 +1,9 @@
-#include <tadah/mlip/engine_factory.h>
+#include <tadah/mlip/engines/engine_factory.h>
 #include <stdexcept>
 
 namespace tadah {
 namespace mlip {
+namespace engines {
 
 static std::unordered_map<std::string, std::function<std::unique_ptr<IEngine>()>>&
 theRegistry() {
@@ -29,5 +30,6 @@ EngineFactory::registry() {
   return theRegistry();
 }
 
+} // namespace engines
 } // namespace mlip
 } // namespace tadah

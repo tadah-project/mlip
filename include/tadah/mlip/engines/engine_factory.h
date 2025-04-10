@@ -1,15 +1,16 @@
-#ifndef TADAH_MLIP_ENGINE_FACTORY_H
-#define TADAH_MLIP_ENGINE_FACTORY_H
+#ifndef TADAH_MLIP_ENGINES_ENGINE_FACTORY_H
+#define TADAH_MLIP_ENGINES_ENGINE_FACTORY_H
 
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <functional>
 
-#include <tadah/mlip/iengine.h>
+#include <tadah/mlip/engines/iengine.h>
 
 namespace tadah {
 namespace mlip {
+namespace engines {
 
 /**
  * @brief Simple dynamic factory that maps a dot-separated task name to a builder function.
@@ -38,7 +39,8 @@ private:
   static std::unordered_map<std::string, std::function<std::unique_ptr<IEngine>()>>& registry();
 };
 
+} // namespace engines
 } // namespace mlip
 } // namespace tadah
 
-#endif // TADAH_MLIP_ENGINE_FACTORY_H
+#endif // TADAH_MLIP_ENGINES_ENGINE_FACTORY_H
