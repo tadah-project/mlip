@@ -140,7 +140,7 @@ public:
   }
 
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
-    if(context.template get<bool>("NORM") && !std.normalised && bf.get_label()!="tadah::models::BF_Linear")
+    if(context.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
@@ -270,7 +270,7 @@ private:
   // normalise weights such that when predict is called
   // we can supply it with a non-normalised descriptor
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
-    if(bf.get_label()!="tadah::models::BF_Linear") {
+    if(bf.get_label()!="BF_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear basis function\n");
     }
@@ -290,7 +290,7 @@ non linear basis function\n");
   }
   // The opposite of convert_to_nweights()
   tadah::core::t_type convert_to_weights(const tadah::core::t_type &nw) const {
-    if(bf.get_label()!="tadah::models::BF_Linear") {
+    if(bf.get_label()!="BF_Linear") {
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear basis function\n");
     }
@@ -321,7 +321,7 @@ non linear basis function\n");
     tadah::models::M_BLR_Train<BF>::train(Phi,T);
 
     if (context.template get<bool>("NORM") &&
-      bf.get_label()=="tadah::models::BF_Linear") {
+      bf.get_label()=="BF_Linear") {
       weights = convert_to_nweights(weights);
     }
   }

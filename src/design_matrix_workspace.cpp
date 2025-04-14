@@ -2,7 +2,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <tadah/core/lapack.h>
-#include <tadah/mlip/memory/DesignMatrixWorkspace.h>
+#include <tadah/mlip/memory/design_matrix_workspace.h>
 namespace tadah {
 namespace mlip {
 namespace memory {

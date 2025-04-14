@@ -98,25 +98,25 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   if (context.get<bool>("BIAS"))
     bias++;
   if (context.get<bool>("INIT2B")) {
-    context.add("SIZE2B",d2.size());
+    context.addInternal("SIZE2B",d2.size());
     if (!context.contains("TYPE2B"))
       context.add("TYPE2B",d2.label());
     dsize+=d2.size();
     d2.set_fidx(bias);
   }
   else {
-    context.add("SIZE2B",0);
+    context.addInternal("SIZE2B",0);
   }
 
   if (context.get<bool>("INITMB")) {
-    context.add("SIZEMB",dm.size());
+    context.addInternal("SIZEMB",dm.size());
     if (!context.contains("TYPEMB"))
       context.add("TYPEMB",dm.label());
     dsize+=dm.size();
     dm.set_fidx(bias+d2.size());
   }
   else {
-    context.add("SIZEMB",0);
+    context.addInternal("SIZEMB",0);
   }
 
   if (!dsize)
@@ -125,7 +125,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   if (context.get<bool>("BIAS"))
     dsize++;
 
-  context.add("DSIZE",dsize);
+  context.addInternal("DSIZE",dsize);
 }
 template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {

@@ -104,7 +104,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     }
 
     // Output uncertainty if requested
-    if (context.contains("--uncertainty")) {
+    if (context.contains("UNCERTAINTY")) {
       tadah::core::t_type weights = tr.model->get_weights();
       tadah::core::t_type unc = tr.model->get_weights_uncertainty();
       Output(param_file, false).print_train_unc(weights, unc);
@@ -117,8 +117,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(core::LogLevel::INFO,
-      "TrainEngine validate() called. No mandatory keys in stub.");
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+                             "Validating TrainEngine...");
+  const auto &context = task.getContext();
+  if (!context.get<bool>("INIT2B") && !context.get<bool>("INITMB")) {
+    throw std::runtime_error(
+        "TrainEngine requires INIT2B or/and INITMB parameters to be set");
+  }
 }
 
 
