@@ -68,8 +68,12 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       worker.solve(); // Perform worker computations
     }
 #else // Non-MPI version
+
+    std::cout << "DEBUG: Non-MPI version" << std::endl;
     tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+    std::cout << "DEBUG: WorkspaceManager created" << std::endl;
     Trainer tr(context, workspaceManager);
+    std::cout << "DEBUG: Trainer created" << std::endl;
 
     // Load structures and provide feedback if verbose
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");

@@ -10,7 +10,6 @@ namespace engines {
 void registerAllEngines() {
   using tadah::mlip::engines::EngineFactory;
   using tadah::mlip::engines::TrainEngine;
-  std::cout << "Registering all engines..." << std::endl;
   EngineFactory::registerEngine("TRAIN", [](){ return std::make_unique<TrainEngine>(); });
   EngineFactory::registerEngine("PREDICT", [](){ return std::make_unique<PredictEngine>(); });
   // EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HpoEngine>(); });
@@ -39,7 +38,6 @@ void registerAllEngines() {
   // EngineFactory::registerEngine("ANALYSIS.bfunc", [](){ return std::make_unique<AnalysisBfuncEngine>(); });
   // EngineFactory::registerEngine("ANALYSIS.cutoff", [](){ return std::make_unique<AnalysisCutoffEngine>(); });
 
-  std::cout << "All engines registered." << std::endl;
 }
 
 } // namespace engines
