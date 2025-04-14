@@ -25,7 +25,7 @@ public:
   /**
    * @brief Return all tasks
    */
-  const std::vector<Task>& getTasks() const;
+  std::vector<Task>& getTasks();
 
   /**
    * @brief Clear or remove tasks

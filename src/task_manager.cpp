@@ -13,7 +13,7 @@ void TaskManager::store(const std::vector<Task> &tasks) {
   }
 }
 
-const std::vector<Task>& TaskManager::getTasks() const {
+std::vector<Task>& TaskManager::getTasks() {
   return tasks_;
 }
 
