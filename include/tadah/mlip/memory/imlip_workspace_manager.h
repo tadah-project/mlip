@@ -1,7 +1,7 @@
 #ifndef TADAH_MLIP_MEMORY_IMLIPWORKSPACEMANAGER_H
 #define TADAH_MLIP_MEMORY_IMLIPWORKSPACEMANAGER_H
 
-#include <tadah/models/memory/IModelsWorkspaceManager.h>
+#include <tadah/models/memory/imodels_workspace_manager.h>
 #include <tadah/core/core_types.h>
 
 namespace tadah {

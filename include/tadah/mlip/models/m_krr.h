@@ -113,10 +113,9 @@ public:
 
   void train(StructureDB &stdb, DC_Base &dc) {
     int modelN;
-    try {
+    if (context.size("MODEL")==3) {
       modelN=context.template get<int>("MODEL",2);
-    }
-    catch(std::runtime_error &e) {
+    } else {
       // use default model
       modelN=1;
       context.add("MODEL", modelN);
@@ -133,7 +132,7 @@ public:
   }
   void train1(StructureDB &stdb, DC_Base &dc) {
     // KRR implementation using EKM
-    if(context.template get<bool>("NORM") || kernel.get_label()!="tadah::models::Kern_Linear") {
+    if(context.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
       // either build basis or prep normaliser
       std::string force=context.template get<std::string>("FORCE");
       std::string stress=context.template get<std::string>("STRESS");
@@ -156,7 +155,7 @@ public:
       context.add("FORCE", force);
       context.add("STRESS", stress);
 
-      if (kernel.get_label()!="tadah::models::Kern_Linear") {
+      if (kernel.get_label()!="Kern_Linear") {
         basis.build_random_basis(context.template get<size_t>("SBASIS"),st_desc_db_temp);
         desmat.f.set_basis(basis.b);
         kernel.set_basis(basis.b);
@@ -194,7 +193,7 @@ public:
   }
 
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
-    if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="tadah::models::Kern_Linear")
+    if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
@@ -229,7 +228,7 @@ public:
         c.add("NSTDEV", norm.std_dev[i]);
       }
     }
-    if (kernel.get_label()!="tadah::models::Kern_Linear") {
+    if (kernel.get_label()!="Kern_Linear") {
       // dump basis to the context file file
       // make sure keys are not accidently assigned
       if (c.contains("SBASIS"))
@@ -340,12 +339,12 @@ private:
   DesignMatrix<K> desmat;
 
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
-    if(kernel.get_label()!="tadah::models::Kern_Linear") {
+    if(kernel.get_label()!="Kern_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear kernel\n");
     }
     tadah::core::t_type kw(weights.rows());
-    if(context.template get<bool>("NORM") && kernel.get_label()=="tadah::models::Kern_Linear") {
+    if(context.template get<bool>("NORM") && kernel.get_label()=="Kern_Linear") {
       // normalise weights such that when predict is called
       // we can supply it with a non-normalised descriptor
       kw.resize(weights.rows());
@@ -365,7 +364,7 @@ non linear kernel\n");
   }
   // The opposite of convert_to_nweights()
   tadah::core::t_type convert_to_weights(const tadah::core::t_type &kw) const {
-    if(kernel.get_label()!="tadah::models::Kern_Linear") {
+    if(kernel.get_label()!="Kern_Linear") {
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear kernel\n");
     }
@@ -391,7 +390,7 @@ non linear kernel\n");
     tadah::models::M_KRR_Train<K>::train(Phi,T);
 
     if (context.template get<bool>("NORM") &&
-      kernel.get_label()=="tadah::models::Kern_Linear") {
+      kernel.get_label()=="Kern_Linear") {
       weights = convert_to_nweights(weights);
     }
   }

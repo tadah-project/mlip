@@ -1,4 +1,4 @@
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
 namespace tadah {
 namespace mlip {
 namespace memory {

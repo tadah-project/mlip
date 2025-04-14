@@ -1,8 +1,8 @@
 #ifndef TADAH_MLIP_MEMORY_MLIPWORKSPACEMANAGER_H
 #define TADAH_MLIP_MEMORY_MLIPWORKSPACEMANAGER_H
 
-#include <tadah/models/memory/ModelsWorkspaceManager.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/models/memory/models_workspace_manager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 namespace tadah {
 namespace mlip {

@@ -329,10 +329,10 @@ private:
       tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Force standard deviation (ev/A): ", f_std_dev);
     }
 
-    context.add("ESTDEV",e_std_dev);
-    context.add("FSTDEV",f_std_dev);
+    context.addInternal("ESTDEV",e_std_dev);
+    context.addInternal("FSTDEV",f_std_dev);
     for (size_t j=0; j<6; ++j)
-      context.add("SSTDEV",s_std_dev[j]);
+      context.addInternal("SSTDEV",s_std_dev[j]);
   }
 
   void compute_wfactors(const StructureDB &stdb) {
