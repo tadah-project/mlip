@@ -7,8 +7,8 @@
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/core/context.h>
 #include <tadah/models/dc_selector.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
-#include <tadah/mlip/memory/MLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
+#include <tadah/mlip/memory/mlip_workspace_manager.h>
 
 #include <iostream>
 namespace tadah {
@@ -20,9 +20,10 @@ class Trainer {
     tadah::models::DC_Selector DCS;
     DescriptorsCalc<> dc;
     NNFinder nnf;
-    DM_Function_Base *fb;
-    M_Tadah_Base *model;
+    DM_Function_Base *fb = nullptr;
+    M_Tadah_Base *model = nullptr;
     DesignMatrix<DM_Function_Base&> dm;
+    tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
 
     ~Trainer() {
       if(model)
@@ -40,7 +41,8 @@ class Trainer {
             context.get<std::string>("MODEL",1),context)),
       model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
           (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),
-      dm(*fb, context, workspaceManager)
+      dm(*fb, context, workspaceManager),
+      workspaceManager_(&workspaceManager)
   {
   }
 
@@ -82,6 +84,15 @@ extern "C" void pdgemv_(char* transa, int* m, int* n, double* alpha, double* a,
     int* incx, double* beta, double* y, int* iy, int* jy, int* desc_y, int* incy);	
 
 
+/**
+ * @class MPI_Trainer
+ * @brief MPI-based trainer for distributed training of MLIP models.
+ *
+ * Here we keep two sets of phi matrices managed by two independent managers:
+ * 1. phi matrices for the local phi matrix - we use Trainer MLIPWorkspaceManager
+ * 2. phi matrices for the block cyclic phi matrix - we use MPI_Trainer MLIPWorkspaceManager
+ *
+ */
 class MPI_Trainer: public Trainer {
   public:
     const static int context_TAG = 4;
@@ -114,11 +125,20 @@ class MPI_Trainer: public Trainer {
     MPI_Datatype rowvec, rowvecs;
     int rank;
     int ncpu;
+    tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager2_ = nullptr;
 
-    MPI_Trainer(tadah::core::Context &c, int &rank, int &ncpu):
-      Trainer(c),
+    ~MPI_Trainer() {
+      if (workspaceManager2_ != nullptr) {
+        delete workspaceManager2_;
+        workspaceManager2_ = nullptr;
+      }
+    }
+
+    MPI_Trainer(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+      Trainer(c, workspaceManager),
       rank(rank),
-      ncpu(ncpu)
+      ncpu(ncpu),
+      workspaceManager2_(new tadah::mlip::memory::MLIPWorkspaceManager())
   {
     if (rank==0) {
       int nstruct_tot = StructureDB::count(context).first;
@@ -151,7 +171,7 @@ class MPI_Trainer: public Trainer {
     }
     else {
       // loop over all possible divisors
-      int before, /*sqrt(ncpu),*/ after;
+      int before=1, /*sqrt(ncpu),*/ after=ncpu;
       for (int i = 1; i <= ncpu; ++i){
         if (ncpu % i == 0) {
           if (i>sqrt(ncpu)) {
@@ -199,10 +219,18 @@ class MPI_Trainer: public Trainer {
     // including host as well. The host will collect excees computations from
     // workers.
     //DesignMatrix<DM_Function_Base&> dm(*fb, context);
-    dm.Phi.resize(phi_rows1,phi_cols1);
+    // dm.Phi.resize(phi_rows1,phi_cols1);
     //int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
-    dm.T.resize(phi_rows1);
-    dm.Tlabels.resize(phi_rows1);
+    // dm.T.resize(phi_rows1);
+    // dm.Tlabels.resize(phi_rows1);
+
+    // Update of above for version 1.0.0 onwards
+    // We can still use DesingMatrixWorkspace to allocate memory for the local phi
+    dm.ws = workspaceManager_->getDesignMatrixWorkspace(phi_rows1,phi_cols1, true); // should we keep copy for weighting?
+    dm.ws->Phi.set_zero();
+    dm.ws->T.set_zero();
+    dm.ws->Tlabels.set_zero();
+    
   }
     void probe() {
       MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
@@ -259,36 +287,40 @@ class MPI_Trainer: public Trainer {
       int ib = 1;
       int jb = 1;
       // Distribute data in 2D block cyclic 
-      DesignMatrix<DM_Function_Base&> dm2(*fb, context);
-      dm2.Phi.resize(phi_rows2,phi_cols2);
-      dm2.T.resize(phi_rows2);
-      dm2.Tlabels.resize(phi_rows2);
+      // dm2.Phi.resize(phi_rows2,phi_cols2);
+      // dm2.T.resize(phi_rows2);
+      // dm2.Tlabels.resize(phi_rows2);
+      DesignMatrix<DM_Function_Base&> dm2(*fb, context, *workspaceManager2_);
+      dm2.ws = workspaceManager2_->getDesignMatrixWorkspace(phi_rows2,phi_cols2, true); // should we keep copy for weighting?
+      dm2.ws->Phi.set_zero();
+      dm2.ws->T.set_zero();
+      dm2.ws->Tlabels.set_zero();
 
-      pdgemr2d_(&PHI_rows, &PHI_cols, dm.Phi.ptr(), &ione, &ione, descPHI,
-          dm2.Phi.ptr(), &ione, &ione, descPHI2, &context2);
+      pdgemr2d_(&PHI_rows, &PHI_cols, dm.ws->Phi.ptr(), &ione, &ione, descPHI,
+          dm2.ws->Phi.ptr(), &ione, &ione, descPHI2, &context2);
 
-      pdgemr2d_(&PHI_rows, &ione, dm.T.ptr(), &ione, &ione, descB,
-          dm2.T.ptr(), &ione, &ione, descB2, &context2);
+      pdgemr2d_(&PHI_rows, &ione, dm.ws->T.ptr(), &ione, &ione, descB,
+          dm2.ws->T.ptr(), &ione, &ione, descB2, &context2);
 
       double wkopt2;
       int lwork2 = -1; // query -> get size of the work matrix
-      pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
-          descPHI2, dm2.T.ptr(), &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
+      pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.ws->Phi.ptr(), &ia, &ja, 
+          descPHI2, dm2.ws->T.ptr(), &ib, &jb, descB2, &wkopt2, &lwork2, &info2);
       if (info2 != 0) {
         printf("Error in pdgels, info = %d\n", info);
       }
       lwork2 = (int)wkopt2;
       double *work2 = new double[lwork2];
 
-      pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.Phi.ptr(), &ia, &ja, 
-          descPHI2, dm2.T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
+      pdgels_(&trans, &PHI_rows, &PHI_cols, &nrhs, dm2.ws->Phi.ptr(), &ia, &ja, 
+          descPHI2, dm2.ws->T.ptr(), &ib, &jb, descB2, work2, &lwork2, &info2);
 
       // get weight vector, for context1 
-      pdgemr2d_(&PHI_cols, &ione, dm2.T.ptr(), &ione, &ione, descB2,
-          dm.T.ptr(), &ione, &ione, descB, &context1);
+      pdgemr2d_(&PHI_cols, &ione, dm2.ws->T.ptr(), &ione, &ione, descB2,
+          dm.ws->T.ptr(), &ione, &ione, descB, &context1);
 
       if (rank==0) {
-        tadah::core::t_type w(dm.T.ptr(), PHI_cols);
+        tadah::core::t_type w(dm.ws->T.ptr(), PHI_cols);
         model->set_weights(w);
         // model->trained=true; // still can't train with this model
       }
@@ -306,8 +338,8 @@ class TrainerHost: public MPI_Trainer {
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
-    TrainerHost(tadah::core::Context &c, int &rank, int &ncpu):
-      MPI_Trainer(c, rank, ncpu)
+    TrainerHost(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+      MPI_Trainer(c, rank, ncpu, workspaceManager)
   {}
 
     void prep_wpckgs() {
@@ -367,11 +399,11 @@ class TrainerHost: public MPI_Trainer {
           rows_available : rows_needed;
         MPI_Send (&b_rank, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
         MPI_Send (&rows_accepted, 1, MPI_INT, worker, tag, MPI_COMM_WORLD);
-        MPI_Recv (&dm.Phi.data()[phi_row], rows_accepted, rowvecs, 
+        MPI_Recv (&dm.ws->Phi.data()[phi_row], rows_accepted, rowvecs, 
             worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&dm.T.data()[phi_row], rows_accepted, MPI_DOUBLE, 
+        MPI_Recv (&dm.ws->T.data()[phi_row], rows_accepted, MPI_DOUBLE, 
             worker, tag, MPI_COMM_WORLD, &status);
-        MPI_Recv (&dm.Tlabels.data()[phi_row], rows_accepted, 
+        MPI_Recv (&dm.ws->Tlabels.data()[phi_row], rows_accepted, 
             MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
         rows_available -= rows_accepted;
         phi_row += rows_accepted;
@@ -465,8 +497,8 @@ class TrainerHost: public MPI_Trainer {
 class TrainerWorker: public MPI_Trainer {
 
   public:
-    TrainerWorker(tadah::core::Context &c, int &rank, int &ncpu):
-      MPI_Trainer(c, rank, ncpu)
+    TrainerWorker(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+      MPI_Trainer(c, rank, ncpu, workspaceManager)
   {}
 
     bool release_tag() {
@@ -491,11 +523,11 @@ class TrainerWorker: public MPI_Trainer {
         throw std::runtime_error("Number of rows available is smaller \
             than number of provided rows");
       }
-      MPI_Recv (&dm.Phi.data()[phi_row], rows_available, 
+      MPI_Recv (&dm.ws->Phi.data()[phi_row], rows_available, 
           rowvecs, worker, tag, MPI_COMM_WORLD, &status);
-      MPI_Recv (&dm.T.data()[phi_row], rows_available, 
+      MPI_Recv (&dm.ws->T.data()[phi_row], rows_available, 
           MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
-      MPI_Recv (&dm.Tlabels.data()[phi_row], rows_available, 
+      MPI_Recv (&dm.ws->Tlabels.data()[phi_row], rows_available, 
           MPI_DOUBLE, worker, tag, MPI_COMM_WORLD, &status);
       rows_available -= rows_accepted;
       phi_row += rows_accepted;
@@ -532,9 +564,10 @@ class TrainerWorker: public MPI_Trainer {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
         DesignMatrix<DM_Function_Base&> temp_dm(*fb, context);
-        temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
-        temp_dm.T.resize(rows_needed);
-        temp_dm.Tlabels.resize(rows_needed);
+        temp_dm.resize(rows_needed,dm.ws->Phi.cols());
+        // temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
+        // temp_dm.T.resize(rows_needed);
+        // temp_dm.Tlabels.resize(rows_needed);
 
         // and compute all rows
         size_t temp_phi_row=0;
@@ -548,10 +581,10 @@ class TrainerWorker: public MPI_Trainer {
         // copy top of temp_dm.Phi to the bottom of dm. Phi in reverse order
         if (rows_available>0) {
           for (; rows_available>0; rows_available--) {
-            for (size_t c=0; c<dm.Phi.cols(); c++) {
-              dm.Phi(phi_row,c) = temp_dm.Phi(rows_available-1,c); 
-              dm.T(phi_row) = temp_dm.T(rows_available-1); 
-              dm.Tlabels(phi_row) = temp_dm.Tlabels(rows_available-1); 
+            for (size_t c=0; c<dm.ws->Phi.cols(); c++) {
+              dm.ws->Phi(phi_row,c) = temp_dm.ws->Phi(rows_available-1,c); 
+              dm.ws->T(phi_row) = temp_dm.ws->T(rows_available-1); 
+              dm.ws->Tlabels(phi_row) = temp_dm.ws->Tlabels(rows_available-1); 
             }
             phi_row++;
             rows_needed--;
@@ -572,23 +605,23 @@ class TrainerWorker: public MPI_Trainer {
           MPI_Recv (&rows_accepted, 1, MPI_INT, 0, MPI_Trainer::DATA_TAG, 
               MPI_COMM_WORLD, &status);
           // we send data to the host or a willing worker
-          int start=temp_dm.Phi.rows()-rows_needed;
+          int start=temp_dm.ws->Phi.rows()-rows_needed;
 
           // Define temp data type for temp Phi matrix 
           // Phi is stored in a column-major order
           MPI_Datatype trowvec, trowvecs;
-          MPI_Type_vector( temp_dm.Phi.cols(), 1, temp_dm.Phi.rows(), 
+          MPI_Type_vector( temp_dm.ws->Phi.cols(), 1, temp_dm.ws->Phi.rows(), 
               MPI_DOUBLE, &trowvec); 
           MPI_Type_commit(&trowvec);
           MPI_Type_create_resized(trowvec, 0, 1*sizeof(double), &trowvecs);
           MPI_Type_commit(&trowvecs);
 
           // ready to send
-          MPI_Send (&temp_dm.Phi.data()[start], rows_accepted, 
+          MPI_Send (&temp_dm.ws->Phi.data()[start], rows_accepted, 
               trowvecs, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
-          MPI_Send (&temp_dm.T.data()[start], rows_accepted, 
+          MPI_Send (&temp_dm.ws->T.data()[start], rows_accepted, 
               MPI_DOUBLE, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
-          MPI_Send (&temp_dm.Tlabels.data()[start], rows_accepted, 
+          MPI_Send (&temp_dm.ws->Tlabels.data()[start], rows_accepted, 
               MPI_DOUBLE, dest, MPI_Trainer::DATA_TAG, MPI_COMM_WORLD);
           rows_needed -= rows_accepted;
           MPI_Type_free(&trowvec);
@@ -607,7 +640,7 @@ class TrainerWorker: public MPI_Trainer {
       }
 
       if (fn)
-        delete fn;
+        std::free(fn);
       return 0;
     }
 

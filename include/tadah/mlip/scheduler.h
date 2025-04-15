@@ -12,7 +12,7 @@ namespace mlip {
 /**
  * @brief Manages and executes tasks.
  *
- * The Scheduler collects Task objects (via shared_ptr),
+ * The Scheduler collects Task objects,
  * orders them based on original order, global priority, and task type groupings.
  * Stubs for dependency rules are provided along with serialization for MPI broadcast.
  */
@@ -26,9 +26,10 @@ public:
   /**
    * @brief Adds a Task to the scheduler.
    *
-   * @param task A shared_ptr to the Task.
+   * @param task the Task.
    */
-  void addTask(const std::shared_ptr<Task> &task);
+  void addTask(const Task &task);
+  void addTasks(std::vector<Task> tasks);
 
   /**
    * @brief Schedules tasks.
@@ -50,20 +51,17 @@ public:
    *
    * @param rule A string representing the dependency rule.
    */
-  void setDependencyRule(const std::string &rule);
+  // void setDependencyRule(const std::string &rule);
 
   /**
-   * @brief Serializes all tasks to a string.
-   *
-   * Used for debugging and MPI broadcast.
-   *
-   * @return A string containing the serialized tasks.
+   * @brief Broadcast tasks_ from rank 0 to all other ranks,
+   *        ensuring all ranks see the same tasks in the same order.
    */
-  std::string serializeTasks() const;
+  void distributeTasks();
 
 private:
-  std::vector<std::shared_ptr<Task>> tasks_;
-  std::string dependencyRule_; ///< Stub for dependency ordering.
+  std::vector<Task> tasks_;
+  // std::string dependencyRule_; ///< Stub for dependency ordering.
 };
 
 } // namespace mlip

@@ -77,11 +77,17 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // The task section has priority over the global section.
   bool hasConfig = baseContext.contains("CONFIG");  // --config given in CLI
   bool hasTask = baseContext.contains("TASK");  // --task given in CLI
-  std::unordered_map<std::string, core::Context> configMap;
+  std::vector<std::pair<std::string, core::Context>> configVec;
   if (hasConfig || hasTask) {
     std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
-    configMap = parser_.parse(userFile, /*mergeFlag=*/true);
+    // parser returns a vec of <taskName, Context> so we can keep multiple tasks of the same type
+    configVec = parser_.parse(userFile, /*mergeFlag=*/true);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
+  }
+  std::cout << "DEBUG: TaskFactory::createTasksFromInput() - configVec.size() = " << configVec.size() << std::endl;
+  // print configVec
+  for (const auto &kv : configVec) {
+    std::cout << "DEBUG: TaskFactory::createTasksFromInput() - configVec[" << kv.first << "] = " << kv.second << std::endl;
   }
 
   // Step 3:  For non --task input we should only allow fully specified command to proceed
@@ -99,24 +105,26 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   }
 
   // the taskInput.getTaskName() as a single task.
-  if (configMap.empty()) {
+  if (configVec.empty()) {
     tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
     return tasksResult;
   }
 
   if (hasTask) {
-    // remove the GLOBAL section from the configMap for --task input
-    configMap.erase("GLOBAL");
+    // remove the GLOBAL section from the configVec for --task input
+    if (configVec.begin()->first == "GLOBAL") {
+      configVec.erase(configVec.begin());
+    }
     // baseContext should be empty by now, we can ignore it.
-    // iterate configMap and copy the contexts to the tasksResult
-    for (const auto &cm : configMap) {
-      const std::string &taskName = cm.first;
-      const core::Context &taskCtx = cm.second;
+    // iterate configVec and copy the contexts to the tasksResult
+    for (const auto &cv : configVec) {
+      const std::string &taskName = cv.first;
+      const core::Context &taskCtx = cv.second;
       // TODO only add the tasks allowed by the subcommand
       tasksResult.emplace_back(Task(taskName, taskCtx));
     }
   } else if (hasConfig) {
-    const core::Context &globalCtx = configMap["GLOBAL"];
+    const core::Context &globalCtx = configVec.begin()->second;
     const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
 

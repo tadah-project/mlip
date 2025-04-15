@@ -47,9 +47,9 @@ void Task::setPriority(int p) {
   priority_ = p;
 }
 
-void Task::setDependency(const std::string &dependencyRule) {
-  dependencyRule_ = dependencyRule;
-}
+// void Task::setDependency(const std::string &dependencyRule) {
+//   dependencyRule_ = dependencyRule;
+// }
 
 //-------------------------------------------------------------------------
 // generateTaskID(): simplistic ID generator
@@ -82,139 +82,62 @@ std::string Task::generateTimestamp() const {
   return oss.str();
 }
 
-//-------------------------------------------------------------------------
-// serialize(): text-based, uses context_.serialize()
-//-------------------------------------------------------------------------
 std::string Task::serialize() const {
-  // We'll store metadata as lines, then the Context lines below.
-  // Format:
-  // TASKID <id>
-  // COMMAND <cmd>
-  // TIMESTAMP <ts>
-  // PRIORITY <n>
-  // CONTEXT
-  //   <lines from context serialization>
-  //
-  // Note: The context lines themselves don't have a prefix. We'll just store them
-  // after a line that says "CONTEXT". The user can parse until next blank line or EOF.
-
   std::ostringstream oss;
-  oss << "TASKID " << taskID_ << "\n"
-      << "COMMAND " << command_ << "\n"
-      << "TIMESTAMP " << timestamp_ << "\n"
-      << "PRIORITY " << priority_ << "\n"
-      << "CONTEXT\n";
+  oss << taskID_ << std::endl
+      << command_ << std::endl
+      << timestamp_ << std::endl
+      << priority_ << std::endl;
 
   // The context is turned into lines of "KEY val1 val2 ..."
   std::vector<char> buffer = context_.serialize();
   // Convert those chars back into string lines
   oss.write(buffer.data(), buffer.size());
 
-  // (Optional) A trailing blank line
-  oss << "\n";
+  std::cout << "DEBUG serialize(): " << oss.str() << std::endl;
   return oss.str();
 }
 
-//-------------------------------------------------------------------------
-// deserialize(): parses lines, then uses context_.deserialize()
-//-------------------------------------------------------------------------
-Task Task::deserialize(const std::string &data,
-                       const tadah::core::Context &baseContext) {
-  // We'll create a new Context from baseContext. Then we overwrite it from
-  // incoming lines. The lines after "CONTEXT" are fed to the context's deserialize().
+void Task::deserialize(const std::string &data) {
 
   std::istringstream iss(data);
   std::string line;
 
-  std::string id;
-  std::string cmd;
-  std::string ts;
-  int pri = 0;
+  if (!std::getline(iss, taskID_)) {
+    throw std::runtime_error("Task::deserialize - missing or malformed ID line");
+  }
+  if (!std::getline(iss, command_)) {
+    throw std::runtime_error("Task::deserialize - missing or malformed COMMAND line");
+  }
+  if (!std::getline(iss, timestamp_)) {
+    throw std::runtime_error("Task::deserialize - missing or malformed TIMESTAMP line");
+  }
+  if (!std::getline(iss, line)) {
+    throw std::runtime_error("Task::deserialize - missing or malformed PRIORITY line");
+  }
+  priority_ = std::stoi(line);
 
-  tadah::core::Context ctx(baseContext); // copy baseline
-
-  bool readingContext = false;
-  std::ostringstream ctxStream;
-
-  while (std::getline(iss, line)) {
-    // Trim
-    if (line.size() == 0) {
-      continue; // ignore blank line
-    }
-    // If we see "CONTEXT", subsequent lines belong to the context
-    if (!readingContext) {
-      // parse "KEY value"
-      std::istringstream parts(line);
-      std::string key;
-      parts >> key; 
-      if (key == "TASKID") {
-        parts >> id;
-      } else if (key == "COMMAND") {
-        parts >> cmd;
-      } else if (key == "TIMESTAMP") {
-        parts >> ts;
-      } else if (key == "PRIORITY") {
-        parts >> pri;
-      } else if (key == "CONTEXT") {
-        // Now we start capturing context lines
-        readingContext = true;
-      }
-      // otherwise ignore unknown lines
-    } else {
-      // We are reading context lines
-      ctxStream << line << "\n";
-    }
+  std::string remainder;
+  if (!iss.eof()) {
+  // Copy everything left in iss into remainder
+  remainder.assign(std::istreambuf_iterator<char>(iss),
+      std::istreambuf_iterator<char>());
   }
 
-  if (id.empty()) {
-    throw std::runtime_error("Task::deserialize - missing TASKID");
-  }
-  if (cmd.empty()) {
-    throw std::runtime_error("Task::deserialize - missing COMMAND");
-  }
-
-  // Now that we have the context lines, let's feed them to ctx
-  // We do so by building a vector<char>
-  const std::string ctxStr = ctxStream.str();
-  std::vector<char> contextData(ctxStr.begin(), ctxStr.end());
-  ctx.deserialize(contextData);
-
-  // Construct final Task. We'll override its ID/timestamp/priority from file
-  Task t(cmd, ctx);
-  t.taskID_    = id;
-  t.timestamp_ = ts;
-  t.priority_  = pri;
-  return t;
+  std::vector<char> contextData(remainder.begin(), remainder.end());
+  context_.deserialize(contextData);
 }
 
-//-------------------------------------------------------------------------
-// serializeBinary(): minimal example
-//-------------------------------------------------------------------------
 std::vector<char> Task::serializeBinary() const {
-  // Example: store ID, command, timestamp, priority. 
-  // The context could also be appended, e.g. as text or more advanced structure.
+  std::string text = this->serialize();
+  return std::vector<char>(text.begin(), text.end());
+}
 
-  std::vector<char> bytes;
-
-  auto writeString = [&](const std::string &s) {
-    bytes.insert(bytes.end(), s.begin(), s.end());
-    bytes.push_back('\0'); // null-terminator
-  };
-
-  writeString(taskID_);
-  writeString(command_);
-  writeString(timestamp_);
-
-  // Priority as 4 bytes
-  int localP = priority_;
-  char* pBytes = reinterpret_cast<char*>(&localP);
-  for (size_t i = 0; i < sizeof(localP); i++) {
-    bytes.push_back(pBytes[i]);
-  }
-
-  // (Optional) we could then store context_.serialize() as well.
-
-  return bytes;
+void Task::deserializeBinary(const std::vector<char> &buffer) {
+  std::string text(buffer.begin(), buffer.end());
+  std::cout << "Deserializing Task from binary data...\n";
+  std::cout << "Text: " << text << std::endl;
+  this->deserialize(text);
 }
 
 //-------------------------------------------------------------------------

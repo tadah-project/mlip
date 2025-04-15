@@ -5,7 +5,8 @@
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/train_engine.h>
-#include <tadah/mlip/memory/MLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
+#include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
@@ -30,25 +31,22 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       if (ncpu < 2) {
         std::cerr << "Minimum number of CPUs for an MPI version is 2"
                   << std::endl;
-        return;
+        return EXIT_FAILURE;
       }
 
       // The uncertainty flag is incompatible with MPI
-      if (context.contains(
-              "--uncertainty")) { // TODO Context does not have this key
-        std::cout << "-----------------------------------------------------"
-                  << std::endl;
-        std::cout << "The --uncertainty flag is not supported by MPI build."
-                  << std::endl;
-        std::cout << "-----------------------------------------------------"
-                  << std::endl;
-        return;
+      if (context.get<bool>("UNCERTAINTY")) {
+        core::Logger::instance().log(
+            tadah::core::LogLevel::ERROR,
+            "The --uncertainty flag is not supported by MPI build.");
+        return EXIT_FAILURE;
       }
 
       // Start training timer if verbose mode is enabled
       tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
       // Initialize host MPI trainer
-      TrainerHost host(context, rank, ncpu);
+      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+      TrainerHost host(context, rank, ncpu, workspaceManager);
       host.run();
 
       // Perform the final computation and save parameters
@@ -63,17 +61,15 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       }
     } else { // Worker code
       // Initialize worker MPI trainer
-      TrainerWorker worker(context, rank, ncpu);
+      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+      TrainerWorker worker(context, rank, ncpu, workspaceManager);
       worker.run();
       worker.solve(); // Perform worker computations
     }
 #else // Non-MPI version
 
-    std::cout << "DEBUG: Non-MPI version" << std::endl;
     tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    std::cout << "DEBUG: WorkspaceManager created" << std::endl;
     Trainer tr(context, workspaceManager);
-    std::cout << "DEBUG: Trainer created" << std::endl;
 
     // Load structures and provide feedback if verbose
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");

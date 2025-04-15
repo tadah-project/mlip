@@ -32,7 +32,7 @@ MLIPUserConfigParser::~MLIPUserConfigParser() {
 /**
  * @brief Parses a user config from file, then merges sections if mergeFlag is true.
  */
-std::unordered_map<std::string, tadah::core::Context>
+std::vector<std::pair<std::string, core::Context>>
 MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
 {
   std::ifstream infile(filename.c_str());
@@ -57,15 +57,15 @@ MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
  *        - Subsequent sections must match an entry in the blueprint’s getTasksMapRef().
  *        - If mergeFlag is true, merges each section with the global context.
  */
-std::unordered_map<std::string, tadah::core::Context>
+std::vector<std::pair<std::string, core::Context>>
 MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFlag) const
 {
   // Split into named sections: "GLOBAL" + each "TASK...." 
   std::vector<std::pair<std::string, std::vector<std::string>>> namedSections =
       splitSections(lines);
 
-  // The final result: map of <sectionName, Context>
-  std::unordered_map<std::string, tadah::core::Context> resultMap;
+  // The final result: vec of <sectionName, Context>
+  std::vector<std::pair<std::string, core::Context>> resultVec;
 
   // We'll retrieve the blueprint tasks for validation
   const auto &taskMap = tadah::core::BlueprintParser::getTasksMapRef();
@@ -95,21 +95,21 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
     }
 
     // Parse the lines for this section to produce a Context.  
-    tadah::core::Context ctx;
+    core::Context ctx;
     if (!sectionLines.empty()) {
       ctx = backendParser_->parse(sectionLines);
     }
 
-    // Put it in the map
-    resultMap[sectionName] = ctx;
+    // Put it in the vec
+    resultVec.push_back(std::make_pair(sectionName, ctx));
   }
 
   // If mergeFlag is true, we do the final merges.
   if (mergeFlag) {
-    mergeAllSections(resultMap);
+    mergeAllSections(resultVec);
   }
 
-  return resultMap;
+  return resultVec;
 }
 
 /**
@@ -200,35 +200,34 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
 }
 
 /**
- * @brief Merges all sections in the map with the "GLOBAL" if it exists and is non-empty.
+ * @brief Merges all sections in the vec with the "GLOBAL" if it exists and is non-empty.
  *
  * We skip merging the global context into itself.
  */
 void MLIPUserConfigParser::mergeAllSections(
-    std::unordered_map<std::string, tadah::core::Context> &resultMap) const
+    std::vector<std::pair<std::string, core::Context>> &resultVec) const
 {
-  auto foundGlobal = resultMap.find("GLOBAL");
-  if (foundGlobal == resultMap.end()) {
+  if (resultVec[0].first != "GLOBAL") {
     // No global section present, nothing to merge
     return;
   }
 
   // Possibly empty global context
-  const tadah::core::Context &globalCtx = foundGlobal->second;
+  const core::Context &globalCtx = resultVec[0].second;
   if (globalCtx.size()==0) {
     // If global is empty, merging does nothing
     return;
   }
 
   // Merge global into each other section
-  for (auto &kv : resultMap) {
+  for (auto &pair : resultVec) {
     // skip the global section
-    if (kv.first == "GLOBAL") {
+    if (pair.first == "GLOBAL") {
       continue;
     }
-    // add keys from global to kv.second
-    // kv.second takes precedence over global
-    kv.second = core::Context::merge(globalCtx, kv.second);
+    // add keys from global to pair.second
+    // pair.second takes precedence over global
+    pair.second = core::Context::merge(globalCtx, pair.second);
   }
 }
 
