@@ -39,6 +39,13 @@ public:
   Task(const std::string &command, const tadah::core::Context &context);
 
   /**
+   * @brief Default constructor.
+   *
+   * This constructor initializes an empty Task object.
+   */
+  Task() = default;
+
+  /**
    * @brief Default destructor.
    */
   ~Task() = default;
@@ -90,11 +97,10 @@ public:
    * @brief Deserializes a Task from a plain-text string.
    *
    * @param data A string containing the serialized task data (e.g. from serialize()).
-   * @param context Optionally, a baseline context to be merged or ignored, depending on design.
    * @return A newly constructed Task.
    * @throws std::runtime_error if the format is invalid.
    */
-  static Task deserialize(const std::string &data, const tadah::core::Context &context);
+  void deserialize(const std::string &data);
 
   /**
    * @brief Serializes selected fields to a binary representation (e.g. for HPC distribution).
@@ -102,6 +108,14 @@ public:
    * @return A vector of bytes representing ID, command, timestamp, etc.
    */
   std::vector<char> serializeBinary() const;
+
+  /**
+   * @brief Deserializes a Task from a binary representation.
+   *
+   * @param data A string containing the serialized binary data.
+   * @throws std::runtime_error if the format is invalid.
+   */
+  void deserializeBinary(const std::vector<char> &buffer);
 
   /**
    * @brief Prints debug information about the task to standard output.
@@ -129,7 +143,7 @@ public:
    * This is a placeholder for future dependency logic.
    * @param dependencyRule A string specifying the dependency requirement.
    */
-  void setDependency(const std::string &dependencyRule);
+  // void setDependency(const std::string &dependencyRule);
 
 private:
   /**
@@ -152,7 +166,7 @@ private:
   std::string taskID_;          ///< The unique ID for this task.
   std::string timestamp_;       ///< The creation timestamp (ISO8601 or similar).
   tadah::core::Context context_;///< The merged context data for this task.
-  std::string dependencyRule_;  ///< Future expansion for visualizing dependencies.
+  // std::string dependencyRule_;  ///< Future expansion for visualizing dependencies.
 };
 
 } // namespace mlip

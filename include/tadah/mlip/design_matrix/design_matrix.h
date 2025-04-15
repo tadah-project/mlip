@@ -204,7 +204,7 @@ public:
       StDescriptors st_d = dc.calc(stdb(s));
 
       if(context.get<bool>("NORM"))  // TODO move to scale()
-        norm.normalise(st_d);
+    norm.normalise(st_d);
 
       build(rows[s], stdb(s), st_d);
     }
@@ -258,6 +258,13 @@ public:
   tadah::core::t_type &getT() { return ws->T; }
   tadah::core::t_type &getTlabels() { return ws->Tlabels; }
   bool hasCopy() { return w_copy_; }
+
+  void resize(size_t rows, size_t cols, bool wcopy=false) {
+    ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
+    ws->Phi.set_zero();
+    ws->T.set_zero();
+    ws->Tlabels.set_zero();
+  }
 
 private:
   tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;

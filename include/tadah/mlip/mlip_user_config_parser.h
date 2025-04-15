@@ -3,7 +3,6 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include <tadah/core/iuser_config_parser.h>
 #include <tadah/core/context.h>
 
@@ -30,7 +29,7 @@ namespace mlip {
  * with the global context, if a global context exists, where task keys 
  * override global ones.
  *
- * @note The parser returns an unordered map of <section-name, Context>.
+ * @note The parser returns a vec of <section-name, Context>.
  *       "GLOBAL" is only included if it is non-empty. The user may have 
  *       any number of tasks, each with or without lines.
  */
@@ -65,11 +64,11 @@ public:
    *
    * @param filename The config file path to parse.
    * @param merge Whether to merge each section with the global Context.
-   * @return A map of <section-name, Context> for each section discovered. 
+   * @return A vec of <section-name, Context> for each section discovered. 
    *         "GLOBAL" is included only if non-empty.
    * @throws std::runtime_error if parsing fails or file cannot be opened.
    */
-  std::unordered_map<std::string, core::Context>
+  std::vector<std::pair<std::string, core::Context>>
   parse(const std::string &filename, bool merge = true) const;
 
   /**
@@ -77,12 +76,12 @@ public:
    *
    * @param lines The lines of the config file.
    * @param merge Whether to merge each section with the global Context.
-   * @return A map of <section-name, Context> for each section discovered.
+   * @return A vec of <section-name, Context> for each section discovered.
    *         "GLOBAL" is included only if non-empty.
    * @throws std::runtime_error if parsing fails, or if a "TASK" 
    *         line has no name following it.
    */
-  std::unordered_map<std::string, core::Context>
+  std::vector<std::pair<std::string, core::Context>>
   parse(const std::vector<std::string>& lines, bool merge = true) const;
 
 private:
@@ -110,11 +109,11 @@ private:
    * @brief Helper that merges each non-empty section with the global context 
    *        if 'GLOBAL' is found and not empty.
    *
-   * @param resultMap A map of <sectionName, Context>.
+   * @param resultVec A vec of <sectionName, Context>.
    *                  On completion, every non-GLOBAL context is merged 
    *                  with the global context (if present and non-empty).
    */
-  void mergeAllSections(std::unordered_map<std::string, core::Context> &resultMap) const;
+  void mergeAllSections(std::vector<std::pair<std::string, core::Context>> &resultVec) const;
 };
 
 } // namespace mlip
