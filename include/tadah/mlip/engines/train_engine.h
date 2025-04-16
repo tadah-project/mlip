@@ -10,11 +10,6 @@ namespace engines {
 
 /**
  * @brief Provides core training functionality.
- *
- * Delegates model training to the underlying Trainer.
- *
- * @param context The contexturation object.
- * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
 class TrainEngine : public IEngine {
 public:

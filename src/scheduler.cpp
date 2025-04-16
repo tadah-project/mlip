@@ -85,14 +85,6 @@ void Scheduler::execute() {
   for (auto &task : tasks_) {
 
     core::Context context = task.getContext();
-    task.print();
-
-    // Possibly adjust log level from context
-    size_t verbose;
-    if (context.contains("VERBOSE")) {
-      verbose = task.getContext().get<size_t>("VERBOSE");
-    }
-    core::Logger::instance().setLogLevel(static_cast<core::LogLevel>(verbose));
 
     core::Logger::instance().log(
         core::LogLevel::INFO, "Executing task: ", task.getTaskName());

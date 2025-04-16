@@ -81,25 +81,50 @@ void Structure::remove_atom(const size_t i) {
  *     // Retrieve the neighbor's position (the 2nd neighbor of atom 0)
  *     tadah::core::Vec3d neighborPos = st.nn_pos(0, 1);
  */
-tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
-  // (A) Global index of this neighbor
+// tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
+//   // (A) Global index of this neighbor
+//   const size_t neighborIndex = near_neigh_idx[i][n];
+//
+//   // (B) Atom's original "unshifted" position
+//   const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
+//
+//   // (C) Convert the stored shift -> real displacement shiftDisp
+//   //     If near_neigh_shift[i][n] is an integer triple (n1, n2, n3),
+//   //     multiply by the cell. Otherwise, if it's already in real space, it may simply be added.
+//   tadah::core::Vec3d shift = near_neigh_shift[i][n]; // Possibly an integer triple
+//   tadah::core::Vec3d shiftDisp;
+//   shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(0,1) + shift[2] * cell(0,2);
+//   shiftDisp[1] = shift[0] * cell(1,0) + shift[1] * cell(1,1) + shift[2] * cell(1,2);
+//   shiftDisp[2] = shift[0] * cell(2,0) + shift[1] * cell(2,1) + shift[2] * cell(2,2);
+//   // shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(1,0) + shift[2] * cell(2,0);
+//   // shiftDisp[1] = shift[0] * cell(0,1) + shift[1] * cell(1,1) + shift[2] * cell(2,1);
+//   // shiftDisp[2] = shift[0] * cell(0,2) + shift[1] * cell(1,2) + shift[2] * cell(2,2);
+//
+//   // (D) Final neighbor position = unshifted position + shiftDisp
+//   return posNeighbor + shiftDisp;
+// }
+tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const 
+{
+  // (A) index of neighbor
   const size_t neighborIndex = near_neigh_idx[i][n];
 
-  // (B) Atom's original "unshifted" position
+  // (B) that neighbor's base ("home cell") position
   const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
 
-  // (C) Convert the stored shift -> real displacement shiftDisp
-  //     If near_neigh_shift[i][n] is an integer triple (n1, n2, n3),
-  //     multiply by the cell. Otherwise, if it's already in real space, it may simply be added.
-  tadah::core::Vec3d shift = near_neigh_shift[i][n]; // Possibly an integer triple
-  tadah::core::Vec3d shiftDisp;
-  shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(0,1) + shift[2] * cell(0,2);
-  shiftDisp[1] = shift[0] * cell(1,0) + shift[1] * cell(1,1) + shift[2] * cell(1,2);
-  shiftDisp[2] = shift[0] * cell(2,0) + shift[1] * cell(2,1) + shift[2] * cell(2,2);
+  // (C) Convert the stored shift -> real displacement
+  //     We said near_neigh_shift[i][n] is the integer triple (n1,n2,n3).
+  tadah::core::Vec3d shift = near_neigh_shift[i][n]; // (n1,n2,n3)
 
-  // (D) Final neighbor position = unshifted position + shiftDisp
+  // row-based multiplication
+  tadah::core::Vec3d shiftDisp;
+  shiftDisp[0] = shift[0]*cell(0,0) + shift[1]*cell(1,0) + shift[2]*cell(2,0);
+  shiftDisp[1] = shift[0]*cell(0,1) + shift[1]*cell(1,1) + shift[2]*cell(2,1);
+  shiftDisp[2] = shift[0]*cell(0,2) + shift[1]*cell(1,2) + shift[2]*cell(2,2);
+
+  // (D) final position
   return posNeighbor + shiftDisp;
 }
+
 
 /**
  * Returns the number of atoms contained in the atoms vector.

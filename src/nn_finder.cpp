@@ -33,27 +33,6 @@ bool NNFinder::check_box(Structure &st)
 }
 
 // ---------------------------------------------------------------------------
-void NNFinder::num_shifts(Structure &st, int N[3]) {
-  tadah::core::Matrix3d cell_inv = st.cell.inverse();
-
-  double l1 = cell_inv.col(0).norm();
-  double l2 = cell_inv.col(1).norm();
-  double l3 = cell_inv.col(2).norm();
-
-  double f1 = (l1 > 0) ? 1.0/l1 : 1.0;
-  double f2 = (l2 > 0) ? 1.0/l2 : 1.0;
-  double f3 = (l3 > 0) ? 1.0/l3 : 1.0;
-
-  int b1 = std::max(int(f1/cutoff),1);
-  int b2 = std::max(int(f2/cutoff),1);
-  int b3 = std::max(int(f3/cutoff),1);
-
-  N[0] = (int)std::round(0.5 + cutoff*b1/f1);
-  N[1] = (int)std::round(0.5 + cutoff*b2/f2);
-  N[2] = (int)std::round(0.5 + cutoff*b3/f3);
-}
-
-// ---------------------------------------------------------------------------
 // Naive approach - store only neighbor indices and shifts, no local Atom copies
 void NNFinder::calc_naive(Structure &st)
 {
@@ -78,9 +57,9 @@ void NNFinder::calc_naive(Structure &st)
     for (int n2 = -N[1]; n2 <= N[1]; n2++) {
       for (int n3 = -N[2]; n3 <= N[2]; n3++) {
         tadah::core::Vec3d disp;
-        disp[0] = st.cell(0,0)*n1 + st.cell(1,0)*n2 + st.cell(2,0)*n3;
-        disp[1] = st.cell(0,1)*n1 + st.cell(1,1)*n2 + st.cell(2,1)*n3;
-        disp[2] = st.cell(0,2)*n1 + st.cell(1,2)*n2 + st.cell(2,2)*n3;
+        disp[0] = n1*st.cell(0,0) + n2*st.cell(1,0) + n3*st.cell(2,0);
+        disp[1] = n1*st.cell(0,1) + n2*st.cell(1,1) + n3*st.cell(2,1);
+        disp[2] = n1*st.cell(0,2) + n2*st.cell(1,2) + n3*st.cell(2,2);
         shifts.push_back(disp);
         shiftIdx.push_back(tadah::core::Vec3d(n1, n2, n3));
       }
@@ -128,12 +107,106 @@ void NNFinder::calc_naive(Structure &st)
     st.near_neigh_idx[i].shrink_to_fit();
   }
 }
+// void NNFinder::num_shifts(Structure &st, int N[3]) {
+//   tadah::core::Matrix3d cell_inv = st.cell.inverse();
+//
+//   double l1 = cell_inv.row(0).norm();
+//   double l2 = cell_inv.row(1).norm();
+//   double l3 = cell_inv.row(2).norm();
+//
+//   double f1 = (l1 > 0) ? 1.0/l1 : 1.0;
+//   double f2 = (l2 > 0) ? 1.0/l2 : 1.0;
+//   double f3 = (l3 > 0) ? 1.0/l3 : 1.0;
+//
+//   int b1 = std::max(int(f1/cutoff),1);
+//   int b2 = std::max(int(f2/cutoff),1);
+//   int b3 = std::max(int(f3/cutoff),1);
+//
+//   N[0] = (int)std::round(0.5 + cutoff*b1/f1);
+//   N[1] = (int)std::round(0.5 + cutoff*b2/f2);
+//   N[2] = (int)std::round(0.5 + cutoff*b3/f3);
+// }
+
+void NNFinder::num_shifts(Structure &st, int N[3]) 
+{
+  // 1) Invert the cell
+  tadah::core::Matrix3d cellInv = st.cell.inverse();
+
+  tadah::core::Vec3d aStar{ cellInv(0,0), cellInv(0,1), cellInv(0,2) };
+  tadah::core::Vec3d bStar{ cellInv(1,0), cellInv(1,1), cellInv(1,2) };
+  tadah::core::Vec3d cStar{ cellInv(2,0), cellInv(2,1), cellInv(2,2) };
+
+  double l1 = aStar.norm();  // Magnitude of reciprocal vector a*
+  double l2 = bStar.norm();
+  double l3 = cStar.norm();
+
+  double f1 = (l1 > 1e-12) ? 1.0 / l1 : 1.0;  // ~ direct space length of v1
+  double f2 = (l2 > 1e-12) ? 1.0 / l2 : 1.0;
+  double f3 = (l3 > 1e-12) ? 1.0 / l3 : 1.0;
+
+  // Overestimate how many images we might need
+  int trialN1 = (int)std::ceil(1.0 + cutoff * 2.0 / f1);
+  int trialN2 = (int)std::ceil(1.0 + cutoff * 2.0 / f2);
+  int trialN3 = (int)std::ceil(1.0 + cutoff * 2.0 / f3);
+
+  double cutoffSq = cutoff * cutoff;
+
+  // We'll track the min/max n1, n2, n3 for shifts < cutoff
+  int n1_min = 0, n1_max = 0;
+  int n2_min = 0, n2_max = 0;
+  int n3_min = 0, n3_max = 0;
+  bool firstValid = true;
+
+  tadah::core::Vec3d row0{ st.cell(0,0), st.cell(0,1), st.cell(0,2) };
+  tadah::core::Vec3d row1{ st.cell(1,0), st.cell(1,1), st.cell(1,2) };
+  tadah::core::Vec3d row2{ st.cell(2,0), st.cell(2,1), st.cell(2,2) };
+
+  // Loop over trial shifts
+  for (int n1 = -trialN1; n1 <= trialN1; ++n1) {
+    for (int n2 = -trialN2; n2 <= trialN2; ++n2) {
+      for (int n3 = -trialN3; n3 <= trialN3; ++n3) {
+
+        tadah::core::Vec3d disp
+          = double(n1)*row0 + double(n2)*row1 + double(n3)*row2;
+
+        double distSq = disp[0] * disp[0]
+          + disp[1] * disp[1]
+          + disp[2] * disp[2];
+        // double distSq = disp.squaredNorm();
+        if (distSq < cutoffSq) {
+          // update bounding box
+          if (firstValid) {
+            n1_min = n1_max = n1;
+            n2_min = n2_max = n2;
+            n3_min = n3_max = n3;
+            firstValid = false;
+          } else {
+            if (n1 < n1_min) n1_min = n1;
+            if (n1 > n1_max) n1_max = n1;
+            if (n2 < n2_min) n2_min = n2;
+            if (n2 > n2_max) n2_max = n2;
+            if (n3 < n3_min) n3_min = n3;
+            if (n3 > n3_max) n3_max = n3;
+          }
+        }
+      }
+    }
+  }
+
+  // convert bounding box → final N
+  N[0] = std::max(std::abs(n1_min), std::abs(n1_max));
+  N[1] = std::max(std::abs(n2_min), std::abs(n2_max));
+  N[2] = std::max(std::abs(n3_min), std::abs(n3_max));
+
+  N[0] = std::max(N[0], 1);
+  N[1] = std::max(N[1], 1);
+  N[2] = std::max(N[2], 1);
+}
 
 // ---------------------------------------------------------------------------
 // Binned approach - similarly remove local copies, store just indices & shifts
 void NNFinder::calc_binned(Structure &st)
 {
-
   st.near_neigh_shift.resize(st.natoms());
   st.near_neigh_idx.resize(st.natoms());
   for (size_t i = 0; i < st.natoms(); i++) {
@@ -141,9 +214,7 @@ void NNFinder::calc_binned(Structure &st)
     st.near_neigh_idx[i].reserve(100);
   }
 
-  // invert cell
-  double invC[9];
-  inverse_3x3_direct(st.cell.data(), invC);
+  tadah::core::Matrix3d cellInv = st.cell.inverse();
 
   auto rowLength = [&](int row){
     double vx = st.cell(row, 0);
@@ -173,13 +244,22 @@ void NNFinder::calc_binned(Structure &st)
     return size_t(ia + nBinsA * (ib + nBinsB * ic));
   };
 
-  // fill bins
   for (size_t i = 0; i < st.natoms(); i++) {
     const auto &atm = st(i);
-    double fx = invC[0]*atm.position[0] + invC[3]*atm.position[1] + invC[6]*atm.position[2];
-    double fy = invC[1]*atm.position[0] + invC[4]*atm.position[1] + invC[7]*atm.position[2];
-    double fz = invC[2]*atm.position[0] + invC[5]*atm.position[1] + invC[8]*atm.position[2];
 
+    double fx = cellInv(0,0)*atm.position[0] 
+      + cellInv(0,1)*atm.position[1] 
+      + cellInv(0,2)*atm.position[2];
+
+    double fy = cellInv(1,0)*atm.position[0] 
+      + cellInv(1,1)*atm.position[1] 
+      + cellInv(1,2)*atm.position[2];
+
+    double fz = cellInv(2,0)*atm.position[0] 
+      + cellInv(2,1)*atm.position[1] 
+      + cellInv(2,2)*atm.position[2];
+
+    // wrap fractional coords into [0,1)
     fx -= std::floor(fx);
     fy -= std::floor(fy);
     fz -= std::floor(fz);
@@ -211,9 +291,7 @@ void NNFinder::calc_binned(Structure &st)
 
               for (size_t idxA : vec0) {
                 for (size_t idxB : vec1) {
-                  // avoid double counting
                   if ((b0 == b1) && (idxB <= idxA)) continue;
-
                   const Atom &a1 = st(idxA);
                   const Atom &a2 = st(idxB);
 
@@ -221,12 +299,11 @@ void NNFinder::calc_binned(Structure &st)
                   double fracY = double(dB)/double(nBinsB);
                   double fracZ = double(dC)/double(nBinsC);
 
-                  // Real shift
                   tadah::core::Vec3d shiftDisp(
-                    st.cell(0,0)*fracX + st.cell(0,1)*fracY + st.cell(0,2)*fracZ,
-                    st.cell(1,0)*fracX + st.cell(1,1)*fracY + st.cell(1,2)*fracZ,
-                    st.cell(2,0)*fracX + st.cell(2,1)*fracY + st.cell(2,2)*fracZ
-                  );
+                      fracX * st.cell(0,0) + fracY * st.cell(1,0) + fracZ * st.cell(2,0),
+                      fracX * st.cell(0,1) + fracY * st.cell(1,1) + fracZ * st.cell(2,1),
+                      fracX * st.cell(0,2) + fracY * st.cell(1,2) + fracZ * st.cell(2,2)
+                      );
 
                   double dx = a1.position[0] - (a2.position[0] + shiftDisp[0]);
                   double dy = a1.position[1] - (a2.position[1] + shiftDisp[1]);
@@ -258,12 +335,123 @@ void NNFinder::calc_binned(Structure &st)
   }
 }
 
+void NNFinder::deduplicate(Structure &st)
+{
+    // We'll do one pass per atom.
+    // For each atom i, we:
+    // 1) gather neighbor info,
+    // 2) compute real-space neighbor positions (or displacements),
+    // 3) sort by position,
+    // 4) merge duplicates.
+
+    const size_t natoms = st.natoms();
+
+    // Pre-extract cell for speed (row-based)
+    double c00 = st.cell(0,0), c01 = st.cell(0,1), c02 = st.cell(0,2);
+    double c10 = st.cell(1,0), c11 = st.cell(1,1), c12 = st.cell(1,2);
+    double c20 = st.cell(2,0), c21 = st.cell(2,1), c22 = st.cell(2,2);
+
+    // We'll define a small struct to hold neighbor data
+    struct NbrInfo {
+        size_t nbrIdx;               // neighbor atom index
+        tadah::core::Vec3d shift;    // the integer shift stored
+        tadah::core::Vec3d pos;      // real-space position of the neighbor
+    };
+
+    // A small function to compare real-space positions (pos.x, pos.y, pos.z)
+    auto eps = 1e-6;
+    auto lessPos = [&](const NbrInfo &A, const NbrInfo &B) {
+        // compare x
+        if (std::fabs(A.pos[0] - B.pos[0]) > eps) 
+            return (A.pos[0] < B.pos[0]);
+        // compare y
+        if (std::fabs(A.pos[1] - B.pos[1]) > eps) 
+            return (A.pos[1] < B.pos[1]);
+        // compare z
+        return (A.pos[2] < B.pos[2] - eps);
+    };
+
+    // A function to see if two positions are "the same" within tolerance
+    auto samePos = [&](const tadah::core::Vec3d &p1, const tadah::core::Vec3d &p2){
+        return ( std::fabs(p1[0] - p2[0]) < eps
+              && std::fabs(p1[1] - p2[1]) < eps
+              && std::fabs(p1[2] - p2[2]) < eps );
+    };
+
+    // For each atom i, deduplicate
+    for (size_t i = 0; i < natoms; i++)
+    {
+        const size_t nnCount = st.near_neigh_idx[i].size();
+        if (nnCount <= 1) {
+            continue;  // no duplicates possible if 0 or 1 neighbor
+        }
+
+        // Gather neighbors in a vector
+        std::vector<NbrInfo> nvec;
+        nvec.reserve(nnCount);
+
+        double xA = st(i).position[0];
+        double yA = st(i).position[1];
+        double zA = st(i).position[2];
+
+        // Build (nbrIdx, shift, realPos)
+        for (size_t n = 0; n < nnCount; n++) {
+            size_t idxB = st.near_neigh_idx[i][n];
+            auto &sh  = st.near_neigh_shift[i][n];  // e.g. integer triple (n1, n2, n3)
+
+            // compute the real displacement from shift
+            double dxS = sh[0]*c00 + sh[1]*c10 + sh[2]*c20;
+            double dyS = sh[0]*c01 + sh[1]*c11 + sh[2]*c21;
+            double dzS = sh[0]*c02 + sh[1]*c12 + sh[2]*c22;
+
+            // neighbor's real position
+            double xN = st(idxB).position[0] + dxS;
+            double yN = st(idxB).position[1] + dyS;
+            double zN = st(idxB).position[2] + dzS;
+
+            nvec.push_back( NbrInfo{ idxB, sh, tadah::core::Vec3d(xN, yN, zN) } );
+        }
+
+        // Sort by real-space pos
+        std::sort(nvec.begin(), nvec.end(), lessPos);
+
+        // Merge duplicates
+        std::vector<size_t> newIdx;
+        std::vector<tadah::core::Vec3d> newShift;
+        newIdx.reserve(nnCount);
+        newShift.reserve(nnCount);
+
+        for (size_t k = 0; k < nvec.size(); k++)
+        {
+            if (k > 0) {
+                // compare with prev
+                if (samePos(nvec[k].pos, nvec[k-1].pos)) {
+                    // skip => it's a duplicate
+                    continue;
+                }
+            }
+            // keep
+            newIdx.push_back(nvec[k].nbrIdx);
+            newShift.push_back(nvec[k].shift);
+        }
+
+        // Replace the old arrays
+        st.near_neigh_idx[i]   = std::move(newIdx);
+        st.near_neigh_shift[i] = std::move(newShift);
+        st.near_neigh_idx[i].shrink_to_fit();
+        st.near_neigh_shift[i].shrink_to_fit();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Master calc that chooses naive or binned
 void NNFinder::calc(Structure &st)
 {
   if(!check_box(st)) {
     calc_naive(st);
+    if (st.natoms() == 1) {
+      deduplicate(st);
+    }
   } else {
     calc_binned(st);
   }
@@ -280,10 +468,6 @@ void NNFinder::calc(StructureDB &stdb)
   for(size_t i = 0; i < stdb.size(); i++){
     calc(stdb(i));
   }
-  // auto t1 = std::chrono::steady_clock::now();
-  // double seconds = std::chrono::duration<double>(t1 - t0).count();
-  // std::cout << "calc(StructureDB &stdb) for-loop took "
-  //           << seconds << " seconds\n";
 }
 
 } // namespace mlip

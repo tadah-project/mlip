@@ -1,5 +1,6 @@
 #include <tadah/mlip/engines/predict_engine.h>
 #include <tadah/core/context.h>
+#include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/descriptors_calc.h>
@@ -7,6 +8,7 @@
 #include <tadah/mlip/output/output.h>
 #include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
+#include <tadah/mlip/structure_readers/structure_reader_selector.h>
 #include <tadah/models/dc_selector.h>
 #include <iostream>
 
@@ -25,78 +27,88 @@ int PredictEngine::run(mlip::Task &task) {
   #endif
   if (rank!=0) return EXIT_SUCCESS;
 
-  // tadah::core::Context pot_context(pot_file);
+  const auto &taskContext = task.getContext();
+  std::string pot_file= taskContext.get<std::string>("POTENTIAL");
+  core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
 
 
-  /*tadah::models::DC_Selector DCS(pot_context);*/
-  /**/
-  /**/
-  /*tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +*/
-  /*  std::to_string(pot_context.get<double>("RCUTMAX")) + " cutoff distance...");*/
-  /*NNFinder nnf(pot_context);*/
-  /*nnf.calc(stdb);*/
-  /**/
-  /*DescriptorsCalc<> dc(pot_context,*DCS.d2b,*DCS.dmb,*/
-  /*                     *DCS.c2b,*DCS.cmb);*/
-  /**/
-  /*tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Prediction...");*/
-  /*DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,core::Context&>(*/
-  /*  pot_context.get<std::string>("MODEL",1),pot_context);*/
-  /*M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(*/
-  /*  pot_context.get<std::string>("MODEL",0),*fb,pot_context);*/
-  /**/
-  /*StructureDB stpred;*/
-  /*tadah::core::aed_type predicted_error;*/
-  /*if (predict->count("--error")) {*/
-  /*  stpred = modelp->predict(pot_context,stdb,dc,predicted_error);*/
-  /*}*/
-  /*else {*/
-  /*  stpred = modelp->predict(pot_context,stdb,dc);*/
-  /*}*/
-  /**/
-  /*core::Logger::instance().log(core::LogLevel::INFO, "Dumping output...");*/
-  /**/
-  /*Output output(pot_context,predict->count("--error"));*/
-  /**/
-  /*if (predict->count("--numeric"))*/
-  /*  output.set_numeric(numeric);*/
-  /**/
-  /*output.print_predict_all(stdb,stpred,predicted_error);*/
-  /**/
-  /**/
-  /*tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, timer_tot.to_string());*/
-  /**/
-  /*if(predict->count("--analytics")) {*/
-  /*  Analytics a(stdb,stpred);*/
-  /**/
-  /*  std::cout << "Energy MAE (meV/atom): " << 1000*a.calc_e_mae() << std::endl;*/
-  /*  std::cout << "Energy RMSE (meV/atom): " << 1000*a.calc_e_rmse() << std::endl;*/
-  /*  std::cout << "Energy R^2: " << a.calc_e_r_sq() << std::endl;*/
-  /**/
-  /*  if (predict->count("--Force")) {*/
-  /*    std::cout << "Force MAE (eV/A): "<< a.calc_f_mae() << std::endl;*/
-  /*    std::cout << "Force RMSE (eV/A): "<< a.calc_f_rmse() << std::endl;*/
-  /*    std::cout << "Force R^2: " << a.calc_f_r_sq() << std::endl;*/
-  /*  }*/
-  /**/
-  /*  if (predict->count("--Stress")) {*/
-  /*    std::cout << "Stress MAE (eV/A^3): "<< a.calc_s_mae() << std::endl;*/
-  /*    std::cout << "Stress RMSE (eV/A^3): "<< a.calc_s_rmse() << std::endl;*/
-  /*    std::cout << "Stress R^2: " << a.calc_s_r_sq() << std::endl;*/
-  /*  }*/
-  /*}*/
-  /**/
-  /*if(modelp)*/
-  /*  delete modelp;*/
-  /*if(fb)*/
-  /*  delete fb;*/
-  /**/
-  /*return 0;*/
+  models::DC_Selector DCS(potContext);
+  core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
+      std::to_string(potContext.get<double>("RCUTMAX")) + " cutoff distance...");
+  NNFinder nnf(potContext);
+
+  // StructureDB stdb(taskContext);
+
+  StructureDB stdb;
+  if(taskContext.contains("DBFILE")) {
+    stdb.add(taskContext);
+  }
+  else if(taskContext.contains("STRUCTURE")) {
+    std::vector<std::string> structures(taskContext.size("STRUCTURE"));
+    taskContext.get<>("STRUCTURE", structures);
+    for (std::string &struc : structures) {
+      auto reader = StructureReaderSelector::getReader(struc);
+      reader->read(struc);
+      Structure s = reader->getStructure();
+      stdb.add(s);
+    }
+  } else {
+    throw std::runtime_error("Neither DBFILE nor STRUCTURE is provided.");
+  }
+
+
+  nnf.calc(stdb);
+
+  DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
+                       *DCS.c2b,*DCS.cmb);
+  
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Prediction...");
+  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,core::Context&>(
+      potContext.get<std::string>("MODEL",1),potContext);
+  M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
+      potContext.get<std::string>("MODEL",0),*fb,potContext);
+  StructureDB stpred;
+  tadah::core::aed_type predicted_error;
+  if (taskContext.get<bool>("ERROR")) {
+    stpred = modelp->predict(potContext,stdb,dc,predicted_error);
+  }
+  else {
+    stpred = modelp->predict(potContext,stdb,dc);
+  }
+  
+  core::Logger::instance().log(core::LogLevel::INFO, "Dumping output...");
+  Output output(potContext,taskContext.get<bool>("ERROR"));
+  output.print_predict_all(stdb,stpred,predicted_error);
+  if(taskContext.get<bool>("ANALYTICS")) {
+    core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");
+    Analytics a(stdb,stpred);
+    std::cout << "Energy MAE (meV/atom): " << 1000*a.calc_e_mae() << std::endl;
+    std::cout << "Energy RMSE (meV/atom): " << 1000*a.calc_e_rmse() << std::endl;
+    std::cout << "Energy R^2: " << a.calc_e_r_sq() << std::endl;
+  
+    if (taskContext.get<bool>("FORCE")) {
+      std::cout << "Force MAE (eV/A): "<< a.calc_f_mae() << std::endl;
+      std::cout << "Force RMSE (eV/A): "<< a.calc_f_rmse() << std::endl;
+      std::cout << "Force R^2: " << a.calc_f_r_sq() << std::endl;
+    }
+  
+    if (taskContext.get<bool>("STRESS")) {
+      std::cout << "Stress MAE (eV/A^3): "<< a.calc_s_mae() << std::endl;
+      std::cout << "Stress RMSE (eV/A^3): "<< a.calc_s_rmse() << std::endl;
+      std::cout << "Stress R^2: " << a.calc_s_r_sq() << std::endl;
+    }
+  }
+
+  delete modelp;
+  delete fb;
+
   return EXIT_SUCCESS;
 }
 void PredictEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(core::LogLevel::INFO,
-      "PredictEngine validate() called. No mandatory keys in stub.");
+  const auto &context = task.getContext();
+  if (!context.contains("POTENTIAL")) {
+    throw std::runtime_error("PredictEngine requires a potential file to be set.");
+  }
 }
 
 } // namespace engines
