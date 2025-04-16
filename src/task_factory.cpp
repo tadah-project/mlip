@@ -40,7 +40,11 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // But we validate anyway so class is generic.
   const auto &bpMap = tadah::core::BlueprintParser::getKeysMapRef();
   for (const auto &kvPair : taskInput.getKeyValueData()) {
-    const std::string &key = kvPair.first;
+    const std::string &longKey = kvPair.first;
+    std::vector<std::string> keyTokens;
+    boost::split(keyTokens, longKey, boost::is_any_of("."));
+    std::string key = keyTokens.back(); // last token is the key
+
     const std::vector<std::string> &values = kvPair.second;
     if (values.empty()) {
       continue; // skip empty values
@@ -84,11 +88,6 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     configVec = parser_.parse(userFile, /*mergeFlag=*/true);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
   }
-  std::cout << "DEBUG: TaskFactory::createTasksFromInput() - configVec.size() = " << configVec.size() << std::endl;
-  // print configVec
-  for (const auto &kv : configVec) {
-    std::cout << "DEBUG: TaskFactory::createTasksFromInput() - configVec[" << kv.first << "] = " << kv.second << std::endl;
-  }
 
   // Step 3:  For non --task input we should only allow fully specified command to proceed
   const auto &blueprintTasks = tadah::core::BlueprintParser::getTasksMapRef();
@@ -107,7 +106,6 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // the taskInput.getTaskName() as a single task.
   if (configVec.empty()) {
     tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
-    return tasksResult;
   }
 
   if (hasTask) {
@@ -139,6 +137,39 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     // No final-level tasks found, log a message and return an empty list.
     core::Logger::instance().log(core::LogLevel::DEBUG,
         "createTasksFromInput: No final-level tasks found. Returning empty list.");
+  }
+
+  // Add default keys to the context if not provided by the user
+  for (auto &task : tasksResult) {
+    const std::string &taskName = task.getTaskName();
+    core::Context &taskContext = task.getContext();
+    const auto bp = blueprintTasks.find(taskName);
+
+    // dealt with options keys
+    for (const auto &bpKey : bp->second.blueprintKeys) {
+      if (bpKey.default_value.empty()) {
+        continue; // skip if no default value
+      }
+      std::vector<std::string> tokens;
+      boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
+      if (!taskContext.contains(tokens.back())) {
+        taskContext.add<std::string>(tokens.back(), bpKey.default_value[0]);
+      }
+    }
+
+    // also deal with groups
+    for (const auto &group : bp->second.groups) {
+      for (const auto &bpKey : group.blueprintKeys) {
+        if (bpKey.default_value.empty()) {
+          continue; // skip if no default value
+        }
+        std::vector<std::string> tokens;
+        boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
+        if (!taskContext.contains(tokens.back())) {
+          taskContext.add<std::string>(tokens.back(), bpKey.default_value[0]);
+        }
+      }
+    }
   }
 
   return tasksResult;

@@ -15,6 +15,7 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+
 int TrainEngine::run(tadah::mlip::Task &task) {
   try {
     tadah::core::Context context = task.getContext();
@@ -51,12 +52,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       host.solve();
 
       tadah::core::Context param_file = host.model->get_param_file();
-      std::ofstream outfile("pot.tadah");
-      if (outfile.is_open()) {
-        outfile << param_file << std::endl;
-      } else {
-        std::cerr << "Error: Unable to open file pot.tadah" << std::endl;
-      }
+      dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
     } else { // Worker code
       // Initialize worker MPI trainer
       tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
@@ -72,7 +68,6 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     // Load structures and provide feedback if verbose
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
     StructureDB stdb(tr.context);
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done");
 
     // Calculate nearest neighbors and provide feedback
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
@@ -80,22 +75,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
                                tr.context.get<std::string>("RCUTMAX") +
                                " cutoff distance...");
     tr.nnf.calc(stdb);
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done!");
 
     // Begin the training process and inform if verbose
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
     tr.model->train(stdb, tr.dc);
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done!");
 
-    // Save the trained model parameters to a file
     tadah::core::Context param_file = tr.model->get_param_file();
-    std::ofstream outfile("pot.tadah");
-    if (outfile.is_open()) {
-      outfile << param_file << std::endl;
-    } else {
-      tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-                             "Error: Unable to open file pot.tadah");
-    }
+    dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
     // Output uncertainty if requested
     if (context.contains("UNCERTAINTY")) {
@@ -117,6 +103,19 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
   if (!context.get<bool>("INIT2B") && !context.get<bool>("INITMB")) {
     throw std::runtime_error(
         "TrainEngine requires INIT2B or/and INITMB parameters to be set");
+  }
+}
+
+// helper function to dump the potential file
+void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &context) {
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "Saving parameters to file: " + outfile);
+  std::ofstream outstream(outfile);
+  if (outstream.is_open()) {
+    outstream << context << std::endl;
+  } else {
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
+        "Error: Unable to open file: ", outfile);
   }
 }
 
