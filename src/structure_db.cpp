@@ -9,7 +9,7 @@ namespace mlip {
 StructureDB::StructureDB() {
   tadah::core::PeriodicTable::initialize();
 }
-StructureDB::StructureDB(tadah::core::Context &context) {
+StructureDB::StructureDB(const tadah::core::Context &context) {
   tadah::core::PeriodicTable::initialize();
   add(context);
 }
@@ -70,7 +70,7 @@ void StructureDB::remove(size_t i) {
   structures.erase(structures.begin()+i);
 }
 
-void StructureDB::add(tadah::core::Context &context) {
+void StructureDB::add(const tadah::core::Context &context) {
   for (const std::string &s : context("DBFILE")) {
     dbidx.push_back(size());
     add(s);

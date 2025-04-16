@@ -46,7 +46,6 @@ void MaterialsProjectReader::parseMpJson(const std::string &jsonContent) {
   using json = nlohmann::json;
   json root = json::parse(jsonContent);
 
-  std::cout << "m_structure: " << m_structure << std::endl;
   if (!root.contains("data") || !root["data"].is_array() || root["data"].empty()) {
     throw std::runtime_error("MaterialsProjectReader::parseMpJson - 'data' is missing/empty.");
   }
@@ -57,9 +56,6 @@ void MaterialsProjectReader::parseMpJson(const std::string &jsonContent) {
   }
   auto structureJson = doc["structure"];
 
-  // Example collecting doc["symmetry"]["symbol"],
-  // doc["material_id"], doc["volume"], doc["density"], doc["elements"], etc.
-  // Build a descriptive label:
   std::string spg = to_string(doc["symmetry"]["symbol"]);
   std::string matID = to_string(doc["material_id"]);
   std::string vol = to_string(doc["volume"]);

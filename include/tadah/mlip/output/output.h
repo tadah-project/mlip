@@ -27,7 +27,9 @@ class Output {
         Output (tadah::core::Context &c, bool peb):
             pot_context(c),
             pred_err_bool(peb)
-    {}
+    {
+      set_numeric(c.get<size_t>("NUMERIC"));
+    }
         void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
             std::string index_str="Index";
 

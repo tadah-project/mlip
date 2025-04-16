@@ -53,7 +53,7 @@ struct StructureDB {
      * \note
      *      Required Context key: \ref DBFILE
      */
-  StructureDB(tadah::core::Context &context);
+  StructureDB(const tadah::core::Context &context);
 
   /** Add structures listed in the context file
      *
@@ -61,7 +61,7 @@ struct StructureDB {
      *      Required Context key: \ref DBFILE
      *
      */
-  void add(tadah::core::Context &context);
+  void add(const tadah::core::Context &context);
 
   /** Add all structures from a file */
   void add(const std::string fn);

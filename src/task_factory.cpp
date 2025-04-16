@@ -126,12 +126,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
 
-  } else {
-    // This should not happen, but just in case.
-    core::Logger::instance().log(core::LogLevel::ERROR,
-        "TaskFactory::createTasksFromInput - No valid task found.");
-    throw std::runtime_error("TaskFactory::createTasksFromInput - No valid task found.");
-  }
+  } 
 
   if (tasksResult.empty()) {
     // No final-level tasks found, log a message and return an empty list.

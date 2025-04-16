@@ -10,12 +10,6 @@ namespace engines {
 
 /**
  * @brief Provides core prediction functionality.
- *
- * Uses the trained model to predict properties.
- *
- * @param pot_context The potential contexturation.
- * @param stdb The structure database.
- * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
 class PredictEngine: public IEngine {
 public:
