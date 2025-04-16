@@ -43,7 +43,7 @@ int PredictEngine::run(mlip::Task &task) {
   if(taskContext.contains("DBFILE")) {
     stdb.add(taskContext);
   }
-  else if(taskContext.contains("STRUCTURE")) {
+  if(taskContext.contains("STRUCTURE")) {
     std::vector<std::string> structures(taskContext.size("STRUCTURE"));
     taskContext.get<>("STRUCTURE", structures);
     for (std::string &struc : structures) {
@@ -52,8 +52,6 @@ int PredictEngine::run(mlip::Task &task) {
       Structure s = reader->getStructure();
       stdb.add(s);
     }
-  } else {
-    throw std::runtime_error("Neither DBFILE nor STRUCTURE is provided.");
   }
 
 
