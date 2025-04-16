@@ -17,12 +17,10 @@ namespace engines {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   try {
+    tadah::core::Context context = task.getContext();
+#ifdef TADAH_BUILD_MPI
     int rank = 0;
     int ncpu = 1;
-
-    tadah::core::Context context = task.getContext();
-
-#ifdef TADAH_BUILD_MPI
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
     // Execute host or worker code based on rank
