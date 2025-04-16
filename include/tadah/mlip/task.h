@@ -56,6 +56,7 @@ public:
    * @return A constant reference to the Context representing the task's settings.
    */
   const tadah::core::Context &getContext() const;
+  tadah::core::Context &getContext();
 
   /**
    * @brief Sets the integer priority for this task, where a higher number denotes higher priority.

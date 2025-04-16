@@ -27,6 +27,9 @@ Task::Task(const std::string &command, const tadah::core::Context &context)
 const tadah::core::Context &Task::getContext() const {
   return context_;
 }
+tadah::core::Context &Task::getContext() {
+  return context_;
+}
 
 std::string Task::getID() const {
   return taskID_;

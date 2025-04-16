@@ -82,20 +82,20 @@ void Scheduler::execute() {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #endif
 
-  std::cout << "Rank " << rank << " executing tasks..." << std::endl;
-  std::cout << "Total tasks: " << tasks_.size() << std::endl;
   for (auto &task : tasks_) {
-    std::cout << "Rank " << rank << " executing task: " << task.getID() << std::endl;
+
     core::Context context = task.getContext();
-    std::cout << "Task context: " << context << std::endl;
     task.print();
 
     // Possibly adjust log level from context
-    size_t verbose = 0;
+    size_t verbose;
     if (context.contains("VERBOSE")) {
       verbose = task.getContext().get<size_t>("VERBOSE");
     }
     core::Logger::instance().setLogLevel(static_cast<core::LogLevel>(verbose));
+
+    core::Logger::instance().log(
+        core::LogLevel::INFO, "Executing task: ", task.getTaskName());
 
     auto engine = mlip::engines::EngineFactory::create(task.getTaskName());
     engine->validate(task);
