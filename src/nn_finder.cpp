@@ -337,110 +337,110 @@ void NNFinder::calc_binned(Structure &st)
 
 void NNFinder::deduplicate(Structure &st)
 {
-    // We'll do one pass per atom.
-    // For each atom i, we:
-    // 1) gather neighbor info,
-    // 2) compute real-space neighbor positions (or displacements),
-    // 3) sort by position,
-    // 4) merge duplicates.
+  // We'll do one pass per atom.
+  // For each atom i, we:
+  // 1) gather neighbor info,
+  // 2) compute real-space neighbor positions (or displacements),
+  // 3) sort by position,
+  // 4) merge duplicates.
 
-    const size_t natoms = st.natoms();
+  const size_t natoms = st.natoms();
 
-    // Pre-extract cell for speed (row-based)
-    double c00 = st.cell(0,0), c01 = st.cell(0,1), c02 = st.cell(0,2);
-    double c10 = st.cell(1,0), c11 = st.cell(1,1), c12 = st.cell(1,2);
-    double c20 = st.cell(2,0), c21 = st.cell(2,1), c22 = st.cell(2,2);
+  // Pre-extract cell for speed (row-based)
+  double c00 = st.cell(0,0), c01 = st.cell(0,1), c02 = st.cell(0,2);
+  double c10 = st.cell(1,0), c11 = st.cell(1,1), c12 = st.cell(1,2);
+  double c20 = st.cell(2,0), c21 = st.cell(2,1), c22 = st.cell(2,2);
 
-    // We'll define a small struct to hold neighbor data
-    struct NbrInfo {
-        size_t nbrIdx;               // neighbor atom index
-        tadah::core::Vec3d shift;    // the integer shift stored
-        tadah::core::Vec3d pos;      // real-space position of the neighbor
-    };
+  // We'll define a small struct to hold neighbor data
+  struct NbrInfo {
+    size_t nbrIdx;               // neighbor atom index
+    tadah::core::Vec3d shift;    // the integer shift stored
+    tadah::core::Vec3d pos;      // real-space position of the neighbor
+  };
 
-    // A small function to compare real-space positions (pos.x, pos.y, pos.z)
-    auto eps = 1e-6;
-    auto lessPos = [&](const NbrInfo &A, const NbrInfo &B) {
-        // compare x
-        if (std::fabs(A.pos[0] - B.pos[0]) > eps) 
-            return (A.pos[0] < B.pos[0]);
-        // compare y
-        if (std::fabs(A.pos[1] - B.pos[1]) > eps) 
-            return (A.pos[1] < B.pos[1]);
-        // compare z
-        return (A.pos[2] < B.pos[2] - eps);
-    };
+  // A small function to compare real-space positions (pos.x, pos.y, pos.z)
+  auto eps = 1e-6;
+  auto lessPos = [&](const NbrInfo &A, const NbrInfo &B) {
+    // compare x
+    if (std::fabs(A.pos[0] - B.pos[0]) > eps) 
+      return (A.pos[0] < B.pos[0]);
+    // compare y
+    if (std::fabs(A.pos[1] - B.pos[1]) > eps) 
+      return (A.pos[1] < B.pos[1]);
+    // compare z
+    return (A.pos[2] < B.pos[2] - eps);
+  };
 
-    // A function to see if two positions are "the same" within tolerance
-    auto samePos = [&](const tadah::core::Vec3d &p1, const tadah::core::Vec3d &p2){
-        return ( std::fabs(p1[0] - p2[0]) < eps
-              && std::fabs(p1[1] - p2[1]) < eps
-              && std::fabs(p1[2] - p2[2]) < eps );
-    };
+  // A function to see if two positions are "the same" within tolerance
+  auto samePos = [&](const tadah::core::Vec3d &p1, const tadah::core::Vec3d &p2){
+    return ( std::fabs(p1[0] - p2[0]) < eps
+        && std::fabs(p1[1] - p2[1]) < eps
+        && std::fabs(p1[2] - p2[2]) < eps );
+  };
 
-    // For each atom i, deduplicate
-    for (size_t i = 0; i < natoms; i++)
-    {
-        const size_t nnCount = st.near_neigh_idx[i].size();
-        if (nnCount <= 1) {
-            continue;  // no duplicates possible if 0 or 1 neighbor
-        }
-
-        // Gather neighbors in a vector
-        std::vector<NbrInfo> nvec;
-        nvec.reserve(nnCount);
-
-        double xA = st(i).position[0];
-        double yA = st(i).position[1];
-        double zA = st(i).position[2];
-
-        // Build (nbrIdx, shift, realPos)
-        for (size_t n = 0; n < nnCount; n++) {
-            size_t idxB = st.near_neigh_idx[i][n];
-            auto &sh  = st.near_neigh_shift[i][n];  // e.g. integer triple (n1, n2, n3)
-
-            // compute the real displacement from shift
-            double dxS = sh[0]*c00 + sh[1]*c10 + sh[2]*c20;
-            double dyS = sh[0]*c01 + sh[1]*c11 + sh[2]*c21;
-            double dzS = sh[0]*c02 + sh[1]*c12 + sh[2]*c22;
-
-            // neighbor's real position
-            double xN = st(idxB).position[0] + dxS;
-            double yN = st(idxB).position[1] + dyS;
-            double zN = st(idxB).position[2] + dzS;
-
-            nvec.push_back( NbrInfo{ idxB, sh, tadah::core::Vec3d(xN, yN, zN) } );
-        }
-
-        // Sort by real-space pos
-        std::sort(nvec.begin(), nvec.end(), lessPos);
-
-        // Merge duplicates
-        std::vector<size_t> newIdx;
-        std::vector<tadah::core::Vec3d> newShift;
-        newIdx.reserve(nnCount);
-        newShift.reserve(nnCount);
-
-        for (size_t k = 0; k < nvec.size(); k++)
-        {
-            if (k > 0) {
-                // compare with prev
-                if (samePos(nvec[k].pos, nvec[k-1].pos)) {
-                    // skip => it's a duplicate
-                    continue;
-                }
-            }
-            // keep
-            newIdx.push_back(nvec[k].nbrIdx);
-            newShift.push_back(nvec[k].shift);
-        }
-
-        // Replace the old arrays
-        st.near_neigh_idx[i]   = std::move(newIdx);
-        st.near_neigh_shift[i] = std::move(newShift);
-        st.near_neigh_idx[i].shrink_to_fit();
-        st.near_neigh_shift[i].shrink_to_fit();
+  // For each atom i, deduplicate
+  for (size_t i = 0; i < natoms; i++)
+  {
+    const size_t nnCount = st.near_neigh_idx[i].size();
+    if (nnCount <= 1) {
+      continue;  // no duplicates possible if 0 or 1 neighbor
     }
+
+    // Gather neighbors in a vector
+    std::vector<NbrInfo> nvec;
+    nvec.reserve(nnCount);
+
+    double xA = st(i).position[0];
+    double yA = st(i).position[1];
+    double zA = st(i).position[2];
+
+    // Build (nbrIdx, shift, realPos)
+    for (size_t n = 0; n < nnCount; n++) {
+      size_t idxB = st.near_neigh_idx[i][n];
+      auto &sh  = st.near_neigh_shift[i][n];  // e.g. integer triple (n1, n2, n3)
+
+      // compute the real displacement from shift
+      double dxS = sh[0]*c00 + sh[1]*c10 + sh[2]*c20;
+      double dyS = sh[0]*c01 + sh[1]*c11 + sh[2]*c21;
+      double dzS = sh[0]*c02 + sh[1]*c12 + sh[2]*c22;
+
+      // neighbor's real position
+      double xN = st(idxB).position[0] + dxS;
+      double yN = st(idxB).position[1] + dyS;
+      double zN = st(idxB).position[2] + dzS;
+
+      nvec.push_back( NbrInfo{ idxB, sh, tadah::core::Vec3d(xN, yN, zN) } );
+    }
+
+    // Sort by real-space pos
+    std::sort(nvec.begin(), nvec.end(), lessPos);
+
+    // Merge duplicates
+    std::vector<size_t> newIdx;
+    std::vector<tadah::core::Vec3d> newShift;
+    newIdx.reserve(nnCount);
+    newShift.reserve(nnCount);
+
+    for (size_t k = 0; k < nvec.size(); k++)
+    {
+      if (k > 0) {
+        // compare with prev
+        if (samePos(nvec[k].pos, nvec[k-1].pos)) {
+          // skip => it's a duplicate
+          continue;
+        }
+      }
+      // keep
+      newIdx.push_back(nvec[k].nbrIdx);
+      newShift.push_back(nvec[k].shift);
+    }
+
+    // Replace the old arrays
+    st.near_neigh_idx[i]   = std::move(newIdx);
+    st.near_neigh_shift[i] = std::move(newShift);
+    st.near_neigh_idx[i].shrink_to_fit();
+    st.near_neigh_shift[i].shrink_to_fit();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -461,7 +461,6 @@ void NNFinder::calc(Structure &st)
 // Parallel loop over structure database
 void NNFinder::calc(StructureDB &stdb)
 {
-  // auto t0 = std::chrono::steady_clock::now();
 #ifdef _OPENMP
   #pragma omp parallel for
 #endif

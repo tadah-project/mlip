@@ -75,7 +75,7 @@ int PredictEngine::run(mlip::Task &task) {
   }
   
   core::Logger::instance().log(core::LogLevel::INFO, "Dumping output...");
-  Output output(potContext,taskContext.get<bool>("ERROR"));
+  Output output(taskContext);
   output.print_predict_all(stdb,stpred,predicted_error);
   if(taskContext.get<bool>("ANALYTICS")) {
     core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");

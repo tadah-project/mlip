@@ -3,6 +3,7 @@
 
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/engines/predict_engine.h>
+#include <tadah/mlip/engines/explain_engine.h>
 
 namespace tadah {
 namespace mlip {
