@@ -15,21 +15,24 @@ namespace mlip {
 
 class Output {
     private:
-        tadah::core::Context &pot_context;
-        bool pred_err_bool;
+        const tadah::core::Context &context;
         //size_t sigfig;
         //size_t nw;
         size_t sigfig=5;  // set number of sig fig;
         size_t fmtw=sigfig+7;  // width of e.g. -1.12345e+12 -> sigfig+7
         size_t emptyspace=5;
         size_t nw=emptyspace+fmtw;   // width of numeric column
+
+        std::string energyFile = "energy.pred";
+        std::string forceFile = "forces.pred";
+        std::string stressFile = "stress.pred";
+        std::string errorFile = "error.pred";
     public:
-        Output (tadah::core::Context &c, bool peb):
-            pot_context(c),
-            pred_err_bool(peb)
-    {
-      set_numeric(c.get<size_t>("NUMERIC"));
-    }
+        Output (const tadah::core::Context &c):
+            context(c)
+  {
+    set_numeric(c.get<size_t>("NUMERIC"));
+  }
         void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
             std::string index_str="Index";
 
@@ -50,10 +53,41 @@ class Output {
             out_unc.close();
         }
         void print_predict_all(StructureDB &stdb, StructureDB &stpred, tadah::core::aed_type & predicted_error) {
-            std::ofstream out_error("error.pred");
-            std::ofstream out_energy("energy.pred");
-            std::ofstream out_force("forces.pred");
-            std::ofstream out_stress("stress.pred");
+          if (context.size("OUTFILE") > 0) {
+            size_t i=0;
+            energyFile = context.get<std::string>("OUTFILE",i++);
+            if (context.get<bool>("FORCE")) {
+              try {
+                forceFile = context.get<std::string>("OUTFILE",i++);
+              } catch (const std::runtime_error &e) {
+                std::cerr << "Error: OUTFILE for forces not provided." << std::endl;
+                throw;
+              }
+            } 
+            if (context.get<bool>("STRESS")) {
+              try {
+                stressFile = context.get<std::string>("OUTFILE",i++);
+              } catch (const std::runtime_error &e) {
+                std::cerr << "Error: OUTFILE for stress not provided." << std::endl;
+                throw;
+              }
+            }
+          }
+          bool pred_err_bool=context.get<bool>("ERROR");
+
+          std::string outfileInfo = "E: " + energyFile;
+          if (context.get<bool>("FORCE")) {
+            outfileInfo += ", F: " + forceFile;
+          }
+          if (context.get<bool>("STRESS")) {
+            outfileInfo += ", S: " + stressFile;
+          }
+          core::Logger::instance().log(tadah::core::LogLevel::INFO,
+              "Output file(s): " + outfileInfo);
+            std::ofstream out_error(errorFile);
+            std::ofstream out_energy(energyFile);
+            std::ofstream out_force(forceFile);
+            std::ofstream out_stress(stressFile);
 
             // Common Headers
             std::string index_str="Index";
@@ -142,7 +176,7 @@ class Output {
                 out_energy << std::endl;
 
 
-                if (pot_context.get<bool>("FORCE")) {
+                if (context.get<bool>("FORCE")) {
                     double max_ferr=0.0;
                     if (newline)
                         out_force << std::endl << std::endl;
@@ -163,7 +197,7 @@ class Output {
                     if(pred_err_bool)
                         out_error << std::setw(nw) << max_ferr;
                 }
-                if (pot_context.get<bool>("STRESS")) {
+                if (context.get<bool>("STRESS")) {
                     double max_serr=0.0;
                     if (newline)
                         out_stress << std::endl << std::endl;

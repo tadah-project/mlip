@@ -72,7 +72,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     // Calculate nearest neighbors and provide feedback
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
                            "Finding nearest neighbours within: " +
-                               tr.context.get<std::string>("RCUTMAX") +
+                               core::to_string(tr.context.get<double>("RCUTMAX"),5) +
                                " cutoff distance...");
     tr.nnf.calc(stdb);
 
@@ -87,7 +87,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     if (context.contains("UNCERTAINTY")) {
       tadah::core::t_type weights = tr.model->get_weights();
       tadah::core::t_type unc = tr.model->get_weights_uncertainty();
-      Output(param_file, false).print_train_unc(weights, unc);
+      Output(param_file).print_train_unc(weights, unc);
     }
 #endif
   } catch (const std::exception &e) {
