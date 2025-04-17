@@ -13,7 +13,7 @@ void registerAllEngines() {
   EngineFactory::registerEngine("TRAIN", [](){ return std::make_unique<TrainEngine>(); });
   EngineFactory::registerEngine("PREDICT", [](){ return std::make_unique<PredictEngine>(); });
   EngineFactory::registerEngine("EXPLAIN", [](){ return std::make_unique<ExplainEngine>(); });
-  // EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HpoEngine>(); });
+  EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HPOEngine>(); });
   //
   // EngineFactory::registerEngine("DATA", [](){ return std::make_unique<DataEngine>(); });
   // EngineFactory::registerEngine("DATA.convert", [](){ return std::make_unique<DataConvertEngine>(); });

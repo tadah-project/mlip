@@ -2,6 +2,7 @@
 #define TADAH_MLIP_ENGINES_HPO_ENGINE_H
 
 #include <tadah/core/context.h>
+#include <tadah/mlip/engines/iengine.h>
 
 namespace tadah {
 namespace mlip {
@@ -9,15 +10,14 @@ namespace engines {
 
 /**
  * @brief Provides hyperparameter optimization functionality.
- *
- * Executes HPO routines using the provided contexturation.
- *
- * @param context The contexturation object.
- * @return int EXIT_SUCCESS or EXIT_FAILURE.
  */
-class HPOEngine {
+class HPOEngine: public IEngine {
 public:
-  static int optimize(tadah::core::Context &context);
+  int run(tadah::mlip::Task &task) override;
+  void validate(const tadah::mlip::Task &task) override;
+
+private:
+  void dumpPotFile(const std::string &outfile, const core::Context &context);
 };
 
 } // namespace engines

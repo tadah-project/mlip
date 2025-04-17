@@ -97,7 +97,6 @@ std::string Task::serialize() const {
   // Convert those chars back into string lines
   oss.write(buffer.data(), buffer.size());
 
-  std::cout << "DEBUG serialize(): " << oss.str() << std::endl;
   return oss.str();
 }
 
@@ -138,8 +137,6 @@ std::vector<char> Task::serializeBinary() const {
 
 void Task::deserializeBinary(const std::vector<char> &buffer) {
   std::string text(buffer.begin(), buffer.end());
-  std::cout << "Deserializing Task from binary data...\n";
-  std::cout << "Text: " << text << std::endl;
   this->deserialize(text);
 }
 

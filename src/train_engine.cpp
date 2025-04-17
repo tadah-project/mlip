@@ -11,6 +11,10 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 
+#ifdef TADAH_BUILD_MPI
+#include <mpi.h>
+#endif
+
 namespace tadah {
 namespace mlip {
 namespace engines {

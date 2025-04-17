@@ -390,10 +390,6 @@ void NNFinder::deduplicate(Structure &st)
     std::vector<NbrInfo> nvec;
     nvec.reserve(nnCount);
 
-    double xA = st(i).position[0];
-    double yA = st(i).position[1];
-    double zA = st(i).position[2];
-
     // Build (nbrIdx, shift, realPos)
     for (size_t n = 0; n < nnCount; n++) {
       size_t idxB = st.near_neigh_idx[i][n];
