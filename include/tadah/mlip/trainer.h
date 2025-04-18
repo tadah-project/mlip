@@ -127,111 +127,106 @@ class MPI_Trainer: public Trainer {
     int ncpu;
     tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager2_ = nullptr;
 
-    ~MPI_Trainer() {
-      if (workspaceManager2_ != nullptr) {
-        delete workspaceManager2_;
-        workspaceManager2_ = nullptr;
+    MPI_Trainer(tadah::core::Context &c,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager2):
+      Trainer(c, workspaceManager)
+    {
+
+      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+      MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
+      if (rank==0) {
+        int nstruct_tot = StructureDB::count(context).first;
+        int natoms_tot = StructureDB::count(context).second;
+        PHI_cols = fb->get_phi_cols(context);
+        PHI_rows = DesignMatrixBase::phi_rows_num(context, nstruct_tot, natoms_tot);
       }
-    }
+      MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    MPI_Trainer(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      Trainer(c, workspaceManager),
-      rank(rank),
-      ncpu(ncpu),
-      workspaceManager2_(new tadah::mlip::memory::MLIPWorkspaceManager())
-  {
-    if (rank==0) {
-      int nstruct_tot = StructureDB::count(context).first;
-      int natoms_tot = StructureDB::count(context).second;
-      PHI_cols = fb->get_phi_cols(context);
-      PHI_rows = DesignMatrixBase::phi_rows_num(context, nstruct_tot, natoms_tot);
-    }
-    MPI_Bcast(&PHI_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&PHI_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
+      // Initialize BLACS
+      // We create two contexts.
+      // context1 is used for the computation of phi matrices
+      // context2 is used for distribution of local phi to "block cyclic phi"
+      blacs_pinfo_(&b_rank, &ncpu) ; // BLACS rank and world size
 
-    // Initialize BLACS
-    // We create two contexts.
-    // context1 is used for the computation of phi matrices
-    // context2 is used for distribution of local phi to "block cyclic phi"
-    blacs_pinfo_(&b_rank, &ncpu) ; // BLACS rank and world size
+      rnb1 = ceil(PHI_rows/ncpu);
+      rnb2 = context.get<int>("MBLOCK");   // Row block size
+      cnb1 = PHI_cols;
+      cnb2 = context.get<int>("NBLOCK");   // Column block size
 
-    rnb1 = ceil(PHI_rows/ncpu);
-    rnb2 = context.get<int>("MBLOCK");   // Row block size
-    cnb1 = PHI_cols;
-    cnb2 = context.get<int>("NBLOCK");   // Column block size
+      b_ncols1 = 1;      //  b_ncols2 = 2;
+      b_nrows1 = ncpu;   //  b_nrows2 = ncpu/b_ncols2;
 
-    b_ncols1 = 1;      //  b_ncols2 = 2;
-    b_nrows1 = ncpu;   //  b_nrows2 = ncpu/b_ncols2;
-
-    // make as sqaure grid as possible
-    int sr = sqrt(ncpu);
-    if (sr*sr==ncpu) {
-      b_nrows2 = sr;
-      b_ncols2 = sr;
-    }
-    else {
-      // loop over all possible divisors
-      int before=1, /*sqrt(ncpu),*/ after=ncpu;
-      for (int i = 1; i <= ncpu; ++i){
-        if (ncpu % i == 0) {
-          if (i>sqrt(ncpu)) {
-            after=i; 
-            break;
+      // make as sqaure grid as possible
+      int sr = sqrt(ncpu);
+      if (sr*sr==ncpu) {
+        b_nrows2 = sr;
+        b_ncols2 = sr;
+      }
+      else {
+        // loop over all possible divisors
+        int before=1, /*sqrt(ncpu),*/ after=ncpu;
+        for (int i = 1; i <= ncpu; ++i){
+          if (ncpu % i == 0) {
+            if (i>sqrt(ncpu)) {
+              after=i; 
+              break;
+            }
+            before=i;
           }
-          before=i;
         }
+        b_nrows2 = after;
+        b_ncols2 = before;
       }
-      b_nrows2 = after;
-      b_ncols2 = before;
+
+      assert(b_nrows2 * b_ncols2 == ncpu);
+      assert(b_nrows1 * b_ncols1 == ncpu);
+
+
+      // Create first context
+      blacs_get_(&izero,&izero, &context1 ); // -> Create context1
+      blacs_gridinit_(&context1, &layout, &b_nrows1, &b_ncols1 ); // context1 -> Initialize the grid
+      blacs_gridinfo_(&context1, &b_nrows1, &b_ncols1, &b_row1, &b_col1 );
+
+      // Create second context
+      blacs_get_(&izero,&izero, &context2 ); // -> Create context2
+      blacs_gridinit_(&context2, &layout, &b_nrows2, &b_ncols2 ); // context2 -> Initialize the grid
+      blacs_gridinfo_(&context2, &b_nrows2, &b_ncols2, &b_row2, &b_col2 );
+
+      // Compute the size of the local phi matrices
+      phi_rows1 = numroc_( &PHI_rows, &rnb1, &b_row1, &izero, &b_nrows1 );
+      phi_cols1 = numroc_( &PHI_cols, &cnb1, &b_col1, &izero, &b_ncols1 );
+      phi_rows2 = numroc_( &PHI_rows, &rnb2, &b_row2, &izero, &b_nrows2 );
+      phi_cols2 = numroc_( &PHI_cols, &cnb2, &b_col2, &izero, &b_ncols2 );
+
+      // Define MPI datatype to send rows from the PHI matrix with column-major order
+      // used only in context1
+      MPI_Type_vector( phi_cols1, 1, phi_rows1, MPI_DOUBLE, &rowvec); 
+      MPI_Type_commit(&rowvec);
+      MPI_Type_create_resized(rowvec, 0, sizeof(double), &rowvecs);
+      MPI_Type_commit(&rowvecs);
+
+      // COUNTERS
+      rows_available=phi_rows1;  // number of available rows in the local phi array
+
+      // once we know the size of local phi, we can allocate memory to it
+      // including host as well. The host will collect excees computations from
+      // workers.
+      //DesignMatrix<DM_Function_Base&> dm(*fb, context);
+      // dm.Phi.resize(phi_rows1,phi_cols1);
+      //int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
+      // dm.T.resize(phi_rows1);
+      // dm.Tlabels.resize(phi_rows1);
+
+      // Update of above for version 1.0.0 onwards
+      // We can still use DesingMatrixWorkspace to allocate memory for the local phi
+      dm.ws = workspaceManager_->getDesignMatrixWorkspace(phi_rows1,phi_cols1, false); // should we keep copy for weighting?
+      dm.set_zero();
+
+      workspaceManager2_ = &workspaceManager2;
     }
 
-    assert(b_nrows2 * b_ncols2 == ncpu);
-    assert(b_nrows1 * b_ncols1 == ncpu);
-
-
-    // Create first context
-    blacs_get_(&izero,&izero, &context1 ); // -> Create context1
-    blacs_gridinit_(&context1, &layout, &b_nrows1, &b_ncols1 ); // context1 -> Initialize the grid
-    blacs_gridinfo_(&context1, &b_nrows1, &b_ncols1, &b_row1, &b_col1 );
-
-    // Create second context
-    blacs_get_(&izero,&izero, &context2 ); // -> Create context2
-    blacs_gridinit_(&context2, &layout, &b_nrows2, &b_ncols2 ); // context2 -> Initialize the grid
-    blacs_gridinfo_(&context2, &b_nrows2, &b_ncols2, &b_row2, &b_col2 );
-
-    // Compute the size of the local phi matrices
-    phi_rows1 = numroc_( &PHI_rows, &rnb1, &b_row1, &izero, &b_nrows1 );
-    phi_cols1 = numroc_( &PHI_cols, &cnb1, &b_col1, &izero, &b_ncols1 );
-    phi_rows2 = numroc_( &PHI_rows, &rnb2, &b_row2, &izero, &b_nrows2 );
-    phi_cols2 = numroc_( &PHI_cols, &cnb2, &b_col2, &izero, &b_ncols2 );
-
-    // Define MPI datatype to send rows from the PHI matrix with column-major order
-    // used only in context1
-    MPI_Type_vector( phi_cols1, 1, phi_rows1, MPI_DOUBLE, &rowvec); 
-    MPI_Type_commit(&rowvec);
-    MPI_Type_create_resized(rowvec, 0, sizeof(double), &rowvecs);
-    MPI_Type_commit(&rowvecs);
-
-    // COUNTERS
-    rows_available=phi_rows1;  // number of available rows in the local phi array
-
-    // once we know the size of local phi, we can allocate memory to it
-    // including host as well. The host will collect excees computations from
-    // workers.
-    //DesignMatrix<DM_Function_Base&> dm(*fb, context);
-    // dm.Phi.resize(phi_rows1,phi_cols1);
-    //int lda1 = phi_rows1 > phi_cols1 ? phi_rows1 : phi_cols1;
-    // dm.T.resize(phi_rows1);
-    // dm.Tlabels.resize(phi_rows1);
-
-    // Update of above for version 1.0.0 onwards
-    // We can still use DesingMatrixWorkspace to allocate memory for the local phi
-    dm.ws = workspaceManager_->getDesignMatrixWorkspace(phi_rows1,phi_cols1, true); // should we keep copy for weighting?
-    dm.ws->Phi.set_zero();
-    dm.ws->T.set_zero();
-    dm.ws->Tlabels.set_zero();
-    
-  }
     void probe() {
       MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
       worker = status.MPI_SOURCE;
@@ -290,11 +285,10 @@ class MPI_Trainer: public Trainer {
       // dm2.Phi.resize(phi_rows2,phi_cols2);
       // dm2.T.resize(phi_rows2);
       // dm2.Tlabels.resize(phi_rows2);
+      // get rank
+
       DesignMatrix<DM_Function_Base&> dm2(*fb, context, *workspaceManager2_);
-      dm2.ws = workspaceManager2_->getDesignMatrixWorkspace(phi_rows2,phi_cols2, true); // should we keep copy for weighting?
-      dm2.ws->Phi.set_zero();
-      dm2.ws->T.set_zero();
-      dm2.ws->Tlabels.set_zero();
+      dm2.resize(phi_rows2,phi_cols2, false);
 
       pdgemr2d_(&PHI_rows, &PHI_cols, dm.ws->Phi.ptr(), &ione, &ione, descPHI,
           dm2.ws->Phi.ptr(), &ione, &ione, descPHI2, &context2);
@@ -338,9 +332,12 @@ class TrainerHost: public MPI_Trainer {
     std::vector<std::tuple<std::string,int,int>> wpckgs;
 
   public:
-    TrainerHost(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      MPI_Trainer(c, rank, ncpu, workspaceManager)
-  {}
+    TrainerHost(tadah::core::Context &c,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager2):
+      MPI_Trainer(c, workspaceManager, workspaceManager2)
+  {
+  }
 
     void prep_wpckgs() {
       // HOST: prepare work packages
@@ -497,9 +494,12 @@ class TrainerHost: public MPI_Trainer {
 class TrainerWorker: public MPI_Trainer {
 
   public:
-    TrainerWorker(tadah::core::Context &c, int &rank, int &ncpu, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      MPI_Trainer(c, rank, ncpu, workspaceManager)
-  {}
+    TrainerWorker(tadah::core::Context &c,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager,
+        tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager2):
+      MPI_Trainer(c, workspaceManager, workspaceManager2)
+  {
+  }
 
     bool release_tag() {
       int temp;
@@ -563,8 +563,12 @@ class TrainerWorker: public MPI_Trainer {
       if (rows_available<rows_needed) {
         // we do not have enough rows in the local phi matrix
         // so we create temp DM of required size
-        DesignMatrix<DM_Function_Base&> temp_dm(*fb, context);
+        // DesignMatrix<DM_Function_Base&> temp_dm(*fb, context);
+        // temp_dm.resize(rows_needed,dm.ws->Phi.cols());
+
+        DesignMatrix<DM_Function_Base&> temp_dm(*fb, context, *workspaceManager2_); // Probably ok?
         temp_dm.resize(rows_needed,dm.ws->Phi.cols());
+        // temp_dm.set_zero();
         // temp_dm.Phi.resize(rows_needed,dm.Phi.cols());
         // temp_dm.T.resize(rows_needed);
         // temp_dm.Tlabels.resize(rows_needed);
@@ -572,6 +576,7 @@ class TrainerWorker: public MPI_Trainer {
         // and compute all rows
         size_t temp_phi_row=0;
         temp_dm.fill_T(stdb);
+        temp_dm.compute_wfactors(stdb); // call after fill_T
         for (size_t s=0; s<stdb.size(); ++s) {
           StDescriptors st_d = dc.calc(stdb(s));
           temp_dm.build(temp_phi_row,stdb(s),st_d); // phi_row++
@@ -632,6 +637,7 @@ class TrainerWorker: public MPI_Trainer {
         // just fill local phi array as it is large enough
         // fill_T must be called before phi_row is incremented
         dm.fill_T(stdb,phi_row);  // phi_row is not incremented by this method
+        dm.compute_wfactors(stdb); // call after fill_T
         for (size_t s=0; s<stdb.size(); ++s) {
           StDescriptors st_d = dc.calc(stdb(s));
           dm.build(phi_row,stdb(s),st_d); // build() increments phi_row++
