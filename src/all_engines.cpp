@@ -1,5 +1,10 @@
 #include <tadah/mlip/engines/all_engines.h>
 #include <tadah/mlip/engines/engine_factory.h>
+
+#include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/engines/predict_engine.h>
+#include <tadah/mlip/engines/explain_engine.h>
+
 #include <stdexcept>
 #include <iostream>
 
@@ -7,13 +12,13 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-void registerAllEngines() {
+void registerAllMLIPEngines() {
   using tadah::mlip::engines::EngineFactory;
   using tadah::mlip::engines::TrainEngine;
   EngineFactory::registerEngine("TRAIN", [](){ return std::make_unique<TrainEngine>(); });
   EngineFactory::registerEngine("PREDICT", [](){ return std::make_unique<PredictEngine>(); });
   EngineFactory::registerEngine("EXPLAIN", [](){ return std::make_unique<ExplainEngine>(); });
-  EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HPOEngine>(); });
+  // EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HPOEngine>(); });
   //
   // EngineFactory::registerEngine("DATA", [](){ return std::make_unique<DataEngine>(); });
   // EngineFactory::registerEngine("DATA.convert", [](){ return std::make_unique<DataConvertEngine>(); });

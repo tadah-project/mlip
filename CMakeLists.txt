@@ -128,8 +128,6 @@ target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/include)
 target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/external/toml11)
 
 
-
-
 # 1) Temporarily store the original add_test() so we can call it.
 #    We name it "_original_add_test" internally.
 #
