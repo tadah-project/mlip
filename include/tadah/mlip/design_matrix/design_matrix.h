@@ -182,7 +182,7 @@ public:
     fill_T(stdb);
     compute_wfactors(stdb); // call after fill_T
 
-    // for opm we need to find first rows for each structure
+    // for openmp we need to find first rows for each structure
     std::vector<size_t> rows(stdb.size());
     size_t row=0;
     for (size_t s=0; s<stdb.size(); ++s) {
@@ -261,9 +261,33 @@ public:
 
   void resize(size_t rows, size_t cols, bool wcopy=false) {
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
+    set_zero();
+  }
+  void set_zero() {
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
+  }
+  void compute_wfactors(const StructureDB &stdb) {
+    size_t j=0;
+    for (size_t s=0; s<stdb.size(); ++s) {
+      ws->wfactors(j++) = std::sqrt(stdb(s).eweight*eweightglob);
+      if (force) {
+        double fscale = std::sqrt(stdb(s).fweight*fweightglob);
+        for (size_t a=0; a<stdb(s).natoms(); ++a) {
+          ws->wfactors(j++) = fscale;
+          ws->wfactors(j++) = fscale;
+          ws->wfactors(j++) = fscale;
+        }
+      }
+      if (stress) {
+        for (size_t x=0; x<3; ++x) {
+          for (size_t y=x; y<3; ++y) {
+            ws->wfactors(j++) = std::sqrt(stdb(s).sweight*sweightglob);
+          }
+        }
+      }
+    }
   }
 
 private:
@@ -342,27 +366,6 @@ private:
       context.addInternal("SSTDEV",s_std_dev[j]);
   }
 
-  void compute_wfactors(const StructureDB &stdb) {
-    size_t j=0;
-    for (size_t s=0; s<stdb.size(); ++s) {
-      ws->wfactors(j++) = std::sqrt(stdb(s).eweight*eweightglob);
-      if (force) {
-        double fscale = std::sqrt(stdb(s).fweight*fweightglob);
-        for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          ws->wfactors(j++) = fscale;
-          ws->wfactors(j++) = fscale;
-          ws->wfactors(j++) = fscale;
-        }
-      }
-      if (stress) {
-        for (size_t x=0; x<3; ++x) {
-          for (size_t y=x; y<3; ++y) {
-            ws->wfactors(j++) = std::sqrt(stdb(s).sweight*sweightglob);
-          }
-        }
-      }
-    }
-  }
 
   void copyAndScale()
   {

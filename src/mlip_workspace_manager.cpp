@@ -15,8 +15,8 @@ DesignMatrixWorkspace* MLIPWorkspaceManager::getDesignMatrixWorkspace(size_t m, 
     if (!designMatrixWorkspace_ || !designMatrixWorkspace_->isSufficient(m, n)) {
         releaseDesignMatrixWorkspace(designMatrixWorkspace_);
         designMatrixWorkspace_ = new DesignMatrixWorkspace(wcopy);
-        designMatrixWorkspace_->allocate(m, n);
     }
+    designMatrixWorkspace_->allocate(m, n);
     return designMatrixWorkspace_;
 }
 

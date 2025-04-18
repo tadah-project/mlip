@@ -22,7 +22,9 @@ namespace engines {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   try {
-    tadah::core::Context context = task.getContext();
+    core::Context context = task.getContext();
+    models::D_mJoin::expand_grids(context);
+
 #ifdef TADAH_BUILD_MPI
     int rank = 0;
     int ncpu = 1;
@@ -30,10 +32,10 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
     // Execute host or worker code based on rank
     if (rank == 0) { // Host code
-      // Ensure there are enough CPUs for MPI
-      if (ncpu < 2) {
-        std::cerr << "Minimum number of CPUs for an MPI version is 2"
-                  << std::endl;
+      if (ncpu<2) {
+        core::Logger::instance().log(
+            tadah::core::LogLevel::ERROR,
+            "Minimum number of cpus for an MPI version is 2");
         return EXIT_FAILURE;
       }
 
@@ -46,10 +48,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       }
 
       // Start training timer if verbose mode is enabled
-      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
+      core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
       // Initialize host MPI trainer
       tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-      TrainerHost host(context, rank, ncpu, workspaceManager);
+      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
+      TrainerHost host(context, workspaceManager, workspaceManager2);
       host.run();
 
       // Perform the final computation and save parameters
@@ -60,7 +63,8 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     } else { // Worker code
       // Initialize worker MPI trainer
       tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-      TrainerWorker worker(context, rank, ncpu, workspaceManager);
+    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
+      TrainerWorker worker(context, workspaceManager, workspaceManager2);
       worker.run();
       worker.solve(); // Perform worker computations
     }
@@ -122,7 +126,6 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
         "Error: Unable to open file: ", outfile);
   }
 }
-
 
 } // namespace engines
 } // namespace mlip
