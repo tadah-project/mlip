@@ -9,6 +9,7 @@
 #include <tadah/mlip/engines/data_write_engine.h>
 #include <tadah/mlip/engines/data_merge_engine.h>
 #include <tadah/mlip/engines/data_split_engine.h>
+#include <tadah/mlip/engines/data_dedup_engine.h>
 
 #include <stdexcept>
 #include <iostream>
@@ -28,12 +29,12 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("DATA.write", [](){ return std::make_unique<DataWriteEngine>(); });
   EngineFactory::registerEngine("DATA.merge", [](){ return std::make_unique<DataMergeEngine>(); });
   EngineFactory::registerEngine("DATA.split", [](){ return std::make_unique<DataSplitEngine>(); });
-  // EngineFactory::registerEngine("DATA.dedup", [](){ return std::make_unique<DataDedupEngine>(); });
+  EngineFactory::registerEngine("DATA.dedup", [](){ return std::make_unique<DataDedupEngine>(); });
   // EngineFactory::registerEngine("DATA.sample", [](){ return std::make_unique<DataSampleEngine>(); });
   // EngineFactory::registerEngine("DATA.balance", [](){ return std::make_unique<DataBalanceEngine>(); });
-  //
-  // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); });
-  //
+  
+  // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); }); // TODO
+  
   // EngineFactory::registerEngine("PROPERTIES.twobody", [](){ return std::make_unique<PropertiesTwobodyEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.ecurve", [](){ return std::make_unique<PropertiesEcurveEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.eos", [](){ return std::make_unique<PropertiesEosEngine>(); });
