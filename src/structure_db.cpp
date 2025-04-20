@@ -368,5 +368,11 @@ bool StructureDB::isBlankLine(const std::string& line) const
     }
     return true;
 }
+
+void StructureDB::clear() {
+  structures.clear();
+  dbidx.clear();
+}
+
 } // namespace mlip
 } // namespace tadah

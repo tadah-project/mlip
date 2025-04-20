@@ -177,6 +177,8 @@ struct StructureDB {
   // then prints the results to std::cout.
   void parseFile(const std::string& filename);
 
+  void clear();
+
 private:
   // Checks if a line is empty or contains only whitespace
   bool isBlankLine(const std::string& line) const;
