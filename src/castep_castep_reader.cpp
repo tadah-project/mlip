@@ -259,7 +259,7 @@ void CastepCastepReader::parse_data() {
       reset_flags(CalcState::FiniteBasisSetCorrection);
       simLabel.calcState = CalcState::FiniteBasisSetCorrection;
       simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP FBCS";
+      simLabel.simType = "CASTEP FBSC";
       simLabel.stepNumber = 0;
       if (debug) std::cout << "Basis set correction" << std::endl;
     }
@@ -458,7 +458,7 @@ void CastepCastepReader::parse_data() {
       }
     }
 
-    // Detect free energy for SPE/GO/FBCS/BS
+    // Detect free energy for SPE/GO/FBSC/BS
     // The energy might not be final so we need to complete the data block elsewhere.
     if (line.find("Final free energy (E-TS)") != std::string::npos && 
         (current_state == CalcState::GeometryOptimization

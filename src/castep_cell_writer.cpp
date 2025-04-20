@@ -6,15 +6,15 @@ namespace mlip {
 
 CastepCellWriter::CastepCellWriter(StructureDB& db) : StructureWriter(db) {}
 
-void CastepCellWriter::write_data(const std::string& filename, const size_t i) {
+void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
 
   if (i >= stdb.size()) {
     throw std::out_of_range("Index i is out of range.");
   }
     
-  std::ofstream file(filename);
+  std::ofstream file(outFile);
   if (!file.is_open()) {
-    throw std::runtime_error("Could not open the file: " + filename);
+    throw std::runtime_error("Could not open the file: " + outFile);
   }
 
   const Structure &st = stdb(i);
