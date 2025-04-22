@@ -3,8 +3,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 
-
 #include <iostream>
+
 #ifdef TADAH_BUILD_MPI
 #include <mpi.h>
 #endif
@@ -14,21 +14,29 @@ namespace mlip {
 namespace engines {
 
 int DataPrintEngine::run(tadah::mlip::Task &task) {
-  int rank = 0;
 #ifdef TADAH_BUILD_MPI
+  int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
   if (rank!=0) return EXIT_SUCCESS;
+#endif
 
-  try {
-    core::Context taskContext = task.getContext();
+  core::Context taskContext = task.getContext();
 
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataPrintEngine started...");
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "DataPrintEngine started...");
 
   StructureDB stdb;
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "Adding structures to the database...");
   if(taskContext.contains("DBFILE")) {
-    stdb.add(taskContext);
+    std::vector<std::string> indicesStrVec;
+    indicesStrVec.resize(taskContext.size("INDEX")); // required for DBFILE
+    taskContext.get<>("INDEX", indicesStrVec);
+    std::vector<size_t> indices =  core::parse_indices(indicesStrVec);
+    std::string dbFile = taskContext.get<std::string>("DBFILE");
+    for (size_t i=0; i<indices.size(); ++i) {
+      stdb.add(dbFile,i);
+    }
   }
   if(taskContext.contains("STRUCTURE")) {
     std::vector<std::string> structures(taskContext.size("STRUCTURE"));
@@ -41,14 +49,12 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
     }
   }
 
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "Printing structures...");
   for (const auto &struc : stdb) {
     std::cout << struc << std::endl;
   }
 
-  } catch (const std::exception &e) {
-    std::cerr << "DataPrintEngine error: " << e.what() << std::endl;
-    return EXIT_FAILURE;
-  }
   return EXIT_SUCCESS;
 }
 void DataPrintEngine::validate(const tadah::mlip::Task &) {

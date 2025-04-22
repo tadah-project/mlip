@@ -76,7 +76,7 @@ struct StructureDB {
      *
      * Return the number of loaded structures.
      */
-  int add(const std::string fn, size_t first, int N);
+  int add(const std::string fn, size_t first, int N=1);
 
   /** Add a single Structure object to this container */
   void add(const Structure &s);
