@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <vector>
 #include <set>
+#include <unordered_map>
 namespace tadah {
 namespace mlip {
 
@@ -131,6 +132,9 @@ struct Structure {
 
   /** @return  a number of atoms in this structure. */
   size_t natoms() const;
+
+  /** @return A map containing natoms per type Z. */
+  std::unordered_map<int,size_t> get_natoms_map() const;
 
   /** @return volume of this structure. */
   double get_volume() const;

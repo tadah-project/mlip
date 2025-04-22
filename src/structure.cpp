@@ -134,6 +134,18 @@ size_t Structure::natoms() const {
   return atoms.size();
 }
 
+std::unordered_map<int,size_t> Structure::get_natoms_map() const {
+  std::set<core::Element> elements = get_unique_elements();
+  std::unordered_map<int,size_t> natoms_map;
+  for (const auto &element : elements) {
+    natoms_map[element.Z] = 0;
+  }
+  for (const auto &atom : atoms) {
+    natoms_map[atom.Z]++;
+  }
+  return natoms_map;
+}
+
 /**
  * Returns a number of nearest neighbors for the i-th Atom.
  * Reason: Gives fast access to the local environment size of a specific atom.
