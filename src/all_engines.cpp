@@ -13,6 +13,8 @@
 #include <tadah/mlip/engines/data_sample_engine.h>
 #include <tadah/mlip/engines/data_balance_engine.h>
 
+#include <tadah/mlip/engines/properties_pairwise_engine.h>
+
 #include <stdexcept>
 #include <iostream>
 
@@ -34,16 +36,15 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("DATA.sample", [](){ return std::make_unique<DataSampleEngine>(); });
   EngineFactory::registerEngine("DATA.balance", [](){ return std::make_unique<DataBalanceEngine>(); });
   
-  // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); }); // TODO
+  // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); });
   
-  // EngineFactory::registerEngine("PROPERTIES.twobody", [](){ return std::make_unique<PropertiesTwobodyEngine>(); });
+  EngineFactory::registerEngine("PROPERTIES.pairwise", [](){ return std::make_unique<PropertiesPairwiseEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.ecurve", [](){ return std::make_unique<PropertiesEcurveEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.eos", [](){ return std::make_unique<PropertiesEosEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.defect", [](){ return std::make_unique<PropertiesDefectEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.surface", [](){ return std::make_unique<PropertiesSurfaceEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.mechanics", [](){ return std::make_unique<PropertiesMechanicsEngine>(); });
   //
-  // EngineFactory::registerEngine("ANALYSIS", [](){ return std::make_unique<AnalysisEngine>(); });
   // EngineFactory::registerEngine("ANALYSIS.descriptor", [](){ return std::make_unique<AnalysisDescriptorEngine>(); });
   // EngineFactory::registerEngine("ANALYSIS.bfunc", [](){ return std::make_unique<AnalysisBfuncEngine>(); });
   // EngineFactory::registerEngine("ANALYSIS.cutoff", [](){ return std::make_unique<AnalysisCutoffEngine>(); });
