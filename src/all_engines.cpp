@@ -11,6 +11,7 @@
 #include <tadah/mlip/engines/data_split_engine.h>
 #include <tadah/mlip/engines/data_dedup_engine.h>
 #include <tadah/mlip/engines/data_sample_engine.h>
+#include <tadah/mlip/engines/data_balance_engine.h>
 
 #include <stdexcept>
 #include <iostream>
@@ -23,8 +24,7 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("TRAIN", [](){ return std::make_unique<TrainEngine>(); });
   EngineFactory::registerEngine("PREDICT", [](){ return std::make_unique<PredictEngine>(); });
   EngineFactory::registerEngine("EXPLAIN", [](){ return std::make_unique<ExplainEngine>(); });
-  // EngineFactory::registerEngine("HPO", [](){ return std::make_unique<HPOEngine>(); });
-  //
+
   EngineFactory::registerEngine("DATA.convert", [](){ return std::make_unique<DataConvertEngine>(); });
   EngineFactory::registerEngine("DATA.print", [](){ return std::make_unique<DataPrintEngine>(); });
   EngineFactory::registerEngine("DATA.write", [](){ return std::make_unique<DataWriteEngine>(); });
@@ -32,7 +32,7 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("DATA.split", [](){ return std::make_unique<DataSplitEngine>(); });
   EngineFactory::registerEngine("DATA.dedup", [](){ return std::make_unique<DataDedupEngine>(); });
   EngineFactory::registerEngine("DATA.sample", [](){ return std::make_unique<DataSampleEngine>(); });
-  // EngineFactory::registerEngine("DATA.balance", [](){ return std::make_unique<DataBalanceEngine>(); });
+  EngineFactory::registerEngine("DATA.balance", [](){ return std::make_unique<DataBalanceEngine>(); });
   
   // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); }); // TODO
   

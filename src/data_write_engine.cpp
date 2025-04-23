@@ -16,17 +16,16 @@ namespace mlip {
 namespace engines {
 
 int DataWriteEngine::run(tadah::mlip::Task &task) {
-  int rank = 0;
 #ifdef TADAH_BUILD_MPI
+  int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
   if (rank!=0) return EXIT_SUCCESS;
+#endif
 
-  try {
-    core::Context taskContext = task.getContext();
+  core::Context taskContext = task.getContext();
 
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataWriteEngine started...");
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "DataWriteEngine started...");
 
   std::vector<std::string> indicesStr;
   StructureDB stdb;
@@ -57,16 +56,11 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
     writer->set_precision(taskContext.get<size_t>("NUMERIC"));
   }
 
-    for (size_t i=0; i<indices.size(); ++i) {
-      std::string out_file = taskContext.get<std::string>("OUTFILE",i);
-      writer->write_data(out_file, indices[i]);
-    }
-
-
-  } catch (const std::exception &e) {
-    std::cerr << "DataWriteEngine error: " << e.what() << std::endl;
-    return EXIT_FAILURE;
+  for (size_t i=0; i<indices.size(); ++i) {
+    std::string out_file = taskContext.get<std::string>("OUTFILE",i);
+    writer->write_data(out_file, indices[i]);
   }
+
   return EXIT_SUCCESS;
 }
 

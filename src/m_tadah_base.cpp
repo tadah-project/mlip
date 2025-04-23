@@ -40,9 +40,10 @@ predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st)
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)
     norm.normalise(std);
-  Structure st_(st);
-  st_.energy = epredict(std);
+  Structure st_;
+  st_.atoms.resize(st.natoms());
 
+  st_.energy = epredict(std);
   if (c.get<bool>("FORCE") && !c.get<bool>("STRESS")) {
     for (size_t a=0; a<st.natoms(); ++a) {
       st_.atoms[a].force = fpredict(a,std,st);

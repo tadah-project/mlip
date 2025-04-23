@@ -30,7 +30,7 @@ int PredictEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
-
+  potContext  = tadah::core::Context::merge(potContext, taskContext);
 
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +

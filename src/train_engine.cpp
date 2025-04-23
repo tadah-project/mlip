@@ -119,8 +119,12 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Saving parameters to file: " + outfile);
   std::ofstream outstream(outfile);
+  core::Context modContext = context;
+  modContext.remove("VERBOSE");
+  modContext.remove("NUMERIC");
+  modContext.remove("OUTFILE");
   if (outstream.is_open()) {
-    outstream << context << std::endl;
+    outstream << modContext << std::endl;
   } else {
     tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
         "Error: Unable to open file: ", outfile);

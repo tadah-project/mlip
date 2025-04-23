@@ -23,9 +23,9 @@ class Output {
         size_t emptyspace=5;
         size_t nw=emptyspace+fmtw;   // width of numeric column
 
-        std::string energyFile = "energy.pred";
-        std::string forceFile = "forces.pred";
-        std::string stressFile = "stress.pred";
+        std::string energyFile;
+        std::string forceFile;
+        std::string stressFile;
         std::string errorFile = "error.pred";
     public:
         Output (const tadah::core::Context &c):
@@ -53,7 +53,7 @@ class Output {
             out_unc.close();
         }
         void print_predict_all(StructureDB &stdb, StructureDB &stpred, tadah::core::aed_type & predicted_error) {
-          if (context.size("OUTFILE") > 0) {
+          // if (context.size("OUTFILE") > 0) {
             size_t i=0;
             energyFile = context.get<std::string>("OUTFILE",i++);
             if (context.get<bool>("FORCE")) {
@@ -72,7 +72,7 @@ class Output {
                 throw;
               }
             }
-          }
+          // }
           bool pred_err_bool=context.get<bool>("ERROR");
 
           std::string outfileInfo = "E: " + energyFile;
