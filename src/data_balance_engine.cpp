@@ -77,10 +77,9 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
 
   if(taskContext.contains("INDEX")) {
     std::vector<size_t> indices;
-    std::vector<std::string> indicesStr;
-    indicesStr.resize(taskContext.size("INDEX"));
-    taskContext.get<>("INDEX", indicesStr);
-    indices = core::parse_indices(indicesStr);
+    std::vector<std::string> indicesStrVec(taskContext.size("INDEX"));
+    taskContext.get<>("INDEX", indicesStrVec);
+    indices = core::parse_indices(indicesStrVec);
     for (const auto idx : indices) {
       if (idx >= numStructures) {
         throw std::runtime_error("Index out of range.");
