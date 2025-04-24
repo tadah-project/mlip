@@ -21,87 +21,82 @@ namespace engines {
 
 
 int TrainEngine::run(tadah::mlip::Task &task) {
-  try {
-    core::Context context = task.getContext();
-    models::D_mJoin::expand_grids(context);
+  core::Context context = task.getContext();
+  models::D_mJoin::expand_grids(context);
 
 #ifdef TADAH_BUILD_MPI
-    int rank = 0;
-    int ncpu = 1;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
-    // Execute host or worker code based on rank
-    if (rank == 0) { // Host code
-      if (ncpu<2) {
-        core::Logger::instance().log(
-            tadah::core::LogLevel::ERROR,
-            "Minimum number of cpus for an MPI version is 2");
-        return EXIT_FAILURE;
-      }
-
-      // The uncertainty flag is incompatible with MPI
-      if (context.get<bool>("UNCERTAINTY")) {
-        core::Logger::instance().log(
-            tadah::core::LogLevel::ERROR,
-            "The --uncertainty flag is not supported by MPI build.");
-        return EXIT_FAILURE;
-      }
-
-      // Start training timer if verbose mode is enabled
-      core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
-      // Initialize host MPI trainer
-      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
-      TrainerHost host(context, workspaceManager, workspaceManager2);
-      host.run();
-
-      // Perform the final computation and save parameters
-      host.solve();
-
-      tadah::core::Context param_file = host.model->get_param_file();
-      dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
-    } else { // Worker code
-      // Initialize worker MPI trainer
-      tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
-      TrainerWorker worker(context, workspaceManager, workspaceManager2);
-      worker.run();
-      worker.solve(); // Perform worker computations
+  int rank = 0;
+  int ncpu = 1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
+  // Execute host or worker code based on rank
+  if (rank == 0) { // Host code
+    if (ncpu<2) {
+      core::Logger::instance().log(
+          tadah::core::LogLevel::ERROR,
+          "Minimum number of cpus for an MPI version is 2");
+      return EXIT_FAILURE;
     }
+
+    // The uncertainty flag is incompatible with MPI
+    if (context.get<bool>("UNCERTAINTY")) {
+      core::Logger::instance().log(
+          tadah::core::LogLevel::ERROR,
+          "The --uncertainty flag is not supported by MPI build.");
+      return EXIT_FAILURE;
+    }
+
+    // Start training timer if verbose mode is enabled
+    core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
+    // Initialize host MPI trainer
+    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
+    TrainerHost host(context, workspaceManager, workspaceManager2);
+    host.run();
+
+    // Perform the final computation and save parameters
+    host.solve();
+
+    tadah::core::Context param_file = host.model->get_param_file();
+    dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
+  } else { // Worker code
+           // Initialize worker MPI trainer
+    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
+    TrainerWorker worker(context, workspaceManager, workspaceManager2);
+    worker.run();
+    worker.solve(); // Perform worker computations
+  }
 #else // Non-MPI version
 
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    Trainer tr(context, workspaceManager);
+  tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
+  Trainer tr(context, workspaceManager);
 
-    // Load structures and provide feedback if verbose
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
-    StructureDB stdb(tr.context);
+  // Load structures and provide feedback if verbose
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
+  StructureDB stdb(tr.context);
 
-    // Calculate nearest neighbors and provide feedback
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                           "Finding nearest neighbours within: " +
-                               core::to_string(tr.context.get<double>("RCUTMAX"),5) +
-                               " cutoff distance...");
-    tr.nnf.calc(stdb);
+  // Calculate nearest neighbors and provide feedback
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "Finding nearest neighbours within: " +
+      core::to_string(tr.context.get<double>("RCUTMAX"),5) +
+      " cutoff distance...");
+  tr.nnf.calc(stdb);
 
-    // Begin the training process and inform if verbose
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
-    tr.model->train(stdb, tr.dc);
+  // Begin the training process and inform if verbose
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
+  tr.model->train(stdb, tr.dc);
 
-    tadah::core::Context param_file = tr.model->get_param_file();
-    dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
+  tadah::core::Context param_file = tr.model->get_param_file();
+  dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
-    // Output uncertainty if requested
-    if (context.contains("UNCERTAINTY")) {
-      tadah::core::t_type weights = tr.model->get_weights();
-      tadah::core::t_type unc = tr.model->get_weights_uncertainty();
-      Output(param_file).print_train_unc(weights, unc);
-    }
-#endif
-  } catch (const std::exception &e) {
-    std::cerr << "TrainEngine error: " << e.what() << std::endl;
-    return EXIT_FAILURE;
+  // Output uncertainty if requested
+  if (context.contains("UNCERTAINTY")) {
+    tadah::core::t_type weights = tr.model->get_weights();
+    tadah::core::t_type unc = tr.model->get_weights_uncertainty();
+    Output(param_file).print_train_unc(weights, unc);
   }
+#endif
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {
