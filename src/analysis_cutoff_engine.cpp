@@ -22,14 +22,25 @@ int AnalysisCutoffEngine::run(mlip::Task &task) {
 
   auto &taskContext = task.getContext();
 
-  std::string type = core::to_upper(taskContext.get<std::string>("TYPE",0));
+  std::string type = taskContext.get<std::string>("TYPE",0);
 
   // generate range
   double start = taskContext.get<double>("RANGE",0);
   double stop = taskContext.get<double>("RANGE",1);
   size_t N = taskContext.get<size_t>("RANGE",2);
   core::v_type range = core::linspace(start,stop,N);
-  models::Cut_Base *fcut = core::factory<models::Cut_Base,double>( type, range.back() );
+  models::Cut_Base *fcut = nullptr;
+  try {
+    fcut = core::factory<models::Cut_Base,double>( type, range.back() );
+  } catch (const std::exception &e) {
+    core::Logger::instance().log(tadah::core::LogLevel::ERROR, "Requested cutoff function does not exist: ", std::string(e.what()));
+    using RegistryType = tadah::core::Registry<tadah::models::Cut_Base, double>;
+    std::cout << "Available functions stored in the registry:" << std::endl;
+    for (const auto& entry : RegistryType::registry) {
+      std::cout << "Function name: " << entry.first << std::endl;
+    }
+    throw e;
+  }
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Generating output...");
   std::ostringstream oss;
 
@@ -71,9 +82,6 @@ int AnalysisCutoffEngine::run(mlip::Task &task) {
 }
 void AnalysisCutoffEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
-    throw std::runtime_error("AnalysisCutoffEngine requires POTENTIAL or CONFIG.");
-  }
   if (context.contains("OUTFILE") && context.size("OUTFILE")!=1) {
     throw std::runtime_error("AnalysisCutoffEngine requires either none or a single OUTFILE.");
   }
@@ -88,4 +96,3 @@ void AnalysisCutoffEngine::validate(const tadah::mlip::Task &task) {
 } // namespace engines
 } // namespace mlip
 } // namespace tadah
-
