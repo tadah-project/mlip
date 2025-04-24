@@ -57,8 +57,8 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
   }
 
   for (size_t i=0; i<indices.size(); ++i) {
-    std::string out_file = taskContext.get<std::string>("OUTFILE",i);
-    writer->write_data(out_file, indices[i]);
+    std::string outFile = taskContext.get<std::string>("OUTFILE",i);
+    writer->write_data(outFile, indices[i]);
   }
 
   return EXIT_SUCCESS;
