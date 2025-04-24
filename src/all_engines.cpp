@@ -16,6 +16,8 @@
 #include <tadah/mlip/engines/properties_pairwise_engine.h>
 
 #include <tadah/mlip/engines/analysis_descriptor_engine.h>
+#include <tadah/mlip/engines/analysis_bfunc_engine.h>
+#include <tadah/mlip/engines/analysis_cutoff_engine.h>
 
 #include <stdexcept>
 #include <iostream>
@@ -48,8 +50,8 @@ void registerAllMLIPEngines() {
   // EngineFactory::registerEngine("PROPERTIES.mechanics", [](){ return std::make_unique<PropertiesMechanicsEngine>(); });
   //
   EngineFactory::registerEngine("ANALYSIS.descriptor", [](){ return std::make_unique<AnalysisDescriptorEngine>(); });
-  // EngineFactory::registerEngine("ANALYSIS.bfunc", [](){ return std::make_unique<AnalysisBfuncEngine>(); });
-  // EngineFactory::registerEngine("ANALYSIS.cutoff", [](){ return std::make_unique<AnalysisCutoffEngine>(); });
+  EngineFactory::registerEngine("ANALYSIS.bfunc", [](){ return std::make_unique<AnalysisBfuncEngine>(); });
+  EngineFactory::registerEngine("ANALYSIS.cutoff", [](){ return std::make_unique<AnalysisCutoffEngine>(); });
 
 }
 
