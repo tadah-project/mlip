@@ -195,23 +195,23 @@ public:
     stdb_.structures.resize(stdb.size());
     size_t i=0;
     for (size_t s=0; s<stdb.size(); ++s) {
-      stdb_(s) = Structure(stdb(s));
+      stdb_(s).atoms.resize(stdb(s).natoms());
 
       predicted_error(i) = (sqrt(predicted_error(i))-pmean);
       stdb_(s).energy = Tpred(i++);
       if (context_pred.get<bool>("FORCE")) {
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
-            stdb_(s).atoms[a].force[k] = Tpred(i++);
             predicted_error(i) = (sqrt(predicted_error(i))-pmean);
+            stdb_(s).atoms[a].force[k] = Tpred(i++);
           }
         }
       }
       if (context_pred.get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            stdb_(s).stress(x,y) = Tpred(i++);
             predicted_error(i) = (sqrt(predicted_error(i))-pmean);
+            stdb_(s).stress(x,y) = Tpred(i++);
             if (x!=y)
               stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
           }
