@@ -40,15 +40,15 @@ public:
 
   /** \brief Predict total force on an atom a. */
   virtual void fpredict(const size_t a, tadah::core::force_type &v,
-                        const StDescriptors &std, const Structure &st);
+                        const StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict total force on an atom a. */
   virtual tadah::core::force_type fpredict(const size_t a, const StDescriptors &std,
-                              const Structure &st);
+                              const Structure &stOrig);
 
-  /** \brief Predict energy, forces and stresses for the Structure st. */
+  /** \brief Predict energy, forces and stresses for the Structure stOrig. */
   virtual Structure predict(const tadah::core::Context &c,
-                            /*not const*/ StDescriptors &std, const Structure &st);
+                            /*not const*/ StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict energy, forces and stresses for a set of Structures.
          *
@@ -61,19 +61,19 @@ public:
   /** \brief Predict energy, forces and stresses for a set of Structures. */
   virtual StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc);
 
-  /** \brief Predict virial stresses in a Structure st. */
-  virtual tadah::core::stress_type spredict(const StDescriptors &std, const Structure &st);
+  /** \brief Predict virial stresses in a Structure stOrig. */
+  virtual tadah::core::stress_type spredict(const StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict virial stresses in all Structures. */
   virtual tadah::core::stress_type spredict(const size_t a, const StDescriptors &std,
-                               const Structure &st);
+                               const Structure &stOrig);
 
   /** \brief Predict both virial stresses and forces for a Structure */
-  virtual void stress_force_predict(const StDescriptors &std, Structure &st);
+  virtual void stress_force_predict(const StDescriptors &std, Structure &stPred, const Structure &stOrig);
 
-  /** \brief Predict virial stress for atom a in a Structure st. */
+  /** \brief Predict virial stress for atom a in a Structure stOrig. */
   virtual void spredict(const size_t a, tadah::core::stress_type &s,
-                        const StDescriptors &std, const Structure &st);
+                        const StDescriptors &std, const Structure &stOrig);
 
 
   /** Return potential file. */

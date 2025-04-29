@@ -340,10 +340,12 @@ private:
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Energy standard deviation (eV/atom): ", e_std_dev);
 
     if (stress) {
+      std::string s_std_dev_str;
       for (size_t j=0; j<6; ++j) {
         s_std_dev[j] = svec.col(j).std_dev(svec.col(j).mean(), svec.col(j).size()-1);
+        s_std_dev_str += std::to_string(s_std_dev[j]) + " ";
       }
-      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Stress standard deviation (eV/A^3): ", s_std_dev);
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Stress standard deviation (eV/A^3): ", s_std_dev_str);
     }
 
     if (force) {

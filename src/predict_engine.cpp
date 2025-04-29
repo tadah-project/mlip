@@ -104,10 +104,31 @@ int PredictEngine::run(mlip::Task &task) {
 }
 void PredictEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      "Validating PredictEngine...");
   if (!context.contains("POTENTIAL")) {
     throw std::runtime_error("PredictEngine requires a potential file to be set.");
   }
+  // require context OUTFILE to be size 1 if no force or stress
+  // size 2 if force or stress
+  // size 3 if force and stress
+  // use logger to inform user do not throw error
+  if (context.get<bool>("FORCE") && context.get<bool>("STRESS")) {
+    if (context.size("OUTFILE") != 3) {
+      core::Logger::instance().log(tadah::core::LogLevel::ERROR,
+          "Provide 3 output files for energy forces and stress.");
+    }
+  } else if (context.get<bool>("FORCE") || context.get<bool>("STRESS")) {
+    if (context.size("OUTFILE") != 2) {
+      core::Logger::instance().log(tadah::core::LogLevel::ERROR,
+          "Provide 2 output files: one for energy energy and one for forces or stress.");
+    }
+  } else  if (context.size("OUTFILE") != 1 && context.size("OUTFILE") != 3) {
+    core::Logger::instance().log(tadah::core::LogLevel::ERROR,
+        "Provide single output file for energy.");
+  }
 }
+
 
 } // namespace engines
 } // namespace mlip
