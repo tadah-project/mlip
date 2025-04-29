@@ -91,7 +91,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
   // Output uncertainty if requested
-  if (context.contains("UNCERTAINTY")) {
+  if (context.get<bool>("UNCERTAINTY")) {
     tadah::core::t_type weights = tr.model->get_weights();
     tadah::core::t_type unc = tr.model->get_weights_uncertainty();
     Output(param_file).print_train_unc(weights, unc);
