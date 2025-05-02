@@ -191,20 +191,22 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 target_link_libraries(tadah.mlip PRIVATE nlohmann_json::nlohmann_json)
 
-find_package(CURL QUIET)   # Use QUIET to avoid CMake’s default error
+if (NOT TADAH_BUILD_DOCS_ONLY)
+  find_package(CURL QUIET)   # Use QUIET to avoid CMake’s default error
 
-if(NOT CURL_FOUND)
-  message(FATAL_ERROR
-    "\nCould not find libcurl. Please install the development files.\n"
-    "On Ubuntu/Debian-based systems, try:\n"
-    "  sudo apt-get install libcurl4-openssl-dev\n"
-    "On Fedora/Red Hat, try:\n"
-    "  sudo dnf install libcurl-devel\n"
-    "Or specify CURL_INCLUDE_DIR/CURL_LIBRARY manually.\n"
-  )
+  if(NOT CURL_FOUND)
+    message(FATAL_ERROR
+      "\nCould not find libcurl. Please install the development files.\n"
+      "On Ubuntu/Debian-based systems, try:\n"
+      "  sudo apt-get install libcurl4-openssl-dev\n"
+      "On Fedora/Red Hat, try:\n"
+      "  sudo dnf install libcurl-devel\n"
+      "Or specify CURL_INCLUDE_DIR/CURL_LIBRARY manually.\n"
+    )
+  endif()
+
+  target_link_libraries(tadah.mlip PRIVATE CURL::libcurl)
 endif()
-
-target_link_libraries(tadah.mlip PRIVATE CURL::libcurl)
 
 if(TADAH_ENABLE_OPENMP)
   find_package(OpenMP REQUIRED)
