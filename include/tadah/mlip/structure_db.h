@@ -158,11 +158,11 @@ struct StructureDB {
 
   void clear_nn();
 
-  /** Check consistency of the ATOMS key. */
-  static void check_atoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
+  /** Check consistency of the ATOM key. */
+  static void check_atom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
-  /** Check consistency of the WATOMS key. Add if missing*/
-  static void check_watoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
+  /** Check consistency of the WATOM key. Add if missing*/
+  static void check_watom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
   // Methods to enable range-based for loop
   std::vector<Structure>::iterator begin();

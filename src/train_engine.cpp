@@ -23,6 +23,9 @@ namespace engines {
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
   models::D_mJoin::expand_grids(context);
+  std::set<core::Element> unique_elements = StructureDB::find_unique_elements(context);
+  StructureDB::check_atom_key(context, unique_elements);
+  StructureDB::check_watom_key(context, unique_elements);
 
 #ifdef TADAH_BUILD_MPI
   int rank = 0;

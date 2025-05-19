@@ -194,18 +194,18 @@ std::pair<int,int> StructureDB::count(const std::string fn){
 void StructureDB::clear_nn() {
   for (auto &struc: structures) struc.clear_nn();
 }
-void StructureDB::check_atoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
+void StructureDB::check_atom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
-  if (context.contains("ATOMS")) {
+  if (context.contains("ATOM")) {
     // user set this key so here we check does it correspond to unique_elements
-    if (unique_elements.size()!=context.size("ATOMS")) {
+    if (unique_elements.size()!=context.size("ATOM")) {
       error=true;
     }
 
     auto set_it = unique_elements.begin();
-    auto atoms_it = context("ATOMS").begin();
-    while (set_it != unique_elements.end() && atoms_it != context("ATOMS").end()) {
+    auto atoms_it = context("ATOM").begin();
+    while (set_it != unique_elements.end() && atoms_it != context("ATOM").end()) {
       if (set_it->symbol != (*atoms_it))  {
         error=true;
       }
@@ -214,32 +214,32 @@ void StructureDB::check_atoms_key(tadah::core::Context &context, std::set<tadah:
     }
     if (error) {
       throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and ATOMS in the context file.\n"
-          "Please either update the ATOMS in the context file or remove ATOMS\n"
+          "Mismatch between elements in datasets and ATOM in the context file.\n"
+          "Please either update the ATOM in the context file or remove ATOM\n"
           "key completely. Tadah! will automatically configure this key.\n"
           );
     }
   } else {
-    for (const auto &s : unique_elements) context.add("ATOMS", s.symbol);
+    for (const auto &s : unique_elements) context.add("ATOM", s.symbol);
   }
 }
-void StructureDB::check_watoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
+void StructureDB::check_watom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
-  if (context.contains("WATOMS")) {
+  if (context.contains("WATOM")) {
     // user set this key so here we check does it correspond to unique_elements
-    if (unique_elements.size()!=context.size("WATOMS")) {
+    if (unique_elements.size()!=context.size("WATOM")) {
       error=true;
     }
     if (error) {
       throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and WATOMS in the context file.\n"
-          "Please either update the WATOMS in the context file or remove WATOMS\n"
+          "Mismatch between elements in datasets and WATOM in the context file.\n"
+          "Please either update the WATOM in the context file or remove WATOM\n"
           "key completely. In the latter case Tadah! will use default values.\n"
           );
     }
   } else {
-    for (const auto &s : unique_elements) context.add("WATOMS", s.Z);
+    for (const auto &s : unique_elements) context.add("WATOM", s.Z);
   }
 }
 
