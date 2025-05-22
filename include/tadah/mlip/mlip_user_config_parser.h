@@ -5,6 +5,7 @@
 #include <vector>
 #include <tadah/core/iuser_config_parser.h>
 #include <tadah/core/context.h>
+#include <memory>
 
 namespace tadah {
 namespace mlip {
@@ -54,7 +55,7 @@ public:
    * If constructed with a default backend, it is destroyed here. Otherwise 
    * no action is taken.
    */
-  ~MLIPUserConfigParser();
+  // ~MLIPUserConfigParser();
 
   /**
    * @brief Parses a user config from a file.
@@ -85,8 +86,9 @@ public:
   parse(const std::vector<std::string>& lines, bool merge = true) const;
 
 private:
-  const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
-
+  // const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
+  // bool ownsBackend_; std::shared_ptr<core::IUserConfigParser> backendParser_; 
+std::shared_ptr<core::IUserConfigParser> backendParser_;
   /**
    * @brief Splits lines into named sections based on "TASK" delimiter.
    *
