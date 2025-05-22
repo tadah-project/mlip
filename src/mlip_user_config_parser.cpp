@@ -13,21 +13,23 @@ namespace tadah {
 namespace mlip {
 
 MLIPUserConfigParser::MLIPUserConfigParser(const tadah::core::IUserConfigParser* backend)
-  : backendParser_(backend)
-{
-  // If no backend is provided, create a default parser instance.
-  if (!backendParser_) {
-    backendParser_ = new tadah::core::CoreUserConfigParser();
-  }
-}
-
-MLIPUserConfigParser::~MLIPUserConfigParser() {
-  // If we created the parser internally (it is a CoreUserConfigParser), then we own it.
-  // if (backendParser_ && 
-  //     dynamic_cast<const tadah::core::CoreUserConfigParser*>(backendParser_)) {
-  //   delete backendParser_;
-  // }
-}
+  : backendParser_(
+      backend
+        // if caller supplied a parser, wrap it in a shared_ptr with a no-op deleter
+        ? std::shared_ptr<core::IUserConfigParser>(const_cast<core::IUserConfigParser*>(backend),
+            [](core::IUserConfigParser*){})
+        // otherwise build our own default parser with normal deleter
+        : std::make_shared<core::CoreUserConfigParser>()
+    )
+{}
+// MLIPUserConfigParser::~MLIPUserConfigParser() {
+//   // Only delete if this object created the backend.
+//   if (ownsBackend_) {
+//     delete backendParser_;
+//   }
+//   backendParser_ = nullptr;
+//   ownsBackend_    = false;
+// }
 
 /**
  * @brief Parses a user config from file, then merges sections if mergeFlag is true.

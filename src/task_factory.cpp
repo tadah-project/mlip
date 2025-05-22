@@ -12,11 +12,9 @@
 
 namespace tadah {
 namespace mlip {
-
-TaskFactory::TaskFactory(const MLIPUserConfigParser &parser)
-  : parser_(parser)
+TaskFactory::TaskFactory(std::shared_ptr<MLIPUserConfigParser> parser)
+  : parser_(std::move(parser))
 {}
-
 std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
 {
   // Definitions:
@@ -85,7 +83,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   if (hasConfig || hasTask) {
     std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
     // parser returns a vec of <taskName, Context> so we can keep multiple tasks of the same type
-    configVec = parser_.parse(userFile, /*mergeFlag=*/true);
+    configVec = parser_->parse(userFile, /*mergeFlag=*/true);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
   }
 
@@ -148,7 +146,9 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       std::vector<std::string> tokens;
       boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
       if (!taskContext.contains(tokens.back())) {
-        for (size_t i = 0; i < bpKey.default_value.size(); ++i) {
+        size_t const nv = std::min(bpKey.default_value.size(),
+            bpKey.value_N.size());
+        for (size_t i = 0; i < nv; ++i) {
           taskContext.add<std::string>(tokens.back(), bpKey.default_value[i], std::abs(bpKey.value_N[i]));
         }
       }
@@ -163,7 +163,9 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
         std::vector<std::string> tokens;
         boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
         if (!taskContext.contains(tokens.back())) {
-          for (size_t i = 0; i < bpKey.default_value.size(); ++i) {
+          size_t const nv = std::min(bpKey.default_value.size(),
+              bpKey.value_N.size());
+          for (size_t i = 0; i < nv; ++i) {
             taskContext.add<std::string>(tokens.back(), bpKey.default_value[i], std::abs(bpKey.value_N[i]));
           }
         }

@@ -14,6 +14,7 @@
 #include <tadah/mlip/mlip_user_config_parser.h>
 #include <tadah/mlip/itask_input.h>
 #include <vector>
+#include <memory>
 
 namespace tadah {
 namespace mlip {
@@ -29,13 +30,12 @@ namespace mlip {
 class TaskFactory {
 public:
   /**
-   * @brief Constructs a TaskFactory with an MLIPUserConfigParser.
-   *
-   * @param parser The user config parser to be used for config files.
-   *               Defaults to a new MLIPUserConfigParser instance.
+   * @brief Constructs a TaskFactory.
+   * @param parser Shared pointer to an MLIPUserConfigParser instance.
+   *               Defaults to a fresh parser if none provided.
    */
-  explicit TaskFactory(const MLIPUserConfigParser &parser = MLIPUserConfigParser());
-
+  explicit TaskFactory(std::shared_ptr<MLIPUserConfigParser> parser
+                       = std::make_shared<MLIPUserConfigParser>());
   /**
    * @brief Default destructor.
    */
@@ -57,7 +57,7 @@ public:
   std::vector<Task> createTasksFromInput(const ITaskInput &taskInput);
 
 private:
-  MLIPUserConfigParser parser_; ///< Parser used for user config files.
+  std::shared_ptr<MLIPUserConfigParser> parser_; ///< Shared parser for config files.
 };
 
 } // namespace mlip
