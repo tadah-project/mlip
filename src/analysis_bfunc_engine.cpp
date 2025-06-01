@@ -47,7 +47,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     dtype = taskContext.get<std::string>("TYPE2B");
     if (types[1]=="Y" || taskContext.get<bool>("RESCALE")) {
       double rcut = taskContext.get<double>("RCUT2BMAX");
-      fcut = core::factory<models::Cut_Base,double>( taskContext.get<std::string>("RCTYPE2B"), rcut);
+      fcut = core::factory<models::Cut_Base,double&>( taskContext.get<std::string>("RCTYPE2B"), rcut);
     }
   } else if (types[0]=="MB") {
     cgridtype="CGRIDMB";
@@ -55,7 +55,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     dtype = taskContext.get<std::string>("TYPEMB");
     if (types[1]=="Y" || taskContext.get<bool>("RESCALE")) {
       double rcut = taskContext.get<double>("RCUTMBMAX");
-      fcut = core::factory<models::Cut_Base,double>( taskContext.get<std::string>("RCTYPEMB"), rcut);
+      fcut = core::factory<models::Cut_Base,double&>( taskContext.get<std::string>("RCTYPEMB"), rcut);
     }
   } else {
     throw std::runtime_error("Unsupported -t, --type: " + types[0] + " " + types[1]);

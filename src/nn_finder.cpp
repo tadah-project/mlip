@@ -11,7 +11,11 @@ namespace tadah {
 namespace mlip {
 
 // Constructor
-NNFinder::NNFinder(tadah::core::Context &context)
+NNFinder::NNFinder(const tadah::core::Context &context)
+{
+  init(context);
+}
+void NNFinder::init(const tadah::core::Context &context)
 {
   cutoff     = context.get<double>("RCUTMAX");
   cutoff_sq  = cutoff * cutoff;

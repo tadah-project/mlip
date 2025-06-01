@@ -31,10 +31,10 @@ int AnalysisCutoffEngine::run(mlip::Task &task) {
   core::v_type range = core::linspace(start,stop,N);
   models::Cut_Base *fcut = nullptr;
   try {
-    fcut = core::factory<models::Cut_Base,double>( type, range.back() );
+    fcut = core::factory<models::Cut_Base,double&>( type, range.back() );
   } catch (const std::exception &e) {
     core::Logger::instance().log(tadah::core::LogLevel::ERROR, "Requested cutoff function does not exist: ", std::string(e.what()));
-    using RegistryType = tadah::core::Registry<tadah::models::Cut_Base, double>;
+    using RegistryType = tadah::core::Registry<tadah::models::Cut_Base, double&>;
     std::cout << "Available functions stored in the registry:" << std::endl;
     for (const auto& entry : RegistryType::registry) {
       std::cout << "Function name: " << entry.first << std::endl;
