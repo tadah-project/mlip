@@ -53,7 +53,13 @@ public:
     /**
      * Construct with cutoff from context("RCUTMAX").
      */
-    NNFinder(tadah::core::Context &context);
+    NNFinder(const tadah::core::Context &context);
+
+    /**
+     * Initialize NNFinder with context.
+     * Sets cutoff and cutoff_sq.
+     */
+    void init(const tadah::core::Context &context);
 
     /**
      * Build nearest neighbors for all atoms in one Structure.
