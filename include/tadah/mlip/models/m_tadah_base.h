@@ -79,6 +79,8 @@ public:
   /** Return potential file. */
   virtual tadah::core::Context get_param_file()=0;
 
+  virtual void set_context(const tadah::core::Context &)=0;
+
   // TRAINING
 
   /** This will fit a model without precalculated StDescriptorsDB object.

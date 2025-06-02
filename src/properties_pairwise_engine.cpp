@@ -81,7 +81,7 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Computing pairwise interactions...");
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
       *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,core::Context&>(
+  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext.get<std::string>("MODEL",1),potContext);
   M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext.get<std::string>("MODEL",0),*fb,potContext);
@@ -104,14 +104,14 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
   DescriptorsCalc<> dc_2b(potContext_2b,*DCS.d2b,*DCS.dmb,
       *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb_2b = tadah::core::factory<DM_Function_Base,core::Context&>(
+  DM_Function_Base *fb_2b = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext_2b.get<std::string>("MODEL",1),potContext_2b);
   M_Tadah_Base *modelp_2b = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext_2b.get<std::string>("MODEL",0),*fb_2b,potContext_2b);
 
   DescriptorsCalc<> dc_mb(potContext_mb,*DCS.d2b,*DCS.dmb,
       *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb_mb = tadah::core::factory<DM_Function_Base,core::Context&>(
+  DM_Function_Base *fb_mb = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext_mb.get<std::string>("MODEL",1),potContext_mb);
   M_Tadah_Base *modelp_mb = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext_mb.get<std::string>("MODEL",0),*fb_mb,potContext_mb);

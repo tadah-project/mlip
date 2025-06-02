@@ -16,11 +16,11 @@ namespace mlip {
 template <typename K>
 class Basis {
 private:
-  tadah::core::Context &context;
+  const tadah::core::Context &context;
 public:
   tadah::core::Matrix b;
   tadah::core::t_type T;    // Vectors corresponding to basis vectors
-  Basis(tadah::core::Context &c):
+  Basis(const tadah::core::Context &c):
     context(c)
   {}
 

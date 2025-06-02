@@ -84,7 +84,7 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Calculating descriptors...");
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
                        *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,core::Context&>(
+  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext.get<std::string>("MODEL",1),potContext);
   M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext.get<std::string>("MODEL",0),*fb,potContext);

@@ -61,7 +61,7 @@ int PredictEngine::run(mlip::Task &task) {
                        *DCS.c2b,*DCS.cmb);
   
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Prediction...");
-  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,core::Context&>(
+  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext.get<std::string>("MODEL",1),potContext);
   M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext.get<std::string>("MODEL",0),*fb,potContext);

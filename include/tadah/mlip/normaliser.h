@@ -21,10 +21,10 @@ public:
   Normaliser ():
     Normaliser_Core()
   {};
-  Normaliser (tadah::core::Context &c):
+  Normaliser (const tadah::core::Context &c):
     Normaliser_Core(c)
   {};
-  Normaliser(tadah::core::Context &c,StDescriptorsDB &st_desc_db):
+  Normaliser(const tadah::core::Context &c,StDescriptorsDB &st_desc_db):
     Normaliser_Core(c)
   {
     learn(st_desc_db);

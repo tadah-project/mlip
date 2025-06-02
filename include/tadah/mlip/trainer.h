@@ -17,9 +17,9 @@ namespace mlip {
 class Trainer {
   public:
     tadah::core::Context context;
-    tadah::models::DC_Selector DCS;
-    DescriptorsCalc<> dc;
-    NNFinder nnf;
+    tadah::models::DC_Selector DCS; // const
+    DescriptorsCalc<> dc; // modifies Context at init only
+    NNFinder nnf; // const
     DM_Function_Base *fb = nullptr;
     M_Tadah_Base *model = nullptr;
     DesignMatrix<DM_Function_Base&> dm;
@@ -32,20 +32,24 @@ class Trainer {
         delete fb;
     }
     Trainer (tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      context(c),
-      DCS(context),
+      context(c), // copy
+      DCS(context), // const, initialized with context
       dc(context,*DCS.d2b,*DCS.dmb,
-          *DCS.c2b,*DCS.cmb),
-      nnf(context),
-      fb(tadah::core::factory<DM_Function_Base,tadah::core::Context&>(
+          *DCS.c2b,*DCS.cmb), // modifies context at init only
+      nnf(context), // const, initialized with context
+      fb(tadah::core::factory<DM_Function_Base,const tadah::core::Context&>(
             context.get<std::string>("MODEL",1),context)),
       model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
-          (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),
-      dm(*fb, context, workspaceManager),
+          (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFES CONTEXT ON TRAINING
+      dm(*fb, context, workspaceManager), // does not modify context
       workspaceManager_(&workspaceManager)
-  {
-  }
+  {  }
 
+    void init(const tadah::core::Context &c) {
+      context = c; // copy
+      model->set_context(context);
+      dc.update_context();
+    }
     void train(StructureDB &stdb) {
       nnf.calc(stdb);
       model->train(stdb,dc);

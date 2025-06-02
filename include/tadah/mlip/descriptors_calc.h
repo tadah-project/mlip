@@ -98,13 +98,17 @@ class DescriptorsCalc: public DC_Base {
         DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &dm, T3 &c2, T4 &cm);
 
         /** Calculate all descriptors in a Structure st */
-        StDescriptors calc(const Structure &st);
+        StDescriptors calc(const Structure &st) const;
 
         /** Calculate all descriptors in a StructureDB st_db */
-        StDescriptorsDB calc(const StructureDB &st_db);
+        StDescriptorsDB calc(const StructureDB &st_db) const;
 
         /** Calculate density vector for the structure */
-        void calc_rho(const Structure &st, StDescriptors &std);
+        void calc_rho(const Structure &st, StDescriptors &std) const;
+
+        void update_context() {
+            common_constructor();
+        }
 
         C2 c2;
         CM cm;
@@ -114,8 +118,8 @@ class DescriptorsCalc: public DC_Base {
         template <typename T1, typename T2>
         DescriptorsCalc(tadah::core::Context &c,T1 &t1,T2 &t2);
 
-        void calc(const Structure &st, StDescriptors &std);
-        void calc_dimer(const Structure &st, StDescriptors &std);
+        void calc(const Structure &st, StDescriptors &std) const;
+        void calc_dimer(const Structure &st, StDescriptors &std) const;
         void common_constructor();
 };
 } // namespace mlip
