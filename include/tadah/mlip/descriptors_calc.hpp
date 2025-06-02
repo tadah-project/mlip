@@ -150,7 +150,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &
       //double rij_sq = delij * delij;
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
       if (rij_sq > rcut_mb_sq) continue;
-      size_t neighIdx = st.near_neigh_idx[i][jj];
+      size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       dm.calc_rho(Zi,Zj,rij,rij_sq,delij,st_d.get_rho(i));
@@ -224,7 +224,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
 
       if (rij_sq > rcut_max_sq) continue;
-      size_t neighIdx = st.near_neigh_idx[i][jj];
+      size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       double rij_inv = 1.0/rij;

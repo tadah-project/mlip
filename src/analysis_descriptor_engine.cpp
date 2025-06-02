@@ -76,9 +76,9 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
       std::to_string(potContext.get<double>("RCUTMAX")) + " cutoff distance...");
-  NNFinder nnf(potContext);
+  NNFinder nnf;
   for (auto &stdb : stdbs) {
-    nnf.calc(stdb);
+    nnf.calc(stdb, potContext);
   }
 
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Calculating descriptors...");
@@ -125,7 +125,7 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
       if (taskContext.get<bool>("FORCE")) {
         for (size_t a1=0; a1<st.natoms(); ++a1) {
           for (size_t jj=0; jj<stDesc.fd[a1].size(); ++jj) {
-            const size_t a2=st.near_neigh_idx[a1][jj];
+            const size_t a2=st.nn->idx[a1][jj];
             const core::fd_type &fij = stDesc.fd[a1][jj];
             for (size_t k=0; k<3; ++k) {
               oss << std::scientific << std::setprecision(numeric);

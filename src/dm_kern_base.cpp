@@ -30,7 +30,7 @@ void  DM_Kern_Base::calc_phi_force_rows(tadah::core::phi_type &Phi, size_t &row,
   for (size_t i=0; i<st.natoms(); ++i) {
     const tadah::core::aed_type& aedi = st_d.get_aed(i);
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
-      size_t j=st.near_neigh_idx[i][jj];
+      size_t j=st.nn->idx[i][jj];
       size_t ii = st.get_nn_iindex(i,j,jj);
       const tadah::core::fd_type &fdji = st_d.fd[j][ii];
       const tadah::core::fd_type &fdij = st_d.fd[i][jj];
@@ -53,7 +53,7 @@ void  DM_Kern_Base::calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row
     const tadah::core::Vec3d &ri = st(i).position;
     const tadah::core::aed_type& aedi = st_d.get_aed(i);
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
-      size_t j=st.near_neigh_idx[i][jj];
+      size_t j=st.nn->idx[i][jj];
       size_t ii = st.get_nn_iindex(i,j,jj);
       const tadah::core::fd_type &fdji = st_d.fd[j][ii];
       const tadah::core::fd_type &fdij = st_d.fd[i][jj];

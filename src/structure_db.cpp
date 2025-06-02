@@ -192,7 +192,7 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   return res;
 }
 void StructureDB::clear_nn() {
-  for (auto &struc: structures) struc.clear_nn();
+  for (auto &s : structures) s.clear_nn();
 }
 void StructureDB::check_atom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;

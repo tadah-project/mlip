@@ -84,7 +84,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       "Finding nearest neighbours within: " +
       core::to_string(tr.context.get<double>("RCUTMAX"),5) +
       " cutoff distance...");
-  tr.nnf.calc(stdb);
+  tr.nnf.calc(stdb, tr.context);
 
   // Begin the training process and inform if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");

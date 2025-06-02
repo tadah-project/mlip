@@ -20,57 +20,93 @@ namespace mlip {
  */
 class NNFinder {
 private:
-    double cutoff;      ///< The cutoff distance
-    double cutoff_sq;   ///< cutoff^2 for distance checks
+    using NNTable      = tadah::mlip::NNTable;
+    using NNTablePtr   = tadah::mlip::NNTablePtr;
 
     /**
      * Return false if any cell dimension < cutoff => fallback to naive.
      */
-    bool check_box(Structure &st);
+    bool check_box(const Structure &st, double cutoff) const;
 
     /**
      * Naive approach to build neighbor lists.
      */
-    void calc_naive(Structure &st);
+    void calc_naive(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
 
 
     /**
      * Remove duplicates from the neighbor list.
      */
-    void deduplicate(Structure &st);
+    void deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl) const;
 
     /**
      * Binning-based approach. If any dimension < cutoff, fallback to naive.
      */
-    void calc_binned(Structure &st);
+    void calc_binned(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
 
     /**
      * For naive approach, compute ±N to consider for image shifts.
      */
-    void num_shifts(Structure &st, int N[3]);
+    void num_shifts(const Structure &st, int N[3], double cutoff) const;
+
+    /**
+     * Helper to get the max cutoff value from context.
+     */
+    double get_cutoff(const tadah::core::Context &context) const;
 
 public:
     /**
      * Construct with cutoff from context("RCUTMAX").
      */
-    NNFinder(const tadah::core::Context &context);
-
-    /**
-     * Initialize NNFinder with context.
-     * Sets cutoff and cutoff_sq.
-     */
-    void init(const tadah::core::Context &context);
+    NNFinder() = default;
 
     /**
      * Build nearest neighbors for all atoms in one Structure.
      * Uses binned approach if possible, else naive fallback.
      */
-    void calc(Structure &st);
+    NNTablePtr build(Structure &st, double cutoff) const;
+
+    /**
+     * Build nearest neighbors for all atoms in one Structure.
+     * Uses context("RCUTMAX") to determine the cutoff.
+     *
+     * @param st Structure to build neighbors for.
+     * @param context Context to get the cutoff from.
+     */
+    NNTablePtr build(Structure &st, const core::Context &context) const;
+
+    /**
+     * Build nearest neighbors for all atoms in one Structure.
+     * Uses binned approach if possible, else naive fallback.
+     *
+     * @param st Structure to build neighbors for.
+     * @param cutoff Cutoff distance for neighbor search.
+     */
+    void calc(Structure &st, double cutoff) const;
+
+    /**
+     * Build nearest neighbors for all atoms in one Structure.
+     * Uses binned approach if possible, else naive fallback.
+     *
+     * @param st Structure to build neighbors for.
+     * @param cutoff Cutoff distance for neighbor search.
+     */
+    void calc(Structure &st, const core::Context &context) const;
 
     /**
      * Build nearest neighbors for each structure in a DB.
      */
-    void calc(StructureDB &stdb);
+    void calc(StructureDB &stdb, double cutoff) const;
+
+
+    /**
+     * Build nearest neighbors for each structure in a DB.
+     * Uses context("RCUTMAX") to determine the cutoff.
+     *
+     * @param stdb StructureDB to build neighbors for.
+     * @param context Context to get the cutoff from.
+     */
+    void calc(StructureDB &stdb, const core::Context &context) const;
 };
 
 } // namespace mlip
