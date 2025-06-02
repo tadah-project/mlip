@@ -149,12 +149,6 @@ public:
     return M_Tadah_Base::predict(c,stdb,dc);
   }
 
-  void set_context(const tadah::core::Context &c) {
-    context = c;
-    // desmat.set_context(c);
-    // norm.set_context(c);
-  }
-
   tadah::core::Context get_param_file() {
     tadah::core::Context c = context;
     //c.remove("ALPHA");

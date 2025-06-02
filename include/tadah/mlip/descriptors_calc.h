@@ -106,10 +106,6 @@ class DescriptorsCalc: public DC_Base {
         /** Calculate density vector for the structure */
         void calc_rho(const Structure &st, StDescriptors &std) const;
 
-        void update_context() {
-            common_constructor();
-        }
-
         C2 c2;
         CM cm;
         D2 d2;

@@ -38,11 +38,12 @@ Structure M_Tadah_Base::
 predict(const tadah::core::Context &c, StDescriptors &std, const Structure &stOrig)
 {
 
-  if(c.contains("WEIGHTS")) {
-    size_t num_weights = c.size("WEIGHTS");
-    weights.resize(num_weights);
-    c.get<>("WEIGHTS", weights);
-  }
+  // TODO ???
+  // if(c.contains("WEIGHTS") && weights.size()==0) {
+  //   size_t num_weights = c.size("WEIGHTS");
+  //   weights.resize(num_weights);
+  //   c.get<>("WEIGHTS", weights);
+  // }
 
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)
