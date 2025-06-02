@@ -128,7 +128,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   context.addInternal("DSIZE",dsize);
 }
 template <typename D2, typename DM, typename C2, typename CM>
-void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
+void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) const {
   double rcut_mb_sq = pow(context.get<double>("RCUTMBMAX"),2);
   tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
@@ -159,7 +159,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &
 }
 
 template <typename D2, typename DM, typename C2, typename CM>
-void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) {
+void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) const {
 
   bool init2b = context.get<bool>("INIT2B");
   bool initmb = context.get<bool>("INITMB");
@@ -267,7 +267,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
   // }
 }
 template <typename D2, typename DM, typename C2, typename CM>
-void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
+void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors &st_d)  const{
 
   double r_b = context.get<double>("DIMER",1);
   bool bond_bool = context.get<bool>("DIMER",2);
@@ -392,7 +392,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
 }
 
 template <typename D2, typename DM, typename C2, typename CM>
-StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) {
+StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) const {
   StDescriptors st_d(st, context);
   if (context.get<bool>("DIMER",0))
     calc_dimer(st,st_d);
@@ -402,7 +402,7 @@ StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) {
 }
 
 template <typename D2, typename DM, typename C2, typename CM>
-StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) {
+StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) const {
   StDescriptorsDB st_desc_db(stdb, context);
 
 #ifdef _OPENMP

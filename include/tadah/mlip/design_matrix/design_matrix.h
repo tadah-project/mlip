@@ -19,7 +19,7 @@ namespace mlip {
 
 class DesignMatrixBase {
 public:
-  static int phi_rows_num(tadah::core::Context &c, int nstruct_tot, int natoms_tot) {
+  static int phi_rows_num(const tadah::core::Context &c, int nstruct_tot, int natoms_tot) {
     bool force = c.get<bool>("FORCE");
     bool stress = c.get<bool>("STRESS");
     int rows = nstruct_tot;
@@ -94,7 +94,7 @@ public:
      *
      * \endcode
      */
-  DesignMatrix(F &f, tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
+  DesignMatrix(F &f, const tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager)
     : f(f),
     workspaceManager_(&workspaceManager),
     ownWorkspaceManager(false),
@@ -114,7 +114,7 @@ public:
   }
 
   // Constructor without workspaceManager_ parameter (delegating constructor)
-  DesignMatrix(F &f, tadah::core::Context &c)
+  DesignMatrix(F &f, const tadah::core::Context &c)
   : DesignMatrix(f, c, *new tadah::mlip::memory::MLIPWorkspaceManager())
   {
     ownWorkspaceManager = true;  // Set ownership flag
@@ -293,7 +293,7 @@ public:
 private:
   tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
   bool ownWorkspaceManager = false;
-  tadah::core::Context & context;
+  const tadah::core::Context & context;
   size_t rows = 0;
   size_t cols = 0;
   bool force;
@@ -362,10 +362,10 @@ private:
       tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Force standard deviation (ev/A): ", f_std_dev);
     }
 
-    context.addInternal("ESTDEV",e_std_dev);
-    context.addInternal("FSTDEV",f_std_dev);
-    for (size_t j=0; j<6; ++j)
-      context.addInternal("SSTDEV",s_std_dev[j]);
+    // context.addInternal("ESTDEV",e_std_dev);
+    // context.addInternal("FSTDEV",f_std_dev);
+    // for (size_t j=0; j<6; ++j)
+    //   context.addInternal("SSTDEV",s_std_dev[j]);
   }
 
 

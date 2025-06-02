@@ -202,6 +202,13 @@ public:
     return M_Tadah_Base::predict(c,stdb,dc);
   }
 
+  void set_context(const tadah::core::Context &c) {
+    context = c;
+    // desmat.set_context(c);
+    // norm.set_context(c);
+    // ekm.set_context(c);
+  }
+
   tadah::core::Context get_param_file() {
     tadah::core::Context c = context;
     c.remove("ALPHA");
@@ -216,8 +223,10 @@ public:
     int modelN=context.template get<int>("MODEL",2);
     c.add("MODEL", modelN);
 
-    for (size_t i=0;i<weights.size();++i) {
-      c.add("WEIGHTS", weights(i));
+    if (!c.contains("WEIGHTS")) {
+      for (size_t i=0;i<weights.size();++i) {
+        c.add("WEIGHTS", weights(i));
+      }
     }
 
     if(context.template get<bool>("NORM")) {
