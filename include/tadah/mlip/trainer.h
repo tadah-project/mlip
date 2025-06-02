@@ -45,11 +45,6 @@ class Trainer {
       workspaceManager_(&workspaceManager)
   {  }
 
-    void init(const tadah::core::Context &c) {
-      context = c; // copy
-      model->set_context(context);
-      dc.update_context();
-    }
     void train(StructureDB &stdb) {
       nnf.calc(stdb);
       model->train(stdb,dc);
