@@ -36,7 +36,6 @@ class Trainer {
       DCS(context), // const, initialized with context
       dc(context,*DCS.d2b,*DCS.dmb,
           *DCS.c2b,*DCS.cmb), // modifies context at init only
-      nnf(context), // const, initialized with context
       fb(tadah::core::factory<DM_Function_Base,const tadah::core::Context&>(
             context.get<std::string>("MODEL",1),context)),
       model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
@@ -46,7 +45,7 @@ class Trainer {
   {  }
 
     void train(StructureDB &stdb) {
-      nnf.calc(stdb);
+      nnf.calc(stdb, context);
       model->train(stdb,dc);
     }
 
@@ -550,7 +549,7 @@ class TrainerWorker: public MPI_Trainer {
       // do work
       StructureDB stdb;
       stdb.add(std::string(fn,fn_length),first,nstruc);
-      nnf.calc(stdb);
+      nnf.calc(stdb, context);
 
       // compute number of rows needed for a given StructureDB
       int rows_needed = 0;

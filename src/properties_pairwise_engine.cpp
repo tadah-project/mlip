@@ -75,8 +75,8 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
       std::to_string(potContext.get<double>("RCUTMAX")) + " cutoff distance...");
-  NNFinder nnf(potContext);
-  nnf.calc(stdb);
+  NNFinder nnf;
+  nnf.calc(stdb, potContext);
 
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Computing pairwise interactions...");
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,

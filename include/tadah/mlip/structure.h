@@ -2,6 +2,7 @@
 #define STRUCTURE_h
 
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/nn_table.h>
 #include <tadah/core/core_types.h>
 #include <tadah/core/periodic_table.h>
 
@@ -12,6 +13,7 @@
 #include <vector>
 #include <set>
 #include <unordered_map>
+
 namespace tadah {
 namespace mlip {
 
@@ -71,30 +73,7 @@ struct Structure {
    */
   double T=0;
 
-
-  /** Periodic image flag for neigherest neighbours.
-   *
-   * Indicate which periodic image the neigbouring atom belongs to.
-   *
-   * Example in two dimensions for illustration purposes:
-   *
-   *      -1, 1 | 0, 1 | 1, 1
-   *      -------------------
-   *      -1, 0 | 0, 0 | 1, 0
-   *      -------------------
-   *      -1,-1 | 0,-1 | 1,-1
-   *
-   * So [0,0] corresponds to the atom in the main box and [1,0] to periodic
-   * shift in the x-direction. Obviously we use three dimensions so this
-   * corresponds to [0,0,0] and [1,0,0].
-   *
-   * Note that there might be more than one periodic image in each direction.
-   * This depends on the box size and the cutoff distance used.
-   */
-  std::vector<std::vector<tadah::core::Vec3d>> near_neigh_shift;
-
-  /** List of global indices for nearest neighbours for every atom */
-  std::vector<std::vector<size_t>> near_neigh_idx;
+  mlip::NNTablePtr nn;   // may be nullptr until NNFinder fills it
 
   /** Weighting parameter for energy used during training.
    *
@@ -169,8 +148,8 @@ struct Structure {
  * computed via the neighbor's global index and periodic shifts.
  *
  * Assumes:
- *   near_neigh_idx[i][n]  -> global index of neighbor
- *   near_neigh_shift[i][n] -> integer triple (n1, n2, n3) OR real shift
+ *   nn->idx[i][n]  -> global index of neighbor
+ *   nn->shift[i][n] -> integer triple (n1, n2, n3) OR real shift
  *
  * Returns by value (tadah::core::Vec3d) so we don't reference a temporary.
  */
@@ -222,7 +201,7 @@ struct Structure {
    *  For many-body potentials we also need to know the density for atom at jj,
    *  hence we need j index. This is stored by:
    *
-   *      j=near_neigh_idx[a][jj]
+   *      j=nn->idx[a][jj]
    *
    *  Moreover we need to know derivatives (descriptor derivatives wrt to rij)
    *  at both i and j atoms. However if jj atom is outside of the main box
@@ -304,7 +283,7 @@ struct Structure {
   // return 0 if there is no more structures
   static int next_structure(std::ifstream &ifs);
 
-  /** Clear NN list */
+  /* clearing == drop the shared pointer */
   void clear_nn();
 
   // Methods to enable range-based for loop

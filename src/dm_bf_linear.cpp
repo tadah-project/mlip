@@ -33,7 +33,7 @@ void DM_BF_Linear::calc_phi_force_rows(tadah::core::phi_type &Phi, size_t &row,
 
   for (size_t a=0; a<st.natoms(); ++a) {
     for (size_t jj=0; jj<st_d.fd[a].size(); ++jj) {
-      const size_t j=st.near_neigh_idx[a][jj];
+      const size_t j=st.nn->idx[a][jj];
       const size_t aa = st.get_nn_iindex(a,j,jj);
       const tadah::core::fd_type &fij = st_d.fd[a][jj];
       const tadah::core::fd_type &fji = st_d.fd[j][aa];
@@ -53,7 +53,7 @@ void DM_BF_Linear::calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row,
   for (size_t i=0; i<st.natoms(); ++i) {
     const tadah::core::Vec3d &ri = st(i).position;
     for (size_t jj=0; jj<st_d.fd[i].size(); ++jj) {
-      const size_t j=st.near_neigh_idx[i][jj];
+      const size_t j=st.nn->idx[i][jj];
       const size_t ii = st.get_nn_iindex(i,j,jj);
       const tadah::core::fd_type &fdij = st_d.fd[i][jj];
       const tadah::core::fd_type &fdji = st_d.fd[j][ii];

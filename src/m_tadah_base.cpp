@@ -7,7 +7,7 @@ fpredict(const size_t a, tadah::core::force_type &v,
          const StDescriptors &std, const Structure &stOrig)
 {
   for (size_t jj=0; jj<stOrig.nn_size(a); ++jj) {
-    size_t j=stOrig.near_neigh_idx[a][jj];
+    size_t j=stOrig.nn->idx[a][jj];
     const size_t aa = stOrig.get_nn_iindex(a,j,jj);
     const tadah::core::fd_type &fdji = std.fd[j][aa];
     const tadah::core::fd_type &fdij = std.fd[a][jj];
@@ -37,13 +37,6 @@ epredict(const StDescriptors &std)
 Structure M_Tadah_Base::
 predict(const tadah::core::Context &c, StDescriptors &std, const Structure &stOrig)
 {
-
-  // TODO ???
-  // if(c.contains("WEIGHTS") && weights.size()==0) {
-  //   size_t num_weights = c.size("WEIGHTS");
-  //   weights.resize(num_weights);
-  //   c.get<>("WEIGHTS", weights);
-  // }
 
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)
@@ -126,7 +119,7 @@ spredict(const size_t a, tadah::core::stress_type &s,
   const tadah::core::Vec3d &ri = stOrig.atoms[a].position;
   const tadah::core::aed_type &aedi = std.get_aed(a);
   for (size_t jj=0; jj<stOrig.nn_size(a); ++jj) {
-    size_t j=stOrig.near_neigh_idx[a][jj];
+    size_t j=stOrig.nn->idx[a][jj];
     const size_t aa = stOrig.get_nn_iindex(a,j,jj);
     const tadah::core::Vec3d &rj = stOrig.nn_pos(a,jj);
     const tadah::core::fd_type &fdij = std.fd[a][jj];
@@ -157,7 +150,7 @@ stress_force_predict(const StDescriptors &std, Structure &stPred, const Structur
     const tadah::core::Vec3d &ri = stOrig.atoms[a].position;
     const tadah::core::aed_type &aedi = std.get_aed(a);
     for (size_t jj=0; jj<stOrig.nn_size(a); ++jj) {
-      size_t j=stOrig.near_neigh_idx[a][jj];
+      size_t j=stOrig.nn->idx[a][jj];
       const size_t aa = stOrig.get_nn_iindex(a,j,jj);
       const tadah::core::Vec3d &rj = stOrig.nn_pos(a,jj);
       const tadah::core::fd_type &fdij = std.fd[a][jj];

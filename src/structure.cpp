@@ -37,8 +37,6 @@ Structure::Structure() {
   stress.set_zero();
 
   atoms.clear();
-  near_neigh_shift.clear();
-  near_neigh_idx.clear();
 }
 
 /**
@@ -83,15 +81,15 @@ void Structure::remove_atom(const size_t i) {
  */
 // tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
 //   // (A) Global index of this neighbor
-//   const size_t neighborIndex = near_neigh_idx[i][n];
+//   const size_t neighborIndex = nn->idx[i][n];
 //
 //   // (B) Atom's original "unshifted" position
 //   const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
 //
 //   // (C) Convert the stored shift -> real displacement shiftDisp
-//   //     If near_neigh_shift[i][n] is an integer triple (n1, n2, n3),
+//   //     If nn->shift[i][n] is an integer triple (n1, n2, n3),
 //   //     multiply by the cell. Otherwise, if it's already in real space, it may simply be added.
-//   tadah::core::Vec3d shift = near_neigh_shift[i][n]; // Possibly an integer triple
+//   tadah::core::Vec3d shift = nn->shift[i][n]; // Possibly an integer triple
 //   tadah::core::Vec3d shiftDisp;
 //   shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(0,1) + shift[2] * cell(0,2);
 //   shiftDisp[1] = shift[0] * cell(1,0) + shift[1] * cell(1,1) + shift[2] * cell(1,2);
@@ -106,14 +104,14 @@ void Structure::remove_atom(const size_t i) {
 tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const 
 {
   // (A) index of neighbor
-  const size_t neighborIndex = near_neigh_idx[i][n];
+  const size_t neighborIndex    = nn->idx  [i][n];
 
   // (B) that neighbor's base ("home cell") position
   const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
 
   // (C) Convert the stored shift -> real displacement
-  //     We said near_neigh_shift[i][n] is the integer triple (n1,n2,n3).
-  tadah::core::Vec3d shift = near_neigh_shift[i][n]; // (n1,n2,n3)
+  //     We said nn->shift[i][n] is the integer triple (n1,n2,n3).
+  const auto& shift = nn->shift[i][n];
 
   // row-based multiplication
   tadah::core::Vec3d shiftDisp;
@@ -151,7 +149,7 @@ std::unordered_map<int,size_t> Structure::get_natoms_map() const {
  * Reason: Gives fast access to the local environment size of a specific atom.
  */
 size_t Structure::nn_size(size_t i) const {
-  return near_neigh_idx[i].size();
+  return nn ? nn->nn_size(i) : 0;
 }
 
 /**
@@ -322,14 +320,11 @@ void Structure::save(const std::string fn) const {
  *     size_t ii = get_nn_iindex(i, j, jj);
  */
 size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj) const {
-  tadah::core::Vec3d shift_ijj = -near_neigh_shift[i][jj];
+  tadah::core::Vec3d shift_ijj = -nn->shift[i][jj];
   size_t ii = 0;
-  for (size_t x = 0; x < near_neigh_idx[j].size(); ++x) {
-    if (near_neigh_idx[j][x] == i) {
-      if (near_neigh_shift[j][ii] == shift_ijj) {
-        break;
-      }
-    }
+  for (size_t x=0; x<nn->idx[j].size(); ++x)
+  {
+    if (nn->idx[j][x]==i && nn->shift[j][x]==shift_ijj) break;
     ii++;
   }
   return ii;
@@ -478,13 +473,8 @@ int Structure::next_structure(std::ifstream &ifs) {
   return natoms;
 }
 
-/**
- * Clears all nearest-neighbor related data.
- * Reason: Resets the neighbor lists, e.g. before recomputing them.
- */
 void Structure::clear_nn() {
-  near_neigh_shift.clear();
-  near_neigh_idx.clear();
+  nn.reset();
 }
 
 /**

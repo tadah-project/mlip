@@ -35,7 +35,7 @@ int PredictEngine::run(mlip::Task &task) {
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
       std::to_string(potContext.get<double>("RCUTMAX")) + " cutoff distance...");
-  NNFinder nnf(potContext);
+  NNFinder nnf;
 
   // StructureDB stdb(taskContext);
 
@@ -55,7 +55,7 @@ int PredictEngine::run(mlip::Task &task) {
   }
 
 
-  nnf.calc(stdb);
+  nnf.calc(stdb,potContext);
 
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
                        *DCS.c2b,*DCS.cmb);
