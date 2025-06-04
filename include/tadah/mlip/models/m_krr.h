@@ -110,8 +110,7 @@ public:
     desmat.build(st_desc_db,stdb,wcopy);
     train(desmat);
   }
-
-  void train(StructureDB &stdb, DC_Base &dc) {
+  void train(const StructureDB &stdb, DC_Base &dc) {
     int modelN;
     if (context.size("MODEL")==3) {
       modelN=context.template get<int>("MODEL",2);
@@ -130,7 +129,7 @@ public:
       "This KRR implementation does exist: "\
       + std::to_string(modelN)+"\n");
   }
-  void train1(StructureDB &stdb, DC_Base &dc) {
+  void train1(const StructureDB &stdb, DC_Base &dc) {
     // KRR implementation using EKM
     if(context.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
       // either build basis or prep normaliser
@@ -168,7 +167,7 @@ public:
     train(desmat);
   }
 
-  void train2(StructureDB &stdb, DC_Base &dc) {
+  void train2(const StructureDB &stdb, DC_Base &dc) {
 
     // NEW (BASIC) IMPLEMENTATION OF KRR //
     std::string force=context.template get<std::string>("FORCE");
