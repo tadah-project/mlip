@@ -88,7 +88,7 @@ public:
          *
          * @param dc is a DescriptorCalc object
          */
-  virtual void train(StructureDB &, DC_Base &) {};
+  virtual void train(const StructureDB &, DC_Base &) {};
 
 
   /** This will fit a model with precalculated StDescriptorsDB object.
