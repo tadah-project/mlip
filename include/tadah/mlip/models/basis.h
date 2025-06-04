@@ -62,7 +62,7 @@ larger than the amount of available AEDs\n");
     }
   }
   void prep_basis_for_krr(StDescriptorsDB &st_desc_db,
-                          StructureDB &stdb) {
+                          const StructureDB &stdb) {
 
     size_t s = context.get<size_t>("SBASIS");
 

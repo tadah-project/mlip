@@ -108,7 +108,7 @@ public:
     train(desmat);
   }
 
-  void train(StructureDB &stdb, DC_Base &dc) {
+  void train(const StructureDB &stdb, DC_Base &dc) {
 
     if(context.template get<bool>("NORM")) {
 
