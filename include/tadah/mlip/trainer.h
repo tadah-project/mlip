@@ -49,6 +49,10 @@ class Trainer {
       model->train(stdb,dc);
     }
 
+    void train(const StructureDB &stdb) {
+      model->train(stdb,dc);
+    }
+
     tadah::core::Context get_param_file() {
       return model->get_param_file();
     }
