@@ -32,8 +32,9 @@ public:
    * the code attempts to extract the COD material ID. Otherwise, it uses @p path
    * directly as the COD ID. The returned raw content is parsed with CifReader.
    *
-   * @param path  A COD entry ID (e.g. "1534932") or a fully qualified URL
-   *              (e.g. "https://www.crystallography.net/cod/1534932.cif").
+   * @param path  A COD entry ID (optionally with prepended "cod-")
+   * (e.g. "cod-1534932" and "1534932" are both valid)
+   * or a fully qualified URL (e.g. "https://www.crystallography.net/cod/1534932.cif").
    */
   void read(const std::string &path) override;
 

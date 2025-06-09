@@ -98,7 +98,7 @@ std::string StructureReaderSelector::guessFormat(const std::string &pathOrId) {
   }
 
   // COD uses 7-digit numeric code, e.g. "8104301".
-  if (isSevenDigits(pathOrId)) {
+  if (pathOrId.rfind("cod-", 0) == 0 /*&& isSevenDigits(pathOrId)*/) {
     return "COD";
   }
 
