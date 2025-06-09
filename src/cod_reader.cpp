@@ -55,7 +55,12 @@ void CODReader::read(const std::string &path) {
       throw std::runtime_error("CODReader::read - Cannot parse COD ID from URL: " + path);
     }
   } else {
-    codID = path; // assume direct numeric ID
+    if(path.rfind("cod-", 0) == 0) {
+      // If it starts with "cod-", strip that prefix
+      codID = path.substr(4); // skip "cod-"
+    } else {
+      codID = path; // assume direct numeric ID
+    } 
   }
 
   // Fetch raw CIF from COD
