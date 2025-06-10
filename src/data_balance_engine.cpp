@@ -103,12 +103,8 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
         auto natomsMap = st.get_natoms_map();
         for (const auto &pair : natomsMap) {
           int Z = pair.first;
-          size_t natomsZ = pair.first;
+          size_t natomsZ = pair.second;
           st.energy += eshiftMap[Z] * natomsZ;
-          std::cout << "DEBUG: Applying ESHIFT for element Z=" << Z
-                    << " with natoms=" << natomsZ
-                    << " and Eshift=" << eshiftMap[Z]
-                    << " to energy=" << st.energy << std::endl;
         }
       }
     }
