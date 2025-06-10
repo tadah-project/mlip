@@ -146,7 +146,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       std::vector<std::string> tokens;
       boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
       if (!taskContext.contains(tokens.back())) {
-        size_t const nv = std::min(bpKey.default_value.size(),
+        size_t const nv = std::max(bpKey.default_value.size(),
             bpKey.value_N.size());
         for (size_t i = 0; i < nv; ++i) {
           taskContext.add<std::string>(tokens.back(), bpKey.default_value[i], std::abs(bpKey.value_N[i]));
@@ -163,7 +163,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
         std::vector<std::string> tokens;
         boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
         if (!taskContext.contains(tokens.back())) {
-          size_t const nv = std::min(bpKey.default_value.size(),
+          size_t const nv = std::max(bpKey.default_value.size(),
               bpKey.value_N.size());
           for (size_t i = 0; i < nv; ++i) {
             taskContext.add<std::string>(tokens.back(), bpKey.default_value[i], std::abs(bpKey.value_N[i]));

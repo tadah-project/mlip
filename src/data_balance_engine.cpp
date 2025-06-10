@@ -58,11 +58,14 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
 
   // floating point thresholds for rescaling
   std::vector<double> thresholdVec(3);  // energy, force, stress
-  taskContext.get("THRESHOLD", thresholdVec);
-  // check if thresholds are positive
-  for (const auto &threshold : thresholdVec) {
-    if (threshold <= 0.0) {
-      throw std::runtime_error("THRESHOLD values must be positive.");
+  if (taskContext.get<bool>("RESCALE") && 
+      taskContext.contains("THRESHOLD")) {
+    taskContext.get("THRESHOLD", thresholdVec);
+    // check if thresholds are positive
+    for (const auto &threshold : thresholdVec) {
+      if (threshold <= 0.0) {
+        throw std::runtime_error("THRESHOLD values must be positive.");
+      }
     }
   }
   bool force = taskContext.get<bool>("FORCE");
