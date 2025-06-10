@@ -90,7 +90,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     std::fill(indicesBool.begin(), indicesBool.end(), true);
   }
 
-  if (taskContext.contains("ESHIFT")) {
+  if (!eshiftMap.empty() && taskContext.contains("ESHIFT")) {
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
         "DataBalanceEngine: Applying ESHIFT...");
     size_t currentIndex = 0;
@@ -102,12 +102,16 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
           int Z = pair.first;
           size_t natomsZ = pair.first;
           st.energy += eshiftMap[Z] * natomsZ;
+          std::cout << "DEBUG: Applying ESHIFT for element Z=" << Z
+                    << " with natoms=" << natomsZ
+                    << " and Eshift=" << eshiftMap[Z]
+                    << " to energy=" << st.energy << std::endl;
         }
       }
     }
   }
 
-  if (taskContext.contains("RESCALE")) {
+  if (taskContext.get<bool>("RESCALE")) {
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
         "DataBalanceEngine: Applying RESCALE...");
 
@@ -177,9 +181,9 @@ void DataBalanceEngine::validate(const tadah::mlip::Task &task) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
                              "Validating DataBalanceEngine...");
   core::Context taskContext = task.getContext();
-  bool rescale = taskContext.contains("RESCALE");
-  bool eshift = taskContext.contains("RESCALE");
-  if (!rescale && !eshift) {
+  bool doRescale = taskContext.get<bool>("RESCALE");
+  bool doEshift = taskContext.contains("ESHIFT") && taskContext.size("ESHIFT");
+  if (!doRescale && !doEshift) {
     throw std::runtime_error("DataBalanceEngine requires either RESCALE and/or ESHIFT option.");
   }
 
