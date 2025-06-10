@@ -28,14 +28,31 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
   StructureDB stdb;
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Adding structures to the database...");
-  if(taskContext.contains("DBFILE")) {
+
+  if(taskContext.size("DBFILE") && !taskContext.contains("INDEX")) {
+    // just print the summary and exit
+    std::string dbFile = taskContext.get<std::string>("DBFILE");
+    stdb.add(dbFile);
+    core::Logger::instance().log(tadah::core::LogLevel::INFO,
+        "Database file: " + dbFile);
+    std::cout << stdb << std::endl;
+    return EXIT_SUCCESS;
+  }
+  if(taskContext.size("DBFILE") && taskContext.contains("INDEX")) {
     std::vector<std::string> indicesStrVec;
     indicesStrVec.resize(taskContext.size("INDEX")); // required for DBFILE
     taskContext.get<>("INDEX", indicesStrVec);
     std::vector<size_t> indices =  core::parse_indices(indicesStrVec);
+    // if indices contain 0, we throw as min index is 1
+    if (std::find(indices.begin(), indices.end(), 0) != indices.end()) {
+      throw std::runtime_error("Indices start from 1, not 0.");
+    }
     std::string dbFile = taskContext.get<std::string>("DBFILE");
-    for (size_t i=0; i<indices.size(); ++i) {
-      stdb.add(dbFile,i);
+    for (auto i :indices) {
+      stdb.add(dbFile,i-1);
+    }
+    if (stdb.size() == 0) {
+      throw std::runtime_error("No structures found in the database with the given indices.");
     }
   }
   if(taskContext.contains("STRUCTURE")) {
@@ -48,12 +65,12 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
       stdb.add(s);
     }
   }
-
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Printing structures...");
   for (const auto &struc : stdb) {
     std::cout << struc << std::endl;
   }
+
 
   return EXIT_SUCCESS;
 }
