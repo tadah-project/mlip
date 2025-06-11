@@ -494,6 +494,30 @@ NNFinder::NNTablePtr NNFinder::build(Structure& st, double cutoff) const
 
     return tbl;
 }
+NNFinder::NNTablePtr
+NNFinder::build(const Structure& st, double cutoff) const
+{
+    auto tbl = std::make_shared<NNTable>();
+
+    tbl->idx.resize(st.natoms());
+    tbl->shift.resize(st.natoms());
+
+    if(!check_box(st, cutoff)) {
+        calc_naive(st, tbl, cutoff);
+        if (st.natoms() == 1)
+            deduplicate(st, tbl);
+    } else
+        calc_binned(st, tbl, cutoff);
+
+    return tbl;
+}
+
+NNFinder::NNTablePtr
+NNFinder::build(const Structure& st,
+                const core::Context& ctx) const
+{
+    return build(st, get_cutoff(ctx));
+}
 
 } // namespace mlip
 } // namespace tadah

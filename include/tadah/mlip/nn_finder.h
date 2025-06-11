@@ -107,6 +107,13 @@ public:
      * @param context Context to get the cutoff from.
      */
     void calc(StructureDB &stdb, const core::Context &context) const;
+
+
+    /* Build NN table without touching the Structure object  */
+    NNTablePtr build(const Structure& st, double cutoff) const;
+    NNTablePtr build(const Structure& st,
+        const core::Context& ctx) const;
+
 };
 
 } // namespace mlip
