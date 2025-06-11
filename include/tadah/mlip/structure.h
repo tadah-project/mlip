@@ -301,6 +301,34 @@ struct Structure {
   /** List of chemical elements in this structure. */
   std::set<tadah::core::Element> get_unique_elements() const;
 
+  /* Return all 3N Cartesian coordinates as a container         *
+   * Container must be default-constructible, hold scalars and  *
+   * provide reserve() and operator[].                          */
+
+// --- inside struct Structure ------------------------------------
+template<class Container = std::vector<double>>
+Container get_coords() const
+{
+    Container x;
+    x.reserve(3 * natoms());
+    for(const auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            x.push_back(static_cast<typename Container::value_type>
+                        (a.position(c)));
+    return x;
+}
+
+template<class Container>
+void set_coords(const Container& x)
+{
+    if(x.size() != 3 * natoms())
+        throw std::runtime_error("Structure::set_coords – size mismatch");
+    std::size_t k = 0;
+    for(auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            a.position(c) = static_cast<double>(x[k++]);
+}
+
   private:
     const static size_t w=13;  // controls output width
     const static size_t p=6;   // controls output precision
