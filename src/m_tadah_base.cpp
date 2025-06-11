@@ -87,10 +87,15 @@ predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc)
   #pragma omp parallel for
 #endif
   for (size_t i=0; i<stdb.size(); ++i) {
-    StDescriptors st_d = dc.calc(stdb(i));
-    stdb_(i) = predict(c,st_d, stdb(i));
+    stdb_(i) = predict(c, stdb(i), dc);
   }
   return stdb_;
+}
+Structure M_Tadah_Base::
+predict(tadah::core::Context &c, const Structure &st, DC_Base &dc)
+{
+    StDescriptors st_d = dc.calc(st);
+    return predict(c,st_d, st);
 }
 
 tadah::core::stress_type M_Tadah_Base::
