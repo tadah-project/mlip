@@ -153,9 +153,9 @@ public:
     tadah::core::Context c = context;
     //c.remove("ALPHA");
     //c.remove("BETA");
-    c.remove("DBFILE");
-    c.remove("FORCE");
-    c.remove("STRESS");
+    // c.remove("DBFILE");
+    // c.remove("FORCE");
+    // c.remove("STRESS");
 
     c.remove("MODEL");
     c.add("MODEL", label);
