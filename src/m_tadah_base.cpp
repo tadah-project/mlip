@@ -30,6 +30,8 @@ epredict(const StDescriptors &std)
   double energy = 0;
   for (size_t i=0;i<std.naed();++i) {
     double Ei =epredict(std.get_aed(i));
+    // std::cout << "E[" << i << "] = " << Ei << std::endl;
+    // std::cout << i << " AED: " << std.get_aed(i) << std::endl;
     energy+=Ei;
   }
   return energy;
