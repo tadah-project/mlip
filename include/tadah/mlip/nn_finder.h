@@ -23,17 +23,9 @@ private:
     using NNTable      = tadah::mlip::NNTable;
     using NNTablePtr   = tadah::mlip::NNTablePtr;
 
-    /**
-     * Return false if any cell dimension < cutoff => fallback to naive.
-     */
-    bool check_box(const Structure &st, double cutoff) const;
 
 
 
-    /**
-     * For naive approach, compute ±N to consider for image shifts.
-     */
-    void num_shifts(const Structure &st, int N[3], double cutoff) const;
 
     /**
      * Helper to get the max cutoff value from context.
@@ -41,6 +33,15 @@ private:
     double get_cutoff(const tadah::core::Context &context) const;
 
 public:
+    /**
+     * Compute ±N to consider for image shifts.
+     */
+    void num_shifts(const Structure &st, int N[3], double cutoff) const;
+    /**
+     * Return false if any cell dimension < cutoff => fallback to naive.
+     */
+    static bool check_box(const Structure &st, double cutoff);
+
     /**
      * Remove duplicates from the neighbor list.
      */

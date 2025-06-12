@@ -16,7 +16,7 @@ double NNFinder::get_cutoff(const tadah::core::Context &context) const
 }
 
 // ---------------------------------------------------------------------------
-bool NNFinder::check_box(const Structure &st, double cutoff) const
+bool NNFinder::check_box(const Structure &st, double cutoff) 
 {
   double cutoff_sq = cutoff * cutoff;
   for (int i = 0; i < 3; i++) {
