@@ -30,9 +30,11 @@ bool NNFinder::check_box(const Structure &st, double cutoff) const
   }
   return true;
 }
-
-// ---------------------------------------------------------------------------
-// Naive approach - store only neighbor indices and shifts, no local Atom copies
+/* ======================================================================
+   Naïve O(N² × #images) neighbour search that keeps every periodic copy
+   lying inside the cut-off sphere.  Returned table is symmetric (i→j and
+   j→i present) and shift = (n1,n2,n3) is the integer lattice vector.
+   ======================================================================*/
 void NNFinder::calc_naive(const Structure &st, std::shared_ptr<NNTable> tbl, double cutoff) const
 {
   double cutoff_sq = cutoff * cutoff;
@@ -102,31 +104,8 @@ void NNFinder::calc_naive(const Structure &st, std::shared_ptr<NNTable> tbl, dou
     }
   }
 
-  // shrink neighbor arrays
-  for (size_t i = 0; i < natoms; i++) {
-    tbl->shift[i].shrink_to_fit();
-    tbl->idx[i].shrink_to_fit();
-  }
+  deduplicate(st,tbl);
 }
-// void NNFinder::num_shifts(Structure &st, int N[3]) {
-//   tadah::core::Matrix3d cell_inv = st.cell.inverse();
-//
-//   double l1 = cell_inv.row(0).norm();
-//   double l2 = cell_inv.row(1).norm();
-//   double l3 = cell_inv.row(2).norm();
-//
-//   double f1 = (l1 > 0) ? 1.0/l1 : 1.0;
-//   double f2 = (l2 > 0) ? 1.0/l2 : 1.0;
-//   double f3 = (l3 > 0) ? 1.0/l3 : 1.0;
-//
-//   int b1 = std::max(int(f1/cutoff),1);
-//   int b2 = std::max(int(f2/cutoff),1);
-//   int b3 = std::max(int(f3/cutoff),1);
-//
-//   N[0] = (int)std::round(0.5 + cutoff*b1/f1);
-//   N[1] = (int)std::round(0.5 + cutoff*b2/f2);
-//   N[2] = (int)std::round(0.5 + cutoff*b3/f3);
-// }
 
 void NNFinder::num_shifts(const Structure &st, int N[3], double cutoff)  const
 {
@@ -203,137 +182,138 @@ void NNFinder::num_shifts(const Structure &st, int N[3], double cutoff)  const
   N[1] = std::max(N[1], 1);
   N[2] = std::max(N[2], 1);
 }
-
-// ---------------------------------------------------------------------------
-// Binned approach - similarly remove local copies, store just indices & shifts
-void NNFinder::calc_binned(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const
+static inline bool is_tilted(const core::Matrix3d& C, double eps = 1e-12)
 {
-  tbl->shift.resize(st.natoms());
-  tbl->idx.resize(st.natoms());
-  for (size_t i = 0; i < st.natoms(); i++) {
-    tbl->shift[i].reserve(100);
-    tbl->idx[i].reserve(100);
-  }
-
-  tadah::core::Matrix3d cellInv = st.cell.inverse();
-
-  auto rowLength = [&](int row){
-    double vx = st.cell(row, 0);
-    double vy = st.cell(row, 1);
-    double vz = st.cell(row, 2);
-    return std::sqrt(vx*vx + vy*vy + vz*vz);
-  };
-
-  double cellLenA = rowLength(0);
-  double cellLenB = rowLength(1);
-  double cellLenC = rowLength(2);
-
-  int nBinsA = std::max(1, (int)std::floor(cellLenA / cutoff));
-  int nBinsB = std::max(1, (int)std::floor(cellLenB / cutoff));
-  int nBinsC = std::max(1, (int)std::floor(cellLenC / cutoff));
-
-  struct BinCell {
-    std::vector<size_t> atomIndices;
-  };
-  std::vector<BinCell> bins(nBinsA * nBinsB * nBinsC);
-
-  auto binIndex = [&](int ia, int ib, int ic){
-    auto wrap = [&](int k, int n){ return ( (k % n) + n ) % n; };
-    ia = wrap(ia, nBinsA);
-    ib = wrap(ib, nBinsB);
-    ic = wrap(ic, nBinsC);
-    return size_t(ia + nBinsA * (ib + nBinsB * ic));
-  };
-
-  for (size_t i = 0; i < st.natoms(); i++) {
-    const auto &atm = st(i);
-
-    double fx = cellInv(0,0)*atm.position[0] 
-      + cellInv(0,1)*atm.position[1] 
-      + cellInv(0,2)*atm.position[2];
-
-    double fy = cellInv(1,0)*atm.position[0] 
-      + cellInv(1,1)*atm.position[1] 
-      + cellInv(1,2)*atm.position[2];
-
-    double fz = cellInv(2,0)*atm.position[0] 
-      + cellInv(2,1)*atm.position[1] 
-      + cellInv(2,2)*atm.position[2];
-
-    // wrap fractional coords into [0,1)
-    fx -= std::floor(fx);
-    fy -= std::floor(fy);
-    fz -= std::floor(fz);
-
-    int ia = (int)std::floor(fx*nBinsA);
-    int ib = (int)std::floor(fy*nBinsB);
-    int ic = (int)std::floor(fz*nBinsC);
-    bins[ binIndex(ia, ib, ic) ].atomIndices.push_back(i);
-  }
-
-  // search
-  double cutoff_sq = cutoff * cutoff;
-  for (int ia = 0; ia < nBinsA; ia++) {
-    for (int ib = 0; ib < nBinsB; ib++) {
-      for (int ic = 0; ic < nBinsC; ic++) {
-        size_t b0 = binIndex(ia, ib, ic);
-        auto &vec0 = bins[b0].atomIndices;
-
-        for (int ja = ia - 1; ja <= ia + 1; ja++) {
-          for (int jb = ib - 1; jb <= ib + 1; jb++) {
-            for (int jc = ic - 1; jc <= ic + 1; jc++) {
-              size_t b1 = binIndex(ja, jb, jc);
-              auto &vec1 = bins[b1].atomIndices;
-
-              int dA = ja - ia;
-              int dB = jb - ib;
-              int dC = jc - ic;
-
-              for (size_t idxA : vec0) {
-                for (size_t idxB : vec1) {
-                  if ((b0 == b1) && (idxB <= idxA)) continue;
-                  const Atom &a1 = st(idxA);
-                  const Atom &a2 = st(idxB);
-
-                  double fracX = double(dA)/double(nBinsA);
-                  double fracY = double(dB)/double(nBinsB);
-                  double fracZ = double(dC)/double(nBinsC);
-
-                  tadah::core::Vec3d shiftDisp(
-                      fracX * st.cell(0,0) + fracY * st.cell(1,0) + fracZ * st.cell(2,0),
-                      fracX * st.cell(0,1) + fracY * st.cell(1,1) + fracZ * st.cell(2,1),
-                      fracX * st.cell(0,2) + fracY * st.cell(1,2) + fracZ * st.cell(2,2)
-                      );
-
-                  double dx = a1.position[0] - (a2.position[0] + shiftDisp[0]);
-                  double dy = a1.position[1] - (a2.position[1] + shiftDisp[1]);
-                  double dz = a1.position[2] - (a2.position[2] + shiftDisp[2]);
-                  double dist2 = dx*dx + dy*dy + dz*dz;
-
-                  if (dist2 < cutoff_sq) {
-                    // forward
-                    tbl->idx[idxA].push_back(idxB);
-                    tbl->shift[idxA].push_back(tadah::core::Vec3d(dA, dB, dC));
-
-                    // reverse
-                    tbl->idx[idxB].push_back(idxA);
-                    tbl->shift[idxB].push_back(tadah::core::Vec3d(-dA, -dB, -dC));
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // shrink
-  for (size_t i = 0; i < st.natoms(); i++) {
-    tbl->shift[i].shrink_to_fit();
-    tbl->idx[i].shrink_to_fit();
-  }
+    return std::fabs(C(0,1)) > eps || std::fabs(C(0,2)) > eps ||
+           std::fabs(C(1,0)) > eps || std::fabs(C(1,2)) > eps ||
+           std::fabs(C(2,0)) > eps || std::fabs(C(2,1)) > eps;
 }
+// ======================================================================
+// Binned neighbour search – works for arbitrary triclinic cells.
+// ======================================================================
+void NNFinder::calc_binned(const Structure&         st,
+                               std::shared_ptr<NNTable> tbl,
+                               double                   cutoff) const
+{
+    const std::size_t N = st.natoms();
+    tbl->idx.resize(N);
+    tbl->shift.resize(N);
+
+    /* ------------------------------------------------------------ */
+    /* 1. decide bin counts in fractional space                     */
+    auto row_length = [&](int r){
+        double x=st.cell(r,0), y=st.cell(r,1), z=st.cell(r,2);
+        return std::sqrt(x*x+y*y+z*z); };
+
+    const double aL = row_length(0);
+    const double bL = row_length(1);
+    const double cL = row_length(2);
+    double Lmax = std::max({aL,bL,cL});
+
+    if ( is_tilted(st.cell) && (Lmax / cutoff) > 1.0 )
+      Lmax *= 0.5;                 // => bin-width doubled, nx,ny,nz halved
+
+    const double df = cutoff / Lmax;              // fractional bin width
+    const int nx = std::max(1, int(std::floor(1.0 / df)));
+    const int ny = nx;
+    const int nz = nx;                            // cubic bins in f-space
+
+    struct Bin { std::vector<std::size_t> atoms; };
+    std::vector<Bin> bins(std::size_t(nx*ny*nz));
+
+    auto wrap=[](int k,int n){ return ((k%n)+n)%n; };
+    auto bidx=[&](int ix,int iy,int iz){
+        return std::size_t(wrap(ix,nx)+nx*(wrap(iy,ny)+ny*wrap(iz,nz))); };
+
+    /* inverse cell & row vectors */
+    core::Matrix3d Cinv = st.cell.inverse();
+    core::Vec3d a(st.cell.row(0)), b(st.cell.row(1)), c(st.cell.row(2));
+
+    /* ------------------------------------------------------------ */
+    /* 2. put atoms into bins, store fractional coords              */
+    struct Frac{ double x,y,z; };
+    std::vector<Frac> fcoord(N);
+
+    for(std::size_t i=0;i<N;++i){
+        const auto& r = st(i).position;
+        double fx=Cinv(0,0)*r[0]+Cinv(0,1)*r[1]+Cinv(0,2)*r[2];
+        double fy=Cinv(1,0)*r[0]+Cinv(1,1)*r[1]+Cinv(1,2)*r[2];
+        double fz=Cinv(2,0)*r[0]+Cinv(2,1)*r[1]+Cinv(2,2)*r[2];
+        fx-=std::floor(fx); fy-=std::floor(fy); fz-=std::floor(fz);
+        fcoord[i]={fx,fy,fz};
+        bins[bidx(int(fx*nx),int(fy*ny),int(fz*nz))].atoms.push_back(i);
+    }
+
+    /* ------------------------------------------------------------ */
+    /* 3. exact lattice-vector span from naive helper               */
+    int Ns[3];  num_shifts(st,Ns,cutoff);
+
+    auto bspan=[&](int nBin,int Ns){ return std::max(1,(Ns+nBin-1)/nBin); };
+    const int sx=bspan(nx,Ns[0]), sy=bspan(ny,Ns[1]), sz=bspan(nz,Ns[2]);
+
+    const double rc2 = cutoff*cutoff;
+    for(std::size_t i=0;i<N;++i){
+        tbl->idx[i].reserve(32); tbl->shift[i].reserve(32); }
+
+    /* ------------------------------------------------------------ */
+    /* 4. neighbour search                                          */
+    for(int ix=0;ix<nx;++ix)
+      for(int iy=0;iy<ny;++iy)
+        for(int iz=0;iz<nz;++iz)
+        {
+            const auto& bin0 = bins[bidx(ix,iy,iz)].atoms;
+
+            for(int dx=-sx;dx<=sx;++dx)
+              for(int dy=-sy;dy<=sy;++dy)
+                for(int dz=-sz;dz<=sz;++dz)
+                {
+                    const auto& bin1 = bins[bidx(ix+dx,iy+dy,iz+dz)].atoms;
+                    for(std::size_t p:bin0)
+                      for(std::size_t q:bin1)
+                      {
+                          if(dx==0 && dy==0 && dz==0 && q<=p) continue;
+
+                          core::Vec3d shift(dx,dy,dz);
+                          core::Vec3d del =
+                               shift[0]*a + shift[1]*b + shift[2]*c +
+                               st(q).position - st(p).position;
+
+                          if(del*del < rc2){
+                              tbl->idx  [p].push_back(q);
+                              tbl->shift[p].push_back( shift);
+                              tbl->idx  [q].push_back(p);
+                              tbl->shift[q].push_back(-shift);
+                          }
+                      }
+                }
+        }
+
+    /* ------------------------------------------------------------
+       5. de-duplicate                                              */
+    struct Rec{ std::size_t j; core::Vec3d s; };
+    auto less=[](const Rec&a,const Rec&b){
+        if(a.j!=b.j) return a.j<b.j;
+        if(a.s[0]!=b.s[0]) return a.s[0]<b.s[0];
+        if(a.s[1]!=b.s[1]) return a.s[1]<b.s[1];
+        return a.s[2]<b.s[2]; };
+
+    for(std::size_t i=0;i<N;++i){
+        std::vector<Rec> rec;
+        rec.reserve(tbl->idx[i].size());
+        for(std::size_t k=0;k<tbl->idx[i].size();++k)
+            rec.push_back({tbl->idx[i][k], tbl->shift[i][k]});
+        std::sort(rec.begin(),rec.end(),less);
+        rec.erase(std::unique(rec.begin(),rec.end(),
+                    [](const Rec&a,const Rec&b){
+                        return a.j==b.j && a.s==b.s;}),rec.end());
+        tbl->idx[i].resize(rec.size());
+        tbl->shift[i].resize(rec.size());
+        for(std::size_t k=0;k<rec.size();++k){
+            tbl->idx[i][k]=rec[k].j; tbl->shift[i][k]=rec[k].s;}
+        tbl->idx[i].shrink_to_fit(); tbl->shift[i].shrink_to_fit();
+    }
+}
+
 
 void NNFinder::deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl ) const
 {
@@ -485,9 +465,6 @@ NNFinder::NNTablePtr NNFinder::build(Structure& st, double cutoff) const
 
     if(!check_box(st, cutoff)) {
       calc_naive(st,tbl, cutoff);
-      if (st.natoms() == 1) {
-        deduplicate(st,tbl);
-      }
     } else {
       calc_binned(st,tbl, cutoff);
     }
@@ -504,8 +481,6 @@ NNFinder::build(const Structure& st, double cutoff) const
 
     if(!check_box(st, cutoff)) {
         calc_naive(st, tbl, cutoff);
-        if (st.natoms() == 1)
-            deduplicate(st, tbl);
     } else
         calc_binned(st, tbl, cutoff);
 

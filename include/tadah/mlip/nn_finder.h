@@ -28,21 +28,7 @@ private:
      */
     bool check_box(const Structure &st, double cutoff) const;
 
-    /**
-     * Naive approach to build neighbor lists.
-     */
-    void calc_naive(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
 
-
-    /**
-     * Remove duplicates from the neighbor list.
-     */
-    void deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl) const;
-
-    /**
-     * Binning-based approach. If any dimension < cutoff, fallback to naive.
-     */
-    void calc_binned(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
 
     /**
      * For naive approach, compute ±N to consider for image shifts.
@@ -55,6 +41,20 @@ private:
     double get_cutoff(const tadah::core::Context &context) const;
 
 public:
+    /**
+     * Remove duplicates from the neighbor list.
+     */
+    void deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl) const;
+    /**
+     * Naive approach to build neighbor lists.
+     */
+    void calc_naive(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
+
+    /**
+     * Binning-based approach. If any dimension < cutoff, fallback to naive.
+     */
+    void calc_binned(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
+
     /**
      * Construct with cutoff from context("RCUTMAX").
      */

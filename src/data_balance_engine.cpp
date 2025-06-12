@@ -87,7 +87,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
       if (idx >= numStructures) {
         throw std::runtime_error("Index out of range.");
       }
-      indicesBool[idx] = true;
+      indicesBool[idx-1] = true;
     }
   } else {
     std::fill(indicesBool.begin(), indicesBool.end(), true);
