@@ -48,6 +48,8 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
     }
   }
   std::vector<size_t> indices =  core::parse_indices(indicesStr);
+  // Adjust for 0-based indexing
+  for (auto &i : indices) i--;
 
   std::string format = taskContext.get<std::string>("FORMAT");
   auto writer = StructureWriterSelector::get_writer(core::to_upper(format),stdb);

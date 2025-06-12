@@ -29,7 +29,8 @@ epredict(const StDescriptors &std)
 {
   double energy = 0;
   for (size_t i=0;i<std.naed();++i) {
-    energy+=epredict(std.get_aed(i));
+    double Ei =epredict(std.get_aed(i));
+    energy+=Ei;
   }
   return energy;
 }

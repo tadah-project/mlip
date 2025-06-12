@@ -149,7 +149,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &
 
       //double rij_sq = delij * delij;
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
-      if (rij_sq > rcut_mb_sq) continue;
+      if (rij_sq >= rcut_mb_sq) continue;
       size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
@@ -223,7 +223,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
 
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
 
-      if (rij_sq > rcut_max_sq) continue;
+      if (rij_sq >= rcut_max_sq) continue;
       size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
@@ -232,7 +232,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
       // CALCULATE TWO-BODY TERM
       if (use_force || use_stress) {
         tadah::core::fd_type &fd_ij = st_d.fd[i][jj];
-        if (rij_sq <= rcut_2b_sq && init2b) {
+        if (init2b && rij_sq < rcut_2b_sq) {
           d2.calc_all(Zi,Zj,rij,rij_sq,aed,fd_ij,0.5);
           // Two-body descriptor calculates x-direction only - fd_ij(n,0)
           // so we have to copy x-dir to y- and z-dir
@@ -245,26 +245,19 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
           }
         }
         // CALCULATE MANY-BODY TERM
-        if (rij_sq <= rcut_mb_sq && initmb) {
+        if (initmb && rij_sq < rcut_mb_sq) {
           tadah::core::rho_type& rhoi = st_d.get_rho(i);
           dm.calc_dXijdri(Zi,Zj,rij,rij_sq,delij,rhoi,fd_ij);
         }
       }
       else {
-        if (rij_sq <= rcut_2b_sq && init2b) {
+        if (init2b && rij_sq < rcut_2b_sq ) {
           d2.calc_aed(Zi, Zj,rij,rij_sq,aed,0.5);
         }
       }
 
     }
   }
-  // if (init2b) {
-  //   for (size_t n=0; n<st.natoms(); ++n) {
-  //     for(size_t s=bias; s<bias+d2.size(); ++s) {
-  //       st_d.get_aed(n)(s) *= 0.5;
-  //     }
-  //   }
-  // }
 }
 template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors &st_d)  const{

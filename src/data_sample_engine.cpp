@@ -90,7 +90,7 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
       throw std::runtime_error("Number of indices is larger than the number of available structures.");
     }
     size_t max_index = *std::max_element(indices.begin(), indices.end());
-    if (max_index>inStdb.size()) 
+    if (max_index>=inStdb.size())   // INDEX starts from 1
       throw std::runtime_error("Selected index is larger than the number of available structures.");
   }
 }
