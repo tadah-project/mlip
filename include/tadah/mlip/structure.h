@@ -329,6 +329,18 @@ void set_coords(const Container& x)
             a.position(c) = static_cast<double>(x[k++]);
 }
 
+template<class Scalar>
+void set_coords(const std::vector<Scalar>& x)
+{
+    if(x.size() != 3 * natoms())
+        throw std::runtime_error("size mismatch in set_coords");
+    std::size_t k = 0;
+    for(auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            a.position(c) = x[k++];        // NO cast to double
+}
+
+
   private:
     const static size_t w=13;  // controls output width
     const static size_t p=6;   // controls output precision

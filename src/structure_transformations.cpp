@@ -186,7 +186,7 @@ void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3
   n /= len;
 
   for (auto &atom : st.atoms) {
-    double proj = atom.position.dot(n);
+    double proj = atom.position * n;
     atom.position -= 2.0 * proj * n;
   }
 
@@ -211,15 +211,15 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
   tadah::core::Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
 
   tadah::core::Vec3d crossA2A3 = a2.cross(a3);
-  double denomA1  = a1.dot(crossA2A3);
+  double denomA1  = a1*crossA2A3;
   tadah::core::Vec3d b1        = crossA2A3 / denomA1;
 
   tadah::core::Vec3d crossA3A1 = a3.cross(a1);
-  double denomA2  = a2.dot(crossA3A1);
+  double denomA2  = a2*crossA3A1;
   tadah::core::Vec3d b2        = crossA3A1 / denomA2;
 
   tadah::core::Vec3d crossA1A2 = a1.cross(a2);
-  double denomA3  = a3.dot(crossA1A2);
+  double denomA3  = a3*crossA1A2;
   tadah::core::Vec3d b3        = crossA1A2 / denomA3;
 
   tadah::core::Vec3d g = (double)h*b1 + (double)k*b2 + (double)l*b3;
@@ -231,7 +231,7 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
 
   // reflection
   for (auto &atom : st.atoms) {
-    double proj = atom.position.dot(n);
+    double proj = atom.position*n;
     atom.position -= 2.0 * proj * n;
   }
 
