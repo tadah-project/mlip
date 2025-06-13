@@ -215,10 +215,11 @@ tadah::core::Context get_param_file() {
     int modelN=context.template get<int>("MODEL",2);
     c.add("MODEL", modelN);
 
-    if (!c.contains("WEIGHTS")) {
-      for (size_t i=0;i<weights.size();++i) {
-        c.add("WEIGHTS", weights(i));
-      }
+    if (c.contains("WEIGHTS")) {
+      c.remove("WEIGHTS");
+    }
+    for (size_t i=0;i<weights.size();++i) {
+      c.add("WEIGHTS", weights(i));
     }
 
     if(context.template get<bool>("NORM")) {
