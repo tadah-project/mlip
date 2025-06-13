@@ -161,10 +161,12 @@ public:
     c.add("MODEL", label);
     c.add("MODEL", bf.get_label());
 
-    if (!c.contains("WEIGHTS")) {
-      for (size_t i=0;i<weights.size();++i) {
-        c.add("WEIGHTS", weights(i));
-      }
+    if (c.contains("WEIGHTS")) {
+      c.remove("WEIGHTS");
+    }
+
+    for (size_t i=0;i<weights.size();++i) {
+      c.add("WEIGHTS", weights(i));
     }
 
     if(context.template get<bool>("NORM")) {
@@ -321,6 +323,8 @@ non linear basis function\n");
     tadah::core::t_type T = desmat.getT();
     //tadah::core::t_type &T = desmat.T;
     tadah::models::M_BLR_Train<BF>::train(Phi,T);
+
+    // std::cout << context << std::endl;
 
     if (context.template get<bool>("NORM") &&
       bf.get_label()=="BF_Linear") {

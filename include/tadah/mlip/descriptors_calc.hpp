@@ -6,6 +6,7 @@
 #include <tadah/core/periodic_table.h>
 
 #include <cstdio>
+
 namespace tadah {
 namespace mlip {
 
