@@ -1,3 +1,4 @@
+#include "tadah/core/registry.h"
 #include "tadah/models/functions/function_base.h"
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 namespace tadah {
