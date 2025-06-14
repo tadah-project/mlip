@@ -19,17 +19,6 @@ StDescriptors::StDescriptors(const Structure &s, const tadah::core::Context &c):
         }
     }
 
-    //if (c.get<bool>("STRESS")) {
-    //    sd.set_zero();
-    //}
-
-    // Partially init rho. We do not know the dimension of rhoi
-    // as it is specific to DMB calculator
-    // so DescriptorCalc will have to resize
-    if (c.get<size_t>("SIZEMB"))
-        rhos.resize(1,s.natoms());
-
-
 }
 StDescriptors::StDescriptors() {}
 

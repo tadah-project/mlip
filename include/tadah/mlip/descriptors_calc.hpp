@@ -17,7 +17,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T
   d2(t1),
   dm(t2)
 {
-  if (!context.contains("DSIZE"))
+  if (context.get<size_t>("DSIZE")==0)
     common_constructor();
   else {
     size_t bias=0;
@@ -37,7 +37,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2BMAX"));
-    if (!context.contains("RCTYPE2B")) {
+    if (context.contains("RCTYPE2B")) {
       context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
@@ -85,7 +85,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T
     }
   }
 
-  if (!context.contains("DSIZE"))
+  if (context.get<size_t>("DSIZE")==0)
     common_constructor();
 }
 template <typename D2, typename DM, typename C2, typename CM>
@@ -99,25 +99,17 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   if (context.get<bool>("BIAS"))
     bias++;
   if (context.get<bool>("INIT2B")) {
-    context.addInternal("SIZE2B",d2.size());
     if (!context.contains("TYPE2B"))
       context.add("TYPE2B",d2.label());
     dsize+=d2.size();
     d2.set_fidx(bias);
   }
-  else {
-    context.addInternal("SIZE2B",0);
-  }
 
   if (context.get<bool>("INITMB")) {
-    context.addInternal("SIZEMB",dm.size());
     if (!context.contains("TYPEMB"))
       context.add("TYPEMB",dm.label());
     dsize+=dm.size();
     dm.set_fidx(bias+d2.size());
-  }
-  else {
-    context.addInternal("SIZEMB",0);
   }
 
   if (!dsize)
@@ -167,8 +159,8 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
 
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=context.get<size_t>("SIZE2B");
-  if (initmb) sizemb=context.get<size_t>("SIZEMB");
+  if (init2b) size2b=d2.size();
+  if (initmb) sizemb=dm.size();
 
   // deal with the case initmb is set to true but dummy is used
   init2b = init2b && size2b;
@@ -279,8 +271,8 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
   bool initmb = context.get<bool>("INITMB");
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=context.get<size_t>("SIZE2B");
-  if (initmb) sizemb=context.get<size_t>("SIZEMB");
+  if (init2b) size2b=d2.size();
+  if (initmb) sizemb=dm.size();
 
   // deal with the case initmb is set to true and dummy is used
   init2b = init2b && size2b;
