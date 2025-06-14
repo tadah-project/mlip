@@ -164,7 +164,6 @@ public:
     if (c.contains("WEIGHTS")) {
       c.remove("WEIGHTS");
     }
-
     for (size_t i=0;i<weights.size();++i) {
       c.add("WEIGHTS", weights(i));
     }

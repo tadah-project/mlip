@@ -22,8 +22,8 @@ operator()( const Structure&            st,
     /* ---------- runtime flags exactly like DescriptorsCalc --------- */
     bool       init2b   = ctx.get<bool>("INIT2B");
     bool       initmb   = ctx.get<bool>("INITMB");
-    std::size_t size2b  = init2b ? ctx.get<std::size_t>("SIZE2B") : 0;
-    std::size_t sizemb  = initmb ? ctx.get<std::size_t>("SIZEMB") : 0;
+    std::size_t size2b  = init2b ? dc.d2b->size() : 0;
+    std::size_t sizemb  = initmb ? dc.dmb->size() : 0;
 
     init2b = init2b && size2b;
     initmb = initmb && sizemb;
