@@ -1,11 +1,12 @@
+#include <tadah/core/registry.h>
 #include <tadah/mlip/design_matrix/functions/dm_f_all.h>
+
 namespace tadah {
 namespace mlip {
 
 template<> tadah::core::Registry<DM_Function_Base>::Map tadah::core::Registry<DM_Function_Base>::registry{};
 template<> tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::Map
   tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::registry{};
-
 
 tadah::core::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "BF_Linear" );
 tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );
