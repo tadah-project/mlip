@@ -1,6 +1,6 @@
 #include <tadah/mlip/models/m_all.h>
-#include <tadah/models/memory/IModelsWorkspaceManager.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/models/memory/imodels_workspace_manager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
 namespace tadah {
 namespace mlip {
 
