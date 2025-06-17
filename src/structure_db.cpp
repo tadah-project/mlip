@@ -9,9 +9,9 @@ namespace mlip {
 StructureDB::StructureDB() {
   tadah::core::PeriodicTable::initialize();
 }
-StructureDB::StructureDB(tadah::core::Config &config) {
+StructureDB::StructureDB(tadah::core::Context &context) {
   tadah::core::PeriodicTable::initialize();
-  add(config);
+  add(context);
 }
 
 void StructureDB::add(const std::string fn) {
@@ -70,8 +70,8 @@ void StructureDB::remove(size_t i) {
   structures.erase(structures.begin()+i);
 }
 
-void StructureDB::add(tadah::core::Config &config) {
-  for (const std::string &s : config("DBFILE")) {
+void StructureDB::add(tadah::core::Context &context) {
+  for (const std::string &s : context("DBFILE")) {
     dbidx.push_back(size());
     add(s);
   }
@@ -152,7 +152,7 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
   }
   return s;
 }
-std::set<tadah::core::Element> StructureDB::find_unique_elements(const tadah::core::Config &c) {
+std::set<tadah::core::Element> StructureDB::find_unique_elements(const tadah::core::Context &c) {
   std::set<tadah::core::Element> s;
   for (const auto& fn: c("DBFILE")) {
     std::set<tadah::core::Element> temp = find_unique_elements(fn);
@@ -165,9 +165,9 @@ template <typename T,typename U>
 std::pair<T,U> operator+(const std::pair<T,U>  &l,const std::pair<T,U>  &r) {   
   return {l.first+r.first,l.second+r.second};                                    
 }  
-std::pair<int,int> StructureDB::count(const tadah::core::Config &config) {
+std::pair<int,int> StructureDB::count(const tadah::core::Context &context) {
   std::pair<int, int> res=std::make_pair(0,0);  
-  for (const std::string &fn : config("DBFILE")) {
+  for (const std::string &fn : context("DBFILE")) {
     res = res + count(fn);
   }
   return res;
@@ -194,18 +194,18 @@ std::pair<int,int> StructureDB::count(const std::string fn){
 void StructureDB::clear_nn() {
   for (auto &struc: structures) struc.clear_nn();
 }
-void StructureDB::check_atoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements) {
+void StructureDB::check_atoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
-  if (config.exist("ATOMS")) {
+  if (context.contains("ATOMS")) {
     // user set this key so here we check does it correspond to unique_elements
-    if (unique_elements.size()!=config.size("ATOMS")) {
+    if (unique_elements.size()!=context.size("ATOMS")) {
       error=true;
     }
 
     auto set_it = unique_elements.begin();
-    auto atoms_it = config("ATOMS").begin();
-    while (set_it != unique_elements.end() && atoms_it != config("ATOMS").end()) {
+    auto atoms_it = context("ATOMS").begin();
+    while (set_it != unique_elements.end() && atoms_it != context("ATOMS").end()) {
       if (set_it->symbol != (*atoms_it))  {
         error=true;
       }
@@ -214,32 +214,32 @@ void StructureDB::check_atoms_key(tadah::core::Config &config, std::set<tadah::c
     }
     if (error) {
       throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and ATOMS in the config file.\n"
-          "Please either update the ATOMS in the config file or remove ATOMS\n"
+          "Mismatch between elements in datasets and ATOMS in the context file.\n"
+          "Please either update the ATOMS in the context file or remove ATOMS\n"
           "key completely. Tadah! will automatically configure this key.\n"
           );
     }
   } else {
-    for (const auto &s : unique_elements) config.add("ATOMS", s.symbol);
+    for (const auto &s : unique_elements) context.add("ATOMS", s.symbol);
   }
 }
-void StructureDB::check_watoms_key(tadah::core::Config &config, std::set<tadah::core::Element> &unique_elements) {
+void StructureDB::check_watoms_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
   bool error=false;
 
-  if (config.exist("WATOMS")) {
+  if (context.contains("WATOMS")) {
     // user set this key so here we check does it correspond to unique_elements
-    if (unique_elements.size()!=config.size("WATOMS")) {
+    if (unique_elements.size()!=context.size("WATOMS")) {
       error=true;
     }
     if (error) {
       throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and WATOMS in the config file.\n"
-          "Please either update the WATOMS in the config file or remove WATOMS\n"
+          "Mismatch between elements in datasets and WATOMS in the context file.\n"
+          "Please either update the WATOMS in the context file or remove WATOMS\n"
           "key completely. In the latter case Tadah! will use default values.\n"
           );
     }
   } else {
-    for (const auto &s : unique_elements) config.add("WATOMS", s.Z);
+    for (const auto &s : unique_elements) context.add("WATOMS", s.Z);
   }
 }
 

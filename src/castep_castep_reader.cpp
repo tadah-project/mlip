@@ -375,11 +375,11 @@ void CastepCastepReader::parse_data() {
 
     // The old cell is reverted and printed before final enthalpy from the current iteration
     // We simply skip over this block of text
-    if (line.find("reverting to earlier configuration") != std::string::npos) {
-      if (debug) std::cout << "reverting to earlier configuration" << std::endl;
+    if (line.find("reverting to earlier contexturation") != std::string::npos) {
+      if (debug) std::cout << "reverting to earlier contexturation" << std::endl;
       for (int i = 0; i < 30; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Failed skiping over revered configuration " << line_counter << ")." << std::endl;
+          std::cerr << "Warning: Failed skiping over revered contexturation " << line_counter << ")." << std::endl;
           break;
         }
         ++line_counter;

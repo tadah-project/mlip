@@ -18,7 +18,7 @@ class AnalysisEngine {
 public:
   static int descriptor(const std::vector<std::string>& datasets, const std::string &pot_file,
                         const std::string &outfile, const std::vector<std::string>& indices);
-  static int bfunc(const std::string &config_file, const std::string &outfile,
+  static int bfunc(const std::string &context_file, const std::string &outfile,
                    const std::vector<double>& range, const std::vector<std::string>& types,
                    bool derivative, bool scale, int numeric_precision);
   static int cutoff(const std::string &outfile, const std::vector<double>& range,

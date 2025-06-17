@@ -1,6 +1,6 @@
 /**
  * @file PlainTextKeyStorage.h
- * @brief Implementation of IKeyStorage that reads/writes plain-text keys in ~/.config/tadah/keys.
+ * @brief Implementation of IKeyStorage that reads/writes plain-text keys in ~/.context/tadah/keys.
  */
 
 #ifndef PLAINTEXTKEYSTORAGE_H
@@ -15,7 +15,7 @@ namespace mlip {
  * @class PlainTextKeyStorage
  * @brief Handles storage of keys in a plain-text file.
  *
- * The file is located in "~/.config/tadah/keys" if possible, otherwise "." 
+ * The file is located in "~/.context/tadah/keys" if possible, otherwise "." 
  * is used as a fallback.
  *
  * Format of each line: KEY_NAME value
@@ -47,9 +47,9 @@ public:
   bool storeKey(const std::string& keyName, const std::string& keyValue) override;
 
 private:
-  std::string m_configDir; ///< Directory path used for storing the "keys" file.
+  std::string m_contextDir; ///< Directory path used for storing the "keys" file.
 
-  std::string prepareConfigDirectory();
+  std::string prepareContextDirectory();
   std::string getKeysFilePath() const;
 
   // Helpers for file read/write

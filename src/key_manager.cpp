@@ -14,7 +14,7 @@ namespace mlip {
 
 std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
 {
-  // 1) Resolve which env/config key to look for
+  // 1) Resolve which env/context key to look for
   const std::string keyName = resolveKeyName(service);
 
   // 2) Acquire fallback storage that checks environment first, then the file
@@ -34,7 +34,7 @@ std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
 
   int choice = promptUserChoice();
   switch (choice) {
-    case 1:  // Store in config file
+    case 1:  // Store in context file
     {
       std::cout << "Please enter the key now (Ctrl+C to cancel):\n> ";
       std::getline(std::cin, val);
@@ -44,9 +44,9 @@ std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
       }
       bool storeOk = storage->storeKey(keyName, val);
       if (!storeOk) {
-        std::cerr << "Failed to store key in config.\n";
+        std::cerr << "Failed to store key in context.\n";
       } else {
-        std::cout << "[Info] Key stored in config file (~/.config/tadah/keys).\n";
+        std::cout << "[Info] Key stored in context file (~/.context/tadah/keys).\n";
       }
       return val;
     }
@@ -112,7 +112,7 @@ int KeyManager::promptUserChoice()
 {
   // Four options now
   std::cout << "Please select an option:\n"
-            << "[1] Store the key in a config file (persistent)\n"
+            << "[1] Store the key in a context file (persistent)\n"
             << "[2] Temporarily set environment variable for THIS run only\n"
             << "[3] View instructions for exporting in your shell (useful across multiple runs)\n"
             << "[4] Abort (do nothing)\n"

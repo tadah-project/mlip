@@ -35,7 +35,7 @@ epredict(const StDescriptors &std)
 }
 
 Structure M_Tadah_Base::
-predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st)
+predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st)
 {
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)
@@ -61,7 +61,7 @@ predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st)
 }
 
 StructureDB M_Tadah_Base::
-predict(const tadah::core::Config &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
+predict(const tadah::core::Context &c, StDescriptorsDB &st_desc_db, const StructureDB &stdb)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
@@ -75,7 +75,7 @@ predict(const tadah::core::Config &c, StDescriptorsDB &st_desc_db, const Structu
 }
 
 StructureDB M_Tadah_Base::
-predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc)
+predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());

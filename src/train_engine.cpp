@@ -2,7 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/memory/MLIPWorkspaceManager.h>
@@ -14,7 +14,7 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-int TrainEngine::train(tadah::core::Config &config) {
+int TrainEngine::train(tadah::core::Context &context) {
   try {
     int rank = 0;
     int ncpu = 1;
@@ -32,8 +32,8 @@ int TrainEngine::train(tadah::core::Config &config) {
       }
 
       // The uncertainty flag is incompatible with MPI
-      if (config.exists(
-              "--uncertainty")) { // TODO Config does not have this key
+      if (context.exists(
+              "--uncertainty")) { // TODO Context does not have this key
         std::cout << "-----------------------------------------------------"
                   << std::endl;
         std::cout << "The --uncertainty flag is not supported by MPI build."
@@ -44,16 +44,15 @@ int TrainEngine::train(tadah::core::Config &config) {
       }
 
       // Start training timer if verbose mode is enabled
-      Logger::instance().log(LogLevel::INFO, "Training...");
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
       // Initialize host MPI trainer
-      TrainerHost host(config, rank, ncpu);
+      TrainerHost host(context, rank, ncpu);
       host.run();
 
       // Perform the final computation and save parameters
       host.solve();
 
-      tadah::core::Config param_file = host.model->get_param_file();
-      param_file.check_pot_file();
+      tadah::core::Context param_file = host.model->get_param_file();
       std::ofstream outfile("pot.tadah");
       if (outfile.is_open()) {
         outfile << param_file << std::endl;
@@ -62,45 +61,44 @@ int TrainEngine::train(tadah::core::Config &config) {
       }
     } else { // Worker code
       // Initialize worker MPI trainer
-      TrainerWorker worker(config, rank, ncpu);
+      TrainerWorker worker(context, rank, ncpu);
       worker.run();
       worker.solve(); // Perform worker computations
     }
 #else // Non-MPI version
     tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    Trainer tr(config, workspaceManager);
+    Trainer tr(context, workspaceManager);
 
     // Load structures and provide feedback if verbose
-    Logger::instance().log(LogLevel::INFO, "Loading structures...");
-    StructureDB stdb(tr.config);
-    Logger::instance().log(LogLevel::INFO, "Done");
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
+    StructureDB stdb(tr.context);
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done");
 
     // Calculate nearest neighbors and provide feedback
-    Logger::instance().log(LogLevel::INFO,
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
                            "Finding nearest neighbours within: " +
-                               tr.config.get<std::string>("RCUTMAX") +
+                               tr.context.get<std::string>("RCUTMAX") +
                                " cutoff distance...");
     tr.nnf.calc(stdb);
-    Logger::instance().log(LogLevel::INFO, "Done!");
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done!");
 
     // Begin the training process and inform if verbose
-    Logger::instance().log(LogLevel::INFO, "Training start...");
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
     tr.model->train(stdb, tr.dc);
-    Logger::instance().log(LogLevel::INFO, "Done!");
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Done!");
 
     // Save the trained model parameters to a file
-    tadah::core::Config param_file = tr.model->get_param_file();
-    param_file.check_pot_file();
+    tadah::core::Context param_file = tr.model->get_param_file();
     std::ofstream outfile("pot.tadah");
     if (outfile.is_open()) {
       outfile << param_file << std::endl;
     } else {
-      Logger::instance().log(LogLevel::ERROR,
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
                              "Error: Unable to open file pot.tadah");
     }
 
     // Output uncertainty if requested
-    if (config.exist("--uncertainty")) {
+    if (context.contains("--uncertainty")) {
       tadah::core::t_type weights = tr.model->get_weights();
       tadah::core::t_type unc = tr.model->get_weights_uncertainty();
       Output(param_file, false).print_train_unc(weights, unc);

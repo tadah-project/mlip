@@ -1,58 +1,69 @@
 #include <tadah/mlip/engines/predict_engine.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/nn_finder.h>
+#include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/models/m_tadah_base.h>
+#include <tadah/mlip/output/output.h>
+#include <tadah/mlip/analytics/analytics.h>
+#include <tadah/models/dc_selector.h>
 #include <iostream>
+
+#ifdef TADAH_BUILD_MPI
+#include <mpi.h>
+#endif
 
 namespace tadah {
 namespace mlip {
 namespace engines {
 
-int PredictEngine::predict(const tadah::core::Config &pot_config, const StructureDB &stdb) {
+int PredictEngine::predict(const tadah::core::Context &pot_context, const StructureDB &stdb) {
+  int rank = 0;
+  #ifdef TADAH_BUILD_MPI
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  #endif
   if (rank!=0) return EXIT_SUCCESS;
 
-  tadah::core::Config pot_config(pot_file);
+  // tadah::core::Context pot_context(pot_file);
 
 
-  DC_Selector DCS(pot_config);
+  tadah::models::DC_Selector DCS(pot_context);
 
 
-  if (is_verbose()) std::cout << "Finding nearest neighbours within: " <<
-    pot_config.get<double>("RCUTMAX") << " cutoff distance..." << std::flush;
-  NNFinder nnf(pot_config);
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
+    std::to_string(pot_context.get<double>("RCUTMAX")) + " cutoff distance...");
+  NNFinder nnf(pot_context);
   nnf.calc(stdb);
-  if (is_verbose()) std::cout << "Done!" << std::endl;
 
-  DescriptorsCalc<> dc(pot_config,*DCS.d2b,*DCS.d3b,*DCS.dmb,
+  tadah::models::DescriptorsCalc<> dc(pot_context,*DCS.d2b,*DCS.d3b,*DCS.dmb,
                        *DCS.c2b,*DCS.c3b,*DCS.cmb);
 
-  if (is_verbose()) std::cout << "Prediction..." << std::flush;
-  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,Config&>(
-    pot_config.get<std::string>("MODEL",1),pot_config);
-  M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,Config&>(
-    pot_config.get<std::string>("MODEL",0),*fb,pot_config);
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Prediction...");
+  DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,Context&>(
+    pot_context.get<std::string>("MODEL",1),pot_context);
+  M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,Context&>(
+    pot_context.get<std::string>("MODEL",0),*fb,pot_context);
 
   StructureDB stpred;
-  aed_type predicted_error;
+  tadah::core::aed_type predicted_error;
   if (predict->count("--error")) {
-    stpred = modelp->predict(pot_config,stdb,dc,predicted_error);
+    stpred = modelp->predict(pot_context,stdb,dc,predicted_error);
   }
   else {
-    stpred = modelp->predict(pot_config,stdb,dc);
+    stpred = modelp->predict(pot_context,stdb,dc);
   }
 
-  if (is_verbose()) std::cout << "Done!" << std::endl;
+  tada::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Dumping output...");
 
-  if (is_verbose()) std::cout << "Dumping output..." << std::flush;
-
-  Output output(pot_config,predict->count("--error"));
+  Output output(pot_context,predict->count("--error"));
 
   if (predict->count("--numeric"))
     output.set_numeric(outprec);
 
   output.print_predict_all(stdb,stpred,predicted_error);
 
-  if (is_verbose()) std::cout << "Done!" << std::endl;
-  if (is_verbose()) std::cout << timer_tot.to_string() << std::endl;
+
+  tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, timer_tot.to_string());
 
   if(predict->count("--analytics")) {
     Analytics a(stdb,stpred);

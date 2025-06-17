@@ -7,7 +7,7 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_krr_train.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/mlip/models/basis.h>
 #include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
 
@@ -34,7 +34,7 @@ namespace mlip {
  * **Usage**:
  * - **Kernels**: Use kernel functions (e.g., linear, RBF) to transform data for effective modeling in higher-dimensional spaces.
  *
- * **Configuration Options**:
+ * **Contexturation Options**:
  * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares, positive values for manual setting, or `-1` for automatic tuning.
  * - **SBASIS**: Defines the number of basis functions for nonlinear kernels.
  *
@@ -50,17 +50,17 @@ class M_KRR: public M_Tadah_Base,
 public:
 
   /** 
-     * @brief Initializes for training or prediction using a configuration.
+     * @brief Initializes for training or prediction using a contexturation.
      * 
    * **Example**:
    * \code{.cpp}
-   * tadah::core::Config config("tadah::core::Config");
-   * M_KRR<tadah::models::Kern_Linear> krr(config);
+   * tadah::core::Context context("tadah::core::Context");
+   * M_KRR<tadah::models::Kern_Linear> krr(context);
    * \endcode
    *
-     * @param c Configuration object.
+     * @param c Contexturation object.
      */
-  M_KRR(tadah::core::Config &c):
+  M_KRR(tadah::core::Context &c):
     tadah::models::M_KRR_Train<K>(c),
     basis(c),
     desmat(kernel,c)
@@ -69,12 +69,12 @@ public:
   }
 
   /** 
-   * @brief Initializes for training or prediction using a kernel and configuration.
+   * @brief Initializes for training or prediction using a kernel and contexturation.
    * 
    * @param kernel Kernel function.
-   * @param c Configuration object.
+   * @param c Contexturation object.
    */
-  M_KRR(K &kernel, tadah::core::Config &c):
+  M_KRR(K &kernel, tadah::core::Context &c):
     tadah::models::M_KRR_Train<K>(kernel,c),
     basis(c),
     desmat(kernel,c)
@@ -82,7 +82,7 @@ public:
     norm = Normaliser(c);
   }
 
-  M_KRR(K &kernel, tadah::core::Config &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
+  M_KRR(K &kernel, tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
     tadah::models::M_KRR_Train<K>(kernel,c,workspaceManager),
     basis(c),
     desmat(kernel,c)
@@ -103,8 +103,8 @@ public:
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
 
-    if(config.template get<bool>("NORM"))
-      norm = Normaliser(config,st_desc_db);
+    if(context.template get<bool>("NORM"))
+      norm = Normaliser(context,st_desc_db);
 
     bool wcopy=false;
     desmat.build(st_desc_db,stdb,wcopy);
@@ -114,12 +114,12 @@ public:
   void train(StructureDB &stdb, DC_Base &dc) {
     int modelN;
     try {
-      modelN=config.template get<int>("MODEL",2);
+      modelN=context.template get<int>("MODEL",2);
     }
     catch(std::runtime_error &e) {
       // use default model
       modelN=1;
-      config.add("MODEL", modelN);
+      context.add("MODEL", modelN);
     }
     if (modelN==1)
       train1(stdb,dc);
@@ -133,31 +133,31 @@ public:
   }
   void train1(StructureDB &stdb, DC_Base &dc) {
     // KRR implementation using EKM
-    if(config.template get<bool>("NORM") || kernel.get_label()!="tadah::models::Kern_Linear") {
+    if(context.template get<bool>("NORM") || kernel.get_label()!="tadah::models::Kern_Linear") {
       // either build basis or prep normaliser
-      std::string force=config.template get<std::string>("FORCE");
-      std::string stress=config.template get<std::string>("STRESS");
+      std::string force=context.template get<std::string>("FORCE");
+      std::string stress=context.template get<std::string>("STRESS");
 
-      config.remove("FORCE");
-      config.remove("STRESS");
-      config.add("FORCE", "false");
-      config.add("STRESS", "false");
+      context.remove("FORCE");
+      context.remove("STRESS");
+      context.add("FORCE", "false");
+      context.add("STRESS", "false");
 
       StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
 
-      if(config.template get<bool>("NORM")) {
-        norm = Normaliser(config);
+      if(context.template get<bool>("NORM")) {
+        norm = Normaliser(context);
         norm.learn(st_desc_db_temp);
         norm.normalise(st_desc_db_temp);
       }
 
-      config.remove("FORCE");
-      config.remove("STRESS");
-      config.add("FORCE", force);
-      config.add("STRESS", stress);
+      context.remove("FORCE");
+      context.remove("STRESS");
+      context.add("FORCE", force);
+      context.add("STRESS", stress);
 
       if (kernel.get_label()!="tadah::models::Kern_Linear") {
-        basis.build_random_basis(config.template get<size_t>("SBASIS"),st_desc_db_temp);
+        basis.build_random_basis(context.template get<size_t>("SBASIS"),st_desc_db_temp);
         desmat.f.set_basis(basis.b);
         kernel.set_basis(basis.b);
         // to configure ekm, we need basis vectors
@@ -172,58 +172,56 @@ public:
   void train2(StructureDB &stdb, DC_Base &dc) {
 
     // NEW (BASIC) IMPLEMENTATION OF KRR //
-    std::string force=config.template get<std::string>("FORCE");
-    std::string stress=config.template get<std::string>("STRESS");
-    config.remove("FORCE");
-    config.remove("STRESS");
-    config.add("FORCE", "false");
-    config.add("STRESS", "false");
+    std::string force=context.template get<std::string>("FORCE");
+    std::string stress=context.template get<std::string>("STRESS");
+    context.remove("FORCE");
+    context.remove("STRESS");
+    context.add("FORCE", "false");
+    context.add("STRESS", "false");
     StDescriptorsDB st_desc_db_temp = dc.calc(stdb);
-    if(config.template get<bool>("NORM")) {
-      norm = Normaliser(config);
+    if(context.template get<bool>("NORM")) {
+      norm = Normaliser(context);
       norm.learn(st_desc_db_temp);
       norm.normalise(st_desc_db_temp);
     }
-    config.remove("FORCE");
-    config.remove("STRESS");
-    config.add("FORCE", force);
-    config.add("STRESS", stress);
+    context.remove("FORCE");
+    context.remove("STRESS");
+    context.add("FORCE", force);
+    context.add("STRESS", stress);
     basis.prep_basis_for_krr(st_desc_db_temp,stdb);
     kernel.set_basis(basis.b);
     tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
   }
 
-  Structure predict(const tadah::core::Config &c, StDescriptors &std, const Structure &st) {
-    if(config.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="tadah::models::Kern_Linear")
+  Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
+    if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="tadah::models::Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
 
-  StructureDB predict(tadah::core::Config &c, const StructureDB &stdb, DC_Base &dc) {
+  StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc) {
     return M_Tadah_Base::predict(c,stdb,dc);
   }
 
-  tadah::core::Config get_param_file() {
-    tadah::core::Config c = config;
+  tadah::core::Context get_param_file() {
+    tadah::core::Context c = context;
     c.remove("ALPHA");
     c.remove("BETA");
     c.remove("DBFILE");
     c.remove("FORCE");
     c.remove("STRESS");
-    c.remove("VERBOSE");
-    c.add("VERBOSE", 0);
 
     c.remove("MODEL");
     c.add("MODEL", label);
     c.add("MODEL", kernel.get_label());
-    int modelN=config.template get<int>("MODEL",2);
+    int modelN=context.template get<int>("MODEL",2);
     c.add("MODEL", modelN);
 
     for (size_t i=0;i<weights.size();++i) {
       c.add("WEIGHTS", weights(i));
     }
 
-    if(config.template get<bool>("NORM")) {
+    if(context.template get<bool>("NORM")) {
       for (size_t i=0;i<norm.mean.size();++i) {
         c.add("NMEAN", norm.mean[i]);
       }
@@ -232,11 +230,11 @@ public:
       }
     }
     if (kernel.get_label()!="tadah::models::Kern_Linear") {
-      // dump basis to the config file file
+      // dump basis to the context file file
       // make sure keys are not accidently assigned
-      if (c.exist("SBASIS"))
+      if (c.contains("SBASIS"))
         c.remove("SBASIS");
-      if (c.exist("BASIS"))
+      if (c.contains("BASIS"))
         c.remove("BASIS");
       c.add("SBASIS", basis.b.cols());
       for (size_t i=0;i<basis.b.cols();++i) {
@@ -245,14 +243,13 @@ public:
         }
       }
     }
-    c.clear_internal_keys();
     return c;
   }
-  StructureDB predict(tadah::core::Config config_pred, StructureDB &stdb, DC_Base &dc,
+  StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
-    tadah::models::LinearRegressor::read_sigma(config_pred,Sigma);
-    DesignMatrix<K> dm(kernel,config_pred);
+    tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
+    DesignMatrix<K> dm(kernel,context_pred);
     // dm.scale=false; // do not scale energy, forces and stresses
     bool wcopy=false;
     dm.build(stdb,norm,dc,wcopy);
@@ -273,7 +270,7 @@ public:
 
       stdb_(s).energy = Tpred(i++);
       predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-      if (config_pred.get<bool>("FORCE")) {
+      if (context_pred.get<bool>("FORCE")) {
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
             stdb_(s).atoms[a].force[k] = Tpred(i++);
@@ -281,7 +278,7 @@ public:
           }
         }
       }
-      if (config_pred.get<bool>("STRESS")) {
+      if (context_pred.get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             predicted_error(i) = (sqrt(predicted_error(i))-pmean);
@@ -303,9 +300,9 @@ Hint: check different predict() methods.");
     // compute energy, forces and stresses
     tadah::core::aed_type Tpred = T_dgemv(Phi, weights);
 
-    // double eweightglob=config.template get<double>("EWEIGHT");
-    // double fweightglob=config.template get<double>("FWEIGHT");
-    // double sweightglob=config.template get<double>("SWEIGHT");
+    // double eweightglob=context.template get<double>("EWEIGHT");
+    // double fweightglob=context.template get<double>("FWEIGHT");
+    // double sweightglob=context.template get<double>("SWEIGHT");
 
     // Construct StructureDB object with predicted values
     StructureDB stdb_;
@@ -315,7 +312,7 @@ Hint: check different predict() methods.");
     while (i<Phi.rows()) {
 
       stdb_(s).energy = Tpred(i++);
-      if (config.template get<bool>("FORCE")) {
+      if (context.template get<bool>("FORCE")) {
         stdb_(s).atoms.resize(stdb(s).natoms());
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
           for (size_t k=0; k<3; ++k) {
@@ -323,7 +320,7 @@ Hint: check different predict() methods.");
           }
         }
       }
-      if (config.template get<bool>("STRESS")) {
+      if (context.template get<bool>("STRESS")) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
             stdb_(s).stress(x,y) = Tpred(i++);
@@ -348,7 +345,7 @@ private:
 non linear kernel\n");
     }
     tadah::core::t_type kw(weights.rows());
-    if(config.template get<bool>("NORM") && kernel.get_label()=="tadah::models::Kern_Linear") {
+    if(context.template get<bool>("NORM") && kernel.get_label()=="tadah::models::Kern_Linear") {
       // normalise weights such that when predict is called
       // we can supply it with a non-normalised descriptor
       kw.resize(weights.rows());
@@ -393,7 +390,7 @@ non linear kernel\n");
     tadah::core::t_type T = desmat.getT();
     tadah::models::M_KRR_Train<K>::train(Phi,T);
 
-    if (config.template get<bool>("NORM") &&
+    if (context.template get<bool>("NORM") &&
       kernel.get_label()=="tadah::models::Kern_Linear") {
       weights = convert_to_nweights(weights);
     }
@@ -406,7 +403,7 @@ non linear kernel\n");
   using tadah::models::M_KRR_Train<K>::trained;
   using tadah::models::M_KRR_Train<K>::weights;
   using tadah::models::M_KRR_Train<K>::Sigma;
-  using tadah::models::M_KRR_Train<K>::config;
+  using tadah::models::M_KRR_Train<K>::context;
   using tadah::models::M_KRR_Train<K>::kernel;
   using tadah::models::M_KRR_Train<K>::ekm;
 };

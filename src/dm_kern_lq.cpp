@@ -4,12 +4,12 @@
 namespace tadah {
 namespace mlip {
 
-//CONFIG::Registry<DM_Function_Base>::Register<DM_Kern_LQ> DM_Kern_LQ_1( "tadah::models::Kern_LQ" );
-//CONFIG::Registry<DM_Function_Base,tadah::core::Config&>::Register<DM_Kern_LQ> DM_Kern_LQ_2( "tadah::models::Kern_LQ" );
+//context::Registry<DM_Function_Base>::Register<DM_Kern_LQ> DM_Kern_LQ_1( "tadah::models::Kern_LQ" );
+//context::Registry<DM_Function_Base,tadah::core::Context&>::Register<DM_Kern_LQ> DM_Kern_LQ_2( "tadah::models::Kern_LQ" );
 
 DM_Kern_LQ::DM_Kern_LQ()
 {}
-DM_Kern_LQ::DM_Kern_LQ(const tadah::core::Config &c):
+DM_Kern_LQ::DM_Kern_LQ(const tadah::core::Context &c):
   tadah::models::Function_Base(c), 
   DM_Kern_Base(c),
   tadah::models::Kern_LQ(c)

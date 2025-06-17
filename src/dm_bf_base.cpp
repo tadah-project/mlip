@@ -4,7 +4,7 @@
 namespace tadah {
 namespace mlip {
 DM_BF_Base::DM_BF_Base() {}
-DM_BF_Base::DM_BF_Base(const tadah::core::Config &c):
+DM_BF_Base::DM_BF_Base(const tadah::core::Context &c):
   tadah::models::Function_Base(c), 
   tadah::models::BF_Base(c),
   DM_Function_Base(c) {}

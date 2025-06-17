@@ -2,12 +2,12 @@
 namespace tadah {
 namespace mlip {
 
-StDescriptorsDB::StDescriptorsDB(const StructureDB &stdb, tadah::core::Config &config):
+StDescriptorsDB::StDescriptorsDB(const StructureDB &stdb, tadah::core::Context &context):
     st_descs(stdb.size())
 {
     // init all StDescriptors
     for (size_t i=0; i<stdb.size(); ++i)
-        st_descs[i]=StDescriptors(stdb(i), config);
+        st_descs[i]=StDescriptors(stdb(i), context);
 }
 
 

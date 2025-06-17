@@ -2,7 +2,7 @@
 #define ST_DESCRIPTORS_H
 
 #include <tadah/mlip/structure.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
 
 #include <vector>
@@ -20,11 +20,11 @@ namespace mlip {
  * To fully initialise this object it needs to know:
  * - number of atoms in a structure (from Structure)
  * - number of nn for every atom (from Structure)
- * - dimension of the descriptor vector (tadah::core::Config)
- * - whether force and stress is being calculated (from tadah::core::Config)
+ * - dimension of the descriptor vector (tadah::core::Context)
+ * - whether force and stress is being calculated (from tadah::core::Context)
  *
  *   \note
- *       Required tadah::core::Config keys:
+ *       Required tadah::core::Context keys:
  *       \ref FORCE \ref STRESS.
  *       \ref INTERNAL_KEY \ref DSIZE.
  *
@@ -35,9 +35,9 @@ struct StDescriptors {
      *
      * Requires:
      * - Structure st to have NN calculated
-     * - tadah::core::Config c to contain keys: \ref DSIZE, \ref FORCE, \ref STRESS
+     * - tadah::core::Context c to contain keys: \ref DSIZE, \ref FORCE, \ref STRESS
      */
-    StDescriptors(const Structure &s, const tadah::core::Config &c);
+    StDescriptors(const Structure &s, const tadah::core::Context &c);
 
     /** Default constructor. Object is left uninitialised */
     StDescriptors();

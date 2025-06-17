@@ -6,7 +6,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/st_descriptors.h>
 #include <tadah/mlip/st_descriptors_db.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/models/descriptors/d2/d2_base.h>
 #include <tadah/models/descriptors/d3/d3_base.h>
 #include <tadah/models/descriptors/dm/dm_base.h>
@@ -20,8 +20,8 @@ namespace mlip {
  *
  * Usage example:
  * \code{.cpp}
- * # Build calculator using tadah::core::Config object.
- * DescriptorsCalc<D2_LJ, D3_Dummy, DM_Dummy> dc(config);
+ * # Build calculator using tadah::core::Context object.
+ * DescriptorsCalc<D2_LJ, D3_Dummy, DM_Dummy> dc(context);
  *
  * # Calculate all descriptors in a Structure st
  * StDescriptors std = dc.calc(st);
@@ -31,7 +31,7 @@ namespace mlip {
  * \endcode
  *
  *  This object sets the following \ref INTERNAL_KEYS
- *  to the provided tadah::core::Config object:
+ *  to the provided tadah::core::Context object:
  *
  *  \ref SIZE2B,\ref SIZE3B,\ref SIZEMB,\ref DSIZE
  *
@@ -51,15 +51,15 @@ template <typename D2=tadah::models::D2_Base&, typename D3=tadah::models::D3_Bas
 class DescriptorsCalc: public DC_Base {
 
     public:
-        tadah::core::Config &config;
+        tadah::core::Context &context;
         /** Constructor to fully initialise this object.
          *
-         *  REQUIRED CONFIG KEYS:
+         *  REQUIRED context KEYS:
          *  \ref FORCE, \ref STRESS,
          *  at least one of: \ref RCUT2B, \ref RCUT3B,\ref RCUTMB
          *
          */
-        DescriptorsCalc(tadah::core::Config &c);
+        DescriptorsCalc(tadah::core::Context &c);
 
         /** This constructor is equivalent to the main constructor above.
          *
@@ -74,11 +74,11 @@ class DescriptorsCalc: public DC_Base {
          *
          * Usage example:
          * \code{.cpp}
-         * # Build calculator using tadah::core::Config object.
-         * D2_Base *d2 = new D2_LJ(config);
-         * D2_Base *d3 = new D3_Dummy(config);
-         * D2_Base *dm = new DM_Dummy(config);
-         * DescriptorsCalc<> dc(config, d2, d3, dm);
+         * # Build calculator using tadah::core::Context object.
+         * D2_Base *d2 = new D2_LJ(context);
+         * D2_Base *d3 = new D3_Dummy(context);
+         * D2_Base *dm = new DM_Dummy(context);
+         * DescriptorsCalc<> dc(context, d2, d3, dm);
          *
          * # Calculate all descriptors in a Structure st
          * StDescriptors std = dc.calc(st);
@@ -91,15 +91,15 @@ class DescriptorsCalc: public DC_Base {
          *  The unfortunate consequence is that
          *  you might want to try this
          *  \code{.cpp}
-         *  DescriptorsCalc<> dc(config);
+         *  DescriptorsCalc<> dc(context);
          *  \endcode
-         *  Basically you are trying to init abstract classes with config object.
+         *  Basically you are trying to init abstract classes with context object.
          *  It won't compile!
          * }
          *
          */
         template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-        DescriptorsCalc(tadah::core::Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm);
+        DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm);
 
         /** Calculate all descriptors in a Structure st */
         StDescriptors calc(const Structure &st);
@@ -118,7 +118,7 @@ class DescriptorsCalc: public DC_Base {
         DM dm;
     private:
         template <typename T1, typename T2, typename T3>
-        DescriptorsCalc(tadah::core::Config &c,T1 &t1,T2 &t2,T3 &t3);
+        DescriptorsCalc(tadah::core::Context &c,T1 &t1,T2 &t2,T3 &t3);
 
         void calc(const Structure &st, StDescriptors &std);
         void calc_dimer(const Structure &st, StDescriptors &std);

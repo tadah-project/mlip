@@ -11,66 +11,66 @@ namespace mlip {
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 template <typename T1, typename T2, typename T3>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c, T1 &t1, T2 &t2, T3 &t3):
-  config(c),
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T2 &t2, T3 &t3):
+  context(c),
   d2(t1),
   d3(t2),
   dm(t3)
 {
-  if (!config.exist("DSIZE"))
+  if (!context.contains("DSIZE"))
     common_constructor();
   else {
     size_t bias=0;
-    if (config.get<bool>("BIAS"))
+    if (context.get<bool>("BIAS"))
       bias++;
-    if (config.get<bool>("INIT2B")) {
+    if (context.get<bool>("INIT2B")) {
       d2.set_fidx(bias);
     }
-    if (config.get<bool>("INITMB")) {
+    if (context.get<bool>("INITMB")) {
       dm.set_fidx(bias+d2.size());
     }
   }
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c):
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c):
   DescriptorsCalc(c,c,c,c)
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2BMAX"));
-    if (!config.exist("RCTYPE2B")) {
-      config.add("RCTYPE2B",c2.label());
+    if (!context.contains("RCTYPE2B")) {
+      context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
   }
   else {
     c2 = C2(0);
-    if (!config.exist("RCTYPE2B")) {
+    if (!context.contains("RCTYPE2B")) {
       d2.set_fcut(&c2,false);
     }
   }
   if (c.get<bool>("INIT3B")) {
     c3 = C3(c.get<double>("RCUT3BMAX"));
-    if (!config.exist("RCTYPE3B")) {
-      config.add("RCTYPE3B",c3.label());
+    if (!context.contains("RCTYPE3B")) {
+      context.add("RCTYPE3B",c3.label());
       d3.set_fcut(&c3,false);
     }
   }
   else {
     c3 = C3(0);
-    if (!config.exist("RCTYPE3B")) {
+    if (!context.contains("RCTYPE3B")) {
       d3.set_fcut(&c3,false);
     }
   }
   if (c.get<bool>("INITMB")) {
     cm = CM(c.get<double>("RCUTMBMAX"));
-    if (!config.exist("RCTYPEMB")) {
-      config.add("RCTYPEMB",cm.label());
+    if (!context.contains("RCTYPEMB")) {
+      context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }
   }
   else {
     cm = CM(0);
-    if (!config.exist("RCTYPEMB")) {
+    if (!context.contains("RCTYPEMB")) {
       dm.set_fcut(&cm,false);
     }
   }
@@ -78,8 +78,8 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c):
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
-  config(c),
+DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
+  context(c),
   c2(c2),
   c3(c3),
   cm(cm),
@@ -88,25 +88,25 @@ DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(tadah::core::Config &c, T1 &
   dm(dm)
 {
   if (c.get<bool>("INIT2B")) {
-    if (!config.exist("RCTYPE2B")) {
-      config.add("RCTYPE2B",c2.label());
+    if (!context.contains("RCTYPE2B")) {
+      context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
   }
   if (c.get<bool>("INIT3B")) {
-    if (!config.exist("RCTYPE3B")) {
-      config.add("RCTYPE3B",c3.label());
+    if (!context.contains("RCTYPE3B")) {
+      context.add("RCTYPE3B",c3.label());
       d3.set_fcut(&c3,false);
     }
   }
   if (c.get<bool>("INITMB")) {
-    if (!config.exist("RCTYPEMB")) {
-      config.add("RCTYPEMB",cm.label());
+    if (!context.contains("RCTYPEMB")) {
+      context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }
   }
 
-  if (!config.exist("DSIZE"))
+  if (!context.contains("DSIZE"))
     common_constructor();
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
@@ -114,54 +114,54 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
   size_t dsize=0;
 
   // Calculate total size of the descriptor.
-  // Add relevant keys to the config.
+  // Add relevant keys to the context.
   // Set first indices for all types
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
-  if (config.get<bool>("INIT2B")) {
-    config.add("SIZE2B",d2.size());
-    if (!config.exist("TYPE2B"))
-      config.add("TYPE2B",d2.label());
+  if (context.get<bool>("INIT2B")) {
+    context.add("SIZE2B",d2.size());
+    if (!context.contains("TYPE2B"))
+      context.add("TYPE2B",d2.label());
     dsize+=d2.size();
     d2.set_fidx(bias);
   }
   else {
-    config.add("SIZE2B",0);
+    context.add("SIZE2B",0);
   }
 
-  if (config.get<bool>("INIT3B")) {
-    config.add("SIZE3B",d3.size());
-    if (!config.exist("TYPE3B"))
-      config.add("TYPE3B",d3.label());
+  if (context.get<bool>("INIT3B")) {
+    context.add("SIZE3B",d3.size());
+    if (!context.contains("TYPE3B"))
+      context.add("TYPE3B",d3.label());
     dsize+=d3.size();
   }
   else {
-    config.add("SIZE3B",0);
+    context.add("SIZE3B",0);
   }
 
-  if (config.get<bool>("INITMB")) {
-    config.add("SIZEMB",dm.size());
-    if (!config.exist("TYPEMB"))
-      config.add("TYPEMB",dm.label());
+  if (context.get<bool>("INITMB")) {
+    context.add("SIZEMB",dm.size());
+    if (!context.contains("TYPEMB"))
+      context.add("TYPEMB",dm.label());
     dsize+=dm.size();
     dm.set_fidx(bias+d2.size());
   }
   else {
-    config.add("SIZEMB",0);
+    context.add("SIZEMB",0);
   }
 
   if (!dsize)
     throw std::runtime_error("The descriptor size is 0, check your config.");
 
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     dsize++;
 
-  config.add("DSIZE",dsize);
+  context.add("DSIZE",dsize);
 }
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
-  double rcut_mb_sq = pow(config.get<double>("RCUTMBMAX"),2);
+  double rcut_mb_sq = pow(context.get<double>("RCUTMBMAX"),2);
   tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
   rhos.resize(s,st.natoms());
@@ -193,26 +193,26 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescrip
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors &st_d) {
 
-  bool init2b = config.get<bool>("INIT2B");
-  bool initmb = config.get<bool>("INITMB");
+  bool init2b = context.get<bool>("INIT2B");
+  bool initmb = context.get<bool>("INITMB");
 
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=config.get<size_t>("SIZE2B");
-  if (initmb) sizemb=config.get<size_t>("SIZEMB");
+  if (init2b) size2b=context.get<size_t>("SIZE2B");
+  if (initmb) sizemb=context.get<size_t>("SIZEMB");
 
   // deal with the case initmb is set to true but dummy is used
   init2b = init2b && size2b;
   initmb = initmb && sizemb;
 
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
 
   if (initmb)
     calc_rho(st,st_d);
 
-  double rcut_max_sq = pow(config.get<double>("RCUTMAX"),2);
+  double rcut_max_sq = pow(context.get<double>("RCUTMAX"),2);
   double rcut_2b_sq = 0.0;
   double rcut_mb_sq = 0.0;
 
@@ -237,8 +237,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
     }
   }
 
-  bool use_force = config.get<bool>("FORCE");
-  bool use_stress = config.get<bool>("STRESS");
+  bool use_force = context.get<bool>("FORCE");
+  bool use_stress = context.get<bool>("STRESS");
 
   tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
@@ -301,8 +301,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
 
-  double r_b = config.get<double>("DIMER",1);
-  bool bond_bool = config.get<bool>("DIMER",2);
+  double r_b = context.get<double>("DIMER",1);
+  bool bond_bool = context.get<bool>("DIMER",2);
 
   // Here we assume that training data consists of 4 atoms
   // The cutoff distance specified in the config file works in the usual way
@@ -313,18 +313,18 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   //    |- - - -r_com- - - - - -|   
   //  |- - - - -r_max- - - - - - -|
 
-  bool init2b = config.get<bool>("INIT2B");
-  bool initmb = config.get<bool>("INITMB");
+  bool init2b = context.get<bool>("INIT2B");
+  bool initmb = context.get<bool>("INITMB");
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=config.get<size_t>("SIZE2B");
-  if (initmb) sizemb=config.get<size_t>("SIZEMB");
+  if (init2b) size2b=context.get<size_t>("SIZE2B");
+  if (initmb) sizemb=context.get<size_t>("SIZEMB");
 
   // deal with the case initmb is set to true and dummy is used
   init2b = init2b && size2b;
   initmb = initmb && sizemb;
 
-  //double rcut_max_sq = pow(config.get<double>("RCUTMAX"),2);
+  //double rcut_max_sq = pow(context.get<double>("RCUTMAX"),2);
   double rcut_2b_sq = 0.0;
   double rcut_mb_sq = 0.0;
 
@@ -332,7 +332,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   if (initmb) rcut_mb_sq = pow(dm.get_rcut(),2);
 
   // Max distance between CoM of two interacting molecules
-  double rcut_com_sq = pow(config.get<double>("RCUTMAX")-r_b,2);
+  double rcut_com_sq = pow(context.get<double>("RCUTMAX")-r_b,2);
 
   // Not that this differ to how lammps implements this
   // TODO make it consistent between those two
@@ -343,7 +343,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   const std::vector<Atom> &atoms = st.atoms;
 
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
 
   // TODO weighting factors
@@ -425,8 +425,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 StDescriptors DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st) {
-  StDescriptors st_d(st, config);
-  if (config.get<bool>("DIMER",0))
+  StDescriptors st_d(st, context);
+  if (context.get<bool>("DIMER",0))
     calc_dimer(st,st_d);
   else
     calc(st,st_d);
@@ -435,13 +435,13 @@ StDescriptors DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st) {
 
 template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
 StDescriptorsDB DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const StructureDB &stdb) {
-  StDescriptorsDB st_desc_db(stdb, config);
+  StDescriptorsDB st_desc_db(stdb, context);
 
 #ifdef _OPENMP
   #pragma omp parallel for
 #endif
   for(size_t i=0; i<stdb.size(); ++i)
-    if (config.get<bool>("DIMER",0))
+    if (context.get<bool>("DIMER",0))
       calc_dimer(stdb(i),st_desc_db(i));
     else
       calc(stdb(i),st_desc_db(i));

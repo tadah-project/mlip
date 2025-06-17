@@ -2,7 +2,7 @@
 #define OUTPUT_H
 
 #include <tadah/mlip/structure_db.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/core/utils.h>
 #include <tadah/core/core_types.h>
 
@@ -15,7 +15,7 @@ namespace mlip {
 
 class Output {
     private:
-        tadah::core::Config &pot_config;
+        tadah::core::Context &pot_context;
         bool pred_err_bool;
         //size_t sigfig;
         //size_t nw;
@@ -24,8 +24,8 @@ class Output {
         size_t emptyspace=5;
         size_t nw=emptyspace+fmtw;   // width of numeric column
     public:
-        Output (tadah::core::Config &c, bool peb):
-            pot_config(c),
+        Output (tadah::core::Context &c, bool peb):
+            pot_context(c),
             pred_err_bool(peb)
     {}
         void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
@@ -140,7 +140,7 @@ class Output {
                 out_energy << std::endl;
 
 
-                if (pot_config.get<bool>("FORCE")) {
+                if (pot_context.get<bool>("FORCE")) {
                     double max_ferr=0.0;
                     if (newline)
                         out_force << std::endl << std::endl;
@@ -161,7 +161,7 @@ class Output {
                     if(pred_err_bool)
                         out_error << std::setw(nw) << max_ferr;
                 }
-                if (pot_config.get<bool>("STRESS")) {
+                if (pot_context.get<bool>("STRESS")) {
                     double max_serr=0.0;
                     if (newline)
                         out_stress << std::endl << std::endl;

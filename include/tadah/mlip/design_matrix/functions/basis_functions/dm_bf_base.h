@@ -14,9 +14,9 @@ namespace mlip {
 struct DM_BF_Base: public DM_Function_Base, public virtual tadah::models::BF_Base {
    
     DM_BF_Base();
-    DM_BF_Base(const tadah::core::Config &c);
+    DM_BF_Base(const tadah::core::Context &c);
     virtual ~DM_BF_Base();
-    // virtual size_t get_phi_cols(const tadah::core::Config &config)=0;
+    // virtual size_t get_phi_cols(const tadah::core::Context &context)=0;
     // virtual void calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row,
     //         const Structure &st, const StDescriptors &st_d)=0;
     // virtual void calc_phi_force_rows(tadah::core::phi_type &Phi, size_t &row,
