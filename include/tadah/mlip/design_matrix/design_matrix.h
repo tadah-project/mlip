@@ -8,9 +8,9 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
-#include <tadah/mlip/memory/MLIPWorkspaceManager.h>
-#include <tadah/mlip/memory/DesignMatrixWorkspace.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
+#include <tadah/mlip/memory/mlip_workspace_manager.h>
+#include <tadah/mlip/memory/design_matrix_workspace.h>
 
 #include <stdexcept>
 namespace tadah {

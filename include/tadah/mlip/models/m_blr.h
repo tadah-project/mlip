@@ -8,7 +8,7 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_blr_train.h>
 #include <tadah/core/context.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 #include <limits>
 #include <stdexcept>

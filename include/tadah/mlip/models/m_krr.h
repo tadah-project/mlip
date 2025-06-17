@@ -9,7 +9,7 @@
 #include <tadah/models/m_krr_train.h>
 #include <tadah/core/context.h>
 #include <tadah/mlip/models/basis.h>
-#include <tadah/mlip/memory/IMLIPWorkspaceManager.h>
+#include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 #include <limits>
 #include <stdexcept>
