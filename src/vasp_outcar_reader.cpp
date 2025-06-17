@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 
 VaspOutcarReader::VaspOutcarReader(StructureDB& db) : DatasetReader(db) {}
 
@@ -140,7 +142,7 @@ void VaspOutcarReader::parse_data() {
       }
       size_t count = 0;
       for (size_t j = 0; j < natom_types.size(); ++j) {
-        Element element(atom_types[j]);
+        tadah::core::Element element(atom_types[j]);
         for (size_t i = 0; i < natom_types[j]; ++i) {
           if (!std::getline(stream, line)) {
             std::cerr << "Warning: Unexpected end of data when reading atom information at atom " << count+1 << std::endl;
@@ -208,3 +210,5 @@ void VaspOutcarReader::print_summary() const {
 std::string VaspOutcarReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

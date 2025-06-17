@@ -5,6 +5,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/castep_castep_reader.h>
+namespace tadah {
+namespace mlip {
 
 CastepCastepReader::CastepCastepReader(StructureDB& db) : DatasetReader(db) {}
 
@@ -257,7 +259,7 @@ void CastepCastepReader::parse_data() {
       reset_flags(CalcState::FiniteBasisSetCorrection);
       simLabel.calcState = CalcState::FiniteBasisSetCorrection;
       simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP FBCS";
+      simLabel.simType = "CASTEP FBSC";
       simLabel.stepNumber = 0;
       if (debug) std::cout << "Basis set correction" << std::endl;
     }
@@ -365,7 +367,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
         // Create Atom, convert fractional to absolute using s.cell
-        Atom a(Element(species), px, py, pz, 0.0, 0.0, 0.0);
+        Atom a(tadah::core::Element(species), px, py, pz, 0.0, 0.0, 0.0);
         atoms.push_back(a); // keep it fractional for now
       }
       simLabel.positionsStopLine = line_counter;
@@ -373,11 +375,11 @@ void CastepCastepReader::parse_data() {
 
     // The old cell is reverted and printed before final enthalpy from the current iteration
     // We simply skip over this block of text
-    if (line.find("reverting to earlier configuration") != std::string::npos) {
-      if (debug) std::cout << "reverting to earlier configuration" << std::endl;
+    if (line.find("reverting to earlier contexturation") != std::string::npos) {
+      if (debug) std::cout << "reverting to earlier contexturation" << std::endl;
       for (int i = 0; i < 30; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Failed skiping over revered configuration " << line_counter << ")." << std::endl;
+          std::cerr << "Warning: Failed skiping over revered contexturation " << line_counter << ")." << std::endl;
           break;
         }
         ++line_counter;
@@ -408,7 +410,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
         if (i < atoms.size()) {
-          atoms[i].force = Vec3d(fx, fy, fz);
+          atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
         }
       }
       simLabel.forcesStopLine = line_counter;
@@ -456,7 +458,7 @@ void CastepCastepReader::parse_data() {
       }
     }
 
-    // Detect free energy for SPE/GO/FBCS/BS
+    // Detect free energy for SPE/GO/FBSC/BS
     // The energy might not be final so we need to complete the data block elsewhere.
     if (line.find("Final free energy (E-TS)") != std::string::npos && 
         (current_state == CalcState::GeometryOptimization
@@ -530,3 +532,5 @@ void CastepCastepReader::print_summary() const {
 std::string CastepCastepReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

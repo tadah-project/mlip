@@ -3,10 +3,14 @@
 
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h>
 #include <tadah/models/functions/kernels/kern_rbf.h>
+namespace tadah {
+namespace mlip {
 
-class DM_Kern_RBF :  public DM_Kern_Base, public Kern_RBF {
+class DM_Kern_RBF :  public DM_Kern_Base, public tadah::models::Kern_RBF {
     public:
         DM_Kern_RBF();
-        DM_Kern_RBF(const Config &c);
+        DM_Kern_RBF(const tadah::core::Context &c);
 };
+} // namespace mlip
+} // namespace tadah
 #endif

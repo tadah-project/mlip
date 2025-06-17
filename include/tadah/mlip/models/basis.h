@@ -4,28 +4,27 @@
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/st_descriptors.h>
 #include <tadah/core/core_types.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 
 #include <algorithm>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 template <typename K>
 class Basis {
 private:
-  Config &config;
-  int verbose;
+  const tadah::core::Context &context;
 public:
-  Matrix b;
-  t_type T;    // Vectors corresponding to basis vectors
-  Basis(Config &c):
-    config(c),
-    verbose(c.get<int>("VERBOSE"))
-
+  tadah::core::Matrix b;
+  tadah::core::t_type T;    // Vectors corresponding to basis vectors
+  Basis(const tadah::core::Context &c):
+    context(c)
   {}
 
-  void set_basis(Matrix &b_) {
+  void set_basis(tadah::core::Matrix &b_) {
     b=b_;
   }
   void build_random_basis(size_t s, StDescriptorsDB &st_desc_db) {
@@ -56,16 +55,16 @@ larger than the amount of available AEDs\n");
     for (size_t i=1; i<s; ++i) {
       size_t st = std::get<0>(indices[i]);
       size_t a = std::get<1>(indices[i]);
-      const aed_type &aed = st_desc_db(st).get_aed(a);
+      const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);
       for (size_t j=0; j<aed.size(); ++j) {
         b(j,i)=aed[j];
       }
     }
   }
   void prep_basis_for_krr(StDescriptorsDB &st_desc_db,
-                          StructureDB &stdb) {
+                          const StructureDB &stdb) {
 
-    size_t s = config.get<size_t>("SBASIS");
+    size_t s = context.get<size_t>("SBASIS");
 
     if (stdb.size() != st_desc_db.size()) {
       throw std::runtime_error("The size of StructureDB is different \n \
@@ -92,12 +91,12 @@ larger than the amount of available AEDs\n");
     b.set_zero();
     b(0,0)=1;
     // Here we add all atomic energy descriptors into single
-    // descriptor which represents total energy of this configuration
+    // descriptor which represents total energy of this contexturation
     for (size_t i=1; i<s; ++i) {
       const size_t st = indices[i];
       T(i)=stdb(st).energy/st_desc_db(st).naed();
       for( size_t a=0; a<st_desc_db(st).naed(); a++ ) {
-        const aed_type &aed = st_desc_db(st).get_aed(a);
+        const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);
         for (size_t j=0; j<aed.size(); ++j) {
           b(j,i)+=aed[j]/st_desc_db(st).naed();
         }
@@ -105,4 +104,6 @@ larger than the amount of available AEDs\n");
     }
   }
 };
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 namespace rx = rapidxml;
 
@@ -163,4 +165,6 @@ private:
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // VASP_VASPRUN_READER_H

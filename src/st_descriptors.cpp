@@ -1,6 +1,8 @@
 #include <tadah/mlip/st_descriptors.h>
+namespace tadah {
+namespace mlip {
 
-StDescriptors::StDescriptors(const Structure &s, const Config &c):
+StDescriptors::StDescriptors(const Structure &s, const tadah::core::Context &c):
     // fully initialize aed
     aeds(c.get<size_t>("DSIZE"), s.natoms()),
     // partially init fd
@@ -9,36 +11,25 @@ StDescriptors::StDescriptors(const Structure &s, const Config &c):
     //sd(c.get<bool>("STRESS") ? c.get<size_t>("DSIZE"),6 : 0,6)
 {
     // fd: we still need to resize nn individually for each atom
-    // and init fd_type with size
+    // and init tadah::core::fd_type with size
     if (c.get<bool>("FORCE") || c.get<bool>("STRESS")) {
         for (size_t i=0; i<fd.size(); ++i) {
-            fd[i].resize(s.nn_size(i),fd_type(c.get<size_t>("DSIZE")));
+            fd[i].resize(s.nn_size(i),tadah::core::fd_type(c.get<size_t>("DSIZE")));
             //for (auto &v:fd[i]) v.set_zero();
         }
     }
 
-    //if (c.get<bool>("STRESS")) {
-    //    sd.set_zero();
-    //}
-
-    // Partially init rho. We do not know the dimension of rhoi
-    // as it is specific to DMB calculator
-    // so DescriptorCalc will have to resize
-    if (c.get<size_t>("SIZEMB"))
-        rhos.resize(1,s.natoms());
-
-
 }
 StDescriptors::StDescriptors() {}
 
-aed_type & StDescriptors::get_aed(const size_t i) {
+tadah::core::aed_type & StDescriptors::get_aed(const size_t i) {
     return aeds.col(i);
 }
 
-const aed_type &StDescriptors::get_aed(const size_t i) const {
+const tadah::core::aed_type &StDescriptors::get_aed(const size_t i) const {
     return aeds.col(i);
 }
-rho_type& StDescriptors::get_rho(const size_t i) {
+tadah::core::rho_type& StDescriptors::get_rho(const size_t i) {
     return rhos.col(i);
 }
 size_t StDescriptors::naed() const {
@@ -47,3 +38,5 @@ size_t StDescriptors::naed() const {
 size_t StDescriptors::dim() const {
     return aeds.rows();
 }
+} // namespace mlip
+} // namespace tadah

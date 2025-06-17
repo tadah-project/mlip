@@ -3,6 +3,9 @@
 #include <tadah/mlip/atom.h>
 #include <string>
 
+using namespace tadah::core;
+using namespace tadah::mlip;
+
 
 char symbol1[]="Ti";
 int Z1 = 22;

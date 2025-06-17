@@ -7,171 +7,134 @@
 
 #include <cstdio>
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-template <typename T1, typename T2, typename T3>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &t1, T2 &t2, T3 &t3):
-  config(c),
+namespace tadah {
+namespace mlip {
+
+template <typename D2, typename DM, typename C2, typename CM>
+template <typename T1, typename T2>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T2 &t2):
+  context(c),
   d2(t1),
-  d3(t2),
-  dm(t3)
+  dm(t2)
 {
-  if (!config.exist("DSIZE"))
+  if (context.get<size_t>("DSIZE")==0)
     common_constructor();
   else {
     size_t bias=0;
-    if (config.get<bool>("BIAS"))
+    if (context.get<bool>("BIAS"))
       bias++;
-    if (config.get<bool>("INIT2B")) {
+    if (context.get<bool>("INIT2B")) {
       d2.set_fidx(bias);
     }
-    if (config.get<bool>("INITMB")) {
+    if (context.get<bool>("INITMB")) {
       dm.set_fidx(bias+d2.size());
     }
   }
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c):
-  DescriptorsCalc(c,c,c,c)
+template <typename D2, typename DM, typename C2, typename CM>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
+  DescriptorsCalc(c,c,c)
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2BMAX"));
-    if (!config.exist("RCTYPE2B")) {
-      config.add("RCTYPE2B",c2.label());
+    if (context.contains("RCTYPE2B")) {
+      context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
   }
   else {
     c2 = C2(0);
-    if (!config.exist("RCTYPE2B")) {
+    if (!context.contains("RCTYPE2B")) {
       d2.set_fcut(&c2,false);
-    }
-  }
-  if (c.get<bool>("INIT3B")) {
-    c3 = C3(c.get<double>("RCUT3BMAX"));
-    if (!config.exist("RCTYPE3B")) {
-      config.add("RCTYPE3B",c3.label());
-      d3.set_fcut(&c3,false);
-    }
-  }
-  else {
-    c3 = C3(0);
-    if (!config.exist("RCTYPE3B")) {
-      d3.set_fcut(&c3,false);
     }
   }
   if (c.get<bool>("INITMB")) {
     cm = CM(c.get<double>("RCUTMBMAX"));
-    if (!config.exist("RCTYPEMB")) {
-      config.add("RCTYPEMB",cm.label());
+    if (!context.contains("RCTYPEMB")) {
+      context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }
   }
   else {
     cm = CM(0);
-    if (!config.exist("RCTYPEMB")) {
+    if (!context.contains("RCTYPEMB")) {
       dm.set_fcut(&cm,false);
     }
   }
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-template <typename T1, typename T2, typename T3,typename T4, typename T5, typename T6>
-DescriptorsCalc<D2,D3,DM,C2,C3,CM>::DescriptorsCalc(Config &c, T1 &d2, T2 &d3, T3 &dm, T4 &c2, T5 &c3, T6 &cm):
-  config(c),
+template <typename D2, typename DM, typename C2, typename CM>
+template <typename T1, typename T2,typename T3, typename T4>
+DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T2 &dm, T3 &c2, T4 &cm):
+  context(c),
   c2(c2),
-  c3(c3),
   cm(cm),
   d2(d2),
-  d3(d3),
   dm(dm)
 {
   if (c.get<bool>("INIT2B")) {
-    if (!config.exist("RCTYPE2B")) {
-      config.add("RCTYPE2B",c2.label());
+    if (!context.contains("RCTYPE2B")) {
+      context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
   }
-  if (c.get<bool>("INIT3B")) {
-    if (!config.exist("RCTYPE3B")) {
-      config.add("RCTYPE3B",c3.label());
-      d3.set_fcut(&c3,false);
-    }
-  }
   if (c.get<bool>("INITMB")) {
-    if (!config.exist("RCTYPEMB")) {
-      config.add("RCTYPEMB",cm.label());
+    if (!context.contains("RCTYPEMB")) {
+      context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }
   }
 
-  if (!config.exist("DSIZE"))
+  if (context.get<size_t>("DSIZE")==0)
     common_constructor();
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::common_constructor() {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   size_t dsize=0;
 
   // Calculate total size of the descriptor.
-  // Add relevant keys to the config.
+  // Add relevant keys to the context.
   // Set first indices for all types
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
-  if (config.get<bool>("INIT2B")) {
-    config.add("SIZE2B",d2.size());
-    if (!config.exist("TYPE2B"))
-      config.add("TYPE2B",d2.label());
+  if (context.get<bool>("INIT2B")) {
+    if (!context.contains("TYPE2B"))
+      context.add("TYPE2B",d2.label());
     dsize+=d2.size();
     d2.set_fidx(bias);
   }
-  else {
-    config.add("SIZE2B",0);
-  }
 
-  if (config.get<bool>("INIT3B")) {
-    config.add("SIZE3B",d3.size());
-    if (!config.exist("TYPE3B"))
-      config.add("TYPE3B",d3.label());
-    dsize+=d3.size();
-  }
-  else {
-    config.add("SIZE3B",0);
-  }
-
-  if (config.get<bool>("INITMB")) {
-    config.add("SIZEMB",dm.size());
-    if (!config.exist("TYPEMB"))
-      config.add("TYPEMB",dm.label());
+  if (context.get<bool>("INITMB")) {
+    if (!context.contains("TYPEMB"))
+      context.add("TYPEMB",dm.label());
     dsize+=dm.size();
     dm.set_fidx(bias+d2.size());
-  }
-  else {
-    config.add("SIZEMB",0);
   }
 
   if (!dsize)
     throw std::runtime_error("The descriptor size is 0, check your config.");
 
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     dsize++;
 
-  config.add("DSIZE",dsize);
+  context.addInternal("DSIZE",dsize);
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescriptors &st_d) {
-  double rcut_mb_sq = pow(config.get<double>("RCUTMBMAX"),2);
-  rhos_type &rhos = st_d.rhos;
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) const {
+  double rcut_mb_sq = pow(context.get<double>("RCUTMBMAX"),2);
+  tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
   rhos.resize(s,st.natoms());
   rhos.set_zero();
 
-  Vec3d delij;
+  tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
     const Atom &a1 = st(i);
 
     int Zi = a1.Z;
     for (size_t jj=0; jj<st.nn_size(i); ++jj) {
-      const Vec3d &a2pos = st.nn_pos(i,jj);
+      const tadah::core::Vec3d &a2pos = st.nn_pos(i,jj);
       //delij = a1.position - a2pos;
       delij[0] = a1.position[0] - a2pos[0];
       delij[1] = a1.position[1] - a2pos[1];
@@ -179,8 +142,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescrip
 
       //double rij_sq = delij * delij;
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
-      if (rij_sq > rcut_mb_sq) continue;
-      size_t neighIdx = st.near_neigh_idx[i][jj];
+      if (rij_sq >= rcut_mb_sq) continue;
+      size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       dm.calc_rho(Zi,Zj,rij,rij_sq,delij,st_d.get_rho(i));
@@ -188,29 +151,29 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_rho(const Structure &st, StDescrip
   }
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors &st_d) {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) const {
 
-  bool init2b = config.get<bool>("INIT2B");
-  bool initmb = config.get<bool>("INITMB");
+  bool init2b = context.get<bool>("INIT2B");
+  bool initmb = context.get<bool>("INITMB");
 
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=config.get<size_t>("SIZE2B");
-  if (initmb) sizemb=config.get<size_t>("SIZEMB");
+  if (init2b) size2b=d2.size();
+  if (initmb) sizemb=dm.size();
 
   // deal with the case initmb is set to true but dummy is used
   init2b = init2b && size2b;
   initmb = initmb && sizemb;
 
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
 
   if (initmb)
     calc_rho(st,st_d);
 
-  double rcut_max_sq = pow(config.get<double>("RCUTMAX"),2);
+  double rcut_max_sq = pow(context.get<double>("RCUTMAX"),2);
   double rcut_2b_sq = 0.0;
   double rcut_mb_sq = 0.0;
 
@@ -219,7 +182,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 
   // zero all aeds and set bias
   for (size_t i=0; i<st.natoms(); ++i) {
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -229,23 +192,23 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
   // can be calculated
   if (initmb) {
     for (size_t i=0; i<st.natoms(); ++i) {
-      aed_type &aed = st_d.get_aed(i);
-      rho_type& rhoi = st_d.get_rho(i);
+      tadah::core::aed_type &aed = st_d.get_aed(i);
+      tadah::core::rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }
   }
 
-  bool use_force = config.get<bool>("FORCE");
-  bool use_stress = config.get<bool>("STRESS");
+  bool use_force = context.get<bool>("FORCE");
+  bool use_stress = context.get<bool>("STRESS");
 
-  Vec3d delij;
+  tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
     const Atom &a1 = st(i);
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
 
     int Zi = a1.Z;
     for (size_t jj=0; jj<st.nn_size(i); ++jj) {
-      const Vec3d &a2pos = st.nn_pos(i,jj);
+      const tadah::core::Vec3d &a2pos = st.nn_pos(i,jj);
 
       delij[0] = a1.position[0] - a2pos[0];
       delij[1] = a1.position[1] - a2pos[1];
@@ -253,16 +216,16 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
 
       double rij_sq = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
 
-      if (rij_sq > rcut_max_sq) continue;
-      size_t neighIdx = st.near_neigh_idx[i][jj];
+      if (rij_sq >= rcut_max_sq) continue;
+      size_t neighIdx = st.nn->idx[i][jj];
       int Zj = st(neighIdx).Z;
       double rij = sqrt(rij_sq);
       double rij_inv = 1.0/rij;
 
       // CALCULATE TWO-BODY TERM
       if (use_force || use_stress) {
-        fd_type &fd_ij = st_d.fd[i][jj];
-        if (rij_sq <= rcut_2b_sq && init2b) {
+        tadah::core::fd_type &fd_ij = st_d.fd[i][jj];
+        if (init2b && rij_sq < rcut_2b_sq) {
           d2.calc_all(Zi,Zj,rij,rij_sq,aed,fd_ij,0.5);
           // Two-body descriptor calculates x-direction only - fd_ij(n,0)
           // so we have to copy x-dir to y- and z-dir
@@ -275,32 +238,25 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st, StDescriptors
           }
         }
         // CALCULATE MANY-BODY TERM
-        if (rij_sq <= rcut_mb_sq && initmb) {
-          rho_type& rhoi = st_d.get_rho(i);
+        if (initmb && rij_sq < rcut_mb_sq) {
+          tadah::core::rho_type& rhoi = st_d.get_rho(i);
           dm.calc_dXijdri(Zi,Zj,rij,rij_sq,delij,rhoi,fd_ij);
         }
       }
       else {
-        if (rij_sq <= rcut_2b_sq && init2b) {
+        if (init2b && rij_sq < rcut_2b_sq ) {
           d2.calc_aed(Zi, Zj,rij,rij_sq,aed,0.5);
         }
       }
 
     }
   }
-  // if (init2b) {
-  //   for (size_t n=0; n<st.natoms(); ++n) {
-  //     for(size_t s=bias; s<bias+d2.size(); ++s) {
-  //       st_d.get_aed(n)(s) *= 0.5;
-  //     }
-  //   }
-  // }
 }
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescriptors &st_d) {
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors &st_d)  const{
 
-  double r_b = config.get<double>("DIMER",1);
-  bool bond_bool = config.get<bool>("DIMER",2);
+  double r_b = context.get<double>("DIMER",1);
+  bool bond_bool = context.get<bool>("DIMER",2);
 
   // Here we assume that training data consists of 4 atoms
   // The cutoff distance specified in the config file works in the usual way
@@ -311,18 +267,18 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   //    |- - - -r_com- - - - - -|   
   //  |- - - - -r_max- - - - - - -|
 
-  bool init2b = config.get<bool>("INIT2B");
-  bool initmb = config.get<bool>("INITMB");
+  bool init2b = context.get<bool>("INIT2B");
+  bool initmb = context.get<bool>("INITMB");
   size_t size2b=0;
   size_t sizemb=0;
-  if (init2b) size2b=config.get<size_t>("SIZE2B");
-  if (initmb) sizemb=config.get<size_t>("SIZEMB");
+  if (init2b) size2b=d2.size();
+  if (initmb) sizemb=dm.size();
 
   // deal with the case initmb is set to true and dummy is used
   init2b = init2b && size2b;
   initmb = initmb && sizemb;
 
-  //double rcut_max_sq = pow(config.get<double>("RCUTMAX"),2);
+  //double rcut_max_sq = pow(context.get<double>("RCUTMAX"),2);
   double rcut_2b_sq = 0.0;
   double rcut_mb_sq = 0.0;
 
@@ -330,18 +286,18 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   if (initmb) rcut_mb_sq = pow(dm.get_rcut(),2);
 
   // Max distance between CoM of two interacting molecules
-  double rcut_com_sq = pow(config.get<double>("RCUTMAX")-r_b,2);
+  double rcut_com_sq = pow(context.get<double>("RCUTMAX")-r_b,2);
 
   // Not that this differ to how lammps implements this
   // TODO make it consistent between those two
-  Mat6R3C delM;  //i1-j1,i2-j1,i1-j2,i2-j2,i1-i2,j1-j2
+  tadah::core::Mat6R3C delM;  //i1-j1,i2-j1,i1-j2,i2-j2,i1-i2,j1-j2
   double r_sq[6];
   double r[6];
 
   const std::vector<Atom> &atoms = st.atoms;
 
   size_t bias=0;
-  if (config.get<bool>("BIAS"))
+  if (context.get<bool>("BIAS"))
     bias++;
 
   // TODO weighting factors
@@ -361,7 +317,7 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
 
   // zero all aeds+rho and set bias
   for (size_t i=0; i<4; ++i) {
-    aed_type &aed = st_d.get_aed(i);
+    tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
     aed(0)=static_cast<double>(bias);   // set bias
   }
@@ -371,10 +327,10 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
     st_d.rhos.set_zero();
   }
 
-  Vec3d xicom = 0.5*(atoms[0].position + atoms[1].position);
-  Vec3d xjcom = 0.5*(atoms[2].position + atoms[3].position);
+  tadah::core::Vec3d xicom = 0.5*(atoms[0].position + atoms[1].position);
+  tadah::core::Vec3d xjcom = 0.5*(atoms[2].position + atoms[3].position);
 
-  Vec3d del_com = xicom-xjcom;;
+  tadah::core::Vec3d del_com = xicom-xjcom;;
   double r_com_sq = del_com * del_com;
   if (r_com_sq > rcut_com_sq) {
     return;
@@ -406,8 +362,8 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   // calculate many-body aed
   if (initmb) {
     for (size_t i=0; i<4; ++i) {
-      aed_type &aed = st_d.get_aed(i);
-      rho_type& rhoi = st_d.get_rho(i);
+      tadah::core::aed_type &aed = st_d.get_aed(i);
+      tadah::core::rho_type& rhoi = st_d.get_rho(i);
       dm.calc_aed(rhoi,aed);
     }
   }
@@ -421,28 +377,30 @@ void DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc_dimer(const Structure &st, StDescr
   //}
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-StDescriptors DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const Structure &st) {
-  StDescriptors st_d(st, config);
-  if (config.get<bool>("DIMER",0))
+template <typename D2, typename DM, typename C2, typename CM>
+StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) const {
+  StDescriptors st_d(st, context);
+  if (context.get<bool>("DIMER",0))
     calc_dimer(st,st_d);
   else
     calc(st,st_d);
   return st_d;
 }
 
-template <typename D2, typename D3, typename DM, typename C2, typename C3, typename CM>
-StDescriptorsDB DescriptorsCalc<D2,D3,DM,C2,C3,CM>::calc(const StructureDB &stdb) {
-  StDescriptorsDB st_desc_db(stdb, config);
+template <typename D2, typename DM, typename C2, typename CM>
+StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) const {
+  StDescriptorsDB st_desc_db(stdb, context);
 
 #ifdef _OPENMP
   #pragma omp parallel for
 #endif
   for(size_t i=0; i<stdb.size(); ++i)
-    if (config.get<bool>("DIMER",0))
+    if (context.get<bool>("DIMER",0))
       calc_dimer(stdb(i),st_desc_db(i));
     else
       calc(stdb(i),st_desc_db(i));
   return st_desc_db;
 }
+} // namespace mlip
+} // namespace tadah
 #endif

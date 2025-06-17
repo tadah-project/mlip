@@ -1,5 +1,7 @@
 #include <tadah/core/utils.h>
 #include <tadah/mlip/dataset_readers/castep_md_reader.h>
+namespace tadah {
+namespace mlip {
 
 CastepMDReader::CastepMDReader(StructureDB& db)
 : DatasetReader(db) {}
@@ -162,7 +164,7 @@ void CastepMDReader::parse_data() {
       std::istringstream iss(line);
       if (!(iss >> element >> temp >> px >> py >> pz)) 
         std::cerr << "Warning: Unexpected end of data when reading atomic positions:\n" << line << std::endl;
-      s.add_atom(Atom(Element(element),px*d_conv,py*d_conv,pz*d_conv,0,0,0));
+      s.add_atom(Atom(tadah::core::Element(element),px*d_conv,py*d_conv,pz*d_conv,0,0,0));
       R_flag=true;
     }
     else if (ends_with(line,"<-- F")) {
@@ -183,7 +185,7 @@ void CastepMDReader::parse_data() {
       F_flag=true;
       if (force_idx==s.natoms()) complete_structure=true;
     }
-    else if (is_blank_line(line)) {
+    else if (tadah::core::is_blank_line(line)) {
       if (!error && complete_structure)
         postproc_structure(s);
 
@@ -224,3 +226,5 @@ void CastepMDReader::print_summary() const {
 std::string CastepMDReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

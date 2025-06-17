@@ -6,6 +6,8 @@
 
 #include <string>
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
 /**
  * Container to represent atom properties
@@ -18,7 +20,7 @@
  *     # set atom symbol
  *     atom.symbol="Ti"
  *
- *     # set atom name, atomic number... see Element class for attributes
+ *     # set atom name, atomic number... see tadah::core::Element class for attributes
  *
  *     # set atom position to (1.1, 2.2, 3.3)
  *     atom.position(0) = 1.1;
@@ -34,7 +36,7 @@
  *
  *     # Use constructor to fully initialise this object
  *     # with the position and force as in the example above
- *     Element element = PeriodicTable().find_by_symbol("Ti");
+ *     tadah::core::Element element = tadah::core::PeriodicTable().find_by_symbol("Ti");
  *     Atom atom(element, 1.1, 2.2, 3.3, 0.1, -0.2, 0.3);
  *
  * Usage example:
@@ -47,7 +49,7 @@
  *
  * @see Structure
  */
-struct Atom: public Element {
+struct Atom: public tadah::core::Element {
     /**
      * Create an empty atom object. All class attributes are left uninitialised.
      */
@@ -55,20 +57,29 @@ struct Atom: public Element {
 
     /** This constructor fully initialise this object
      *
-     * @param[in] element   Chemical Element
+     * @param[in] element   Chemical tadah::core::Element
      * @param[in] px,py,pz  Atomic coordinates
      * @param[in] fx,fy,fz  Force acting on the atom
      *
      */
-    Atom(const Element &element,
+    Atom(const tadah::core::Element &element,
             const double px, const double py, const double pz,
             const double fx, const double fy, const double fz);
 
+    /** This constructor fully initialise this object with zero force
+     *
+     * @param[in] element   Chemical tadah::core::Element
+     * @param[in] px,py,pz  Atomic coordinates
+     *
+     */
+    Atom(const tadah::core::Element &element,
+            const double px, const double py, const double pz);
+
     /** Hold position of the atom. */
-    Vec3d position;
+    tadah::core::Vec3d position;
 
     /** Hold force on the atom. */
-    Vec3d force;
+    tadah::core::Vec3d force;
 
     /** Print object summary to the stream */
     friend std::ostream& operator<<(std::ostream& os, const Atom& atom);
@@ -86,4 +97,6 @@ struct Atom: public Element {
     bool is_the_same(const Atom &, double thr=1e-6) const;
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif

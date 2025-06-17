@@ -3,7 +3,7 @@
 
 #include "tadah/core/utils.h"
 #include <tadah/core/element.h>
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/mlip/structure.h>
 
 #include <string>
@@ -12,6 +12,8 @@
 #include <vector>
 #include <set>
 
+namespace tadah {
+namespace mlip {
 /**
  * Container for a collection of Structure(s).
  *
@@ -24,9 +26,9 @@
  *
  * Usage example:
  *
- *     # Load all structure files listed in a Config file
- *     Config config("config");
- *     StructureDB stdb(config);
+ *     # Load all structure files listed in a Context file
+ *     Context context("context");
+ *     StructureDB stdb(context);
  *
  * Usage example:
  *
@@ -46,20 +48,20 @@ struct StructureDB {
   StructureDB();
 
   /** Create this object and load structures
-     *  listed in the config file
+     *  listed in the context file
      *
      * \note
-     *      Required Config key: \ref DBFILE
+     *      Required Context key: \ref DBFILE
      */
-  StructureDB(Config &config);
+  StructureDB(const tadah::core::Context &context);
 
-  /** Add structures listed in the config file
+  /** Add structures listed in the context file
      *
      *	\note
-     *      Required Config key: \ref DBFILE
+     *      Required Context key: \ref DBFILE
      *
      */
-  void add(Config &config);
+  void add(const tadah::core::Context &context);
 
   /** Add all structures from a file */
   void add(const std::string fn);
@@ -74,7 +76,7 @@ struct StructureDB {
      *
      * Return the number of loaded structures.
      */
-  int add(const std::string fn, size_t first, int N);
+  int add(const std::string fn, size_t first, int N=1);
 
   /** Add a single Structure object to this container */
   void add(const Structure &s);
@@ -140,27 +142,27 @@ struct StructureDB {
   size_t calc_natoms(size_t n) const;
 
   /** Return unique elements for all Structures. */
-  std::set<Element> get_unique_elements() const;
+  std::set<tadah::core::Element> get_unique_elements() const;
 
-  /** Find unique elements in provided Config file */
-  static std::set<Element> find_unique_elements(const Config &c);
+  /** Find unique elements in provided Context file */
+  static std::set<tadah::core::Element> find_unique_elements(const tadah::core::Context &c);
 
   /** Find unique elements in provided file */
-  static std::set<Element> find_unique_elements(const std::string &fn);
+  static std::set<tadah::core::Element> find_unique_elements(const std::string &fn);
 
-  /** Count number of structures and atoms in all datasets from the Config file. */
-  static std::pair<int,int> count(const Config &c);
+  /** Count number of structures and atoms in all datasets from the Context file. */
+  static std::pair<int,int> count(const tadah::core::Context &c);
 
   /** Count number of structures and atoms in a single dataset. */
   static std::pair<int,int> count(const std::string fn);
 
   void clear_nn();
 
-  /** Check consistency of the ATOMS key. */
-  static void check_atoms_key(Config &config, std::set<Element> &unique_elements);
+  /** Check consistency of the ATOM key. */
+  static void check_atom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
-  /** Check consistency of the WATOMS key. Add if missing*/
-  static void check_watoms_key(Config &config, std::set<Element> &unique_elements);
+  /** Check consistency of the WATOM key. Add if missing*/
+  static void check_watom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
   // Methods to enable range-based for loop
   std::vector<Structure>::iterator begin();
@@ -175,9 +177,13 @@ struct StructureDB {
   // then prints the results to std::cout.
   void parseFile(const std::string& filename);
 
+  void clear();
+
 private:
   // Checks if a line is empty or contains only whitespace
   bool isBlankLine(const std::string& line) const;
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif
