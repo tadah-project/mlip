@@ -83,7 +83,7 @@ add_library(boost_iostream STATIC ${BOOST_SRC})
 target_include_directories(boost_iostream
   PUBLIC
       # while building this project
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost/include>
       # after "make install"
       $<INSTALL_INTERFACE:include>
   PRIVATE
