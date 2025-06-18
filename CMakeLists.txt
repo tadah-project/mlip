@@ -71,6 +71,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Tadah.MODELS)
 
+# 4. External dependencies
+# Tiny Boost
+file(GLOB BOOST_SRC external/boost/libs/iostreams/src/*.cpp)
+add_library(boost_iostream STATIC ${BOOST_SRC})
+target_include_directories(boost_iostream PRIVATE external/boost)
+
 file(GLOB MLIP_SRC CONFIGURE_DEPENDS "src/*.cpp")
 add_library(tadah.mlip ${MLIP_SRC})
 target_include_directories(tadah.mlip
@@ -82,7 +88,9 @@ target_include_directories(tadah.mlip
 target_link_libraries(tadah.mlip
   PUBLIC
     tadah::compile_options    # get warnings/asan/-pg flags
-    tadah.models)
+    tadah.models
+    boost_iostream
+  )
 
 # Hack to skip the Gemmi cpptest
 # 1) Temporarily store the original add_test() so we can call it.
