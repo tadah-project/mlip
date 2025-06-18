@@ -72,12 +72,23 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Tadah.MODELS)
 
 # 4. External dependencies
-# Tiny Boost
-file(GLOB BOOST_SRC external/boost/libs/iostreams/src/*.cpp)
+# ---- Tiny Boost ---------------------------------------------------------
+file(GLOB BOOST_SRC CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/external/boost/libs/iostreams/src/*.cpp)
+
 add_library(boost_iostream STATIC ${BOOST_SRC})
+
+# Public headers: boost/**              (needed by users)
+# Private  headers: libs/iostreams/src  (only needed while building)
 target_include_directories(boost_iostream
-  PUBLIC external/boost/include
-  external/boost/libs/iostreams/src)
+  PUBLIC
+      # while building this project
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost>
+      # after "make install"
+      $<INSTALL_INTERFACE:include>
+  PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost/libs/iostreams/src>
+)
 
 file(GLOB MLIP_SRC CONFIGURE_DEPENDS "src/*.cpp")
 add_library(tadah.mlip ${MLIP_SRC})
@@ -196,6 +207,8 @@ include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
+
+install(DIRECTORY external/boost/boost      DESTINATION include)  # headers
 
 # Installation rules
 install(TARGETS tadah.mlip boost_iostream
