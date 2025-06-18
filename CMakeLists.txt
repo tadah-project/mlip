@@ -82,7 +82,7 @@ target_include_directories(tadah.mlip
 target_link_libraries(tadah.mlip
   PUBLIC
     tadah::compile_options    # get warnings/asan/-pg flags
-    tadah.core tadah.models)
+    tadah.models)
 
 # Hack to skip the Gemmi cpptest
 # 1) Temporarily store the original add_test() so we can call it.
