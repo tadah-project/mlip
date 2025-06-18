@@ -59,7 +59,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "DEBUG"
     OR
     CMAKE_BUILD_TYPE STREQUAL "DEVELOP"
 )
-  message(STATUS "${TADAH} Build type:  ${CMAKE_BUILD_TYPE}.")
+message(STATUS "${PROJECT_NAME} Build type:  ${CMAKE_BUILD_TYPE}.")
 else()
   message(FATAL_ERROR "
   Selected build type is not supported: ${CMAKE_BUILD_TYPE}.
@@ -85,10 +85,10 @@ endif()
     )
     if(found_dir)
       set(${result_var} "${found_dir}" PARENT_SCOPE)
-      message("${TADAH} Develop build: Found directory: ${found_dir}")
+      message(STATUS "${PROJECT_NAME} Develop build: Found directory: ${found_dir}")
     else()
       set(${result_var} "" PARENT_SCOPE)
-      message("${TADAH} Develop build: Directory not found.")
+      message(STATUS "${PROJECT_NAME} Develop build: Directory not found.")
     endif()
   endfunction()
   find_directory_case_insensitive("models" "$ENV{TADAH_PATH}" DEVELOP_MODELS_DIR)
@@ -98,7 +98,7 @@ endif()
 
 include(FetchContent)
 
-if(DEFINED ENV{CI_COMMIT_REF_NAME})
+if(NOT DEFINED GIT_BRANCH AND DEFINED ENV{CI_COMMIT_REF_NAME})
   set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
 else()
   execute_process(
@@ -107,7 +107,7 @@ else()
     OUTPUT_VARIABLE GIT_BRANCH
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
-message(STATUS "${TADAH}MLIP Using GIT_BRANCH:  ${GIT_BRANCH}")
+message(STATUS "${PROJECT_NAME} module is using GIT_BRANCH:  ${GIT_BRANCH}")
 
 FetchContent_Declare(
     Tadah.MODELS
