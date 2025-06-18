@@ -76,7 +76,7 @@ FetchContent_MakeAvailable(Tadah.MODELS)
 file(GLOB BOOST_SRC external/boost/libs/iostreams/src/*.cpp)
 add_library(boost_iostream STATIC ${BOOST_SRC})
 target_include_directories(boost_iostream
-  PRIVATE external/boost/include
+  PUBLIC external/boost/include
   external/boost/libs/iostreams/src)
 
 file(GLOB MLIP_SRC CONFIGURE_DEPENDS "src/*.cpp")
