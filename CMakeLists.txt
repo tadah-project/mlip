@@ -196,7 +196,7 @@ if(BUILD_TESTING)
 endif()
 
 # Installation rules
-install(TARGETS tadah.mlip
+install(TARGETS tadah.mlip boost_iostream
         EXPORT  tadahMlipTargets
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
