@@ -208,7 +208,7 @@ if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 
-install(DIRECTORY external/boost/boost      DESTINATION include)  # headers
+install(DIRECTORY external/boost/include/boost  DESTINATION include)
 
 # Installation rules
 install(TARGETS tadah.mlip boost_iostream
