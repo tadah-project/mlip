@@ -1,11 +1,10 @@
 stages:
   - build_debug
-  - run_unit_tests
   - build_release
   - trigger
 
 cache:
-    key: "$CI_PIPELINE_ID"
+    key: "build-cache-$CI_COMMIT_REF_SLUG"
     paths:
     - ${BUILD_DIR}
   
@@ -19,12 +18,8 @@ build_debug:
   stage: build_debug
   script:
     - cd ${DEBUG_DIR}
-    - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DTADAH_BUILD_TESTS=ON
+    - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DBUILD_TESTING=ON
     - make -j ${CPU_BUILD}
-
-run_unit_tests:
-  stage: run_unit_tests
-  script:
     - cd ${DEBUG_DIR}
     - make test
     - cd ..; gcovr -e '.*tests.*|.*lib.*|.*utils.*|build' -r .

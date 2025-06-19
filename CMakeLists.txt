@@ -1,28 +1,24 @@
 cmake_minimum_required(VERSION 3.12)
-project(Tadah.MLIP)
+project(Tadah.MLIP LANGUAGES CXX)
 
-# Guard against in-source builds
-# Also, make sure user does not accidently invoke cmake .. from the source dir
-# of the module in case module is added as a submodule.
-get_filename_component(MODULE_TEST ${CMAKE_BINARY_DIR} NAME)
-if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR}
-        OR ${MODULE_TEST} STREQUAL "MLIP"
-)
-  message(FATAL_ERROR "
-    In-source builds not allowed.
-    Please make a new directory (called a build directory) and run CMake from there.
-    You may need to remove CMakeCache.txt and CMakeFiles dir. ")
+# 0. Guard against in-source builds
+if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+  message(FATAL_ERROR
+    "In-source builds are not allowed.\n"
+    "Create a separate build directory and run CMake from there.")
 endif()
 
+# 1. Global settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-if(BUILD_SHARED_LIBS)
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# default build type for single-config generators (Ninja/Make)
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-if (BUILD_SHARED_LIBS)
+if(BUILD_SHARED_LIBS)
   # Always full RPATH
   # use, i.e. don't skip the full RPATH for the build tree
   set(CMAKE_SKIP_BUILD_RPATH FALSE)
@@ -36,104 +32,85 @@ if (BUILD_SHARED_LIBS)
   # add the automatically determined parts of the RPATH
   # which point to directories outside the build tree to the install RPATH
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-  # the RPATH to be used when installing, but only if it's not a system directory
-  list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
-  if("${isSystemDir}" STREQUAL "-1")
-    set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-  endif("${isSystemDir}" STREQUAL "-1")
 endif()
 
-# Set default build type
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
-endif()
-
-# Check is build supported
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
-if (CMAKE_BUILD_TYPE STREQUAL "DEBUG" 
-    OR
-    CMAKE_BUILD_TYPE STREQUAL "RELEASE"
-    OR
-    CMAKE_BUILD_TYPE STREQUAL "PROFILE"
-    OR
-    CMAKE_BUILD_TYPE STREQUAL "DEVELOP"
-)
-  message(STATUS "${TADAH} Build type:  ${CMAKE_BUILD_TYPE}.")
-else()
-  message(FATAL_ERROR "
-  Selected build type is not supported: ${CMAKE_BUILD_TYPE}.
-  Supported build types: Release, Debug, Profile Develop"
-  )
-endif()
-
-# Update the documentation string of CMAKE_BUILD_TYPE for GUIs
-set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING
-  "Choose the type of build, options are: None Debug Release Profile."
-  FORCE)
-
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
-if (CMAKE_BUILD_TYPE STREQUAL "DEVELOP")
-if(NOT DEFINED ENV{TADAH_PATH})
-  message(FATAL_ERROR "TADAH_PATH system variable is undefined for the ${CMAKE_BUILD_TYPE} build")
-endif()
-  function(find_directory_case_insensitive target_name search_dir result_var)
-    execute_process(
-        COMMAND find "${search_dir}" -maxdepth 1 -type d -iname "${target_name}"
-        OUTPUT_VARIABLE found_dir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(found_dir)
-      set(${result_var} "${found_dir}" PARENT_SCOPE)
-      message("${TADAH} Develop build: Found directory: ${found_dir}")
-    else()
-      set(${result_var} "" PARENT_SCOPE)
-      message("${TADAH} Develop build: Directory not found.")
-    endif()
-  endfunction()
-  find_directory_case_insensitive("models" "$ENV{TADAH_PATH}" DEVELOP_MODELS_DIR)
-  set(FETCHCONTENT_SOURCE_DIR_TADAH.MODELS "${DEVELOP_MODELS_DIR}")
-endif()
-
-
+# 2. Bring in the shared compile/link options
 include(FetchContent)
-
-if(DEFINED ENV{CI_COMMIT_REF_NAME})
-  set(GIT_BRANCH "$ENV{CI_COMMIT_REF_NAME}")
-else()
-  execute_process(
-    COMMAND bash -c "git status | grep origin |sed -e 's/.*origin\\///' -e 's/[^a-zA-Z\/_-].*//'"
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_BRANCH
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT TARGET tadah::compile_options)
+  FetchContent_Declare (
+    tadah_cmake
+    GIT_REPOSITORY  https://git.ecdf.ed.ac.uk/tadah/cmake-tools.git
+    GIT_TAG         main
+  )
+  FetchContent_MakeAvailable(tadah_cmake)   # defines tadah::compile_options
 endif()
-message(STATUS "${TADAH}MLIP Using GIT_BRANCH:  ${GIT_BRANCH}")
 
+# (option) Developer builds -DTADAH_DEVELOP=ON
+tadah_use_local_module(Tadah.MODELS MODELS)  # FetchContent name + folder name
+
+# 2. Bring in the shared compile/link options
+include(FetchContent)
+if(NOT TARGET tadah::compile_options)
+  FetchContent_Declare (
+    tadah_cmake
+    GIT_REPOSITORY  https://git.ecdf.ed.ac.uk/tadah/cmake-tools.git
+    GIT_TAG         main
+  )
+  FetchContent_MakeAvailable(tadah_cmake)   # defines tadah::compile_options
+endif()
+
+# 3. Git branch information, for informational purposes 
+tadah_get_git_branch(GIT_BRANCH)
+message(STATUS "${PROJECT_NAME} module is using GIT_BRANCH: ${GIT_BRANCH}")
+
+#4. Fetch Tadah! modules
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
     GIT_TAG origin/${GIT_BRANCH}
 )
-
 FetchContent_MakeAvailable(Tadah.MODELS)
+
+# 4. External dependencies
+# ---- Tiny Boost ---------------------------------------------------------
+file(GLOB BOOST_SRC CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/external/boost/libs/iostreams/src/*.cpp)
+
+add_library(boost_iostream STATIC ${BOOST_SRC})
+
+# Public headers: boost/**              (needed by users)
+# Private  headers: libs/iostreams/src  (only needed while building)
+target_include_directories(boost_iostream
+  PUBLIC
+      # while building this project
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost/include>
+      # after "make install"
+      $<INSTALL_INTERFACE:include>
+  PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/boost/libs/iostreams/src>
+)
 
 file(GLOB MLIP_SRC CONFIGURE_DEPENDS "src/*.cpp")
 add_library(tadah.mlip ${MLIP_SRC})
-target_link_libraries(tadah.mlip PRIVATE config::rc)
-target_link_libraries(tadah.mlip PUBLIC tadah.models)
-target_include_directories(tadah.mlip PUBLIC include)
-target_include_directories(tadah.mlip PUBLIC external)
-target_include_directories(tadah.mlip PUBLIC ${Tadah.MODELS_SOURCE_DIR}/include)
-target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/include)
-target_include_directories(tadah.mlip PUBLIC ${Tadah.CORE_SOURCE_DIR}/external/toml11)
+target_include_directories(tadah.mlip
+  PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/external>
+)
+target_link_libraries(tadah.mlip
+  PUBLIC
+    tadah::compile_options    # get warnings/asan/-pg flags
+    tadah.models
+    boost_iostream
+  )
 
-
+# Hack to skip the Gemmi cpptest
 # 1) Temporarily store the original add_test() so we can call it.
 #    We name it "_original_add_test" internally.
 #
 #    NOTE: We must first verify that add_test is indeed available
 #    as a command to avoid scope issues.
-
 if(COMMAND add_test)
   cmake_policy(PUSH)
 
@@ -175,8 +152,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(gemmi)
 
-
-
 target_link_libraries(tadah.mlip PRIVATE gemmi::headers)
 
 message(STATUS "Fetching nlohmann/json...")
@@ -189,7 +164,7 @@ FetchContent_Declare(
   LOG_DOWNLOAD ON
 )
 FetchContent_MakeAvailable(json)
-target_link_libraries(tadah.mlip PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(tadah.mlip PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
 
 if (NOT TADAH_BUILD_DOCS_ONLY)
   find_package(CURL QUIET)   # Use QUIET to avoid CMake’s default error
@@ -216,7 +191,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlopt)
 target_link_libraries(tadah.mlip PRIVATE nlopt)
 
-
 if(TADAH_ENABLE_OPENMP)
   find_package(OpenMP REQUIRED)
   target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
@@ -228,17 +202,22 @@ if (TADAH_BUILD_MPI)
   add_compile_definitions(TADAH_BUILD_MPI)
 endif()
 
-
-if(TADAH_BUILD_TESTS)
-  include(CTest) 
+set(BUILD_TESTING OFF CACHE BOOL "Build tests")
+include(CTest)
+if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 
+install(DIRECTORY external/boost/include/boost  DESTINATION include)
+
 # Installation rules
-install(TARGETS tadah.mlip
+install(TARGETS tadah.mlip boost_iostream
+        EXPORT  tadahMlipTargets
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
-install(DIRECTORY include/
-    DESTINATION include
-)
+
+install(DIRECTORY include/ DESTINATION include)
+install(EXPORT tadahMlipTargets
+        NAMESPACE tadah::
+        DESTINATION lib/cmake/tadah.mlip)

@@ -37,7 +37,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
 {
   if (c.get<bool>("INIT2B")) {
     c2 = C2(c.get<double>("RCUT2BMAX"));
-    if (context.contains("RCTYPE2B")) {
+    if (!context.contains("RCTYPE2B")) {
       context.add("RCTYPE2B",c2.label());
       d2.set_fcut(&c2,false);
     }
