@@ -4,7 +4,7 @@ stages:
   - trigger
 
 cache:
-    key: "$CI_PIPELINE_ID"
+    key: "build-cache-$CI_COMMIT_REF_SLUG"
     paths:
     - ${BUILD_DIR}
   
