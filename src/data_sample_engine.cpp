@@ -38,13 +38,15 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
     }
   }
   else if (taskContext.contains("RANDOM")) {
+    size_t N = taskContext.get<size_t>("RANDOM");
+    indices.resize(N);
     std::iota(indices.begin(), indices.end(), 0);
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(indices.begin(), indices.end(), g);
-    size_t N = taskContext.get<size_t>("RANDOM");
-    for (size_t i=0; i < N; ++i) {
+    for (size_t i : indices) {
       outStdb.add(inStdb(i));
+      if (outStdb.size() >= N) break;
     }
   }
   else if (taskContext.contains("INDEX")) {
@@ -75,8 +77,14 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
 
   if (!areDataLoaded) loadInput(taskContext);
 
-  if (taskContext.contains("UNIFORM") || taskContext.contains("RANDOM")) {
-    size_t N = taskContext.get<size_t>("N");
+  if (taskContext.contains("UNIFORM")) {
+    size_t N = taskContext.get<size_t>("UNIFORM");
+    size_t total = inStdb.size();
+    if (N>total) throw std::runtime_error(
+        "Selected number is larger than total number of configurations availble.");
+  }
+  if (taskContext.contains("RANDOM")) {
+    size_t N = taskContext.get<size_t>("RANDOM");
     size_t total = inStdb.size();
     if (N>total) throw std::runtime_error(
         "Selected number is larger than total number of configurations availble.");
