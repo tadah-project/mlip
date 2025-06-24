@@ -182,6 +182,7 @@ int Structure::read(std::ifstream &ifs) {
   stream.clear();
   stream.seekg(0, std::ios::beg);
 
+  try {
   if (count == 3) {
     // eweight, fweight, sweight
     stream >> eweight >> fweight >> sweight;
@@ -229,6 +230,11 @@ int Structure::read(std::ifstream &ifs) {
     tmp >> symbol >> px >> py >> pz >> fx >> fy >> fz;
     tadah::core::Element e = tadah::core::PeriodicTable::find_by_symbol(symbol);
     atoms.push_back(Atom(e, px, py, pz, fx, fy, fz));
+  }
+  } catch (const std::exception &e) {
+    std::cerr << "Error reading structure: " << e.what() << std::endl;
+    std::cerr << "The error occured while reading line: " << line << std::endl;
+    throw std::runtime_error("Error reading structure from file.");
   }
   return 0;
 }
