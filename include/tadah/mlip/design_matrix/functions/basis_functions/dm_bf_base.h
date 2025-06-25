@@ -8,18 +8,22 @@
 #include <tadah/models/functions/basis_functions/bf_base.h>
 
 #include <iostream>
+namespace tadah {
+namespace mlip {
 
-struct DM_BF_Base: public DM_Function_Base, public virtual BF_Base {
+struct DM_BF_Base: public DM_Function_Base, public virtual tadah::models::BF_Base {
    
     DM_BF_Base();
-    DM_BF_Base(const Config &c);
+    DM_BF_Base(const tadah::core::Context &c);
     virtual ~DM_BF_Base();
-    // virtual size_t get_phi_cols(const Config &config)=0;
-    // virtual void calc_phi_energy_row(phi_type &Phi, size_t &row,
-    //         const double fac, const Structure &st, const StDescriptors &st_d)=0;
-    // virtual void calc_phi_force_rows(phi_type &Phi, size_t &row,
-    //         const double fac, const Structure &st, const StDescriptors &st_d)=0;
-    // virtual void calc_phi_stress_rows(phi_type &Phi, size_t &row,
-    //         const double fac[6], const Structure &st, const StDescriptors &st_d)=0;
+    // virtual size_t get_phi_cols(const tadah::core::Context &context)=0;
+    // virtual void calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row,
+    //         const Structure &st, const StDescriptors &st_d)=0;
+    // virtual void calc_phi_force_rows(tadah::core::phi_type &Phi, size_t &row,
+    //         const Structure &st, const StDescriptors &st_d)=0;
+    // virtual void calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row,
+    //         const Structure &st, const StDescriptors &st_d)=0;
 };
+} // namespace mlip
+} // namespace tadah
 #endif

@@ -1,5 +1,7 @@
 #include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/analytics/statistics.h>
+namespace tadah {
+namespace mlip {
 
 Analytics::Analytics(const StructureDB &st, const StructureDB &stp):
     st(st),
@@ -9,9 +11,9 @@ Analytics::Analytics(const StructureDB &st, const StructureDB &stp):
         throw std::runtime_error("Containers differ in size.");
 }
 
-t_type Analytics::calc_e_mae() const{
+tadah::core::t_type Analytics::calc_e_mae() const{
 
-    t_type emae_vec(st.dbidx.size()-1);
+    tadah::core::t_type emae_vec(st.dbidx.size()-1);
     double emae=0;
     size_t dbidx=0;
     size_t N=0;
@@ -29,9 +31,9 @@ t_type Analytics::calc_e_mae() const{
     return emae_vec;
 }
 
-t_type Analytics::calc_f_mae() const{
+tadah::core::t_type Analytics::calc_f_mae() const{
 
-    t_type fmae_vec(st.dbidx.size()-1);
+    tadah::core::t_type fmae_vec(st.dbidx.size()-1);
     double fmae=0;
     size_t dbidx=0;
     size_t N=0;
@@ -55,9 +57,9 @@ t_type Analytics::calc_f_mae() const{
     return fmae_vec;
 }
 
-t_type Analytics::calc_s_mae() const {
+tadah::core::t_type Analytics::calc_s_mae() const {
 
-    t_type smae_vec(st.dbidx.size()-1);
+    tadah::core::t_type smae_vec(st.dbidx.size()-1);
     double smae=0;
     size_t dbidx=0;
     size_t N=0;
@@ -78,9 +80,29 @@ t_type Analytics::calc_s_mae() const {
     return smae_vec;
 }
 
-t_type Analytics::calc_e_rmse() const{
+tadah::core::t_type Analytics::calc_e_rrmse() const {
+  tadah::core::t_type errmse_vec(st.dbidx.size()-1);
+  double errmse=0;
+  size_t dbidx=0;
+  size_t N=0;
+  for (size_t i=0; i<st.size(); ++i) {
+    if (st(i).energy != 0.0) {
+      errmse += std::pow((st(i).energy - stp(i).energy)/st(i).energy,2);
+      N++;
+    }
+    if (i+1==st.dbidx[dbidx+1]) {
+      errmse_vec(dbidx)=std::sqrt(errmse/N);
+      errmse=0;
+      N=0;
+      dbidx++;
+    }
+  }
+  return errmse_vec;
+}
 
-    t_type ermse_vec(st.dbidx.size()-1);
+tadah::core::t_type Analytics::calc_e_rmse() const{
+
+    tadah::core::t_type ermse_vec(st.dbidx.size()-1);
     double ermse=0;
     size_t dbidx=0;
     size_t N=0;
@@ -98,9 +120,9 @@ t_type Analytics::calc_e_rmse() const{
     return ermse_vec;
 }
 
-t_type Analytics::calc_f_rmse() const{
+tadah::core::t_type Analytics::calc_f_rmse() const{
 
-    t_type frmse_vec(st.dbidx.size()-1);
+    tadah::core::t_type frmse_vec(st.dbidx.size()-1);
     double frmse=0;
     size_t dbidx=0;
     size_t N=0;
@@ -124,9 +146,9 @@ t_type Analytics::calc_f_rmse() const{
     return frmse_vec;
 }
 
-t_type Analytics::calc_s_rmse() const {
+tadah::core::t_type Analytics::calc_s_rmse() const {
 
-    t_type srmse_vec(st.dbidx.size()-1);
+    tadah::core::t_type srmse_vec(st.dbidx.size()-1);
     double srmse=0;
     size_t dbidx=0;
     size_t N=0;
@@ -147,11 +169,11 @@ t_type Analytics::calc_s_rmse() const {
     return srmse_vec;
 }
 
-t_type Analytics::calc_e_r_sq() const {
-    t_type e_r_sq_vec(st.dbidx.size()-1);
+tadah::core::t_type Analytics::calc_e_r_sq() const {
+    tadah::core::t_type e_r_sq_vec(st.dbidx.size()-1);
     size_t dbidx=0;
-    t_type obs(st.size(dbidx));
-    t_type pred(st.size(dbidx));
+    tadah::core::t_type obs(st.size(dbidx));
+    tadah::core::t_type pred(st.size(dbidx));
     size_t idx=0;
     for (size_t i=0; i<st.size(); ++i) {
         obs(idx) = st(i).energy/st(i).natoms();
@@ -170,11 +192,11 @@ t_type Analytics::calc_e_r_sq() const {
     return e_r_sq_vec;
 }
 
-t_type Analytics::calc_f_r_sq() const {
-    t_type f_r_sq_vec(st.dbidx.size()-1);
+tadah::core::t_type Analytics::calc_f_r_sq() const {
+    tadah::core::t_type f_r_sq_vec(st.dbidx.size()-1);
     size_t dbidx=0;
-    t_type obs(3*st.calc_natoms(dbidx));
-    t_type pred(3*st.calc_natoms(dbidx));
+    tadah::core::t_type obs(3*st.calc_natoms(dbidx));
+    tadah::core::t_type pred(3*st.calc_natoms(dbidx));
     size_t idx=0;
     for (size_t i=0; i<st.size(); ++i) {
         for (size_t a=0; a<st(i).natoms(); ++a) {
@@ -197,11 +219,11 @@ t_type Analytics::calc_f_r_sq() const {
     return f_r_sq_vec;
 }
 
-t_type Analytics::calc_s_r_sq() const {
-    t_type s_r_sq_vec(st.dbidx.size()-1);
+tadah::core::t_type Analytics::calc_s_r_sq() const {
+    tadah::core::t_type s_r_sq_vec(st.dbidx.size()-1);
     size_t dbidx=0;
-    t_type obs(6*st.size(dbidx));
-    t_type pred(6*st.size(dbidx));
+    tadah::core::t_type obs(6*st.size(dbidx));
+    tadah::core::t_type pred(6*st.size(dbidx));
     size_t idx=0;
     for (size_t i=0; i<st.size(); ++i) {
 
@@ -225,3 +247,5 @@ t_type Analytics::calc_s_r_sq() const {
     }
     return s_r_sq_vec;
 }
+} // namespace mlip
+} // namespace tadah

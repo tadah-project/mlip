@@ -10,6 +10,8 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+using namespace tadah::core;
+using namespace tadah::mlip;
 
 // Function to list all files in a directory
 std::vector<std::string> get_all_files(const std::string& directory) {

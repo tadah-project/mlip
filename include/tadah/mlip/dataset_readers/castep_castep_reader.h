@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 /**
  * @class CastepCastepReader
  * @brief A class for reading and parsing CASTEP .castep files.
@@ -85,6 +87,8 @@ protected:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CASTEP_CASTEP_READER_H
 
 

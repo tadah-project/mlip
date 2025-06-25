@@ -2,6 +2,7 @@
 #define STRUCTURE_h
 
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/nn_table.h>
 #include <tadah/core/core_types.h>
 #include <tadah/core/periodic_table.h>
 
@@ -11,6 +12,10 @@
 #include <iomanip>
 #include <vector>
 #include <set>
+#include <unordered_map>
+
+namespace tadah {
+namespace mlip {
 
 /**
  * Container for a collection of Atom(s).
@@ -54,10 +59,10 @@ struct Structure {
   double energy;
 
   /** Lattice vectors. */
-  Matrix3d cell;
+  tadah::core::Matrix3d cell;
 
   /** Virial stress tensor. */
-  stress_type stress;
+  tadah::core::stress_type stress;
 
   /** Container for atoms which belong to this structure */
   std::vector<Atom> atoms;
@@ -68,34 +73,7 @@ struct Structure {
    */
   double T=0;
 
-  /**
-   * Container for nearest neighbour atoms for every atom in the structure.
-   */
-  std::vector<std::vector<Atom>> near_neigh_atoms;
-
-  /** Periodic image flag for neigherest neighbours.
-   *
-   * Indicate which periodic image the neigbouring atom belongs to.
-   *
-   * Example in two dimensions for illustration purposes:
-   *
-   *      -1, 1 | 0, 1 | 1, 1
-   *      -------------------
-   *      -1, 0 | 0, 0 | 1, 0
-   *      -------------------
-   *      -1,-1 | 0,-1 | 1,-1
-   *
-   * So [0,0] corresponds to the atom in the main box and [1,0] to periodic
-   * shift in the x-direction. Obviously we use three dimensions so this
-   * corresponds to [0,0,0] and [1,0,0].
-   *
-   * Note that there might be more than one periodic image in each direction.
-   * This depends on the box size and the cutoff distance used.
-   */
-  std::vector<std::vector<Vec3d>> near_neigh_shift;
-
-  /** List of global indices for nearest neighbours for every atom */
-  std::vector<std::vector<size_t>> near_neigh_idx;
+  mlip::NNTablePtr nn;   // may be nullptr until NNFinder fills it
 
   /** Weighting parameter for energy used during training.
    *
@@ -134,6 +112,9 @@ struct Structure {
   /** @return  a number of atoms in this structure. */
   size_t natoms() const;
 
+  /** @return A map containing natoms per type Z. */
+  std::unordered_map<int,size_t> get_natoms_map() const;
+
   /** @return volume of this structure. */
   double get_volume() const;
 
@@ -162,8 +143,17 @@ struct Structure {
    */
   double get_pressure(const double T, const double kB=8.617333262145e-5) const;
 
-  /** @return position of the n-th nearest neighbour of the i-th Atom. */
-  const Vec3d& nn_pos(const size_t i, const size_t n) const;
+/**
+ * Return the position of the n-th neighbor of atom i,
+ * computed via the neighbor's global index and periodic shifts.
+ *
+ * Assumes:
+ *   nn->idx[i][n]  -> global index of neighbor
+ *   nn->shift[i][n] -> integer triple (n1, n2, n3) OR real shift
+ *
+ * Returns by value (tadah::core::Vec3d) so we don't reference a temporary.
+ */
+  tadah::core::Vec3d nn_pos(const size_t i, const size_t n) const;
 
   /** @return a number of nearest neighbours of the i-th Atom. */
   size_t nn_size(const size_t i) const;
@@ -211,7 +201,7 @@ struct Structure {
    *  For many-body potentials we also need to know the density for atom at jj,
    *  hence we need j index. This is stored by:
    *
-   *      j=near_neigh_idx[a][jj]
+   *      j=nn->idx[a][jj]
    *
    *  Moreover we need to know derivatives (descriptor derivatives wrt to rij)
    *  at both i and j atoms. However if jj atom is outside of the main box
@@ -230,15 +220,23 @@ struct Structure {
   {
     os << "Structure  :    " << std::left << st.label << std::endl;
     os << "Weights    :    " << std::left
-      <<  "E: "<< st.eweight
+      << "E: "    << st.eweight
       << " | F: " << std::left << st.fweight
       << " | S: " << std::left << st.sweight << std::endl;
-    os << "# atoms    :    " << std::left << st.atoms.size() << std::endl;
+    os << "Atoms      :    " << std::left << st.atoms.size() << " | ";
+    for (const auto &el: st.get_unique_elements()) {  os << " " << el.symbol << std::left; }
+    os << std::endl;
     os << "Energy     :" << std::right << std::setw(w)
-      << std::setprecision(p) << std::fixed << st.energy << std::endl;
+      << std::setprecision(p) << std::fixed << st.energy << "     "
+       << "Temp   :" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_temperature() << std::endl;
+    os << "Volume     :" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_volume() << "     "
+       << "Density:" << std::right << std::setw(w)
+      << std::setprecision(p) << std::fixed << st.get_density() << std::endl;
     os << "Cell       :" << std::endl;
     for (int i=0; i<3; ++i) {
-      os << std::right << std::fixed << std::setw(w+10)
+      os << std::right << std::fixed << std::setw(w+12)
         << std::setprecision(p) << st.cell(i,0);
       os << std::right << std::fixed << std::setw(w)
         << std::setprecision(p) << st.cell(i,1);
@@ -248,7 +246,7 @@ struct Structure {
     }
     os << "Stress     :" << std::endl;
     for (int i=0; i<3; ++i) {
-      os << std::right << std::fixed << std::setw(w+10)
+      os << std::right << std::fixed << std::setw(w+12)
         << std::setprecision(p) << st.stress(i,0);
       os << std::right << std::fixed << std::setw(w)
         << std::setprecision(p) << st.stress(i,1);
@@ -285,7 +283,7 @@ struct Structure {
   // return 0 if there is no more structures
   static int next_structure(std::ifstream &ifs);
 
-  /** Clear NN list */
+  /* clearing == drop the shared pointer */
   void clear_nn();
 
   // Methods to enable range-based for loop
@@ -301,12 +299,54 @@ struct Structure {
   void dump_to_file(const std::string& filepath, size_t prec=12) const;
 
   /** List of chemical elements in this structure. */
-  std::set<Element> get_unique_elements() const;
+  std::set<tadah::core::Element> get_unique_elements() const;
+
+  /* Return all 3N Cartesian coordinates as a container         *
+   * Container must be default-constructible, hold scalars and  *
+   * provide reserve() and operator[].                          */
+
+// --- inside struct Structure ------------------------------------
+template<class Container = std::vector<double>>
+Container get_coords() const
+{
+    Container x;
+    x.reserve(3 * natoms());
+    for(const auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            x.push_back(static_cast<typename Container::value_type>
+                        (a.position(c)));
+    return x;
+}
+
+template<class Container>
+void set_coords(const Container& x)
+{
+    if(x.size() != 3 * natoms())
+        throw std::runtime_error("Structure::set_coords – size mismatch");
+    std::size_t k = 0;
+    for(auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            a.position(c) = static_cast<double>(x[k++]);
+}
+
+template<class Scalar>
+void set_coords(const std::vector<Scalar>& x)
+{
+    if(x.size() != 3 * natoms())
+        throw std::runtime_error("size mismatch in set_coords");
+    std::size_t k = 0;
+    for(auto& a : atoms)
+        for(int c = 0; c < 3; ++c)
+            a.position(c) = x[k++];        // NO cast to double
+}
+
 
   private:
-    const static size_t w=15;  // controls output width
+    const static size_t w=13;  // controls output width
     const static size_t p=6;   // controls output precision
   
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif

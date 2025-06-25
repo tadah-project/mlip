@@ -5,6 +5,8 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/castep_castep_reader.h>
+namespace tadah {
+namespace mlip {
 
 CastepCastepReader::CastepCastepReader(StructureDB& db) : DatasetReader(db) {}
 
@@ -33,7 +35,9 @@ void CastepCastepReader::parse_data() {
     Idle,               // No recognized computation
     GeometryOptimization,
     MolecularDynamics,
-    SinglePoint         // SCF or single-point run
+    SinglePointEnergy,        // SCF or single-point run
+    BandStructure,
+    FiniteBasisSetCorrection  // We get last SCF energy here
   };
 
   struct Label {
@@ -62,7 +66,9 @@ void CastepCastepReader::parse_data() {
         case CalcState::Idle: return "Idle";
         case CalcState::GeometryOptimization: return "GO";
         case CalcState::MolecularDynamics: return "MD";
-        case CalcState::SinglePoint: return "SPC";
+        case CalcState::SinglePointEnergy: return "SPE";
+        case CalcState::BandStructure: return "BS";
+        case CalcState::FiniteBasisSetCorrection: return "FBSC";
       }
       return "Unknown";
     }
@@ -86,7 +92,23 @@ void CastepCastepReader::parse_data() {
     std::string getSPLabel() {
       std::string state = getStateLabel();
       return "File: " + filename + " Lines: (" + std::to_string(startLine) + " : " + std::to_string(stopLine) + ") " 
-      + simType + " SPC #: " + std::to_string(stepNumber) + " stress: " + stress + " Parser State: " + state
+      + simType + " SPE #: " + std::to_string(stepNumber) + " stress: " + stress + " Parser State: " + state
+      + " | C: (" + std::to_string(positionsStartLine) + " : " + std::to_string(positionsStopLine)
+      + ") F: (" + std::to_string(forcesStartLine) + " : " + std::to_string(forcesStopLine)
+      + ") S: (" + std::to_string(stressStartLine) + " : " + std::to_string(stressStopLine) + ") + E: " + std::to_string(energyLine);
+    }
+    std::string getBSLabel() {
+      std::string state = getStateLabel();
+      return "File: " + filename + " Lines: (" + std::to_string(startLine) + " : " + std::to_string(stopLine) + ") " 
+      + simType + " BS #: " + std::to_string(stepNumber) + " stress: " + stress + " Parser State: " + state
+      + " | C: (" + std::to_string(positionsStartLine) + " : " + std::to_string(positionsStopLine)
+      + ") F: (" + std::to_string(forcesStartLine) + " : " + std::to_string(forcesStopLine)
+      + ") S: (" + std::to_string(stressStartLine) + " : " + std::to_string(stressStopLine) + ") + E: " + std::to_string(energyLine);
+    }
+    std::string getFBSCLabel() {
+      std::string state = getStateLabel();
+      return "File: " + filename + " Lines: (" + std::to_string(startLine) + " : " + std::to_string(stopLine) + ") " 
+      + simType + " FBSC #: " + std::to_string(stepNumber) + " stress: " + stress + " Parser State: " + state
       + " | C: (" + std::to_string(positionsStartLine) + " : " + std::to_string(positionsStopLine)
       + ") F: (" + std::to_string(forcesStartLine) + " : " + std::to_string(forcesStopLine)
       + ") S: (" + std::to_string(stressStartLine) + " : " + std::to_string(stressStopLine) + ") + E: " + std::to_string(energyLine);
@@ -96,7 +118,9 @@ void CastepCastepReader::parse_data() {
         case CalcState::Idle: return "Idle";
         case CalcState::GeometryOptimization: return getGOLabel();
         case CalcState::MolecularDynamics: return getMDLabel();
-        case CalcState::SinglePoint: return getSPLabel();
+        case CalcState::SinglePointEnergy: return getSPLabel();
+        case CalcState::BandStructure: return getBSLabel();
+        case CalcState::FiniteBasisSetCorrection: return getFBSCLabel();
       }
       return "Unknown";
     }
@@ -107,7 +131,6 @@ void CastepCastepReader::parse_data() {
   CalcState current_state = CalcState::Idle; 
   bool stress_tensor_found = false;
   bool data_block_complete = false; // Indicates a completed set of structure data
-  bool is_stress = false;              // SCF run with stress tensor
 
   // Local counters and accumulators
   size_t natoms = 0;                // Number of atoms from the input
@@ -164,51 +187,50 @@ void CastepCastepReader::parse_data() {
 
     // Detect starting SP calculation (zeroth step)
     if (line.find("single point energy") != std::string::npos) {
-      reset_flags(CalcState::SinglePoint);
-      if (!std::getline(stream, line)) break; 
-      ++line_counter;
-      std::istringstream iss(line);
-      std::string ignore, stress;
-      iss >> ignore >> ignore >> ignore >> stress;
-      simLabel.calcState = CalcState::SinglePoint;
+      reset_flags(CalcState::SinglePointEnergy);
+      simLabel.calcState = CalcState::SinglePointEnergy;
       simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP SPC";
+      simLabel.simType = "CASTEP SPE";
       simLabel.stepNumber = 0;
-      simLabel.stress = stress;
-      simLabel.useStress = stress == "on" ? true : false;
       if (debug) std::cout << "single point energy" << std::endl;
+    }
+
+    if (line.find("band structure") != std::string::npos) {
+      reset_flags(CalcState::BandStructure);
+      simLabel.calcState = CalcState::BandStructure;
+      simLabel.startLine = line_counter;
+      simLabel.simType = "CASTEP BS";
+      simLabel.stepNumber = 0;
+      if (debug) std::cout << "band structure" << std::endl;
     }
 
     // Detect starting GO calculation (zeroth step)
     if (line.find("geometry optimization") != std::string::npos) {
       reset_flags(CalcState::GeometryOptimization);
-      jumpNLines(stream, 1);
-      std::istringstream iss(line);
-      std::string ignore, stress;
-      iss >> ignore >> ignore >> ignore >> stress;
       simLabel.calcState = CalcState::GeometryOptimization;
       simLabel.startLine = line_counter;
       simLabel.simType = "CASTEP GO";
       simLabel.stepNumber = 0;
-      simLabel.stress = stress;
-      simLabel.useStress = stress == "on" ? true : false;
       if (debug) std::cout << "geometry optimization" << std::endl;
     }
 
     // Detect MD calculation type (zeroth step)
     if (line.find("molecular dynamics") != std::string::npos) {
       reset_flags(CalcState::MolecularDynamics);
-      jumpNLines(stream, 1);
-      std::istringstream iss(line);
-      std::string ignore, stress;
-      iss >> ignore >> ignore >> ignore >> stress;
       simLabel.calcState = CalcState::MolecularDynamics;
       simLabel.startLine = line_counter;
       simLabel.simType = "CASTEP MD";
       simLabel.stepNumber = 0;
+      if (debug) std::cout << "molecular dynamics" << std::endl;
+    }
+
+    if (line.find("stress calculation") != std::string::npos) {
+      std::istringstream iss(line);
+      std::string ignore, stress;
+      iss >> ignore >> ignore >> ignore >> stress;
       simLabel.stress = stress;
       simLabel.useStress = stress == "on" ? true : false;
-      if (debug) std::cout << "molecular dynamics" << std::endl;
+      if (debug) std::cout << "stress calculation" << std::endl;
     }
 
     // Get GO algorithm name at step zero
@@ -231,6 +253,17 @@ void CastepCastepReader::parse_data() {
       simLabel.ensemble = ensemble;
       if (debug) std::cout << "Molecular Dynamics Parameters" << std::endl;
     }
+
+    // Detect starting of basis set correction calculation (FBSC)
+    if (line.find("Calculating finite basis set correction") != std::string::npos) {
+      reset_flags(CalcState::FiniteBasisSetCorrection);
+      simLabel.calcState = CalcState::FiniteBasisSetCorrection;
+      simLabel.startLine = line_counter;
+      simLabel.simType = "CASTEP FBSC";
+      simLabel.stepNumber = 0;
+      if (debug) std::cout << "Basis set correction" << std::endl;
+    }
+
 
     // Detect or store the "Unit Cell"
     if (line.find("Unit Cell") != std::string::npos) {
@@ -334,7 +367,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
         // Create Atom, convert fractional to absolute using s.cell
-        Atom a(Element(species), px, py, pz, 0.0, 0.0, 0.0);
+        Atom a(tadah::core::Element(species), px, py, pz, 0.0, 0.0, 0.0);
         atoms.push_back(a); // keep it fractional for now
       }
       simLabel.positionsStopLine = line_counter;
@@ -342,11 +375,11 @@ void CastepCastepReader::parse_data() {
 
     // The old cell is reverted and printed before final enthalpy from the current iteration
     // We simply skip over this block of text
-    if (line.find("reverting to earlier configuration") != std::string::npos) {
-      if (debug) std::cout << "reverting to earlier configuration" << std::endl;
+    if (line.find("reverting to earlier contexturation") != std::string::npos) {
+      if (debug) std::cout << "reverting to earlier contexturation" << std::endl;
       for (int i = 0; i < 30; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Failed skiping over revered configuration " << line_counter << ")." << std::endl;
+          std::cerr << "Warning: Failed skiping over revered contexturation " << line_counter << ")." << std::endl;
           break;
         }
         ++line_counter;
@@ -377,10 +410,17 @@ void CastepCastepReader::parse_data() {
           break;
         }
         if (i < atoms.size()) {
-          atoms[i].force = Vec3d(fx, fy, fz);
+          atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
         }
       }
       simLabel.forcesStopLine = line_counter;
+
+      if (simLabel.useStress == false && (current_state == CalcState::SinglePointEnergy || 
+            current_state == CalcState::FiniteBasisSetCorrection ||
+            current_state == CalcState::BandStructure)) {
+        data_block_complete = true;
+        simLabel.stopLine = line_counter;
+      }
     }
 
     // Detect stress block
@@ -410,48 +450,40 @@ void CastepCastepReader::parse_data() {
         simLabel.stressStopLine = line_counter;
       }
       stress_tensor_found = true;
-      if (current_state == CalcState::SinglePoint) {
-        simLabel.stepNumber++; 
-        if (is_stress) data_block_complete = true;
+      if (current_state == CalcState::SinglePointEnergy || 
+          current_state == CalcState::FiniteBasisSetCorrection ||
+          current_state == CalcState::BandStructure) {
+        data_block_complete = true;
         simLabel.stopLine = line_counter;
       }
     }
 
-    // Detect final free energy for single-point or last iteration in GO
+    // Detect free energy for SPE/GO/FBSC/BS
+    // The energy might not be final so we need to complete the data block elsewhere.
     if (line.find("Final free energy (E-TS)") != std::string::npos && 
-        (current_state == CalcState::GeometryOptimization || current_state == CalcState::SinglePoint)) {
+        (current_state == CalcState::GeometryOptimization
+         || current_state == CalcState::SinglePointEnergy
+         || current_state == CalcState::BandStructure
+         || current_state == CalcState::FiniteBasisSetCorrection)) {
       if (debug) std::cout << "Final free energy (E-TS)" << std::endl;
-      // Single point or final iteration of a geometry optimization 
       std::istringstream iss(line);
       std::string ignore;
-      double energy;
-      // Typical: "Final free energy (E-TS) =    <val> eV"
-      // Rolling through tokens to read last numeric:
-      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> energy)) {
+      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> s.energy)) {
         std::cerr << "Warning: Could not parse final free energy (line: "
-                  << line_counter << ")." << std::endl;
-      } else {
-        s.energy = energy;
-        simLabel.energyLine = line_counter;
+          << line_counter << ")." << std::endl;
       }
-
-      // Single-point detection: if current_state is Idle or SinglePoint, treat it as an SCF run
-      // but it might also appear mid-GO. The code below sets a label if no other structure data is present.
-      if (current_state == CalcState::SinglePoint && !is_stress) {
-        simLabel.stepNumber++; 
-        simLabel.stopLine = line_counter;
-        data_block_complete = true;
-      }
+      simLabel.energyLine = line_counter;
     }
 
-    // Detect the line with "enthalpy=" used in geometry optimization
+    // Terminates the geometry optimization step
+    // Uses last free energy found previously
     if (line.find("enthalpy=") != std::string::npos && current_state == CalcState::GeometryOptimization) {
       if (debug) std::cout << "enthalpy=" << std::endl;
-      // This typically indicates a converged or final iteration of geometry optimization
+      // This indicates a converged or final iteration of geometry optimization
       std::istringstream iss(line);
       std::string ignore, step;
-      if (!(iss >> ignore >> ignore >> ignore>> step >> ignore >> ignore >> s.energy)) {
-        std::cerr << "Warning: Could not parse final free energy (line: "
+      if (!(iss >> ignore >> ignore >> ignore>> step >> ignore >> ignore >> ignore)) {
+        std::cerr << "Warning: Could not parse GO termination line (line: "
                   << line_counter << ")." << std::endl;
       }
       simLabel.stepNumber = std::stoi(step);
@@ -464,30 +496,23 @@ void CastepCastepReader::parse_data() {
       if (debug) std::cout << "Potential Energy:" << std::endl;
       std::istringstream iss(line);
       std::string ignore;
-      double energy;
-      if (!(iss >> ignore >> ignore >> ignore >> energy)) {
+      if (!(iss >> ignore >> ignore >> ignore >> s.energy)) {
         std::cerr << "Warning: Could not parse potential energy in MD (line: " 
                   << line_counter << ")." << std::endl;
-      } else {
-        s.energy = energy;
       }
-      continue;
+      simLabel.energyLine = line_counter;
     }
 
-    // Detect temperature line in MD, which often appears last in an MD step
+    // Detect temperature line in MD and finalize
     if (line.find("Temperature:") != std::string::npos && current_state == CalcState::MolecularDynamics) {
       if (debug) std::cout << "Temperature:" << std::endl;
-      // This usually concludes an MD iteration
       std::istringstream iss(line);
       std::string ignore;
-      double temperature;
-      if (!(iss >> ignore >> ignore >> temperature)) {
+      if (!(iss >> ignore >> ignore >> s.T)) {
         std::cerr << "Warning: Could not parse temperature in MD (line: " 
                   << line_counter << ")." << std::endl;
-      } else {
-        s.T = temperature;
       }
-      simLabel.T = temperature;
+      simLabel.T = s.T;
       simLabel.stopLine = line_counter;
       data_block_complete = true;
     }
@@ -507,3 +532,5 @@ void CastepCastepReader::print_summary() const {
 std::string CastepCastepReader::get_summary() const {
   return stdb.summary();
 }
+} // namespace mlip
+} // namespace tadah

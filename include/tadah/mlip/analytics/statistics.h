@@ -2,10 +2,12 @@
 #define STATISTICS_H
 
 #include <tadah/core/core_types.h>
+namespace tadah {
+namespace mlip {
 
 /** Some basis statistical tools */
 class Statistics {
-    using vec = aed_type;
+    using vec = tadah::core::aed_type;
     public:
         /** Residual sum of squares. */
         static double res_sum_sq(const vec &obs, const vec &pred);
@@ -23,4 +25,6 @@ class Statistics {
         static double mean(const vec &v);
 
 };
+} // namespace mlip
+} // namespace tadah
 #endif

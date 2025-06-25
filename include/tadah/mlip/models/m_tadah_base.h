@@ -10,12 +10,14 @@
 #include <tadah/core/core_types.h>
 #include <tadah/models/m_core.h>
 #include <tadah/models/m_predict.h>
+namespace tadah {
+namespace mlip {
 
 /** This interface provides functionality required from all models.
  */
 class M_Tadah_Base:
-    public virtual M_Core,
-    public virtual M_Predict
+    public virtual tadah::models::M_Core,
+    public virtual tadah::models::M_Predict
 {
 
 public:
@@ -24,57 +26,61 @@ public:
   virtual ~M_Tadah_Base() {};
 
   /** \brief Predict total energy for a set of atoms. */
-  using M_Predict::epredict;
-  using M_Predict::fpredict;
+  using tadah::models::M_Predict::epredict;
+  using tadah::models::M_Predict::fpredict;
+  using tadah::models::M_Core::predict;
   double epredict(const StDescriptors &std);
 
   ///** \brief Predict force between a pair of atoms in a k-direction. */
-  //virtual double fpredict(const fd_type &fdij, const aed_type &aedi, size_t k)=0;
+  //virtual double fpredict(const tadah::core::fd_type &fdij, const tadah::core::aed_type &aedi, size_t k)=0;
 
   ///** \brief Predict force between a pair of atoms. */
-  //virtual force_type fpredict(const fd_type &fdij,
-  //        const aed_type &aedi)=0;
+  //virtual tadah::core::force_type fpredict(const tadah::core::fd_type &fdij,
+  //        const tadah::core::aed_type &aedi)=0;
 
   /** \brief Predict total force on an atom a. */
-  virtual void fpredict(const size_t a, force_type &v,
-                        const StDescriptors &std, const Structure &st);
+  virtual void fpredict(const size_t a, tadah::core::force_type &v,
+                        const StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict total force on an atom a. */
-  virtual force_type fpredict(const size_t a, const StDescriptors &std,
-                              const Structure &st);
+  virtual tadah::core::force_type fpredict(const size_t a, const StDescriptors &std,
+                              const Structure &stOrig);
 
-  /** \brief Predict energy, forces and stresses for the Structure st. */
-  virtual Structure predict(const Config &c,
-                            /*not const*/ StDescriptors &std, const Structure &st);
+  /** \brief Predict energy, forces and stresses for the Structure stOrig. */
+  virtual Structure predict(const tadah::core::Context &c,
+                            /*not const*/ StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict energy, forces and stresses for a set of Structures.
          *
          * Use precalculated descriptors.
          */
-  virtual StructureDB predict(const Config &c,
+  virtual StructureDB predict(const tadah::core::Context &c,
                               /*not const*/ StDescriptorsDB &st_desc_db,
                               const StructureDB &stdb);
 
   /** \brief Predict energy, forces and stresses for a set of Structures. */
-  virtual StructureDB predict(Config &c, const StructureDB &stdb, DC_Base &dc);
+  virtual StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc);
 
-  /** \brief Predict virial stresses in a Structure st. */
-  virtual stress_type spredict(const StDescriptors &std, const Structure &st);
+  /** \brief Predict energy, forces and stresses for a set of Structures. */
+  virtual Structure predict(tadah::core::Context &c, const Structure &st, DC_Base &dc);
+
+  /** \brief Predict virial stresses in a Structure stOrig. */
+  virtual tadah::core::stress_type spredict(const StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict virial stresses in all Structures. */
-  virtual stress_type spredict(const size_t a, const StDescriptors &std,
-                               const Structure &st);
+  virtual tadah::core::stress_type spredict(const size_t a, const StDescriptors &std,
+                               const Structure &stOrig);
 
   /** \brief Predict both virial stresses and forces for a Structure */
-  virtual void stress_force_predict(const StDescriptors &std, Structure &st);
+  virtual void stress_force_predict(const StDescriptors &std, Structure &stPred, const Structure &stOrig);
 
-  /** \brief Predict virial stress for atom a in a Structure st. */
-  virtual void spredict(const size_t a, stress_type &s,
-                        const StDescriptors &std, const Structure &st);
+  /** \brief Predict virial stress for atom a in a Structure stOrig. */
+  virtual void spredict(const size_t a, tadah::core::stress_type &s,
+                        const StDescriptors &std, const Structure &stOrig);
 
 
   /** Return potential file. */
-  virtual Config get_param_file()=0;
+  virtual tadah::core::Context get_param_file()=0;
 
   // TRAINING
 
@@ -85,7 +91,7 @@ public:
          *
          * @param dc is a DescriptorCalc object
          */
-  virtual void train(StructureDB &, DC_Base &) {};
+  virtual void train(const StructureDB &, DC_Base &) {};
 
 
   /** This will fit a model with precalculated StDescriptorsDB object.
@@ -95,11 +101,13 @@ public:
          */
   virtual void train(StDescriptorsDB &, const StructureDB &) {};
 
-  virtual StructureDB predict(Config config_pred, StructureDB &stdb, DC_Base &dc,
-                              aed_type &predicted_error)=0;
+  virtual StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
+                              tadah::core::aed_type &predicted_error)=0;
 
   virtual StructureDB predict(StructureDB &stdb)=0;
 
 };
-//template<> inline Registry<M_Tadah_Base,DM_Function_Base&,Config&>::Map Registry<M_Tadah_Base,DM_Function_Base&,Config&>::registry{};
+//template<> inline Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::Map Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::registry{};
+} // namespace mlip
+} // namespace tadah
 #endif

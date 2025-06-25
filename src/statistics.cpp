@@ -1,6 +1,8 @@
 #include <tadah/mlip/analytics/statistics.h>
 
 #include <cmath>
+namespace tadah {
+namespace mlip {
 
 double Statistics::res_sum_sq(const vec &obs, const vec &pred) {
     if (obs.size() != pred.size())
@@ -33,3 +35,5 @@ double Statistics::variance(const vec &v) {
 double Statistics::mean(const vec &v) {
     return v.mean();
 }
+} // namespace mlip
+} // namespace tadah

@@ -5,11 +5,15 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/st_descriptors.h>
 #include <tadah/mlip/st_descriptors_db.h>
+namespace tadah {
+namespace mlip {
 
 class DC_Base {
     public:
         virtual ~DC_Base() {};
-        virtual StDescriptors calc(const Structure &) { return StDescriptors(); };
-        virtual StDescriptorsDB calc(const StructureDB &) {return StDescriptorsDB();};
+        virtual StDescriptors calc(const Structure &) const { return StDescriptors(); };
+        virtual StDescriptorsDB calc(const StructureDB &) const {return StDescriptorsDB();};
 };
+} // namespace mlip
+} // namespace tadah
 #endif

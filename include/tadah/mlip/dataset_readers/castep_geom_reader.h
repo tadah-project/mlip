@@ -10,6 +10,8 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class CastepGeomReader
@@ -62,5 +64,7 @@ private:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // CASTEP_GEOM_READER_H
 

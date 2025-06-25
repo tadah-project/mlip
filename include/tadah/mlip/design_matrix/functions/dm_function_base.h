@@ -1,7 +1,7 @@
 #ifndef DM_FUNCTION_H
 #define DM_FUNCTION_H
 
-#include <tadah/core/config.h>
+#include <tadah/core/context.h>
 #include <tadah/core/registry.h>
 #include <tadah/core/core_types.h>
 #include <tadah/models/functions/function_base.h>
@@ -12,23 +12,27 @@
 #include <iostream>
 #include <limits>
 #include <vector>
+namespace tadah {
+namespace mlip {
 
 /** Base class for Kernels and Basis Functions */
-struct DM_Function_Base: public virtual Function_Base {
+struct DM_Function_Base: public virtual tadah::models::Function_Base {
 
-  // Derived classes must implement Derived() and Derived(Config)
+  // Derived classes must implement Derived() and Derived(tadah::core::Context)
   DM_Function_Base();
-  DM_Function_Base(const Config &c);
+  DM_Function_Base(const tadah::core::Context &c);
   virtual ~DM_Function_Base();
 
-  virtual size_t get_phi_cols(const Config &)=0;
-  virtual void calc_phi_energy_row(phi_type &, size_t &,
-                                   const double , const Structure &, const StDescriptors &)=0;
-  virtual void calc_phi_force_rows(phi_type &, size_t &,
-                                   const double , const Structure &, const StDescriptors &)=0;
-  virtual void calc_phi_stress_rows(phi_type &, size_t &,
-                                    const double[6], const Structure &, const StDescriptors &)=0;
+  virtual size_t get_phi_cols(const tadah::core::Context &)=0;
+  virtual void calc_phi_energy_row(tadah::core::phi_type &, size_t &,
+                                   const Structure &, const StDescriptors &)=0;
+  virtual void calc_phi_force_rows(tadah::core::phi_type &, size_t &,
+                                   const Structure &, const StDescriptors &)=0;
+  virtual void calc_phi_stress_rows(tadah::core::phi_type &, size_t &,
+                                   const Structure &, const StDescriptors &)=0;
 };
-//template<> inline CONFIG::Registry<DM_Function_Base>::Map CONFIG::Registry<DM_Function_Base>::registry{};
-//template<> inline CONFIG::Registry<DM_Function_Base,Config&>::Map CONFIG::Registry<DM_Function_Base,Config&>::registry{};
+//template<> inline context::Registry<DM_Function_Base>::Map context::Registry<DM_Function_Base>::registry{};
+//template<> inline context::Registry<DM_Function_Base,tadah::core::Context&>::Map context::Registry<DM_Function_Base,tadah::core::Context&>::registry{};
+} // namespace mlip
+} // namespace tadah
 #endif

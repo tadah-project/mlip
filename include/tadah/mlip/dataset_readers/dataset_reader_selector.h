@@ -5,6 +5,8 @@
 #include <tadah/mlip/dataset_readers/dataset_reader.h>
 #include <string>
 #include <memory>
+namespace tadah {
+namespace mlip {
 
 /**
  * @class DatasetReaderSelector
@@ -31,4 +33,6 @@ public:
 
 };
 
+} // namespace mlip
+} // namespace tadah
 #endif // DATASET_READER_SELECTOR_H
