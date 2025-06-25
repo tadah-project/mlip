@@ -67,7 +67,7 @@ message(STATUS "${PROJECT_NAME} module is using GIT_BRANCH: ${GIT_BRANCH}")
 FetchContent_Declare(
     Tadah.MODELS
     GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
-    GIT_TAG origin/${GIT_BRANCH}
+    GIT_TAG ${GIT_BRANCH}
 )
 FetchContent_MakeAvailable(Tadah.MODELS)
 
