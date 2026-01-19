@@ -150,18 +150,25 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
       }
     }
   }
+
   // energy is predicted per structure. Given that we have
   // two atoms, we need to divide by 2 unless user
   // specifically asked for bond energy
   std::string energyUnit;
   if (!taskContext.get<bool>("BONDENERGY")) {
-    for (auto &s : stpred) {
-      s.energy /= s.natoms();
+    if (stpred.size() != stdb.size())
+      throw std::runtime_error("Prediction size mismatch.");
+
+    for (size_t i = 0; i < stpred.size(); ++i) {
+      const auto n = stdb(i).natoms(); // use input natoms to avoid div. by zero
+      if (n == 0) throw std::runtime_error("Input structure has zero atoms.");
+      stpred(i).energy /= static_cast<double>(n);
     }
     energyUnit = "eV/atom";
   } else {
     energyUnit = "eV/bond";
   }
+
 
   bool force = taskContext.get<bool>("FORCE");
   bool error = taskContext.get<bool>("ERROR");
