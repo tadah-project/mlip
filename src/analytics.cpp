@@ -170,25 +170,27 @@ tadah::core::t_type Analytics::calc_s_rmse() const {
 }
 
 tadah::core::t_type Analytics::calc_e_r_sq() const {
-    tadah::core::t_type e_r_sq_vec(st.dbidx.size()-1);
-    size_t dbidx=0;
-    tadah::core::t_type obs(st.size(dbidx));
-    tadah::core::t_type pred(st.size(dbidx));
-    size_t idx=0;
-    for (size_t i=0; i<st.size(); ++i) {
-        obs(idx) = st(i).energy/st(i).natoms();
-        pred(idx) = stp(i).energy/st(i).natoms();
-        idx++;
-        if (i+1==st.dbidx[dbidx+1]) {
-            e_r_sq_vec(dbidx) = Statistics::r_sq(obs,pred);
-            dbidx++;
-            if (dbidx<st.dbidx.size()-2) {
-                obs.resize(st.size(dbidx));
-                pred.resize(st.size(dbidx));
-            }
-            idx=0;
+    const auto nseg = st.dbidx.size() - 1;
+    tadah::core::t_type e_r_sq_vec(nseg);
+
+    for (size_t dbidx = 0; dbidx < nseg; ++dbidx) {
+        const size_t begin = st.dbidx[dbidx];
+        const size_t end   = st.dbidx[dbidx + 1];
+        assert(end >= begin);
+
+        const size_t n = end - begin;
+        tadah::core::t_type obs(n);
+        tadah::core::t_type pred(n);
+
+        for (size_t j = 0; j < n; ++j) {
+            const size_t i = begin + j;
+            obs(j)  = st(i).energy  / st(i).natoms();
+            pred(j) = stp(i).energy / st(i).natoms();
         }
+
+        e_r_sq_vec(dbidx) = Statistics::r_sq(obs, pred);
     }
+
     return e_r_sq_vec;
 }
 
