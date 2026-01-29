@@ -179,14 +179,6 @@ if (NOT TADAH_BUILD_DOCS_ONLY)
   target_link_libraries(tadah.mlip PRIVATE CURL::libcurl)
 endif()
 
-FetchContent_Declare(
-  nlopt
-  GIT_REPOSITORY https://github.com/stevengj/nlopt.git
-  GIT_TAG        v2.10.0
-)
-FetchContent_MakeAvailable(nlopt)
-target_link_libraries(tadah.mlip PRIVATE nlopt)
-
 if(TADAH_ENABLE_OPENMP)
   find_package(OpenMP REQUIRED)
   target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
