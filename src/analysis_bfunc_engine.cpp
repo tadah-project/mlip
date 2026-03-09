@@ -14,11 +14,11 @@ namespace mlip {
 namespace engines {
 
 int AnalysisBfuncEngine::run(mlip::Task &task) {
-  #ifdef TADAH_BUILD_MPI
+#ifdef TADAH_BUILD_MPI
   int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   if (rank!=0) return EXIT_SUCCESS;
-  #endif
+#endif
 
   auto &taskContext = task.getContext();
   if (taskContext.contains("POTENTIAL") || taskContext.contains("CONFIG")) {
@@ -38,130 +38,142 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     types[1] = "N";
   }
 
-  models::Cut_Base *fcut = nullptr;
-  double (*fb)(double,double,double) = nullptr;
-  std::string cgridtype;
-  std::string sgridtype;
-  std::string dtype;
-  if (types[0]=="2B") {
-    cgridtype="CGRID2B";
-    sgridtype="SGRID2B";
-    dtype = taskContext.get<std::string>("TYPE2B");
-    if (types[1]=="Y" || taskContext.get<bool>("RESCALE")) {
-      double rcut = taskContext.get<double>("RCUT2BMAX");
-      fcut = core::factory<models::Cut_Base,double&>( taskContext.get<std::string>("RCTYPE2B"), rcut);
-    }
-  } else if (types[0]=="MB") {
-    cgridtype="CGRIDMB";
-    sgridtype="SGRIDMB";
-    dtype = taskContext.get<std::string>("TYPEMB");
-    if (types[1]=="Y" || taskContext.get<bool>("RESCALE")) {
-      double rcut = taskContext.get<double>("RCUTMBMAX");
-      fcut = core::factory<models::Cut_Base,double&>( taskContext.get<std::string>("RCTYPEMB"), rcut);
-    }
-  } else {
-    throw std::runtime_error("Unsupported -t, --type: " + types[0] + " " + types[1]);
+  std::vector<tadah::core::Context> contexts = D_mJoin::parse_context(taskContext, "TYPE"+types[0]);
+  std::cout << "TYPE:" << types[0] << std::endl;
+  std::cout << "Parsed contexts:" << std::endl;
+  for (size_t i=0; i<contexts.size(); ++i) {
+    std::cout << contexts[i] << std::endl;
   }
 
-  core::v_type cgrid;
-  core::v_type sgrid;
-  models::D_Base::get_grid(taskContext, cgridtype, cgrid);
-  models::D_Base::get_grid(taskContext, sgridtype, sgrid);
+  std::ostringstream oss;
+  for (size_t i=0; i<contexts.size(); ++i) {
+    tadah::core::Context &singleContext = contexts[i];
 
-  models::DC_Selector DCS(taskContext);
-  // only required for DM_mEAD types testing
-  models::D_Base *dm = nullptr;
-  if (types[0]=="MB") {
-    dm = DCS.dmb;
-  }
-
-  if (dtype == "D2_Blip" || dtype == "DM_Blip") {
-    if (taskContext.get<bool>("DERIVATIVE")) { fb = &models::dB;} else { fb = &models::B; }
-    // we have to test DM_mEAD types (for example DM_mRLR) by generic label
-    // so we do not have to modify line below each time we add new type
-  } else if (dtype == "D2_BP" || dtype == "DM_EAD" || dm->label() == "DM_mEAD") {
-    if (taskContext.get<bool>("DERIVATIVE")) { fb = &models::dG;} else { fb = &models::G; }
-  } else {
-    throw std::runtime_error("Unsupported: " + dtype);
-  }
-
-  std::vector<size_t> indices;
-  if (taskContext.contains("INDEX")) {
-    std::vector<std::string> indicesStrVec(taskContext.size("INDEX"));
-    taskContext.get<>("INDEX", indicesStrVec);
-    indices = core::parse_indices(indicesStrVec);
-    // prune indices if too large values are given by the user
-    for (auto it = indices.begin(); it != indices.end(); ) {
-      if (*it > cgrid.size()) { // remember indices start from 1
-        core::Logger::instance().log(tadah::core::LogLevel::WARNING, "Index " + std::to_string(*it) + " is out of range. This index will be removed from the list.");
-        it = indices.erase(it);
-      } else {
-        ++it;
+    models::Cut_Base *fcut = nullptr;
+    double (*fb)(double,double,double) = nullptr;
+    std::string cgridtype;
+    std::string sgridtype;
+    std::string dtype;
+    if (types[0]=="2B") {
+      cgridtype="CGRID2B";
+      sgridtype="SGRID2B";
+      dtype = singleContext.get<std::string>("TYPE2B");
+      if (types[1]=="Y" || singleContext.get<bool>("RESCALE")) {
+        double rcut = singleContext.get<double>("RCUT2BMAX");
+        fcut = core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPE2B"), rcut);
       }
-    }
-  }
-  else {
-    for (size_t j=0; j < cgrid.size(); ++j) {
-      indices.push_back(j+1);
-    }
-  }
-
-  // generate range
-  double start = taskContext.get<double>("RANGE",0);
-  double stop = taskContext.get<double>("RANGE",1);
-  size_t N = taskContext.get<size_t>("RANGE",2);
-  core::v_type range = core::linspace(start,stop,N);
-
-  size_t numeric = taskContext.get<size_t>("NUMERIC");
-  core::v_type cutoff_values (range.size(), 1.0);
-  if (taskContext.get<bool>("RESCALE")) {
-    // only for rescale
-    if(taskContext.get<bool>("DERIVATIVE")) {
-      for (size_t i=0; i<range.size(); ++i) {
-        cutoff_values[i] = fcut->calc_prime(range[i]);
+    } else if (types[0]=="MB") {
+      cgridtype="CGRIDMB";
+      sgridtype="SGRIDMB";
+      dtype = singleContext.get<std::string>("TYPEMB");
+      if (types[1]=="Y" || singleContext.get<bool>("RESCALE")) {
+        double rcut = singleContext.get<double>("RCUTMBMAX");
+        fcut = core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPEMB"), rcut);
       }
     } else {
-      for (size_t i=0; i<range.size(); ++i) {
-        cutoff_values[i] = fcut->calc(range[i]);
-      }
+      throw std::runtime_error("Unsupported -t, --type: " + types[0] + " " + types[1]);
     }
-  }
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO, "Generating output...");
-  std::ostringstream oss;
-  for (const auto &i : indices) {
-    double c = cgrid[i-1];
-    double s = sgrid[i-1];
-    for (size_t j=0; j<range.size(); ++j) {
-      oss << std::fixed << std::setprecision(numeric)
-        << std::setw(numeric+5)
-        << range[j] << "    "
-        << std::setw(numeric+5) << fb(range[j],s,c)*cutoff_values[j] << std::endl;
+    core::v_type cgrid;
+    core::v_type sgrid;
+    models::D_Base::get_grid(singleContext, cgridtype, cgrid);
+    models::D_Base::get_grid(singleContext, sgridtype, sgrid);
+
+    models::DC_Selector DCS(singleContext);
+    // only required for DM_mEAD types testing
+    models::D_Base *dm = nullptr;
+    if (types[0]=="MB") {
+      dm = DCS.dmb;
     }
-    oss << std::endl << std::endl;
-  }
 
-  if (types[1]=="Y") {
-    if(taskContext.get<bool>("DERIVATIVE")) {
-      for (size_t i=0; i<range.size(); ++i) {
-        oss << std::fixed << std::setprecision(numeric)
-          << std::setw(numeric+5)
-          << range[i] << "    "
-          << std::setw(numeric+5) << fcut->calc_prime(range[i]) << std::endl;
+    if (dtype == "D2_Blip" || dtype == "DM_Blip") {
+      if (singleContext.get<bool>("DERIVATIVE")) { fb = &models::dB;} else { fb = &models::B; }
+      // we have to test DM_mEAD types (for example DM_mRLR) by generic label
+      // so we do not have to modify line below each time we add new type
+    } else if (dtype == "D2_BP" || dtype == "DM_EAD" || dm->label() == "DM_mEAD") {
+      if (singleContext.get<bool>("DERIVATIVE")) { fb = &models::dG;} else { fb = &models::G; }
+    } else {
+      throw std::runtime_error("Unsupported: " + dtype);
+    }
+
+    std::vector<size_t> indices;
+    if (singleContext.contains("INDEX")) {
+      std::vector<std::string> indicesStrVec(singleContext.size("INDEX"));
+      singleContext.get<>("INDEX", indicesStrVec);
+      indices = core::parse_indices(indicesStrVec);
+      // prune indices if too large values are given by the user
+      for (auto it = indices.begin(); it != indices.end(); ) {
+        if (*it > cgrid.size()) { // remember indices start from 1
+          core::Logger::instance().log(tadah::core::LogLevel::WARNING, "Index " + std::to_string(*it) + " is out of range. This index will be removed from the list.");
+          it = indices.erase(it);
+        } else {
+          ++it;
+        }
       }
-      oss << std::endl << std::endl;
     }
     else {
-      for (size_t i=0; i<range.size(); ++i) {
+      for (size_t j=0; j < cgrid.size(); ++j) {
+        indices.push_back(j+1);
+      }
+    }
+
+    // generate range
+    double start = singleContext.get<double>("RANGE",0);
+    double stop = singleContext.get<double>("RANGE",1);
+    size_t N = singleContext.get<size_t>("RANGE",2);
+    core::v_type range = core::linspace(start,stop,N);
+
+    size_t numeric = singleContext.get<size_t>("NUMERIC");
+    core::v_type cutoff_values (range.size(), 1.0);
+    if (singleContext.get<bool>("RESCALE")) {
+      // only for rescale
+      if(singleContext.get<bool>("DERIVATIVE")) {
+        for (size_t i=0; i<range.size(); ++i) {
+          cutoff_values[i] = fcut->calc_prime(range[i]);
+        }
+      } else {
+        for (size_t i=0; i<range.size(); ++i) {
+          cutoff_values[i] = fcut->calc(range[i]);
+        }
+      }
+    }
+
+    core::Logger::instance().log(tadah::core::LogLevel::INFO, "Generating output...");
+    for (const auto &i : indices) {
+      double c = cgrid[i-1];
+      double s = sgrid[i-1];
+      for (size_t j=0; j<range.size(); ++j) {
         oss << std::fixed << std::setprecision(numeric)
           << std::setw(numeric+5)
-          << range[i] << "    "
-          << std::setw(numeric+5) << fcut->calc(range[i]) << std::endl;
+          << range[j] << "    "
+          << std::setw(numeric+5) << fb(range[j],s,c)*cutoff_values[j] << std::endl;
       }
-      oss << std::endl << std::endl;
+      oss << std::endl;
     }
-  }
 
+
+    if (types[1]=="Y") {
+      if(singleContext.get<bool>("DERIVATIVE")) {
+        for (size_t i=0; i<range.size(); ++i) {
+          oss << std::fixed << std::setprecision(numeric)
+            << std::setw(numeric+5)
+            << range[i] << "    "
+            << std::setw(numeric+5) << fcut->calc_prime(range[i]) << std::endl;
+        }
+        oss << std::endl;
+      }
+      else {
+        for (size_t i=0; i<range.size(); ++i) {
+          oss << std::fixed << std::setprecision(numeric)
+            << std::setw(numeric+5)
+            << range[i] << "    "
+            << std::setw(numeric+5) << fcut->calc(range[i]) << std::endl;
+        }
+        oss << std::endl;
+      }
+    }
+    oss << std::endl;
+  }
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Dumping output...");
   if (taskContext.contains("OUTFILE")) {
     std::string outFile = taskContext.get<std::string>("OUTFILE",0);
@@ -174,15 +186,11 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   } else {
     std::cout << oss.str();
   }
-
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "AnalysisBfuncEngine finished.");
   return EXIT_SUCCESS;
 }
 void AnalysisBfuncEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  // std::cout << "Validating context for AnalysisBfuncEngine..." << std::endl;
-  // std::cout << "Context keys: ";
-  // std::cout << context << std::endl;
   // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therfore we do not check either.
   // if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
   //   throw std::runtime_error("AnalysisBfuncEngine requires POTENTIAL or CONFIG.");
