@@ -21,11 +21,13 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   #endif
 
   auto &taskContext = task.getContext();
-  std::string inFile;
-  if (taskContext.contains("POTENTIAL")) {
-    inFile= taskContext.get<std::string>("POTENTIAL");
+  if (taskContext.contains("POTENTIAL") || taskContext.contains("CONFIG")) {
+    const std::string inputKey =
+      taskContext.contains("POTENTIAL") ? "POTENTIAL" : "CONFIG";
+
+    const std::string inFile = taskContext.get<std::string>(inputKey);
     core::Context tempContext = core::CoreUserConfigParser().parse(inFile);
-    taskContext  = tadah::core::Context::merge(taskContext, tempContext);
+    taskContext = tadah::core::Context::merge(taskContext, tempContext);
   }
 
   std::string types[2];
@@ -178,9 +180,13 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
 }
 void AnalysisBfuncEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
-    throw std::runtime_error("AnalysisBfuncEngine requires POTENTIAL or CONFIG.");
-  }
+  // std::cout << "Validating context for AnalysisBfuncEngine..." << std::endl;
+  // std::cout << "Context keys: ";
+  // std::cout << context << std::endl;
+  // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therfore we do not check either.
+  // if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
+  //   throw std::runtime_error("AnalysisBfuncEngine requires POTENTIAL or CONFIG.");
+  // }
   if (context.contains("OUTFILE") && context.size("OUTFILE")!=1) {
     throw std::runtime_error("AnalysisBfuncEngine requires either none or a single OUTFILE.");
   }
