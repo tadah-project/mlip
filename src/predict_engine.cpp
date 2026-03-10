@@ -119,9 +119,10 @@ void PredictEngine::validate(const tadah::mlip::Task &task) {
           "Provide 3 output files for energy forces and stress.");
     }
   } else if (context.get<bool>("FORCE") || context.get<bool>("STRESS")) {
-    if (context.size("OUTFILE") != 2) {
+    if (context.size("OUTFILE") < 2) {
+      std::string which = context.get<bool>("FORCE") ? "forces" : "stress";
       core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-          "Provide 2 output files: one for energy energy and one for forces or stress.");
+          "Provide 2 output files: one for energy and one for " + which + ".");
     }
   } else  if (context.size("OUTFILE") != 1 && context.size("OUTFILE") != 3) {
     core::Logger::instance().log(tadah::core::LogLevel::ERROR,

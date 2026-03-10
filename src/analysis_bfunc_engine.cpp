@@ -39,11 +39,6 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   }
 
   std::vector<tadah::core::Context> contexts = D_mJoin::parse_context(taskContext, "TYPE"+types[0]);
-  std::cout << "TYPE:" << types[0] << std::endl;
-  std::cout << "Parsed contexts:" << std::endl;
-  for (size_t i=0; i<contexts.size(); ++i) {
-    std::cout << contexts[i] << std::endl;
-  }
 
   std::ostringstream oss;
   for (size_t i=0; i<contexts.size(); ++i) {
