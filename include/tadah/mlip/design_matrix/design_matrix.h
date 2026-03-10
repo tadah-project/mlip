@@ -313,10 +313,13 @@ private:
       if (force) rows+=stdb(s).natoms()*3;
     }
 
+
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
+
     // Add space for augmented matrix
     rows += cols;
 
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix (including augmented matrix): rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
   }
 
   void compute_stdevs(const StructureDB &stdb) {
