@@ -79,21 +79,59 @@ int PredictEngine::run(mlip::Task &task) {
   output.print_predict_all(stdb,stpred,predicted_error);
   if(taskContext.get<bool>("ANALYTICS")) {
     core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");
-    Analytics a(stdb,stpred);
-    std::cout << "Energy MAE (meV/atom): " << 1000*a.calc_e_mae() << std::endl;
-    std::cout << "Energy RMSE (meV/atom): " << 1000*a.calc_e_rmse() << std::endl;
-    std::cout << "Energy R^2: " << a.calc_e_r_sq() << std::endl;
-  
-    if (taskContext.get<bool>("FORCE")) {
-      std::cout << "Force MAE (eV/A): "<< a.calc_f_mae() << std::endl;
-      std::cout << "Force RMSE (eV/A): "<< a.calc_f_rmse() << std::endl;
-      std::cout << "Force R^2: " << a.calc_f_r_sq() << std::endl;
+    Analytics a(stdb, stpred);
+
+    const int col_width = 16;
+    const int val_width = 16;
+
+    // Prepare a sample vector to determine the number of values per metric
+    auto sample_values = a.calc_e_mae();
+    size_t n_vals = sample_values.size();
+
+    // Print header
+    std::cout << std::setw(col_width) << std::left << "Metric"
+      << std::setw(val_width) << std::right << "Mean";
+    for (size_t i = 0; i < n_vals; ++i) {
+      std::cout << std::setw(val_width) << std::right << ("Val" + std::to_string(i + 1));
     }
-  
+    std::cout << std::endl;
+
+    // Print separator
+    std::cout << std::setw(col_width) << std::setfill('-') << ""
+      << std::setw(val_width) << ""
+      << std::setfill('-');
+    for (size_t i = 0; i < n_vals; ++i) {
+      std::cout << std::setw(val_width) << "";
+    }
+    std::cout << std::setfill(' ') << std::endl;
+
+    auto print_metric = [col_width, val_width](const std::string& name, const auto& values, double scale = 1.0) {
+      double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+      std::cout << std::setw(col_width) << std::left << name
+        << std::setw(val_width) << std::right << std::scientific << std::setprecision(6) << scale * mean;
+      for (const auto& v : values) {
+        std::cout << std::setw(val_width) << std::right << std::scientific << std::setprecision(6) << scale * v;
+      }
+      std::cout << std::endl;
+    };
+
+    // Energy
+    print_metric("Energy MAE", a.calc_e_mae(), 1000);
+    print_metric("Energy RMSE", a.calc_e_rmse(), 1000);
+    print_metric("Energy R^2", a.calc_e_r_sq());
+
+    if (taskContext.get<bool>("FORCE")) {
+      std::cout << std::endl;
+      print_metric("Force MAE", a.calc_f_mae());
+      print_metric("Force RMSE", a.calc_f_rmse());
+      print_metric("Force R^2", a.calc_f_r_sq());
+    }
+
     if (taskContext.get<bool>("STRESS")) {
-      std::cout << "Stress MAE (eV/A^3): "<< a.calc_s_mae() << std::endl;
-      std::cout << "Stress RMSE (eV/A^3): "<< a.calc_s_rmse() << std::endl;
-      std::cout << "Stress R^2: " << a.calc_s_r_sq() << std::endl;
+      std::cout << std::endl;
+      print_metric("Stress MAE", a.calc_s_mae());
+      print_metric("Stress RMSE", a.calc_s_rmse());
+      print_metric("Stress R^2", a.calc_s_r_sq());
     }
   }
 
