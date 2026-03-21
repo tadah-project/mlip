@@ -56,20 +56,22 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     }
   }
 
-  // floating point thresholds for rescaling
-  std::vector<double> thresholdVec(3);  // energy, force, stress
-  if (taskContext.get<bool>("RESCALE") && 
-      taskContext.contains("THRESHOLD")) {
-    taskContext.get("THRESHOLD", thresholdVec);
-    // check if thresholds are positive
-    for (const auto &threshold : thresholdVec) {
-      if (threshold <= 0.0) {
-        throw std::runtime_error("THRESHOLD values must be positive.");
-      }
-    }
-  }
   bool force = taskContext.get<bool>("FORCE");
   bool stress = taskContext.get<bool>("STRESS");
+
+  // floating point thresholds for rescaling (energy/atom, force, stress)
+  // 3 defaults are always set in context before run() is called
+  size_t expectedThresholds = 1 + (force ? 1 : 0) + (stress ? 1 : 0);
+  std::vector<double> thresholdVec(taskContext.size("THRESHOLD"));
+  taskContext.get("THRESHOLD", thresholdVec);
+  if (taskContext.get<bool>("RESCALE")) {
+    if (thresholdVec.size() < expectedThresholds) {
+      throw std::runtime_error("Not enough THRESHOLD values for the selected FORCE/STRESS flags.");
+    }
+  }
+  // If user provided exact count, use positional indexing (stress at force?2:1).
+  // If more values than needed (e.g. 3 defaults), use fixed indexing (stress always at 2).
+  size_t stressIdx = (thresholdVec.size() == expectedThresholds) ? (force ? 2 : 1) : 2;
 
   std::vector<bool> indicesBool;  // what structures to process
   size_t numStructures = 0;
@@ -118,8 +120,8 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     for (auto &stdb : inStdbs) {
       for (auto &s: stdb) {
         if (!indicesBool[currentIndex++]) continue;
-        // ENERGY WEIGHT
-        if (std::fabs(s.energy) < thresholdVec[0]) {
+        // ENERGY WEIGHT (threshold is per atom)
+        if (std::fabs(s.energy) / s.natoms() < thresholdVec[0]) {
           s.eweight = 1.0;
         } else {
           s.eweight = 1.0 / std::fabs(s.energy);
@@ -143,7 +145,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
         // STRESS WEIGHT
         if (stress) {
           double sweight = s.stress.norm();
-          if (std::fabs(sweight) < thresholdVec[2]) {
+          if (std::fabs(sweight) < thresholdVec[stressIdx]) {
             s.sweight = 1.0;
           } else {
             s.sweight = 1.0 / sweight;
@@ -184,6 +186,22 @@ void DataBalanceEngine::validate(const tadah::mlip::Task &task) {
   bool doEshift = taskContext.contains("ESHIFT") && taskContext.size("ESHIFT");
   if (!doRescale && !doEshift) {
     throw std::runtime_error("DataBalanceEngine requires either RESCALE and/or ESHIFT option.");
+  }
+
+  if (doRescale) {
+    bool force = taskContext.get<bool>("FORCE");
+    bool stress = taskContext.get<bool>("STRESS");
+    size_t expectedThresholds = 1 + (force ? 1 : 0) + (stress ? 1 : 0);
+    std::vector<double> thresholds(taskContext.size("THRESHOLD"));
+    taskContext.get("THRESHOLD", thresholds);
+    if (thresholds.size() < expectedThresholds) {
+      throw std::runtime_error("Not enough THRESHOLD values for the selected FORCE/STRESS flags.");
+    }
+    for (const auto &th : thresholds) {
+      if (th <= 0.0) {
+        throw std::runtime_error("THRESHOLD values must be positive.");
+      }
+    }
   }
 
   size_t numOutFiles = taskContext.size("OUTFILE");
