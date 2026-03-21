@@ -248,12 +248,25 @@ void NNFinder::calc_binned(const Structure&         st,
     /* 3. exact lattice-vector span from naive helper               */
     int Ns[3];  num_shifts(st,Ns,cutoff);
 
-    auto bspan=[&](int nBin,int Ns){ return std::max(1,(Ns+nBin-1)/nBin); };
+    // For atom p in bin ibinP and neighbor q in bin ibinQ with lattice shift m,
+    // the required loop offset is dx = ibinQ + m*nBin - ibinP.
+    // Over all ibinP,ibinQ ∈ [0,nBin) and |m| ≤ Ns, |dx| ≤ nBin*(Ns+1)-1.
+    auto bspan=[&](int nBin,int Ns){ return std::max(1, nBin*(Ns+1) - 1); };
     const int sx=bspan(nx,Ns[0]), sy=bspan(ny,Ns[1]), sz=bspan(nz,Ns[2]);
 
     const double rc2 = cutoff*cutoff;
     for(std::size_t i=0;i<N;++i){
         tbl->idx[i].reserve(32); tbl->shift[i].reserve(32); }
+
+    // Floor division: shift = floor((bin_index + offset) / bin_count).
+    // This gives the lattice-image shift for a given bin offset.
+    // Using the raw offset (dx) directly is only correct for nx==1;
+    // for nx>1 adjacent bins in the home cell have lattice shift=0, not shift=dx.
+    auto floorDiv = [](int a, int b) -> int {
+        int d = a / b;
+        if (a % b != 0 && (a < 0) != (b < 0)) d--;
+        return d;
+    };
 
     /* ------------------------------------------------------------ */
     /* 4. neighbour search                                          */
@@ -273,7 +286,10 @@ void NNFinder::calc_binned(const Structure&         st,
                       {
                           if(dx==0 && dy==0 && dz==0 && q<=p) continue;
 
-                          core::Vec3d shift(dx,dy,dz);
+                          core::Vec3d shift(
+                              floorDiv(ix+dx, nx),
+                              floorDiv(iy+dy, ny),
+                              floorDiv(iz+dz, nz));
                           core::Vec3d del =
                                shift[0]*a + shift[1]*b + shift[2]*c +
                                st(q).position - st(p).position;
