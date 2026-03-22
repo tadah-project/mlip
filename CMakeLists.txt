@@ -52,6 +52,8 @@ if(NOT TARGET tadah::compile_options)
   FetchContent_MakeAvailable(tadah_cmake)   # defines tadah::compile_options
 endif()
 
+option(TADAH_ENABLE_ASAN "Enable AddressSanitizer (-fsanitize=address -fno-omit-frame-pointer)" OFF)
+
 # (option) Developer builds -DTADAH_DEVELOP=ON
 tadah_use_local_module(Tadah.MODELS MODELS)  # FetchContent name + folder name
 
@@ -100,6 +102,11 @@ target_link_libraries(tadah.mlip
     tadah.models
     boost_iostream
   )
+
+if(TADAH_ENABLE_ASAN)
+  target_compile_options(tadah.mlip PUBLIC -fsanitize=address -fno-omit-frame-pointer -g)
+  target_link_libraries(tadah.mlip PUBLIC -fsanitize=address)
+endif()
 
 # Hack to skip the Gemmi cpptest
 # 1) Temporarily store the original add_test() so we can call it.
