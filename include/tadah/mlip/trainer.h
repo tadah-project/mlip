@@ -321,9 +321,11 @@ class MPI_Trainer: public Trainer {
         // model->trained=true; // still can't train with this model
       }
       delete[] work2;
+    }
+
+    ~MPI_Trainer() {
       MPI_Type_free(&rowvec);
       MPI_Type_free(&rowvecs);
-
       blacs_gridexit_(&context1);
       blacs_gridexit_(&context2);
     }
@@ -342,6 +344,7 @@ class TrainerHost: public MPI_Trainer {
   }
 
     void prep_wpckgs() {
+      wpckgs.clear();
       // HOST: prepare work packages
       // filename, first structure index, number of structures to read
       int nstruc = context.get<int>("MPIWPCKG");
@@ -459,6 +462,10 @@ class TrainerHost: public MPI_Trainer {
           MPI_Trainer::context_TAG, MPI_COMM_WORLD);
     }
     void run() {
+      // Reset per-iteration mutable state for reuse
+      phi_row = 0;
+      rows_available = phi_rows1;
+      dm.set_zero();
       prep_wpckgs();
 
       // Process requests from workers
