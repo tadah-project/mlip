@@ -194,6 +194,10 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
   delete modelp;
   delete fb;
+  delete modelp_2b;
+  delete fb_2b;
+  delete modelp_mb;
+  delete fb_mb;
 
   return EXIT_SUCCESS;
 }
