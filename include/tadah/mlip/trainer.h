@@ -53,6 +53,14 @@ class Trainer {
       model->train(stdb,dc);
     }
 
+    /** Update descriptor parameters in-place from trainer.context.
+     *  Call after modifying context with new HPO parameters.
+     *  Returns true if descriptor size changed — caller must rebuild Trainer. */
+    bool reinit() {
+      if (model) model->reset_trained();
+      return DCS.reinit(context);
+    }
+
     tadah::core::Context get_param_file() {
       return model->get_param_file();
     }
