@@ -1,7 +1,9 @@
 stages:
+  - lint
   - build_debug
   - build_release
   - trigger
+  - release
 
 cache:
     key: "build-cache-$CI_COMMIT_REF_SLUG"
@@ -41,6 +43,42 @@ build_release_static:
 
 trigger_job:
   stage: trigger
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_BRANCH
   trigger:
     project: tadah/tadah.mlip
     branch: $CI_COMMIT_REF_NAME
+
+# ---- Lint (codespell) ---------------------------------------------------
+lint_codespell:
+  stage: lint
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - command -v codespell || pip install --user codespell
+    - export PATH=$HOME/.local/bin:$PATH
+    - codespell --skip='./build*,./external,./_deps,./tests/data' || true
+  allow_failure: true
+
+# ---- Source-tarball release (tag-gated) --------------------------------
+release_tarball:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - export TARBALL="${CI_PROJECT_NAME}-${CI_COMMIT_TAG}.tar.gz"
+    - git archive --format=tar.gz
+        --prefix="${CI_PROJECT_NAME}-${CI_COMMIT_TAG}/"
+        -o "${TARBALL}" HEAD
+    - 'curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN"
+        --upload-file "${TARBALL}"
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/${CI_COMMIT_TAG}/${TARBALL}"'
+  artifacts:
+    paths:
+      - "*.tar.gz"
+    expire_in: 1 week
