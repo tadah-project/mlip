@@ -8,6 +8,7 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_blr_train.h>
 #include <tadah/core/context.h>
+#include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 #include <limits>
@@ -270,24 +271,28 @@ private:
   std::string label="M_BLR";
   DesignMatrix<BF> desmat;
 
-  // normalise weights such that when predict is called
-  // we can supply it with a non-normalised descriptor
+  // Convert weights from normalised feature space to the equivalent weights
+  // for raw (unnormalised) descriptors. Requires at least one intercept column
+  // — the normalisation introduces a constant offset (−Σ mean[i]·nw[i]) that
+  // can only be absorbed into intercepts. For per-species BIAS, every atom of
+  // species s contributes 1.0 to its own intercept and 0 to the others, so the
+  // same correction lands uniformly on every species intercept.
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
     if(bf.get_label()!="BF_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear basis function\n");
     }
+    const size_t nb = tadah::core::n_intercept_columns(context);
     tadah::core::t_type nw(weights.rows());
-    nw(0) = weights(0);
-    for (size_t i=1; i<weights.size(); ++i) {
-
+    for (size_t b = 0; b < nb; ++b) nw(b) = weights(b);
+    for (size_t i = nb; i < weights.size(); ++i) {
       if (norm.std_dev[i] > std::numeric_limits<double>::min())
         nw(i) = weights(i) / norm.std_dev[i];
       else
         nw(i) = weights(i);
 
-      nw(0) -= norm.mean[i]*nw(i);
-
+      const double corr = norm.mean[i] * nw(i);
+      for (size_t b = 0; b < nb; ++b) nw(b) -= corr;
     }
     return nw;
   }
@@ -297,16 +302,17 @@ non linear basis function\n");
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear basis function\n");
     }
-    // convert normalised weights back to "normal"
+    const size_t nb = tadah::core::n_intercept_columns(context);
     tadah::core::t_type w(nw.rows());
-    w(0) = nw(0);
-    for (size_t i=1; i<nw.size(); ++i) {
+    for (size_t b = 0; b < nb; ++b) w(b) = nw(b);
+    for (size_t i = nb; i < nw.size(); ++i) {
       if (norm.std_dev[i] > std::numeric_limits<double>::min())
         w(i) = nw(i) * norm.std_dev[i];
       else
         w(i) = nw(i);
 
-      w(0) += nw(i)*norm.mean[i];
+      const double corr = nw(i) * norm.mean[i];
+      for (size_t b = 0; b < nb; ++b) w(b) += corr;
     }
     return w;
   }

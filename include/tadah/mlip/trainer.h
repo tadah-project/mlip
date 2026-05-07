@@ -58,6 +58,7 @@ class Trainer {
      *  Returns true if descriptor size changed — caller must rebuild Trainer. */
     bool reinit() {
       if (model) model->reset_trained();
+      dm.refresh_context_scalars(context);
       return DCS.reinit(context);
     }
 

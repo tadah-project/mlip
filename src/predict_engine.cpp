@@ -1,6 +1,7 @@
 #include <tadah/mlip/engines/predict_engine.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
+#include <tadah/mlip/load_transforms.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/descriptors_calc.h>
@@ -32,6 +33,21 @@ int PredictEngine::run(mlip::Task &task) {
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
   potContext  = tadah::core::Context::merge(potContext, taskContext);
 
+  // Honour --no-lscale / --no-eshift cancellation flags by removing the
+  // corresponding keys from the merged context BEFORE apply_load_transforms
+  // runs. The user is asserting "the dataset I'm passing in is already at the
+  // model's scale / baseline".
+  if (taskContext.contains("NO_LSCALE") && taskContext.get<bool>("NO_LSCALE")) {
+    potContext.remove("LSCALE");
+    core::Logger::instance().log(core::LogLevel::INFO,
+        "--no-lscale: ignoring LSCALE recorded in pot.tadah.");
+  }
+  if (taskContext.contains("NO_ESHIFT") && taskContext.get<bool>("NO_ESHIFT")) {
+    potContext.remove("ESHIFT");
+    core::Logger::instance().log(core::LogLevel::INFO,
+        "--no-eshift: ignoring ESHIFT recorded in pot.tadah.");
+  }
+
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +
       std::to_string(potContext.get<double>("RCUTMAX")) + " cutoff distance...");
@@ -52,8 +68,20 @@ int PredictEngine::run(mlip::Task &task) {
       Structure s = reader->getStructure();
       stdb.add(s);
     }
+    // STRUCTURE inputs were not loaded via DBFILE iteration, so dbidx is empty
+    // for those configs. Mark the whole stdb as a single dataset so that
+    // any transforms that consult dbidx see consistent boundaries.
+    if (stdb.dbidx.empty()) {
+      stdb.dbidx = {0, stdb.size()};
+    }
   }
 
+  // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, ZERO_COM_FORCE)
+  // using the merged potContext, so the input dataset is reshaped to match
+  // what the model was trained on. NB: at predict time the model has already
+  // been trained, so derived sources (ESHIFT_ATOM, ESHIFT_DBATOM) and
+  // training-only knobs (WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP) are no-ops here.
+  apply_load_transforms(stdb, potContext);
 
   nnf.calc(stdb,potContext);
 

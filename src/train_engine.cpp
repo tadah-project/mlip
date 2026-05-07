@@ -4,7 +4,9 @@
 #include <stdexcept>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/load_transforms.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
@@ -19,6 +21,52 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+namespace {
+
+// Detect global-view features that are not yet supported under MPI training.
+[[maybe_unused]] void check_mpi_unsupported_features(const core::Context &ctx) {
+  std::vector<std::string> bad;
+  if (ctx.contains("ESHIFT_ATOM") && ctx.get<bool>("ESHIFT_ATOM"))
+    bad.emplace_back("ESHIFT_ATOM");
+  if (ctx.contains("ESHIFT_DBATOM") && ctx.get<bool>("ESHIFT_DBATOM"))
+    bad.emplace_back("ESHIFT_DBATOM");
+  if (ctx.contains("EWEIGHT_TEMP") && ctx.get<double>("EWEIGHT_TEMP") > 0.0)
+    bad.emplace_back("EWEIGHT_TEMP");
+  if (ctx.contains("WDBFILE_AUTO") && ctx.get<double>("WDBFILE_AUTO") > 0.0)
+    bad.emplace_back("WDBFILE_AUTO");
+  if (!bad.empty()) {
+    std::string msg =
+        "The following load-time transforms require a global view of the "
+        "dataset and are not yet supported in the MPI training build:";
+    for (const auto &k : bad) msg += " " + k;
+    msg += ". Run without MPI, set explicit ESHIFT, or omit these keys.";
+    throw std::runtime_error(msg);
+  }
+}
+
+[[maybe_unused]] void check_bias_constraints(const core::Context &ctx) {
+  const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
+  const bool bias = ctx.contains("BIAS") && ctx.get<bool>("BIAS");
+  const std::string model_bf =
+      ctx.contains("MODEL") && ctx.size("MODEL") >= 2
+          ? ctx.get<std::string>("MODEL", 1)
+          : std::string{};
+
+  if (norm && model_bf == "BF_Linear" && !bias) {
+    throw std::runtime_error(
+        "Configuration: NORM=true with MODEL=BF_Linear requires BIAS=true. "
+        "Without intercept columns the train→nweights conversion would silently "
+        "produce wrong LAMMPS predictions. Set BIAS=true or NORM=false.");
+  }
+  if (bias && (!ctx.contains("ATOM") || ctx.size("ATOM") == 0)) {
+    throw std::runtime_error(
+        "Configuration: BIAS=true requires a non-empty ATOM list "
+        "(BIAS adds one intercept column per species).");
+  }
+}
+
+}  // namespace
+
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
@@ -26,6 +74,23 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   std::set<core::Element> unique_elements = StructureDB::find_unique_elements(context);
   StructureDB::check_atom_key(context, unique_elements);
   StructureDB::check_watom_key(context, unique_elements);
+  check_bias_constraints(context);
+
+#ifdef TADAH_BUILD_MPI
+  // MPI: workers load chunks incrementally, so global-view transforms are not
+  // yet supported. Local-only transforms (LSCALE, explicit ESHIFT, EFILTER,
+  // FFILTER, ZERO_COM_FORCE, WDBFILE) would still need TrainerWorker plumbing,
+  // which is a separate change. For now, fail fast if any of these are set.
+  check_mpi_unsupported_features(context);
+  if (context.contains("LSCALE") && context.get<double>("LSCALE") != 1.0) {
+    throw std::runtime_error(
+        "LSCALE is not yet wired into the MPI training path. Run without MPI.");
+  }
+  if (context.contains("ESHIFT") && context.size("ESHIFT") > 0) {
+    throw std::runtime_error(
+        "ESHIFT is not yet wired into the MPI training path. Run without MPI.");
+  }
+#endif
 
 #ifdef TADAH_BUILD_MPI
   int rank = 0;
@@ -79,6 +144,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
   StructureDB stdb(tr.context);
 
+  // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, WDBFILE etc.)
+  // before any neighbour-finding or descriptor calculation, so downstream code
+  // sees the already-transformed positions, energies, and weights.
+  LoadTransformReport report = apply_load_transforms(stdb, tr.context);
+
   // Calculate nearest neighbors and provide feedback
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Finding nearest neighbours within: " +
@@ -91,6 +161,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tr.model->train(stdb, tr.dc);
 
   tadah::core::Context param_file = tr.model->get_param_file();
+  stamp_into_param_file(param_file, report);
   dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
   // Output uncertainty if requested

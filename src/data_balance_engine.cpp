@@ -1,5 +1,6 @@
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/data_balance_engine.h>
+#include <tadah/mlip/load_transforms.h>
 #include <tadah/mlip/structure_db.h>
 
 
@@ -97,17 +98,19 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
 
   if (!eshiftMap.empty() && taskContext.contains("ESHIFT")) {
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataBalanceEngine: Applying ESHIFT...");
+        "DataBalanceEngine: Applying ESHIFT (E -= sum_Z N_Z * eshift[Z])...");
     size_t currentIndex = 0;
     for (auto &stdb : inStdbs) {
       for (auto &st : stdb) {
         if (!indicesBool[currentIndex++]) continue;
         auto natomsMap = st.get_natoms_map();
+        double total = 0.0;
         for (const auto &pair : natomsMap) {
-          int Z = pair.first;
-          size_t natomsZ = pair.second;
-          st.energy += eshiftMap[Z] * natomsZ;
+          auto it = eshiftMap.find(pair.first);
+          if (it == eshiftMap.end()) continue;
+          total += it->second * static_cast<double>(pair.second);
         }
+        st.energy -= total;  // unified Tadah! ESHIFT convention: subtract baseline
       }
     }
   }

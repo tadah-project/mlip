@@ -67,6 +67,22 @@ void StructureTransformation::scale(Structure &st, double factor)
   checkNearSingular(st);
 }
 
+void StructureTransformation::rescaleLength(Structure &st, double s)
+{
+  if (s <= 0.0) {
+    throw std::invalid_argument("rescaleLength factor must be positive.");
+  }
+  st.cell = s * st.cell;
+  const double inv_s = 1.0 / s;
+  for (auto &atom : st.atoms) {
+    atom.position = s * atom.position;
+    atom.force    = inv_s * atom.force;
+  }
+  // Energy and stored virial stress are invariant under uniform length rescaling.
+  // (Tadah's stress is the virial V * sigma_Cauchy with units of energy.)
+  checkNearSingular(st);
+}
+
 void StructureTransformation::scaleToVolume(Structure &st, double targetVolume)
 {
   if (targetVolume <= 0.0) {
