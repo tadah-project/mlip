@@ -7,10 +7,10 @@ namespace mlip {
 
 double StructureProperties::getVolume(const Structure &st)
 {
-  // Columns of st.cell => a1, a2, a3
-  tadah::core::Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
-  tadah::core::Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
-  tadah::core::Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
+  // Rows of st.cell => a1, a2, a3
+  tadah::core::Vec3d a1 = st.cell.row(0);
+  tadah::core::Vec3d a2 = st.cell.row(1);
+  tadah::core::Vec3d a3 = st.cell.row(2);
 
   double volume = a1 * (a2.cross(a3));  // scalar triple product
   return volume; // [Å^3]

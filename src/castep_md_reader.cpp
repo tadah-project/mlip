@@ -133,7 +133,8 @@ void CastepMDReader::parse_data() {
         continue;
       }
       std::istringstream iss(line);
-      if (!(iss >> s.cell(0,cell_idx) >> s.cell(1,cell_idx) >> s.cell(2,cell_idx)))
+      // CASTEP-MD writes each lattice vector a_i on its own line; store as row i of cell.
+      if (!(iss >> s.cell(cell_idx,0) >> s.cell(cell_idx,1) >> s.cell(cell_idx,2)))
         std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << cell_idx << std::endl;
       cell_idx++;
       H_flag++;

@@ -123,13 +123,14 @@ void VaspOutcarReader::parse_data() {
     }
 
     else if (line.find("direct lattice vectors") != std::string::npos) {
+      // OUTCAR lists each lattice vector a_i on its own row; store as row i of cell.
       for (int i = 0; i < 3; ++i) {
         if (!std::getline(stream, line)) {
           std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << i << std::endl;
           break;
         }
         std::istringstream iss(line);
-        if (!(iss >> s.cell(0,i) >> s.cell(1,i) >> s.cell(2,i))) {
+        if (!(iss >> s.cell(i,0) >> s.cell(i,1) >> s.cell(i,2))) {
           std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << i << std::endl;
           break;
         }
