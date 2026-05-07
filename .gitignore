@@ -2,3 +2,26 @@
 *.swo
 build
 .cache
+
+# --- Beta-prep additions (Session E) ---
+build_*/
+cmake-build-*/
+_build/
+out/
+install_manifest.txt
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+.cache/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.gcda
+*.gcno
+coverage*.info
+coverage_html/
+perf.data
+perf.data.old
