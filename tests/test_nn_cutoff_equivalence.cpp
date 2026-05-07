@@ -24,6 +24,7 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/context.h>
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -312,8 +313,12 @@ TEST_CASE("NNFinder: symmetry — 4.5 Å list for 5.9 Å cell: binned=naive",
 
 // Path to the CH4 phase I validation database used during the HPO run.
 // Skip the test gracefully if the file is not present.
-static const char* PHASEI_DB =
-    "/home/marcin/PROJECTS/CH4/MLIP/TADAH_DATASETS/ch4_phasei_S_U67.tadahdb";
+// Set the TADAH_TEST_PHASEI_DB environment variable to override; the
+// dataset is not redistributed with this repository.
+static const char* PHASEI_DB = []() {
+    const char* env = std::getenv("TADAH_TEST_PHASEI_DB");
+    return (env && *env) ? env : "ch4_phasei_S_U67.tadahdb";
+}();
 
 TEST_CASE("NNFinder: real CH4 phase-I structure — 7.0 Å list is superset of 4.5 Å list",
           "[nn][equivalence][real_ch4_phasei]")
