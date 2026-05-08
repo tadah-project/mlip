@@ -10,6 +10,7 @@
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
+#include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 
@@ -156,6 +157,31 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       " cutoff distance...");
   tr.nnf.calc(stdb, tr.context);
 
+  // Pre-flight audit. Default mode is `warn`; users opt into `error`
+  // for hard refusal-to-launch via the AUDIT context key. Reads
+  // dataset stats (cheap — same NN list) and walks every configured
+  // descriptor's meta() to flag ρ-collapse and out-of-range parameter
+  // combinations (Phase 5 of the bound-validation pipeline).
+  {
+    AuditMode mode = audit_mode_from_context(tr.context);
+    if (mode != AuditMode::Off) {
+      auto report = run_preflight_from_db(stdb, tr.context, mode);
+      report.log();
+      try {
+        enforce_audit_mode(report, mode);
+      } catch (const std::exception& e) {
+        // AUDIT=error and there are FAIL findings. Surface the message
+        // and exit immediately. Scheduler::execute ignores engine
+        // return codes, so a clean refusal-to-launch must short-circuit
+        // the process here. EXIT_FAILURE is documented behaviour for
+        // this mode (`AUDIT error` in the user's seed config).
+        tadah::core::Logger::instance().log(
+            tadah::core::LogLevel::ERROR, e.what());
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  }
+
   // Begin the training process and inform if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
   tr.model->train(stdb, tr.dc);
@@ -192,6 +218,12 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   modContext.remove("VERBOSE");
   modContext.remove("NUMERIC");
   modContext.remove("OUTFILE");
+  // Audit / health-monitor knobs are runtime-only and not part of the
+  // trained model. The LAMMPS-side PairTadah parser does not register
+  // them, so leaving them in pot.tadah triggers an "Invalid key"
+  // error during pair_coeff and a downstream null-deref in calc_rho.
+  modContext.remove("AUDIT");
+  modContext.remove("HEALTH_LOG");
   if (outstream.is_open()) {
     outstream << modContext << std::endl;
   } else {

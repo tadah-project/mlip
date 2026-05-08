@@ -18,6 +18,9 @@
 #include <tadah/mlip/engines/analysis_descriptor_engine.h>
 #include <tadah/mlip/engines/analysis_bfunc_engine.h>
 #include <tadah/mlip/engines/analysis_cutoff_engine.h>
+#include <tadah/mlip/engines/analysis_dataset_stats_engine.h>
+#include <tadah/mlip/engines/analysis_check_bounds_engine.h>
+#include <tadah/mlip/engines/analysis_suggest_bounds_engine.h>
 
 #include <stdexcept>
 #include <iostream>
@@ -52,6 +55,9 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("ANALYSIS.descriptor", [](){ return std::make_unique<AnalysisDescriptorEngine>(); });
   EngineFactory::registerEngine("ANALYSIS.bfunc", [](){ return std::make_unique<AnalysisBfuncEngine>(); });
   EngineFactory::registerEngine("ANALYSIS.cutoff", [](){ return std::make_unique<AnalysisCutoffEngine>(); });
+  EngineFactory::registerEngine("ANALYSIS.dataset_stats", [](){ return std::make_unique<AnalysisDatasetStatsEngine>(); });
+  EngineFactory::registerEngine("ANALYSIS.suggest_bounds", [](){ return std::make_unique<AnalysisSuggestBoundsEngine>(); });
+  EngineFactory::registerEngine("ANALYSIS.check_bounds", [](){ return std::make_unique<AnalysisCheckBoundsEngine>(); });
 
 }
 

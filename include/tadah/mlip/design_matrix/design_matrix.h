@@ -5,6 +5,7 @@
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/design_matrix/column_block.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -77,6 +78,14 @@ public:
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws;
   bool w_copy_=false;  // keep copy of Phi and T witoout weights
+
+  /** \brief Per-block column layout populated at build()-time.
+   *
+   *  Empty until build() runs at least once. Consumed by Phase 5
+   *  pre-flight audit and Phase 6 per-iter health monitor.
+   */
+  ColumnLayout layout_;
+  const ColumnLayout& layout() const { return layout_; }
 
   double e_std_dev=1;
   double f_std_dev=1;
@@ -190,6 +199,27 @@ public:
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
+
+    // Phase 2: capture per-block column layout and cross-check it
+    // against the canonical column count `cols` (set by calc_mn from
+    // f.get_phi_cols(context)). A disagreement here signals a stale
+    // descriptor / dsize mismatch and the audit pipeline (Phase 5)
+    // would silently flag every block as wrong, so fail loud.
+    //
+    // DC_Base's default layout() returns an empty ColumnLayout; in that
+    // case we leave layout_ empty and skip validation (legacy callers
+    // stay byte-identical). Concrete DescriptorsCalc<...>::layout()
+    // overrides return a populated layout that validate() must accept.
+    layout_ = dc.layout(context);
+    if (!layout_.blocks.empty()) {
+      const std::string err = layout_.validate(cols);
+      if (!err.empty()) {
+        throw std::runtime_error(
+            "DesignMatrix::build: " + err +
+            " — descriptors_calc layout disagrees with materialised matrix width.");
+      }
+    }
+
     compute_stdevs(stdb);
     fill_T(stdb);
     compute_wfactors(stdb); // call after fill_T

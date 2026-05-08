@@ -2,6 +2,7 @@
 #define DESCRIPTORS_CALC_H
 
 #include <tadah/mlip/descriptors_calc_base.h>
+#include <tadah/mlip/design_matrix/column_block.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/st_descriptors.h>
@@ -105,6 +106,23 @@ class DescriptorsCalc: public DC_Base {
 
         /** Calculate density vector for the structure */
         void calc_rho(const Structure &st, StDescriptors &std) const;
+
+        /** \brief Compute the design-matrix column layout for the
+         *  descriptors held by this calculator.
+         *
+         *  Reads BIAS / INIT2B / INITMB from the supplied context and
+         *  reports per-block label, family, offset, and count in the
+         *  same order they are placed in the design matrix:
+         *
+         *    [bias]  if BIAS=true            -> "bias", family "bias"
+         *    [d2]    if INIT2B and d2.size>0 -> d2.label(), family "D2"
+         *    [dm]    if INITMB and dm.size>0 -> dm.label(), family "DM"
+         *
+         *  Offsets match the `set_fidx()` calls done in
+         *  `common_constructor()` (descriptors_calc.hpp). The total
+         *  column count agrees with `context.get<size_t>("DSIZE")`.
+         */
+        ColumnLayout layout(const tadah::core::Context &c) const override;
 
         C2 c2;
         CM cm;

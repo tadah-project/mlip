@@ -401,6 +401,40 @@ StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) cons
       calc(stdb(i),st_desc_db(i));
   return st_desc_db;
 }
+template <typename D2, typename DM, typename C2, typename CM>
+ColumnLayout DescriptorsCalc<D2,DM,C2,CM>::layout(const tadah::core::Context &c) const {
+  ColumnLayout L;
+  std::size_t offset = 0;
+  if (c.get<bool>("BIAS")) {
+    ColumnBlock b;
+    b.descriptor_label = "bias";
+    b.family           = "bias";
+    b.col_offset       = offset;
+    b.col_count        = 1;
+    L.blocks.push_back(b);
+    offset += 1;
+  }
+  if (c.get<bool>("INIT2B") && d2.size() > 0) {
+    ColumnBlock b;
+    b.descriptor_label = d2.label();
+    b.family           = "D2";
+    b.col_offset       = offset;
+    b.col_count        = d2.size();
+    L.blocks.push_back(b);
+    offset += d2.size();
+  }
+  if (c.get<bool>("INITMB") && dm.size() > 0) {
+    ColumnBlock b;
+    b.descriptor_label = dm.label();
+    b.family           = "DM";
+    b.col_offset       = offset;
+    b.col_count        = dm.size();
+    L.blocks.push_back(b);
+    offset += dm.size();
+  }
+  return L;
+}
+
 } // namespace mlip
 } // namespace tadah
 #endif

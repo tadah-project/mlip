@@ -1,0 +1,160 @@
+#include <tadah/mlip/engines/analysis_suggest_bounds_engine.h>
+
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+#include <tadah/core/context.h>
+#include <tadah/core/logger.h>
+#include <tadah/core/registry.h>
+#include <tadah/core/stats/data_stats.h>
+#include <tadah/mlip/bound_suggester.h>
+#include <tadah/mlip/data_stats_compute.h>
+#include <tadah/mlip/structure_db.h>
+#include <tadah/models/descriptors/d_base.h>
+#include <tadah/models/descriptors/d2/d2_base.h>
+#include <tadah/models/descriptors/dm/dm_base.h>
+
+#ifdef TADAH_BUILD_MPI
+#include <mpi.h>
+#endif
+
+namespace tadah {
+namespace mlip {
+namespace engines {
+
+void AnalysisSuggestBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
+  // Blueprint validation enforces input-group constraints (`-c | -t`).
+  // Engine-level pre-conditions (e.g. RCUTMAX presence) are checked
+  // inside run() with actionable error messages.
+}
+
+int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
+#ifdef TADAH_BUILD_MPI
+  int rank = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  if (rank != 0) return EXIT_SUCCESS;
+#endif
+
+  auto& taskCtx = task.getContext();
+  tadah::core::Context workCtx = taskCtx;
+
+  if (!taskCtx.contains("DBFILE")) {
+    throw std::runtime_error(
+        "analysis suggest_bounds: at least one DBFILE must be configured "
+        "(via `-c train.tadah`).");
+  }
+  if (!workCtx.contains("RCUTMAX") || workCtx.get<double>("RCUTMAX") <= 0) {
+    throw std::runtime_error(
+        "analysis suggest_bounds: RCUTMAX is not set (set RCUT2B / RCUTMB).");
+  }
+
+  // Load DB
+  StructureDB stdb;
+  const std::size_t nf = taskCtx.size("DBFILE");
+  for (std::size_t i = 0; i < nf; ++i) {
+    const std::string dbf = taskCtx.get<std::string>("DBFILE", i);
+    tadah::core::Logger::instance().log(
+        tadah::core::LogLevel::INFO, "Reading file: " + dbf);
+    stdb.add(dbf);
+  }
+  if (stdb.size() == 0) {
+    throw std::runtime_error("analysis suggest_bounds: no structures loaded");
+  }
+
+  // Compute dataset stats (DBFILE -> DataStats).
+  auto data = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false);
+
+  // Output stream — stdout if no OUTFILE, else file.
+  std::ofstream ofile;
+  std::ostream* os_block = &std::cout;
+  if (taskCtx.contains("OUTFILE")) {
+    const std::string out = taskCtx.get<std::string>("OUTFILE");
+    ofile.open(out);
+    if (!ofile) {
+      throw std::runtime_error(
+          "analysis suggest_bounds: cannot open output file '" + out + "'");
+    }
+    os_block = &ofile;
+  }
+
+  // Configured descriptors (string names from the user's TYPE2B/TYPEMB).
+  std::vector<OptimSuggestion> all_suggestions;
+
+  // Scan every entry of TYPE2B / TYPEMB and process anything that
+  // starts with `D2_` or `DM_`. This handles the common case where
+  // the user nests real descriptors under a `D2_mJoin` / `DM_mJoin`
+  // meta-descriptor (per-pair configs in CH4-style multi-element
+  // datasets).
+  auto looks_like_descriptor = [](const std::string& s) {
+    return s.size() >= 3 && (s.compare(0, 3, "D2_") == 0 ||
+                             s.compare(0, 3, "DM_") == 0);
+  };
+
+  auto run_for = [&](const std::string& type_key) {
+    if (!workCtx.contains(type_key)) return;
+    const std::size_t n = workCtx.size(type_key);
+    std::vector<std::string> labels_seen;
+    for (std::size_t i = 0; i < n; ++i) {
+      std::string label;
+      try { label = workCtx.get<std::string>(type_key, i); }
+      catch (...) { continue; }
+      if (!looks_like_descriptor(label)) continue;
+      // Avoid duplicating the same descriptor label twice — the user
+      // typically configures the same descriptor multiple times for
+      // different pairs (e.g. `D2_BP 7 7 C C` then `D2_BP 7 7 C H`),
+      // but the suggestion math doesn't yet differentiate per-pair.
+      bool seen = false;
+      for (const auto& l : labels_seen)
+        if (l == label) { seen = true; break; }
+      if (seen) continue;
+      labels_seen.push_back(label);
+
+      std::unique_ptr<models::D_Base> obj;
+      try {
+        obj.reset(tadah::core::factory<models::D_Base>(label));
+      } catch (const std::exception& e) {
+        tadah::core::Logger::instance().log(
+            tadah::core::LogLevel::WARNING,
+            "analysis suggest_bounds: cannot instantiate '" + label + "' (" +
+                e.what() + "); skipping.");
+        continue;
+      }
+      auto m = obj->meta();
+      if (!m.has_value()) {
+        tadah::core::Logger::instance().log(
+            tadah::core::LogLevel::INFO,
+            "analysis suggest_bounds: '" + label +
+                "' has no meta() yet; skipping.");
+        continue;
+      }
+      auto sug = suggest_bounds_for(data, *m, workCtx);
+      all_suggestions.insert(all_suggestions.end(),
+                             sug.begin(), sug.end());
+    }
+  };
+
+  run_for("TYPE2B");
+  run_for("TYPEMB");
+
+  // Always print the human table to stdout for visibility.
+  print_suggestions(all_suggestions, std::cout);
+
+  // Write the OPTIM block to the chosen sink.
+  write_optim_block(all_suggestions, *os_block);
+
+  if (taskCtx.contains("OUTFILE")) {
+    tadah::core::Logger::instance().log(
+        tadah::core::LogLevel::INFO,
+        "analysis suggest_bounds: wrote OPTIM block to " +
+            taskCtx.get<std::string>("OUTFILE"));
+  }
+
+  return EXIT_SUCCESS;
+}
+
+}  // namespace engines
+}  // namespace mlip
+}  // namespace tadah
