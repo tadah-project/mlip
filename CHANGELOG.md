@@ -19,6 +19,7 @@ The MLIP layer gains in-place HPO support, load-time dataset transforms, and a w
 - mJoin support in basis-function plotting.
 - Augmented design matrix logged alongside the raw DM.
 - `TADAH_ENABLE_ASAN` CMake option.
+- **HPO bound-validation pipeline** (Phases 2–5): design-matrix `ColumnBlock` / `ColumnLayout` types (`design_matrix/column_block.h`); `DC_Base::layout()` + `DescriptorsCalc<>::layout()` override; dataset stats (`data_stats_compute.{h,cpp}` — `compute_data_stats` + `classify_dataset`, with the NN-sweep `sample_size` parameter wired in from blueprint `AUDIT_SAMPLE`); per-`ParamMeta` data-driven OPTIM bound suggestion (`bound_suggester.{h,cpp}`); pre-flight audit (`preflight_audit.{h,cpp}`, `AuditMode::{Off,Warn,Error}`). Catches the BASINS class of silent training failures (descriptors that collapse to zero weights when bounds put them outside the dataset's support).
 
 ### Changed
 - Improved terminal output (status lines and progress reporting).
