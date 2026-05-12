@@ -211,6 +211,7 @@ set(BUILD_TESTING OFF CACHE BOOL "Build tests")
 include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
+  add_subdirectory(bench)
 endif()
 
 install(DIRECTORY external/boost/include/boost  DESTINATION include)
