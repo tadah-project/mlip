@@ -2121,3 +2121,370 @@ TEST_CASE("DM force walker (DM_mBlip) matches FD on WATOM[1]",
         CHECK(std::abs(an - fd) <= tol + 1e-6);
     }
 }
+
+// ============================================================================
+// Phase 2E P1: Layer-1.5 parity tests for the combined (energy + force)
+// walker. The combined walker fuses the per-atom / per-pair iteration of the
+// legacy two-pass walker into one structure traversal sharing scratch state
+// (and, for DM, sharing the per-atom rho_i / drho_i / F'(rho_i) buffers).
+// These tests assert that the combined walker produces byte-identical
+// `dphi_energy_out` and `dphi_force_out` to the two legacy walkers run back
+// to back on the same inputs — the load-bearing correctness gate for wiring
+// it into compute_analytical_gradient_from_trainer's per-θ loop.
+// ============================================================================
+
+TEST_CASE("combined walker D2_BP CGRID2B[1] matches legacy two-pass byte-identically",
+          "[dphi_dtheta_walk][parity][combined][cgrid][force][d2]")
+{
+    PeriodicTable::initialize();
+
+    const std::vector<double> cgrid = {0.5, 1.4};
+    const std::vector<double> sgrid = {3.0, 5.0};
+    const double rcut = 3.0;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_three_atom_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_bp_context(cgrid, sgrid, rcut);
+    D2_BP d(c);
+    Cut_Cos fc(rcut);
+    d.set_fcut(&fc, false);
+
+    const std::size_t n_cols       = d.size();
+    const std::size_t natoms       = db.structures[0].natoms();
+    const std::size_t n_force_rows = 3 * natoms;
+    const std::vector<std::size_t> force_row_start = {0};
+
+    /* Legacy two-pass: energy then force, separate buffers. */
+    std::vector<double> legacy_energy(db.size() * n_cols, 0.0);
+    std::vector<double> legacy_force (n_force_rows * n_cols, 0.0);
+    const bool legacy_ok_e = tadah::mlip::assemble_dphi_train_energy_rows_d2(
+        db, d, "CGRID2B", /*arg_pos=*/1,
+        legacy_energy.data(), n_cols);
+    const bool legacy_ok_f = tadah::mlip::assemble_dphi_train_force_rows_d2(
+        db, d, "CGRID2B", /*arg_pos=*/1,
+        legacy_force.data(),  n_cols, force_row_start);
+    REQUIRE(legacy_ok_e);
+    REQUIRE(legacy_ok_f);
+
+    /* Combined: one walker writing to both buffers. */
+    std::vector<double> both_energy(db.size() * n_cols, 0.0);
+    std::vector<double> both_force (n_force_rows * n_cols, 0.0);
+    const auto pr = tadah::mlip::assemble_dphi_train_both_rows_d2(
+        db, d, "CGRID2B", /*arg_pos=*/1,
+        both_energy.data(), both_force.data(),
+        n_cols, force_row_start);
+    CHECK(pr.first  == legacy_ok_e);
+    CHECK(pr.second == legacy_ok_f);
+
+    REQUIRE(legacy_energy.size() == both_energy.size());
+    REQUIRE(legacy_force.size()  == both_force.size());
+    for (std::size_t i = 0; i < legacy_energy.size(); ++i) {
+        INFO("energy idx=" << i
+             << " legacy=" << legacy_energy[i]
+             << " combined=" << both_energy[i]);
+        REQUIRE(legacy_energy[i] == both_energy[i]);
+    }
+    for (std::size_t i = 0; i < legacy_force.size(); ++i) {
+        INFO("force idx=" << i
+             << " legacy=" << legacy_force[i]
+             << " combined=" << both_force[i]);
+        REQUIRE(legacy_force[i] == both_force[i]);
+    }
+}
+
+TEST_CASE("combined walker D2_BP CGRID2B[1] energy-only (force_out=nullptr) "
+          "matches legacy energy walker byte-identically",
+          "[dphi_dtheta_walk][parity][combined][cgrid][d2]")
+{
+    PeriodicTable::initialize();
+
+    const std::vector<double> cgrid = {0.5, 1.4};
+    const std::vector<double> sgrid = {3.0, 5.0};
+    const double rcut = 3.0;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_three_atom_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_bp_context(cgrid, sgrid, rcut);
+    D2_BP d(c);
+    Cut_Cos fc(rcut);
+    d.set_fcut(&fc, false);
+
+    const std::size_t n_cols = d.size();
+
+    std::vector<double> legacy_energy(db.size() * n_cols, 0.0);
+    const bool legacy_ok_e = tadah::mlip::assemble_dphi_train_energy_rows_d2(
+        db, d, "CGRID2B", 1, legacy_energy.data(), n_cols);
+    REQUIRE(legacy_ok_e);
+
+    std::vector<double> both_energy(db.size() * n_cols, 0.0);
+    const auto pr = tadah::mlip::assemble_dphi_train_both_rows_d2(
+        db, d, "CGRID2B", 1, both_energy.data(), /*force_out=*/nullptr,
+        n_cols, /*force_row_start=*/{});
+    CHECK(pr.first  == legacy_ok_e);
+    CHECK(pr.second == false);
+
+    for (std::size_t i = 0; i < legacy_energy.size(); ++i) {
+        INFO("idx=" << i << " legacy=" << legacy_energy[i]
+                    << " combined=" << both_energy[i]);
+        REQUIRE(legacy_energy[i] == both_energy[i]);
+    }
+}
+
+TEST_CASE("combined walker DM_mBlip CGRIDMB[1] matches legacy two-pass byte-identically",
+          "[dphi_dtheta_walk][parity][combined][dm][mblip][force]")
+{
+    PeriodicTable::initialize();
+
+    const double cgrid_val = 0.5;
+    const double sgrid_val = 3.0;
+    const std::vector<double> cembfunc = {0.05, 0.15};
+    const std::vector<double> sembfunc = {20.0, 20.0};
+    const double rcut = 3.5;
+    const int    Lmax = 2;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_four_atom_off_axis_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_mblip_mb_context_mlip(cgrid_val, sgrid_val,
+                                            cembfunc, sembfunc, rcut, Lmax);
+    DM_mEAD<F_Blip> dm(c);
+    Cut_Cos fc(rcut);
+    dm.set_fcut(&fc, false);
+
+    const std::size_t n_cols       = dm.size();
+    const std::size_t natoms       = db.structures[0].natoms();
+    const std::size_t n_force_rows = 3 * natoms;
+    const std::vector<std::size_t> force_row_start = {0};
+
+    std::vector<double> legacy_energy(db.size() * n_cols, 0.0);
+    std::vector<double> legacy_force (n_force_rows * n_cols, 0.0);
+    const bool legacy_ok_e = tadah::mlip::assemble_dphi_train_energy_rows_dm(
+        db, dm, "CGRIDMB", /*arg_pos=*/1, legacy_energy.data(), n_cols);
+    const bool legacy_ok_f = tadah::mlip::assemble_dphi_train_force_rows_dm(
+        db, dm, "CGRIDMB", /*arg_pos=*/1, legacy_force.data(),  n_cols,
+        force_row_start);
+    REQUIRE(legacy_ok_e);
+    REQUIRE(legacy_ok_f);
+
+    std::vector<double> both_energy(db.size() * n_cols, 0.0);
+    std::vector<double> both_force (n_force_rows * n_cols, 0.0);
+    const auto pr = tadah::mlip::assemble_dphi_train_both_rows_dm(
+        db, dm, "CGRIDMB", /*arg_pos=*/1,
+        both_energy.data(), both_force.data(),
+        n_cols, force_row_start);
+    CHECK(pr.first  == legacy_ok_e);
+    CHECK(pr.second == legacy_ok_f);
+
+    REQUIRE(legacy_energy.size() == both_energy.size());
+    REQUIRE(legacy_force.size()  == both_force.size());
+    for (std::size_t i = 0; i < legacy_energy.size(); ++i) {
+        INFO("energy idx=" << i
+             << " legacy=" << legacy_energy[i]
+             << " combined=" << both_energy[i]);
+        REQUIRE(legacy_energy[i] == both_energy[i]);
+    }
+    for (std::size_t i = 0; i < legacy_force.size(); ++i) {
+        INFO("force idx=" << i
+             << " legacy=" << legacy_force[i]
+             << " combined=" << both_force[i]);
+        REQUIRE(legacy_force[i] == both_force[i]);
+    }
+}
+
+TEST_CASE("combined walker DM_mBlip CGRIDMB[1] energy-only (force_out=nullptr) "
+          "matches legacy energy walker byte-identically",
+          "[dphi_dtheta_walk][parity][combined][dm][mblip]")
+{
+    PeriodicTable::initialize();
+
+    const double cgrid_val = 0.5;
+    const double sgrid_val = 3.0;
+    const std::vector<double> cembfunc = {0.05, 0.15};
+    const std::vector<double> sembfunc = {20.0, 20.0};
+    const double rcut = 3.5;
+    const int    Lmax = 2;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_four_atom_off_axis_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_mblip_mb_context_mlip(cgrid_val, sgrid_val,
+                                            cembfunc, sembfunc, rcut, Lmax);
+    DM_mEAD<F_Blip> dm(c);
+    Cut_Cos fc(rcut);
+    dm.set_fcut(&fc, false);
+
+    const std::size_t n_cols = dm.size();
+
+    std::vector<double> legacy_energy(db.size() * n_cols, 0.0);
+    const bool legacy_ok_e = tadah::mlip::assemble_dphi_train_energy_rows_dm(
+        db, dm, "CGRIDMB", 1, legacy_energy.data(), n_cols);
+    REQUIRE(legacy_ok_e);
+
+    std::vector<double> both_energy(db.size() * n_cols, 0.0);
+    const auto pr = tadah::mlip::assemble_dphi_train_both_rows_dm(
+        db, dm, "CGRIDMB", 1, both_energy.data(), /*force_out=*/nullptr,
+        n_cols, /*force_row_start=*/{});
+    CHECK(pr.first  == legacy_ok_e);
+    CHECK(pr.second == false);
+
+    for (std::size_t i = 0; i < legacy_energy.size(); ++i) {
+        INFO("idx=" << i << " legacy=" << legacy_energy[i]
+                    << " combined=" << both_energy[i]);
+        REQUIRE(legacy_energy[i] == both_energy[i]);
+    }
+}
+
+// ============================================================================
+// Phase 2E P3: Layer-1.5 parity tests for the cached DM walker. The cached
+// walker reads rho_i / F'(rho_i) from a pre-built DMRhoCache instead of
+// recomputing them; the math is otherwise identical to the non-cached
+// combined walker, so the outputs must be byte-identical.
+// ============================================================================
+
+TEST_CASE("cached DM walker (DM_mBlip CGRIDMB[1]) matches non-cached combined "
+          "byte-identically",
+          "[dphi_dtheta_walk][parity][cached][dm][mblip][force]")
+{
+    PeriodicTable::initialize();
+
+    const double cgrid_val = 0.5;
+    const double sgrid_val = 3.0;
+    const std::vector<double> cembfunc = {0.05, 0.15};
+    const std::vector<double> sembfunc = {20.0, 20.0};
+    const double rcut = 3.5;
+    const int    Lmax = 2;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_four_atom_off_axis_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_mblip_mb_context_mlip(cgrid_val, sgrid_val,
+                                            cembfunc, sembfunc, rcut, Lmax);
+    DM_mEAD<F_Blip> dm(c);
+    Cut_Cos fc(rcut);
+    dm.set_fcut(&fc, false);
+
+    const std::size_t n_cols       = dm.size();
+    const std::size_t natoms       = db.structures[0].natoms();
+    const std::size_t n_force_rows = 3 * natoms;
+    const std::vector<std::size_t> force_row_start = {0};
+
+    /* Non-cached combined walker as reference. */
+    std::vector<double> ref_energy(db.size() * n_cols, 0.0);
+    std::vector<double> ref_force (n_force_rows * n_cols, 0.0);
+    const auto pr_ref = tadah::mlip::assemble_dphi_train_both_rows_dm(
+        db, dm, "CGRIDMB", /*arg_pos=*/1,
+        ref_energy.data(), ref_force.data(),
+        n_cols, force_row_start);
+    REQUIRE(pr_ref.first);
+    REQUIRE(pr_ref.second);
+
+    /* Build rho cache once, then run the cached walker. */
+    tadah::mlip::DMRhoCache cache;
+    tadah::mlip::build_dm_rho_cache(db, dm, cache, n_cols);
+    REQUIRE(cache.rhoi_per_struct.size() == db.size());
+    REQUIRE(cache.rhoi_per_struct[0].size() == natoms);
+
+    std::vector<double> cached_energy(db.size() * n_cols, 0.0);
+    std::vector<double> cached_force (n_force_rows * n_cols, 0.0);
+    const auto pr_cached = tadah::mlip::assemble_dphi_train_both_rows_dm_cached(
+        db, dm, cache, "CGRIDMB", /*arg_pos=*/1,
+        cached_energy.data(), cached_force.data(),
+        n_cols, force_row_start);
+    CHECK(pr_cached.first  == pr_ref.first);
+    CHECK(pr_cached.second == pr_ref.second);
+
+    for (std::size_t i = 0; i < ref_energy.size(); ++i) {
+        INFO("energy idx=" << i
+             << " ref=" << ref_energy[i]
+             << " cached=" << cached_energy[i]);
+        REQUIRE(ref_energy[i] == cached_energy[i]);
+    }
+    for (std::size_t i = 0; i < ref_force.size(); ++i) {
+        INFO("force idx=" << i
+             << " ref=" << ref_force[i]
+             << " cached=" << cached_force[i]);
+        REQUIRE(ref_force[i] == cached_force[i]);
+    }
+}
+
+TEST_CASE("cached DM walker (DM_mBlip CEMBFUNC[1]) matches non-cached combined "
+          "byte-identically",
+          "[dphi_dtheta_walk][parity][cached][dm][mblip][force][embedding]")
+{
+    PeriodicTable::initialize();
+
+    const double cgrid_val = 0.5;
+    const double sgrid_val = 3.0;
+    const std::vector<double> cembfunc = {0.05, 0.15};
+    const std::vector<double> sembfunc = {20.0, 20.0};
+    const double rcut = 3.5;
+    const int    Lmax = 2;
+
+    StructureDB db;
+    db.dbidx = {0, 1};
+    db.structures.push_back(make_four_atom_off_axis_structure());
+    NNFinder finder;
+    finder.calc(db.structures[0], rcut);
+
+    Context c = make_mblip_mb_context_mlip(cgrid_val, sgrid_val,
+                                            cembfunc, sembfunc, rcut, Lmax);
+    DM_mEAD<F_Blip> dm(c);
+    Cut_Cos fc(rcut);
+    dm.set_fcut(&fc, false);
+
+    const std::size_t n_cols       = dm.size();
+    const std::size_t natoms       = db.structures[0].natoms();
+    const std::size_t n_force_rows = 3 * natoms;
+    const std::vector<std::size_t> force_row_start = {0};
+
+    std::vector<double> ref_energy(db.size() * n_cols, 0.0);
+    std::vector<double> ref_force (n_force_rows * n_cols, 0.0);
+    const auto pr_ref = tadah::mlip::assemble_dphi_train_both_rows_dm(
+        db, dm, "CEMBFUNC", /*arg_pos=*/1,
+        ref_energy.data(), ref_force.data(),
+        n_cols, force_row_start);
+    REQUIRE(pr_ref.first);
+    REQUIRE(pr_ref.second);
+
+    tadah::mlip::DMRhoCache cache;
+    tadah::mlip::build_dm_rho_cache(db, dm, cache, n_cols);
+
+    std::vector<double> cached_energy(db.size() * n_cols, 0.0);
+    std::vector<double> cached_force (n_force_rows * n_cols, 0.0);
+    const auto pr_cached = tadah::mlip::assemble_dphi_train_both_rows_dm_cached(
+        db, dm, cache, "CEMBFUNC", /*arg_pos=*/1,
+        cached_energy.data(), cached_force.data(),
+        n_cols, force_row_start);
+    CHECK(pr_cached.first  == pr_ref.first);
+    CHECK(pr_cached.second == pr_ref.second);
+
+    for (std::size_t i = 0; i < ref_energy.size(); ++i) {
+        INFO("energy idx=" << i
+             << " ref=" << ref_energy[i]
+             << " cached=" << cached_energy[i]);
+        REQUIRE(ref_energy[i] == cached_energy[i]);
+    }
+    for (std::size_t i = 0; i < ref_force.size(); ++i) {
+        INFO("force idx=" << i
+             << " ref=" << ref_force[i]
+             << " cached=" << cached_force[i]);
+        REQUIRE(ref_force[i] == cached_force[i]);
+    }
+}

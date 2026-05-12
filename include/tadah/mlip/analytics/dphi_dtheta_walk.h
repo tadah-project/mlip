@@ -63,6 +63,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tadah {
@@ -764,6 +765,655 @@ assemble_dphi_train_energy_rows(const StructureDB&                stdb,
         any = true;
 
     return any;
+}
+
+/* Combined ENERGY + FORCE per-D2 walker.
+ *
+ * Functionally equivalent to calling
+ *   assemble_dphi_train_energy_rows_d2 + assemble_dphi_train_force_rows_d2
+ * on the same inputs, but folds them into ONE per-atom / per-pair iteration
+ * so the NN-cache lookups, the per-pair distance math, and the (Zi, Zj, rij)
+ * derivation are amortised across the two derivative kernels.
+ *
+ * dphi_force_out may be nullptr to skip force-side work entirely
+ * (energy-only mode, used by the orchestrator on val side when use_frmse_val
+ * is false). force_row_start_per_struct is read only when dphi_force_out is
+ * non-null; pass an empty vector when force is skipped.
+ *
+ * Returns (any_energy, any_force): the same booleans the two legacy walkers
+ * would have produced. When dphi_force_out == nullptr, any_force is false. */
+inline std::pair<bool, bool>
+assemble_dphi_train_both_rows_d2(
+    const StructureDB&                     stdb,
+    const tadah::models::D2_Base&          d2,
+    const std::string&                     theta_name,
+    int                                    arg_pos,
+    double*                                dphi_energy_out,
+    double*                                dphi_force_out,
+    std::size_t                            n_cols,
+    const std::vector<std::size_t>&        force_row_start_per_struct)
+{
+    bool any_energy = false;
+    bool any_force  = false;
+    const bool compute_force = (dphi_force_out != nullptr);
+
+    /* Per-atom energy buffer (reused across atoms) and per-pair force
+     * scratch (reused across pairs). */
+    tadah::core::aed_type dD_buf;
+    dD_buf.resize(static_cast<long>(n_cols));
+    tadah::core::fd_type dfd_ij(n_cols);
+    tadah::core::fd_type dfd_ji(n_cols);
+
+    const double rcut2b    = d2.get_rcut();
+    const double rcut2b_sq = rcut2b * rcut2b;
+
+    for (std::size_t s = 0; s < stdb.size(); ++s) {
+        const Structure& st = stdb(s);
+        if (!st.nn)
+            throw std::runtime_error(
+                "assemble_dphi_train_both_rows_d2: structure " +
+                std::to_string(s) + " has no NN cache; run NNFinder first.");
+
+        const std::size_t e_row_off = s * n_cols;
+        const std::size_t row_start_s =
+            compute_force ? force_row_start_per_struct[s] : 0;
+
+        for (std::size_t i = 0; i < st.natoms(); ++i) {
+            for (std::size_t k = 0; k < n_cols; ++k) dD_buf[k] = 0.0;
+
+            const Atom& a1 = st(i);
+            const int   Zi = a1.Z;
+            const std::size_t row_i = row_start_s + 3 * i;
+
+            for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                const double dx = a1.position[0] - a2pos[0];
+                const double dy = a1.position[1] - a2pos[1];
+                const double dz = a1.position[2] - a2pos[2];
+                const double rij_sq = dx*dx + dy*dy + dz*dz;
+                if (rij_sq >= rcut2b_sq) continue;
+                const std::size_t neighIdx = st.nn->idx[i][jj];
+                const int    Zj  = st(neighIdx).Z;
+                const double rij = std::sqrt(rij_sq);
+
+                /* ENERGY: per-pair calc_dDdtheta, scale=0.5. */
+                if (d2.calc_dDdtheta(theta_name, arg_pos,
+                                     Zi, Zj, rij, rij_sq, dD_buf, 0.5))
+                    any_energy = true;
+
+                /* FORCE: per-pair calc_dXijdri_dtheta (ij + ji) +
+                 * axis expansion, mirrors assemble_dphi_train_force_rows_d2. */
+                if (compute_force) {
+                    const double rij_inv = 1.0 / rij;
+                    for (std::size_t n = 0; n < n_cols; ++n) {
+                        dfd_ij(n, 0) = 0.0;
+                        dfd_ji(n, 0) = 0.0;
+                    }
+                    const bool ok_ij = d2.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zi, Zj, rij, rij_sq,
+                        dfd_ij, 0.5);
+                    const bool ok_ji = d2.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zj, Zi, rij, rij_sq,
+                        dfd_ji, 0.5);
+                    if (ok_ij || ok_ji) {
+                        any_force = true;
+                        for (std::size_t n = 0; n < n_cols; ++n) {
+                            const double r0_ij = dfd_ij(n, 0) * rij_inv;
+                            dfd_ij(n, 0) = r0_ij * dx;
+                            dfd_ij(n, 1) = r0_ij * dy;
+                            dfd_ij(n, 2) = r0_ij * dz;
+                            const double r0_ji = dfd_ji(n, 0) * rij_inv;
+                            dfd_ji(n, 0) = r0_ji * (-dx);
+                            dfd_ji(n, 1) = r0_ji * (-dy);
+                            dfd_ji(n, 2) = r0_ji * (-dz);
+                        }
+                        for (std::size_t k = 0; k < 3; ++k) {
+                            const std::size_t row_off = (row_i + k) * n_cols;
+                            for (std::size_t n = 0; n < n_cols; ++n) {
+                                dphi_force_out[row_off + n] -=
+                                    (dfd_ij(n, k) - dfd_ji(n, k));
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* Fold atom i's accumulated dAED into structure energy row. */
+            for (std::size_t k = 0; k < n_cols; ++k)
+                dphi_energy_out[e_row_off + k] += dD_buf[k];
+        }
+    }
+    return {any_energy, any_force};
+}
+
+/* Combined ENERGY + FORCE per-DM walker.
+ *
+ * Functionally equivalent to calling
+ *   assemble_dphi_train_energy_rows_dm + assemble_dphi_train_force_rows_dm
+ * on the same inputs, but builds the per-atom rho_i / drho_i / F'(rho_i)
+ * scratch ONCE per structure (instead of once in the energy walker and once
+ * in the force walker) and reuses it for both the per-atom calc_daed_dtheta
+ * step (energy contribution) and the per-pair calc_dXijdri_dtheta step
+ * (force contribution). Cuts roughly half of the intrinsic walker cost
+ * for DM arms when use_force is true.
+ *
+ * dphi_force_out may be nullptr to skip force-side work entirely. In that
+ * mode the walker still allocates rhoi_per_atom (energy needs F'(rho)) but
+ * drhoi_per_atom storage is still allocated for the per-pair drhoi pass
+ * (it feeds calc_daed_dtheta on the energy side).
+ *
+ * Returns (any_energy, any_force). When dphi_force_out == nullptr,
+ * any_force is false. */
+inline std::pair<bool, bool>
+assemble_dphi_train_both_rows_dm(
+    const StructureDB&                     stdb,
+    const tadah::models::DM_Base&          dm,
+    const std::string&                     theta_name,
+    int                                    arg_pos,
+    double*                                dphi_energy_out,
+    double*                                dphi_force_out,
+    std::size_t                            n_cols,
+    const std::vector<std::size_t>&        force_row_start_per_struct)
+{
+    if (dm.rhoi_size() == 0) return {false, false};
+
+    bool any_energy = false;
+    bool any_force  = false;
+    const bool compute_force = (dphi_force_out != nullptr);
+
+    const std::size_t rho_total = dm.rhoi_size() + dm.rhoip_size();
+    tadah::core::aed_type aed_scratch(n_cols);
+    tadah::core::aed_type daed_buf   (n_cols);
+    tadah::core::fd_type  dfd_ij(n_cols);
+    tadah::core::fd_type  dfd_ji(n_cols);
+
+    const double rcutmb    = dm.get_rcut();
+    const double rcutmb_sq = rcutmb * rcutmb;
+
+    for (std::size_t s = 0; s < stdb.size(); ++s) {
+        const Structure& st = stdb(s);
+        if (!st.nn)
+            throw std::runtime_error(
+                "assemble_dphi_train_both_rows_dm: structure " +
+                std::to_string(s) + " has no NN cache; run NNFinder first.");
+
+        const std::size_t natoms = st.natoms();
+
+        /* Per-atom rho / drho buffers — filled by the pre-pass below
+         * and consumed both by the per-atom calc_daed_dtheta (energy)
+         * and the per-pair calc_dXijdri_dtheta (force) loops. */
+        std::vector<tadah::core::rho_type> rhoi_per_atom (natoms);
+        std::vector<tadah::core::rho_type> drhoi_per_atom(natoms);
+        for (std::size_t i = 0; i < natoms; ++i) {
+            rhoi_per_atom [i].resize(static_cast<long>(rho_total));
+            drhoi_per_atom[i].resize(static_cast<long>(rho_total));
+            rhoi_per_atom [i].set_zero();
+            drhoi_per_atom[i].set_zero();
+        }
+
+        const std::size_t e_row_off = s * n_cols;
+
+        /* ----- Per-atom pre-pass + ENERGY contribution -----
+         * Mirrors assemble_dphi_train_energy_rows_dm but writes the full
+         * rho_i / drho_i / F'(rho_i) field into per-atom storage so the
+         * force-side per-pair loop below can reuse it. */
+        for (std::size_t i = 0; i < natoms; ++i) {
+            const Atom& a1 = st(i);
+            const int   Zi = a1.Z;
+
+            tadah::core::Vec3d delij;
+            for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                delij[0] = a1.position[0] - a2pos[0];
+                delij[1] = a1.position[1] - a2pos[1];
+                delij[2] = a1.position[2] - a2pos[2];
+                const double rij_sq = delij[0]*delij[0] +
+                                      delij[1]*delij[1] +
+                                      delij[2]*delij[2];
+                if (rij_sq >= rcutmb_sq) continue;
+                const std::size_t neighIdx = st.nn->idx[i][jj];
+                const int    Zj  = st(neighIdx).Z;
+                const double rij = std::sqrt(rij_sq);
+
+                dm.calc_rho(Zi, Zj, rij, rij_sq, delij,
+                            rhoi_per_atom[i], /*scale=*/1.0);
+                dm.calc_drhoi_dtheta(theta_name, arg_pos,
+                                     Zi, Zj, rij, rij_sq, delij,
+                                     drhoi_per_atom[i], /*scale=*/1.0);
+            }
+
+            /* Populate F'(rho) tail in rhoi_per_atom[i]. */
+            aed_scratch.set_zero();
+            dm.calc_aed(rhoi_per_atom[i], aed_scratch);
+
+            /* ENERGY: calc_daed_dtheta -> dphi_energy_out. */
+            daed_buf.set_zero();
+            const bool ok_e = dm.calc_daed_dtheta(
+                theta_name, arg_pos,
+                rhoi_per_atom[i], drhoi_per_atom[i],
+                daed_buf, /*scale=*/1.0);
+            if (ok_e) any_energy = true;
+            for (std::size_t k = 0; k < n_cols; ++k)
+                dphi_energy_out[e_row_off + k] += daed_buf[k];
+        }
+
+        /* ----- FORCE contribution per pair (reuses cached rhoi/drhoi) ----- */
+        if (compute_force) {
+            const std::size_t row_start_s = force_row_start_per_struct[s];
+
+            for (std::size_t i = 0; i < natoms; ++i) {
+                const Atom& a1 = st(i);
+                const int   Zi = a1.Z;
+                const std::size_t row_i = row_start_s + 3 * i;
+
+                tadah::core::Vec3d delij;
+                for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                    const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                    delij[0] = a1.position[0] - a2pos[0];
+                    delij[1] = a1.position[1] - a2pos[1];
+                    delij[2] = a1.position[2] - a2pos[2];
+                    const double rij_sq = delij[0]*delij[0] +
+                                          delij[1]*delij[1] +
+                                          delij[2]*delij[2];
+                    if (rij_sq >= rcutmb_sq) continue;
+                    const std::size_t neighIdx = st.nn->idx[i][jj];
+                    const int    Zj  = st(neighIdx).Z;
+                    const double rij = std::sqrt(rij_sq);
+
+                    for (std::size_t n = 0; n < n_cols; ++n) {
+                        for (std::size_t k = 0; k < 3; ++k) {
+                            dfd_ij(n, k) = 0.0;
+                            dfd_ji(n, k) = 0.0;
+                        }
+                    }
+                    const bool ok_ij = dm.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zi, Zj, rij, rij_sq,
+                        delij, rhoi_per_atom[i], drhoi_per_atom[i],
+                        dfd_ij, /*scale=*/1.0);
+
+                    tadah::core::Vec3d delji = delij;
+                    delji[0] = -delji[0];
+                    delji[1] = -delji[1];
+                    delji[2] = -delji[2];
+                    const bool ok_ji = dm.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zj, Zi, rij, rij_sq,
+                        delji, rhoi_per_atom[neighIdx],
+                        drhoi_per_atom[neighIdx],
+                        dfd_ji, /*scale=*/1.0);
+                    if (!ok_ij && !ok_ji) continue;
+                    any_force = true;
+
+                    for (std::size_t k = 0; k < 3; ++k) {
+                        const std::size_t row_off = (row_i + k) * n_cols;
+                        for (std::size_t n = 0; n < n_cols; ++n) {
+                            dphi_force_out[row_off + n] -=
+                                (dfd_ij(n, k) - dfd_ji(n, k));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return {any_energy, any_force};
+}
+
+/* DM rho cache (Phase 2E P3) — caches the θ-independent per-atom rho_i and
+ * F'(rho_i) tail across an entire gradient call. The combined+cached walker
+ * (assemble_dphi_train_both_rows_dm_cached) reads from this cache instead of
+ * re-running the calc_rho neighbour-loop + calc_aed embedding evaluation on
+ * every θ.
+ *
+ * Why: the DM walker's per-atom pre-pass (calc_rho across neighbours +
+ * calc_aed to populate F'(rho)) depends ONLY on (Zi, Zj, rij, vec_ij, weights);
+ * none of those depend on theta_name. drho_i/dθ is the only θ-dependent
+ * per-atom quantity, so it stays inside the per-θ walker.
+ *
+ * Storage: rhoi_per_struct[s][a] is a rho_type of size dm.rhoi_size() +
+ * dm.rhoip_size() with the rho field at [rfidx..] and F'(rho) tail at
+ * [drfidx..] populated. Empty when dm.rhoi_size() == 0 (DM_Dummy or
+ * INITMB=false). Memory budget for the user's BASINSv2 config:
+ * ~2650 structs × ~50 atoms × ~30 doubles ≈ 32 MB total.
+ */
+struct DMRhoCache {
+    std::vector<std::vector<tadah::core::rho_type>> rhoi_per_struct;
+};
+
+/* Build the per-atom rho_i + F'(rho_i) cache for the entire StructureDB.
+ * No-op (cache cleared) when dm.rhoi_size() == 0. Allocates the per-atom
+ * rho_type vectors in cache.rhoi_per_struct; safe to call repeatedly.
+ *
+ * `n_cols` is the full DC_Selector descriptor column count; calc_aed writes
+ * its side-output into aed_scratch[fidx + dm.size()) which must fit. The
+ * aed side-output is discarded — we only want the rhoi tail mutation.
+ *
+ * Thread-safety: each iteration s writes only to cache.rhoi_per_struct[s];
+ * the caller may parallelise the outer loop with #pragma omp parallel for. */
+inline void
+build_dm_rho_cache(const StructureDB&             stdb,
+                   const tadah::models::DM_Base&  dm,
+                   DMRhoCache&                    cache,
+                   std::size_t                    n_cols)
+{
+    if (dm.rhoi_size() == 0) {
+        cache.rhoi_per_struct.clear();
+        return;
+    }
+
+    const std::size_t rho_total = dm.rhoi_size() + dm.rhoip_size();
+    cache.rhoi_per_struct.assign(stdb.size(), {});
+
+    const double rcutmb    = dm.get_rcut();
+    const double rcutmb_sq = rcutmb * rcutmb;
+
+#if defined(TADAH_ENABLE_OPENMP)
+#   pragma omp parallel for schedule(dynamic)
+#endif
+    for (std::size_t s = 0; s < stdb.size(); ++s) {
+        const Structure& st = stdb(s);
+        if (!st.nn)
+            throw std::runtime_error(
+                "build_dm_rho_cache: structure " + std::to_string(s) +
+                " has no NN cache; run NNFinder first.");
+
+        const std::size_t natoms = st.natoms();
+        auto& rhoi_per_atom = cache.rhoi_per_struct[s];
+        rhoi_per_atom.resize(natoms);
+
+        /* aed_scratch is per-thread (declared inside the OMP loop body). */
+        tadah::core::aed_type aed_scratch(n_cols);
+
+        for (std::size_t i = 0; i < natoms; ++i) {
+            rhoi_per_atom[i].resize(static_cast<long>(rho_total));
+            rhoi_per_atom[i].set_zero();
+
+            const Atom& a1 = st(i);
+            const int   Zi = a1.Z;
+
+            tadah::core::Vec3d delij;
+            for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                delij[0] = a1.position[0] - a2pos[0];
+                delij[1] = a1.position[1] - a2pos[1];
+                delij[2] = a1.position[2] - a2pos[2];
+                const double rij_sq = delij[0]*delij[0] +
+                                      delij[1]*delij[1] +
+                                      delij[2]*delij[2];
+                if (rij_sq >= rcutmb_sq) continue;
+                const std::size_t neighIdx = st.nn->idx[i][jj];
+                const int    Zj  = st(neighIdx).Z;
+                const double rij = std::sqrt(rij_sq);
+
+                dm.calc_rho(Zi, Zj, rij, rij_sq, delij,
+                            rhoi_per_atom[i], /*scale=*/1.0);
+            }
+
+            /* Populate F'(rho) tail in rhoi_per_atom[i]. aed_scratch's
+             * side-output is discarded; we only want the rhoi mutation. */
+            aed_scratch.set_zero();
+            dm.calc_aed(rhoi_per_atom[i], aed_scratch);
+        }
+    }
+}
+
+/* Cached DM combined walker — reads the per-atom rho_i / F'(rho_i) field
+ * from a pre-built DMRhoCache instead of recomputing it on every θ.
+ *
+ * Semantically identical to assemble_dphi_train_both_rows_dm when the cache
+ * has been built for the same (stdb, dm) inputs: the only cross-θ-invariant
+ * work moved out of the per-θ loop is calc_rho + calc_aed (rho field and
+ * F'(rho) tail). drho_i/dθ is θ-dependent, so it's still computed inside
+ * this walker per θ.
+ *
+ * Pre-condition: cache.rhoi_per_struct.size() == stdb.size() AND
+ * cache.rhoi_per_struct[s].size() == stdb(s).natoms() — i.e. cache was
+ * built from the SAME stdb. */
+inline std::pair<bool, bool>
+assemble_dphi_train_both_rows_dm_cached(
+    const StructureDB&                     stdb,
+    const tadah::models::DM_Base&          dm,
+    const DMRhoCache&                      cache,
+    const std::string&                     theta_name,
+    int                                    arg_pos,
+    double*                                dphi_energy_out,
+    double*                                dphi_force_out,
+    std::size_t                            n_cols,
+    const std::vector<std::size_t>&        force_row_start_per_struct)
+{
+    if (dm.rhoi_size() == 0) return {false, false};
+    if (cache.rhoi_per_struct.size() != stdb.size())
+        throw std::runtime_error(
+            "assemble_dphi_train_both_rows_dm_cached: cache size mismatch "
+            "(cache built for a different StructureDB?).");
+
+    bool any_energy = false;
+    bool any_force  = false;
+    const bool compute_force = (dphi_force_out != nullptr);
+
+    const std::size_t rho_total = dm.rhoi_size() + dm.rhoip_size();
+    tadah::core::aed_type daed_buf(n_cols);
+    tadah::core::fd_type  dfd_ij(n_cols);
+    tadah::core::fd_type  dfd_ji(n_cols);
+
+    const double rcutmb    = dm.get_rcut();
+    const double rcutmb_sq = rcutmb * rcutmb;
+
+    for (std::size_t s = 0; s < stdb.size(); ++s) {
+        const Structure& st = stdb(s);
+        if (!st.nn)
+            throw std::runtime_error(
+                "assemble_dphi_train_both_rows_dm_cached: structure " +
+                std::to_string(s) + " has no NN cache; run NNFinder first.");
+
+        const std::size_t natoms = st.natoms();
+        const auto& rhoi_per_atom = cache.rhoi_per_struct[s];
+        if (rhoi_per_atom.size() != natoms)
+            throw std::runtime_error(
+                "assemble_dphi_train_both_rows_dm_cached: cache shape "
+                "mismatch at structure " + std::to_string(s) +
+                " (cache built for a different StructureDB?).");
+
+        /* drho_i / dθ is the only θ-dependent per-atom quantity; allocate
+         * a per-structure buffer (per-atom). */
+        std::vector<tadah::core::rho_type> drhoi_per_atom(natoms);
+        for (std::size_t i = 0; i < natoms; ++i) {
+            drhoi_per_atom[i].resize(static_cast<long>(rho_total));
+            drhoi_per_atom[i].set_zero();
+        }
+
+        const std::size_t e_row_off = s * n_cols;
+
+        /* Per-atom: drho_i/dθ pre-pass + ENERGY contribution. */
+        for (std::size_t i = 0; i < natoms; ++i) {
+            const Atom& a1 = st(i);
+            const int   Zi = a1.Z;
+
+            tadah::core::Vec3d delij;
+            for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                delij[0] = a1.position[0] - a2pos[0];
+                delij[1] = a1.position[1] - a2pos[1];
+                delij[2] = a1.position[2] - a2pos[2];
+                const double rij_sq = delij[0]*delij[0] +
+                                      delij[1]*delij[1] +
+                                      delij[2]*delij[2];
+                if (rij_sq >= rcutmb_sq) continue;
+                const std::size_t neighIdx = st.nn->idx[i][jj];
+                const int    Zj  = st(neighIdx).Z;
+                const double rij = std::sqrt(rij_sq);
+
+                dm.calc_drhoi_dtheta(theta_name, arg_pos,
+                                     Zi, Zj, rij, rij_sq, delij,
+                                     drhoi_per_atom[i], /*scale=*/1.0);
+            }
+
+            /* ENERGY: calc_daed_dtheta on (cached rho_i, fresh drho_i). */
+            daed_buf.set_zero();
+            const bool ok_e = dm.calc_daed_dtheta(
+                theta_name, arg_pos,
+                rhoi_per_atom[i], drhoi_per_atom[i],
+                daed_buf, /*scale=*/1.0);
+            if (ok_e) any_energy = true;
+            for (std::size_t k = 0; k < n_cols; ++k)
+                dphi_energy_out[e_row_off + k] += daed_buf[k];
+        }
+
+        /* Per-pair: FORCE contribution. */
+        if (compute_force) {
+            const std::size_t row_start_s = force_row_start_per_struct[s];
+
+            for (std::size_t i = 0; i < natoms; ++i) {
+                const Atom& a1 = st(i);
+                const int   Zi = a1.Z;
+                const std::size_t row_i = row_start_s + 3 * i;
+
+                tadah::core::Vec3d delij;
+                for (std::size_t jj = 0; jj < st.nn_size(i); ++jj) {
+                    const tadah::core::Vec3d& a2pos = st.nn_pos(i, jj);
+                    delij[0] = a1.position[0] - a2pos[0];
+                    delij[1] = a1.position[1] - a2pos[1];
+                    delij[2] = a1.position[2] - a2pos[2];
+                    const double rij_sq = delij[0]*delij[0] +
+                                          delij[1]*delij[1] +
+                                          delij[2]*delij[2];
+                    if (rij_sq >= rcutmb_sq) continue;
+                    const std::size_t neighIdx = st.nn->idx[i][jj];
+                    const int    Zj  = st(neighIdx).Z;
+                    const double rij = std::sqrt(rij_sq);
+
+                    for (std::size_t n = 0; n < n_cols; ++n) {
+                        for (std::size_t k = 0; k < 3; ++k) {
+                            dfd_ij(n, k) = 0.0;
+                            dfd_ji(n, k) = 0.0;
+                        }
+                    }
+                    const bool ok_ij = dm.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zi, Zj, rij, rij_sq,
+                        delij, rhoi_per_atom[i], drhoi_per_atom[i],
+                        dfd_ij, /*scale=*/1.0);
+
+                    tadah::core::Vec3d delji = delij;
+                    delji[0] = -delji[0];
+                    delji[1] = -delji[1];
+                    delji[2] = -delji[2];
+                    const bool ok_ji = dm.calc_dXijdri_dtheta(
+                        theta_name, arg_pos, Zj, Zi, rij, rij_sq,
+                        delji, rhoi_per_atom[neighIdx],
+                        drhoi_per_atom[neighIdx],
+                        dfd_ji, /*scale=*/1.0);
+                    if (!ok_ij && !ok_ji) continue;
+                    any_force = true;
+
+                    for (std::size_t k = 0; k < 3; ++k) {
+                        const std::size_t row_off = (row_i + k) * n_cols;
+                        for (std::size_t n = 0; n < n_cols; ++n) {
+                            dphi_force_out[row_off + n] -=
+                                (dfd_ij(n, k) - dfd_ji(n, k));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return {any_energy, any_force};
+}
+
+/* DC_Selector-level combined walker. Mirrors the legacy energy + force
+ * dispatchers but in one pass: D2 arm contributes via
+ * assemble_dphi_train_both_rows_d2, then DM arm contributes via
+ * assemble_dphi_train_both_rows_dm. Returns (any_energy, any_force) ORed
+ * across both arms — semantically equivalent to running the two legacy
+ * dispatchers separately. */
+inline std::pair<bool, bool>
+assemble_dphi_train_both_rows(
+    const StructureDB&                stdb,
+    const tadah::models::DC_Selector& dcs,
+    const std::string&                theta_name,
+    int                               arg_pos,
+    double*                           dphi_energy_out,
+    double*                           dphi_force_out,
+    std::size_t                       n_cols,
+    const std::vector<std::size_t>&   force_row_start_per_struct)
+{
+    if (!dcs.d2b)
+        throw std::runtime_error(
+            "assemble_dphi_train_both_rows: DC_Selector has no D2 descriptor; "
+            "DC_Selector::init always allocates a D2_Dummy fallback — "
+            "this is a sign of an improperly constructed selector.");
+
+    bool any_e = false;
+    bool any_f = false;
+
+    {
+        auto pr = assemble_dphi_train_both_rows_d2(
+            stdb, *dcs.d2b, theta_name, arg_pos,
+            dphi_energy_out, dphi_force_out,
+            n_cols, force_row_start_per_struct);
+        if (pr.first)  any_e = true;
+        if (pr.second) any_f = true;
+    }
+    if (dcs.dmb) {
+        auto pr = assemble_dphi_train_both_rows_dm(
+            stdb, *dcs.dmb, theta_name, arg_pos,
+            dphi_energy_out, dphi_force_out,
+            n_cols, force_row_start_per_struct);
+        if (pr.first)  any_e = true;
+        if (pr.second) any_f = true;
+    }
+    return {any_e, any_f};
+}
+
+/* Cached DC_Selector-level combined walker (Phase 2E P3). Same shape as
+ * assemble_dphi_train_both_rows but the DM arm goes through the
+ * _cached variant which reads rho_i / F'(rho_i) from the supplied cache
+ * instead of recomputing them per θ.
+ *
+ * The D2 arm has no analogous cache because its per-pair derivative kernels
+ * (calc_dDdtheta, calc_dXijdri_dtheta) are themselves θ-dependent and there
+ * is no expensive θ-independent pre-pass to hoist. It is invoked through the
+ * standard combined walker.
+ *
+ * Pre-condition: `dm_cache` was built via build_dm_rho_cache on the same
+ * (stdb, *dcs.dmb) pair. When `dcs.dmb == nullptr` (no MB arm) or
+ * `dcs.dmb->rhoi_size() == 0` (DM_Dummy) the cache is unused; passing an
+ * empty cache in those cases is fine. */
+inline std::pair<bool, bool>
+assemble_dphi_train_both_rows_cached(
+    const StructureDB&                stdb,
+    const tadah::models::DC_Selector& dcs,
+    const DMRhoCache&                 dm_cache,
+    const std::string&                theta_name,
+    int                               arg_pos,
+    double*                           dphi_energy_out,
+    double*                           dphi_force_out,
+    std::size_t                       n_cols,
+    const std::vector<std::size_t>&   force_row_start_per_struct)
+{
+    if (!dcs.d2b)
+        throw std::runtime_error(
+            "assemble_dphi_train_both_rows_cached: DC_Selector has no D2 "
+            "descriptor; DC_Selector::init always allocates a D2_Dummy "
+            "fallback — this is a sign of an improperly constructed selector.");
+
+    bool any_e = false;
+    bool any_f = false;
+
+    {
+        auto pr = assemble_dphi_train_both_rows_d2(
+            stdb, *dcs.d2b, theta_name, arg_pos,
+            dphi_energy_out, dphi_force_out,
+            n_cols, force_row_start_per_struct);
+        if (pr.first)  any_e = true;
+        if (pr.second) any_f = true;
+    }
+    if (dcs.dmb && dcs.dmb->rhoi_size() > 0) {
+        auto pr = assemble_dphi_train_both_rows_dm_cached(
+            stdb, *dcs.dmb, dm_cache, theta_name, arg_pos,
+            dphi_energy_out, dphi_force_out,
+            n_cols, force_row_start_per_struct);
+        if (pr.first)  any_e = true;
+        if (pr.second) any_f = true;
+    }
+    return {any_e, any_f};
 }
 
 }  // namespace mlip
