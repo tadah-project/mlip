@@ -181,6 +181,35 @@ void NNFinder::num_shifts(const Structure &st, int N[3], double cutoff)  const
   N[0] = std::max(N[0], 1);
   N[1] = std::max(N[1], 1);
   N[2] = std::max(N[2], 1);
+
+  /* Defensive: a near-degenerate cell (e.g. produced by an unbounded
+   * relaxation step) can produce a per-atom neighbour count in the
+   * tens of thousands, which then drives the O(nn × get_nn_iindex)
+   * inner loops in M_Tadah_Base::fpredict to ~10^10 operations and
+   * stalls evaluate_E_F for tens of seconds. Cap the total image
+   * count instead of any single N[i] — a cubic 0.5 Å cell with all
+   * N[i]=12 already produces ~25^3 ≈ 15000 image cells per atom, and
+   * a 0.1 Å cell pushes it past 10^6. Throw past 10^4 so legitimate
+   * small cells (down to ~cutoff/15 per side) still work, but
+   * unbounded-relax outputs fail fast and propagate up to obs_loss's
+   * try-catch as a failscored θ. */
+  const long long total_shifts =
+      static_cast<long long>(2 * N[0] + 1) *
+      static_cast<long long>(2 * N[1] + 1) *
+      static_cast<long long>(2 * N[2] + 1);
+  constexpr long long kMaxTotalShifts = 10000;
+  if (total_shifts > kMaxTotalShifts) {
+    throw std::runtime_error(
+        "NNFinder::num_shifts: cell vectors are too short relative to "
+        "cutoff — would need ("
+        + std::to_string(N[0]) + ", "
+        + std::to_string(N[1]) + ", "
+        + std::to_string(N[2]) + ") periodic images per direction ("
+        + std::to_string(total_shifts) + " total image cells > cap "
+        + std::to_string(kMaxTotalShifts) +
+        "). Caller produced a degenerate cell (e.g. unbounded "
+        "relaxation step). Aborting NN search.");
+  }
 }
 static inline bool is_tilted(const core::Matrix3d& C, double eps = 1e-12)
 {

@@ -78,6 +78,46 @@ public:
   virtual void spredict(const size_t a, tadah::core::stress_type &s,
                         const StDescriptors &std, const Structure &stOrig);
 
+  /** \brief Compute ∂E/∂W for a Structure.
+   *
+   *  Linear-model contract (BF_Linear / Kern_Linear): the total energy is
+   *  E = W · Σ_a aed_a, so ∂E/∂W = Σ_a aed_a (size = descriptor dim).
+   *
+   *  Nonlinear model classes (Kern_RBF, KAN, ...) must override.
+   *
+   *  Used by the typed PC_OBSERVABLE path to compose closed-form dO/dW
+   *  contributions without finite differences in W-space.
+   *
+   *  @param std Precomputed descriptors for stOrig.
+   *  @param stOrig The Structure.
+   *  @param out Output vector; resized to descriptor dim, zero-initialised.
+   */
+  virtual void predict_dE_dW(const StDescriptors &std,
+                             const Structure &stOrig,
+                             tadah::core::t_type &out);
+
+  /** \brief Compute the VJP ∂(λᵀ·F)/∂W for a Structure.
+   *
+   *  Linear-model contract (BF_Linear / Kern_Linear): walks every
+   *  (atom, neighbour) pair the way fpredict does and contracts
+   *      out[c] += Σ_a Σ_k λ_a[k] · (−fd_ij(c,k) + fd_ji(c,k)).
+   *
+   *  Nonlinear model classes must override with their own reverse-mode pass.
+   *
+   *  Used by the IFT-adjoint pipeline once an observable's λ has been
+   *  obtained from the adjoint solve. The mixed partial ∂²E/∂x∂W is never
+   *  materialised — only its contraction with λ.
+   *
+   *  @param std Precomputed descriptors for stOrig.
+   *  @param stOrig The Structure.
+   *  @param lambda Force-shaped multiplier, one Vec3d per atom.
+   *  @param out Output vector; resized to descriptor dim, zero-initialised.
+   */
+  virtual void vjp_force(const StDescriptors &std,
+                         const Structure &stOrig,
+                         const std::vector<tadah::core::force_type> &lambda,
+                         tadah::core::t_type &out);
+
 
   /** Return potential file. */
   virtual tadah::core::Context get_param_file()=0;

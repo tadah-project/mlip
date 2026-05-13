@@ -146,6 +146,54 @@ spredict(const size_t a, tadah::core::stress_type &s,
 }
 
 void M_Tadah_Base::
+predict_dE_dW(const StDescriptors &std,
+              const Structure &stOrig,
+              tadah::core::t_type &out)
+{
+  const size_t n_desc = std.dim();
+  if (out.size() != n_desc) {
+    out = tadah::core::t_type(n_desc);
+  } else {
+    for (size_t c = 0; c < n_desc; ++c) out(c) = 0.0;
+  }
+  for (size_t a = 0; a < stOrig.natoms(); ++a) {
+    const tadah::core::aed_type &aedi = std.get_aed(a);
+    for (size_t c = 0; c < n_desc; ++c) {
+      out(c) += aedi(c);
+    }
+  }
+}
+
+void M_Tadah_Base::
+vjp_force(const StDescriptors &std,
+          const Structure &stOrig,
+          const std::vector<tadah::core::force_type> &lambda,
+          tadah::core::t_type &out)
+{
+  const size_t n_desc = std.dim();
+  if (out.size() != n_desc) {
+    out = tadah::core::t_type(n_desc);
+  } else {
+    for (size_t c = 0; c < n_desc; ++c) out(c) = 0.0;
+  }
+  for (size_t a = 0; a < stOrig.natoms(); ++a) {
+    const tadah::core::force_type &lam_a = lambda[a];
+    for (size_t jj = 0; jj < stOrig.nn_size(a); ++jj) {
+      size_t j = stOrig.nn->idx[a][jj];
+      const size_t aa = stOrig.get_nn_iindex(a, j, jj);
+      const tadah::core::fd_type &fdij = std.fd[a][jj];
+      const tadah::core::fd_type &fdji = std.fd[j][aa];
+      for (size_t k = 0; k < 3; ++k) {
+        const double lk = lam_a[k];
+        for (size_t c = 0; c < n_desc; ++c) {
+          out(c) += lk * (-fdij(c, k) + fdji(c, k));
+        }
+      }
+    }
+  }
+}
+
+void M_Tadah_Base::
 stress_force_predict(const StDescriptors &std, Structure &stPred, const Structure &stOrig)
 {
   tadah::core::stress_type s;
