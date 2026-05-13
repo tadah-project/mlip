@@ -1,9 +1,11 @@
 #include <tadah/mlip/native_relaxer.h>
 
+#include <tadah/mlip/nn_cache.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/st_descriptors.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -17,39 +19,6 @@ using tadah::core::Vec3d;
 /* ------------------------------------------------------------------- */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------- */
-
-double NativeRelaxer::
-evaluate_E_F(Structure& st,
-             M_Tadah_Base& model,
-             DC_Base& dc,
-             const Context& ctx,
-             std::vector<Vec3d>& F_out)
-{
-    /* Rebuild NN — atoms may have moved since last build. */
-    NNFinder nnf;
-    nnf.calc(st, ctx);
-
-    /* Compute descriptors + energy + forces. */
-    StDescriptors std_d = dc.calc(st);
-    const double E = model.epredict(std_d);
-    F_out.resize(st.natoms());
-    for (std::size_t a = 0; a < st.natoms(); ++a) {
-        F_out[a] = model.fpredict(a, std_d, st);
-    }
-    return E;
-}
-
-double NativeRelaxer::
-evaluate_E(Structure& st,
-           M_Tadah_Base& model,
-           DC_Base& dc,
-           const Context& ctx)
-{
-    NNFinder nnf;
-    nnf.calc(st, ctx);
-    StDescriptors std_d = dc.calc(st);
-    return model.epredict(std_d);
-}
 
 void NativeRelaxer::
 apply_iso_strain(Structure& st, double scale,
@@ -115,25 +84,113 @@ relax(Structure& st_inout,
     auto budget_left = [&]() {
         return result.n_evals < opts.maxeval;
     };
-    auto eval_ef = [&](Structure& s, std::vector<Vec3d>& F_out) {
-        ++result.n_evals;
-        return evaluate_E_F(s, model, dc, ctx, F_out);
+
+    /* Wall-time bookkeeping (PC_OBSERVABLE analogue of LAMMPS MAXTIME).
+     * Checked at iter boundaries; if exceeded, the relax exits with
+     * `Result::wall_time_exceeded = true`. Disabled when max_wall_time_s
+     * <= 0 (the std::chrono path stays cheap when unused). */
+    const auto t0_wall = std::chrono::steady_clock::now();
+    auto wall_exceeded = [&]() {
+        if (opts.max_wall_time_s <= 0.0) return false;
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsed = std::chrono::duration<double>(now - t0_wall).count();
+        return elapsed > opts.max_wall_time_s;
     };
-    auto eval_e = [&](Structure& s) {
+
+    /* NN-cache state. One NNFinder, one cache, live across all evals
+     * inside this relax(). `cached` calls (st_inout's initial build and
+     * its post-LS force refresh) check freshness against the prior
+     * snapshot and reuse the cached NN list when atoms drift < skin/2;
+     * `uncached` calls (FD strain probes, LS trial energies) always
+     * rebuild fresh since their Structure objects are transient.
+     * Building NN at cutoff = rcut + skin so pairs that drift into the
+     * rcut sphere are already present. */
+    nn_cache::State cache;
+    cache.skin = opts.nn_skin;
+    const double rcut = ctx.get<double>("RCUTMAX");
+    const double nn_cutoff = rcut + cache.skin;
+    NNFinder nnf;
+
+    auto ensure_nn = [&](Structure& s, bool use_cache) {
+        if (use_cache && nn_cache::is_fresh(s, cache)) return;
+        nnf.calc(s, nn_cutoff);
+        if (use_cache) nn_cache::capture(s, cache);
+    };
+
+    auto eval_ef = [&](Structure& s, std::vector<Vec3d>& F_out,
+                       bool use_cache) {
         ++result.n_evals;
-        return evaluate_E(s, model, dc, ctx);
+        ensure_nn(s, use_cache);
+        StDescriptors std_d = dc.calc(s);
+        const double E = model.epredict(std_d);
+        F_out.resize(s.natoms());
+        for (std::size_t a = 0; a < s.natoms(); ++a) {
+            F_out[a] = model.fpredict(a, std_d, s);
+        }
+        return E;
+    };
+
+    auto eval_e = [&](Structure& s, bool use_cache) {
+        ++result.n_evals;
+        ensure_nn(s, use_cache);
+        StDescriptors std_d = dc.calc(s);
+        return model.epredict(std_d);
     };
 
     std::vector<Vec3d> F(st_inout.natoms());
-    double E0 = eval_ef(st_inout, F);
+    double E0 = eval_ef(st_inout, F, /*use_cache=*/true);
     result.final_energy = E0;
+    result.final_fmax_atoms = fmax_inf(F);
 
     if (opts.verbose >= 1) {
         std::cerr << "[NativeRelaxer] iter=0  E=" << E0
                   << "  fmax=" << fmax_inf(F) << "\n";
     }
 
+    /* Iter-0 convergence check. If the initial state is already at
+     * (or below) ftol, declare convergence without entering the iter
+     * loop. Handles two real cases:
+     *  - caller asks for maxiter=0 ("don't relax, just evaluate") —
+     *    test_cohesive_energy_observable.cpp:207 relies on this for
+     *    FD-vs-analytical dO/dW parity on a fixed cell;
+     *  - perfect BCC under Fixed/Iso where F=0 and stress=0 by symmetry;
+     *    previously the relaxer needed ≥1 iter to detect convergence.
+     *
+     * For Iso mode we need the strain force F_ε via a one-time FD probe
+     * before we can rule on convergence (the in-loop test always checks
+     * both fmax_atoms AND fmax_strain_norm). Cost: 2 extra E evals on
+     * iter 0; amortised against the maxiter=5000 budget this is noise. */
+    {
+        double fmax_strain_norm = 0.0;
+        if (opts.box_mode == Options::Iso) {
+            const double dh = opts.eps_strain_fd;
+            Structure st_p = st_inout;
+            apply_iso_strain(st_p, 1.0 + dh, st_baseline);
+            const double E_plus = eval_e(st_p, /*use_cache=*/false);
+
+            Structure st_m = st_inout;
+            apply_iso_strain(st_m, 1.0 - dh, st_baseline);
+            const double E_minus = eval_e(st_m, /*use_cache=*/false);
+
+            const double dE_deps = (E_plus - E_minus) / (2.0 * dh);
+            const double V0 = st_inout.get_volume();
+            const double dH_deps = dE_deps + opts.pressure * 3.0 * V0;
+            const double F_eps = -dH_deps;
+            result.final_strain_force = std::abs(F_eps);
+            fmax_strain_norm = std::abs(F_eps) / (3.0 * std::max(V0, 1.0e-9));
+        }
+        if (result.final_fmax_atoms < opts.ftol && fmax_strain_norm < opts.ftol) {
+            result.converged = true;
+            result.scale_factor = 1.0;
+            return result;
+        }
+    }
+
     double step = opts.init_step;
+
+    /* Track the previous accepted energy for the etol convergence test.
+     * Updated only when an LS step is accepted (E0 reassigned). */
+    double E_prev = E0;
 
     for (std::size_t it = 1; it <= opts.maxiter; ++it) {
         result.n_iter = it;
@@ -150,6 +207,13 @@ relax(Structure& st_inout,
             result.scale_factor    = scale_total;
             return result;
         }
+        if (wall_exceeded()) {
+            result.wall_time_exceeded = true;
+            result.final_energy       = E0;
+            result.final_fmax_atoms   = fmax_inf(F);
+            result.scale_factor       = scale_total;
+            return result;
+        }
 
         /* Strain force (Iso mode only). */
         double F_eps = 0.0;
@@ -157,11 +221,11 @@ relax(Structure& st_inout,
             const double dh = opts.eps_strain_fd;
             Structure st_p = st_inout;
             apply_iso_strain(st_p, scale_total * (1.0 + dh), st_baseline);
-            const double E_plus = eval_e(st_p);
+            const double E_plus = eval_e(st_p, /*use_cache=*/false);
 
             Structure st_m = st_inout;
             apply_iso_strain(st_m, scale_total * (1.0 - dh), st_baseline);
-            const double E_minus = eval_e(st_m);
+            const double E_minus = eval_e(st_m, /*use_cache=*/false);
 
             const double dE_deps = (E_plus - E_minus) / (2.0 * dh);
             /* Add external-pressure contribution: H = E + P·V; for iso
@@ -192,6 +256,24 @@ relax(Structure& st_inout,
             return result;
         }
 
+        /* Energy-tolerance convergence (LAMMPS-style etol). Skipped when
+         * etol == 0 (default). Avoids the rare "force just above ftol
+         * but energy already at floating-point floor" stall mode. */
+        if (opts.etol > 0.0) {
+            const double dE_rel = std::abs(E0 - E_prev)
+                / (std::abs(E0) + std::abs(E_prev) + 1.0e-12);
+            if (dE_rel < opts.etol && it > 1) {
+                result.converged = true;
+                result.final_energy = E0;
+                result.scale_factor = scale_total;
+                if (opts.verbose >= 1) {
+                    std::cerr << "[NativeRelaxer] etol-converged at iter=" << it
+                              << "  E=" << E0 << "  dE_rel=" << dE_rel << "\n";
+                }
+                return result;
+            }
+        }
+
         /* Compute step magnitude. Two simultaneous bounds:
          *  - atomic displacement ≤ max_step / fmax_a
          *  - |Δscale| ≤ max_strain_step (Iso mode only)
@@ -213,6 +295,12 @@ relax(Structure& st_inout,
         Structure st_trial;
         double E_trial = E0;
         bool accepted = false;
+        /* Track whether at least one LS trial was rejected by the soft
+         * scale-range gate; used to set `result.scale_out_of_range=true`
+         * if the LS exhausts. Previously the flag was declared on Result
+         * but never assigned — a latent bug that cohesive_energy reads
+         * (cohesive_energy.cpp:120). Fixed here as side cleanup. */
+        bool any_scale_violation_in_ls = false;
         for (std::size_t ls = 0; ls < opts.maxiter_ls; ++ls) {
             st_trial = st_inout;
             /* Atom step. */
@@ -256,7 +344,7 @@ relax(Structure& st_inout,
                 }
             }
 
-            E_trial = eval_e(st_trial);
+            E_trial = eval_e(st_trial, /*use_cache=*/false);
 
             /* Scale-range gate (Iso): if this LS trial would push
              * scale_total outside [scale_min, scale_max], reject it
@@ -272,6 +360,7 @@ relax(Structure& st_inout,
             if (opts.box_mode == Options::Iso &&
                 (scale_trial < opts.scale_min ||
                  scale_trial > opts.scale_max)) {
+                any_scale_violation_in_ls = true;
                 alpha *= opts.backtrack_rho;
                 if (alpha < opts.step_floor) break;
                 if (!budget_left()) break;
@@ -283,13 +372,20 @@ relax(Structure& st_inout,
                 /* Commit. */
                 st_inout = st_trial;
                 if (opts.box_mode == Options::Iso) scale_total = scale_trial;
+                E_prev = E0;       /* snapshot for next iter's etol test */
                 E0 = E_trial;
-                /* Refresh forces for next iter. */
-                eval_ef(st_inout, F);
+                /* Refresh forces for next iter. The new st_inout is at
+                 * the same positions as the just-evaluated st_trial, so
+                 * the NN list may still be valid (small cumulative drift
+                 * vs the cached snapshot). Use the cached path: cache
+                 * hit skips the rebuild entirely; miss rebuilds + updates
+                 * the snapshot for next iter. */
+                eval_ef(st_inout, F, /*use_cache=*/true);
                 /* Grow step for next iter (mild). */
                 step = std::min(opts.max_step, alpha * 1.5);
                 break;
             }
+            /* Armijo failure path. */
             alpha *= opts.backtrack_rho;
             if (alpha < opts.step_floor) break;
             /* Bail out of line search if we exhausted the eval budget
@@ -306,7 +402,32 @@ relax(Structure& st_inout,
             result.converged = false;
             result.final_energy = E0;
             result.scale_factor = scale_total;
+            /* LAMMPS-style scale_out_of_range exit: if the LS exhausted
+             * because every trial landed outside [scale_min, scale_max],
+             * tell the caller so it can short-circuit (cohesive_energy
+             * reads this flag at HPO/src/cohesive_energy.cpp:120). */
+            if (any_scale_violation_in_ls) {
+                result.scale_out_of_range = true;
+            }
             return result;
+        }
+
+        /* Early-bail predicate hook. Called once per accepted step with
+         * the post-step state; observable decides whether to keep going
+         * or abort (e.g. cohesive_energy bails when scale_total drives
+         * a0 outside a margin-widened hot-var range, avoiding the rest
+         * of the maxeval budget on a θ that will be post-hoc rejected
+         * anyway). */
+        if (opts.early_reject) {
+            EarlyState state{scale_total, fmax_inf(F),
+                              std::abs(F_eps), it, result.n_evals};
+            if (opts.early_reject(state)) {
+                result.early_rejected   = true;
+                result.final_energy     = E0;
+                result.final_fmax_atoms = fmax_inf(F);
+                result.scale_factor     = scale_total;
+                return result;
+            }
         }
 
         if (opts.verbose >= 2) {

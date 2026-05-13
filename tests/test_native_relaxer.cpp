@@ -189,8 +189,93 @@ TEST_CASE("NativeRelaxer Fixed mode on perfect BCC converges at iter 0",
          << "  fmax=" << res.final_fmax_atoms);
 
     CHECK(res.converged);
-    CHECK(res.n_iter == 1);
+    /* Iter-0 convergence check (added with D3 early-bail work) detects
+     * the symmetric F≈0 state without entering the iter loop. Prior
+     * expectation `n_iter == 1` predated this check. */
+    CHECK(res.n_iter == 0);
     CHECK(res.final_fmax_atoms < 1.0e-6);
+}
+
+TEST_CASE("NativeRelaxer early_reject predicate aborts mid-relax",
+          "[mlip][native_relaxer][iso][early_reject]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    /* Compressed BCC so the relax has work to do. */
+    auto st = make_bcc_ta_supercell(3.10);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.pressure  = 0.0;
+    opts.ftol      = 1.0e-6;
+    opts.maxiter   = 500;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+    /* Predicate: bail after iter 2 regardless of state. */
+    opts.early_reject = [](const tadah::mlip::EarlyState& s) {
+        return s.iter >= 2;
+    };
+
+    NativeRelaxer relaxer;
+    auto res = relaxer.relax(st, *host.model, host.dc, host.context, opts);
+
+    INFO("converged=" << res.converged
+         << "  early_rejected=" << res.early_rejected
+         << "  iter=" << res.n_iter);
+    CHECK(res.early_rejected);
+    CHECK_FALSE(res.converged);
+    CHECK(res.n_iter == 2);
+}
+
+TEST_CASE("NativeRelaxer scale_out_of_range fires when LS exhausts on soft bound",
+          "[mlip][native_relaxer][iso][scale_oor]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    auto st = make_bcc_ta_supercell(3.10);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.pressure  = 0.0;
+    opts.ftol      = 1.0e-6;
+    opts.maxiter   = 100;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+    /* Tight scale bounds: scale must stay in [0.999, 1.001]. The relax
+     * from a 3% compressed cell wants to expand → trial scale > 1.001 →
+     * LS halving exhausts → scale_out_of_range = true. */
+    opts.scale_min = 0.999;
+    opts.scale_max = 1.001;
+    opts.step_floor = 1.0e-8;
+
+    NativeRelaxer relaxer;
+    auto res = relaxer.relax(st, *host.model, host.dc, host.context, opts);
+
+    INFO("converged=" << res.converged
+         << "  scale_out_of_range=" << res.scale_out_of_range
+         << "  iter=" << res.n_iter);
+    /* Either the LS exhausts and reports scale_out_of_range (the
+     * primary path) OR the relax converges within the tight bound (also
+     * acceptable for very gentle synthetic potentials). The
+     * scale_out_of_range latent bug was: prior to this fix the flag
+     * was never assigned true; this case exercises the fix. */
+    if (!res.converged) {
+        CHECK(res.scale_out_of_range);
+    }
 }
 
 TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
