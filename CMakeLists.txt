@@ -43,6 +43,24 @@ endif()
 
 # 2. Bring in the shared compile/link options
 include(FetchContent)
+# Developer build (-DTADAH_DEVELOP=ON): use a local cmake-tools checkout
+# rather than fetching it. Skipped when the source dir is already pinned
+# (e.g. -DFETCHCONTENT_SOURCE_DIR_TADAH_CMAKE=...).
+if(TADAH_DEVELOP AND NOT FETCHCONTENT_SOURCE_DIR_TADAH_CMAKE
+   AND DEFINED ENV{TADAH_PATH})
+  foreach(_tadah_ct "$ENV{TADAH_PATH}/cmake-tools"
+                    "$ENV{TADAH_PATH}/../cmake-tools")
+    if(IS_DIRECTORY "${_tadah_ct}")
+      get_filename_component(FETCHCONTENT_SOURCE_DIR_TADAH_CMAKE
+                             "${_tadah_ct}" ABSOLUTE)
+      message(STATUS
+        "TADAH_DEVELOP: cmake-tools taken from ${FETCHCONTENT_SOURCE_DIR_TADAH_CMAKE}")
+      break()
+    endif()
+  endforeach()
+  unset(_tadah_ct)
+endif()
+
 if(NOT TARGET tadah::compile_options)
   FetchContent_Declare (
     tadah_cmake
@@ -51,6 +69,11 @@ if(NOT TARGET tadah::compile_options)
   )
   FetchContent_MakeAvailable(tadah_cmake)   # defines tadah::compile_options
 endif()
+
+# Declare the BUILD_TESTING switch (default OFF) before any sub-module
+# is fetched, so a parent project's value propagates down. See
+# cmake-tools/TadahTesting.cmake.
+tadah_declare_testing()
 
 # Single-source-of-truth version (from CORE's blueprint TOML).
 # Falls back to 0.0.0 when CORE isn't reachable or cmake-tools is old.
@@ -207,10 +230,8 @@ if (TADAH_BUILD_MPI)
   add_compile_definitions(TADAH_BUILD_MPI)
 endif()
 
-set(BUILD_TESTING OFF CACHE BOOL "Build tests")
-include(CTest)
+tadah_add_tests()
 if(BUILD_TESTING)
-  add_subdirectory(tests)
   add_subdirectory(bench)
 endif()
 
