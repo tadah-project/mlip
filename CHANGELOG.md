@@ -39,6 +39,8 @@ The MLIP layer gains in-place HPO support, load-time dataset transforms, and a w
 - Substantive README rewrite (Session B).
 - Community / governance pointer files added.
 - CI/CD: lint + release stages, VERSION wired from blueprint TOML.
+- Test build routed through `cmake-tools/cmake/TadahTesting.cmake` helpers (`tadah_declare_testing` / `tadah_add_tests`).
+- README: dropped a dead link to the removed engineer-facing `HPO/LOAD_TRANSFORMS.md` note (content now lives in `hpo.rst`).
 
 ## [1.2.0] and earlier (condensed)
 
