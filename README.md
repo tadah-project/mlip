@@ -24,9 +24,8 @@ The `tadah.mlip` library implements the engines that back every
 - **Load-time data transforms** — `LSCALE`, `ESHIFT` (explicit /
   ATOM / DBATOM), `EFILTER`, `FFILTER`, `WDBFILE`, `WDBFILE_AUTO`,
   `EWEIGHT_TEMP`, `ZERO_COM_FORCE`, equilibrium-volume diagnostic.
-  See
-  [HPO/LOAD_TRANSFORMS.md](https://git.ecdf.ed.ac.uk/tadah/hpo/-/blob/develop/LOAD_TRANSFORMS.md)
-  for the conceptual reference.
+  Implemented in `load_transforms.{h,cpp}`; documented in the
+  *Load-time data transforms* section of the Tadah!MLIP HPO docs.
 
 ## When you use this directly
 
