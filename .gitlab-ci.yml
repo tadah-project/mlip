@@ -60,9 +60,16 @@ lint_codespell:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
   script:
-    - command -v codespell || python3 -m pip install --user codespell
-    - export PATH=$HOME/.local/bin:$PATH
-    - codespell --skip='./build*,./external,./_deps,./tests/data' || true
+    - |
+      if ! command -v codespell; then
+        python3 -m ensurepip --user --upgrade >/dev/null 2>&1 || true
+        python3 -m pip install --user codespell >/dev/null 2>&1 || {
+          echo "[lint_codespell] codespell unavailable in this runner image; skipping"
+          exit 0
+        }
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+      codespell --skip='./build*,./external,./_deps,./tests/data' || true
   allow_failure: true
 
 # ---- Source-tarball release (tag-gated) --------------------------------
