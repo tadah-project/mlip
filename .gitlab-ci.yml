@@ -20,7 +20,7 @@ build_debug:
   stage: build_debug
   script:
     - cd ${DEBUG_DIR}
-    - rm -f CMakeCache.txt
+    - find . -name CMakeCache.txt -delete
     - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DBUILD_TESTING=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
     - cd ${DEBUG_DIR}
@@ -33,7 +33,7 @@ build_release_shared:
   resource_group: build_release
   script:
     - cd ${RELEASE_SHARED_DIR}
-    - rm -f CMakeCache.txt
+    - find . -name CMakeCache.txt -delete
     - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
 
@@ -42,7 +42,7 @@ build_release_static:
   resource_group: build_release
   script:
     - cd ${RELEASE_STATIC_DIR}
-    - rm -f CMakeCache.txt
+    - find . -name CMakeCache.txt -delete
     - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
 
