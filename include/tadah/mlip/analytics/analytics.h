@@ -26,7 +26,7 @@ class Analytics {
 
         /** Return Stress Mean Absolute Error for each DBFILE.
          *
-         *  Calculated using 6 independed components.
+         *  Calculated using 6 independent components.
          */
         tadah::core::t_type calc_s_mae() const;
 
@@ -41,7 +41,7 @@ class Analytics {
 
         /** Return Stress Root Mean Square Error for each DBFILE.
          *
-         *  Calculated using 6 independed components.
+         *  Calculated using 6 independent components.
          */
         tadah::core::t_type calc_s_rmse() const;
 

@@ -186,7 +186,7 @@ struct Structure {
 
   /**  Return corresponding ii index of i-j (jj) atom interaction.
    *
-   *  The ii index is used with nearest neighour lists.
+   *  The ii index is used with nearest neighbour lists.
    *  i,j are atom global indices; ii,jj are neighbour lists indices.
    *
    *  This method is required to fully specify interacton of two atoms
@@ -272,7 +272,7 @@ struct Structure {
    * This method compares cell vectors, number of atoms,
    * species and atomic coordinates
    *
-   * Order ot atoms does not matter.
+   * Order of atoms does not matter.
    *
    * It does NOT compare energies, stresses, forces and labels.
    */

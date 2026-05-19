@@ -136,7 +136,7 @@ spredict(const size_t a, tadah::core::stress_type &s,
 
     // S_xy = (\sum nn of i) r_i[x]f_i(y) + rj[x]f_j(y)
     // where f_i and f_j are the forces on the atom i and j respectively
-    // resutling from the pairwise i-j interaction.
+    // resulting from the pairwise i-j interaction.
     for (size_t x=0; x<3; ++x) {
       for (size_t y=x; y<3; ++y) {
         s(x,y) -= V_inv*0.5*(ri[x]-rj[x])*(fij[y]-fji[y]);

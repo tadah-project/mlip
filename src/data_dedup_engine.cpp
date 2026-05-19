@@ -95,7 +95,7 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     } 
   }
 
-  // finaly prune...
+  // finally prune...
   for (size_t idx = duplicates.size(); idx-- > 0;) {
     auto &dup = duplicates[idx];
     size_t i1 = dup.first;  

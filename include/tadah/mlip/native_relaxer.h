@@ -168,7 +168,7 @@ public:
      *
      *  Returns a Result summarising convergence. On failure
      *  (`converged=false`), the Structure is left at the last accepted
-     *  step (still useable, just not at the energy minimum).
+     *  step (still usable, just not at the energy minimum).
      */
     Result relax(Structure& st,
                  M_Tadah_Base& model,

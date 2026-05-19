@@ -48,7 +48,7 @@ public:
  *     | force on the 1st atom in the x-dir
  *     | force on the 1st atom in the y-dir
  *     | force on the 1st atom in the z-dir
- *     | force on the 2st atom in the x-dir
+ *     | force on the 2nd atom in the x-dir
  *     | ...
  *     | force on the n-th atom in the z-dir
  *     | stress xx
@@ -416,7 +416,7 @@ private:
 
   void copyAndScale()
   {
-    // first copy scalled Phi to Phi_cpy and T to T_cpy
+    // first copy scaled Phi to Phi_cpy and T to T_cpy
     // followed by swapping pointers
     for (std::size_t j = 0; j < ws->Phi.cols(); ++j) {
       for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {

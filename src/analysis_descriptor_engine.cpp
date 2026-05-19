@@ -112,7 +112,7 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
       // for each structure
       std::ostringstream oss;
       Structure &st = stdbs[idxDB](idxSt);
-      oss << "# Strcuture: " << st.label << std::endl;
+      oss << "# Structure: " << st.label << std::endl;
       for (size_t a=0; a<st.natoms(); ++a) {  
         const core::aed_type &aed = stDesc.get_aed(a);
         oss << std::scientific << std::setprecision(numeric);

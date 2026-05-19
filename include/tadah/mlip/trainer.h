@@ -39,7 +39,7 @@ class Trainer {
       fb(tadah::core::factory<DM_Function_Base,const tadah::core::Context&>(
             context.get<std::string>("MODEL",1),context)),
       model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
-          (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFES CONTEXT ON TRAINING
+          (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFIES CONTEXT ON TRAINING
       dm(*fb, context, workspaceManager), // does not modify context
       workspaceManager_(&workspaceManager)
   {  }
@@ -169,7 +169,7 @@ class MPI_Trainer: public Trainer {
       b_ncols1 = 1;      //  b_ncols2 = 2;
       b_nrows1 = ncpu;   //  b_nrows2 = ncpu/b_ncols2;
 
-      // make as sqaure grid as possible
+      // make as square grid as possible
       int sr = sqrt(ncpu);
       if (sr*sr==ncpu) {
         b_nrows2 = sr;

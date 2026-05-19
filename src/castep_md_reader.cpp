@@ -85,7 +85,7 @@ void CastepMDReader::parse_data() {
   size_t force_idx=0;
 
   // skip header if exists also deal with the case 
-  // where there is no blank line at the begining of the .md file
+  // where there is no blank line at the beginning of the .md file
   std::string time;
   while (std::getline(stream, line)) {
     std::istringstream iss(line);
@@ -214,7 +214,7 @@ void CastepMDReader::parse_data() {
     }
   }
 
-  // in case there is no blank line at the end we have to add last strcuture here
+  // in case there is no blank line at the end we have to add last structure here
   if (s.natoms() && !error && complete_structure) {
     postproc_structure(s);
   }

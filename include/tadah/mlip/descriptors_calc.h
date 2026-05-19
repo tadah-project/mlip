@@ -68,7 +68,7 @@ class DescriptorsCalc: public DC_Base {
          *
          * In contrast, the main constructor above is purely generic.
          *
-         * The rule of thumb is: Use the main contructor unless it's a pain.
+         * The rule of thumb is: Use the main constructor unless it's a pain.
          *
          * Usage example:
          * \code{.cpp}

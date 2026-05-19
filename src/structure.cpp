@@ -233,7 +233,7 @@ int Structure::read(std::ifstream &ifs) {
   }
   } catch (const std::exception &e) {
     std::cerr << "Error reading structure: " << e.what() << std::endl;
-    std::cerr << "The error occured while reading line: " << line << std::endl;
+    std::cerr << "The error occurred while reading line: " << line << std::endl;
     throw std::runtime_error("Error reading structure from file.");
   }
   return 0;

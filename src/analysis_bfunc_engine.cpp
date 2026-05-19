@@ -186,7 +186,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
 }
 void AnalysisBfuncEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therfore we do not check either.
+  // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therefore we do not check either.
   // if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
   //   throw std::runtime_error("AnalysisBfuncEngine requires POTENTIAL or CONFIG.");
   // }
