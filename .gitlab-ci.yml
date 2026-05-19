@@ -25,7 +25,7 @@ build_debug:
     - make -j ${CPU_BUILD}
     - cd ${DEBUG_DIR}
     - make test
-    - cd ..; gcovr -e '.*tests.*|.*lib.*|.*utils.*|build' -r .
+    - cd ..; gcovr -e '.*tests.*|external|.*/_deps/.*|.*utils.*|build' -r .
   coverage: /^TOTAL.*\s+(\d+\%)$/
 
 build_release_shared:
@@ -74,7 +74,7 @@ lint_codespell:
         }
       fi
       export PATH="$HOME/.local/bin:$PATH"
-      codespell --skip='./build*,./external,./_deps,./tests/data' || true
+      codespell --skip='./build*,./external,./_deps,./tests/data,./tests/tests_data,./tests/catch2' --ignore-words-list='daed,struc,smae,eCounter,ue,cNa,re-use,re-uses,re-used,re-using,nd,SEH' || true
   allow_failure: true
 
 # ---- Source-tarball release (tag-gated) --------------------------------
