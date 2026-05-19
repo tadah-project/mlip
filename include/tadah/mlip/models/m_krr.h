@@ -232,7 +232,7 @@ tadah::core::Context get_param_file() {
     }
     if (kernel.get_label()!="Kern_Linear") {
       // dump basis to the context file file
-      // make sure keys are not accidently assigned
+      // make sure keys are not accidentally assigned
       if (c.contains("SBASIS"))
         c.remove("SBASIS");
       if (c.contains("BASIS"))

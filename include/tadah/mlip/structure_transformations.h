@@ -29,6 +29,24 @@ public:
   static void scale(Structure &st, double factor);
 
   /**
+   * Uniform length rescale: the physical effect of viewing the same configuration
+   * at a different length scale. Suitable for the LSCALE feature, where DFT data
+   * is reinterpreted at the experimental scale.
+   *
+   *   cell    -> s * cell
+   *   pos     -> s * pos
+   *   energy  -> energy        (invariant)
+   *   force   -> force / s     (chain rule on E(r))
+   *   stress  -> stress        (Tadah stores the virial V*sigma_Cauchy with units
+   *                             of energy; under V -> s^3 V and sigma_Cauchy -> sigma/s^3
+   *                             the product is invariant)
+   *
+   * Throws std::invalid_argument if s <= 0, std::runtime_error if the resulting
+   * cell is near-singular.
+   */
+  static void rescaleLength(Structure &st, double s);
+
+  /**
    * Scales the cell to achieve a target volume [Å^3].
    * factor = cbrt(targetVolume / currentVolume).
    * Then calls scale(st, factor).

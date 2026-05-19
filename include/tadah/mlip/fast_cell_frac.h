@@ -43,7 +43,8 @@ public:
         head_.assign(std::size_t(nx_*ny_*nz_), -1);
         next_.assign(N,-1);
 
-        Cinv_ = st.cell.inverse();
+        // Rows-as-lattice-vectors convention: r = cell^T * frac, so frac = (cell^T)^{-1} * r.
+        Cinv_ = st.cell.transpose().inverse();
         a_ = st.cell.row(0);  b_ = st.cell.row(1);  c_ = st.cell.row(2);
 
         f_.resize(N);

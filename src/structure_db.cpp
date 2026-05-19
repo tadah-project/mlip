@@ -24,7 +24,7 @@ void StructureDB::add(const std::string fn) {
     structures.push_back(Structure());
     int t = structures.back().read(ifs);
 
-    // did we read structure succesfully?
+    // did we read structure successfully?
     // if not remove last object from the list
     if (t==1) structures.pop_back();
 
@@ -48,7 +48,7 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
     structures.push_back(Structure());
     int t = structures.back().read(ifs);
 
-    // did we read structure succesfully?
+    // did we read structure successfully?
     // if not remove last object from the list
     if (t==1) structures.pop_back();
 

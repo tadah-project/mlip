@@ -117,14 +117,14 @@ void DataSplitEngine::calculateSizes(const core::Context &taskContext) {
   if (taskContext.get<bool>("EVEN")) {
     sizes = core::divide_into_parts(inStdb.size(),outFilesSize);
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "Spliting evenly. Resulting sizes: ", sizes);
+        "Splitting evenly. Resulting sizes: ", sizes);
   }
   else if (taskContext.contains("PERCENT")) {
     sizes.resize(taskContext.size("PERCENT"));
     taskContext.get<std::vector<size_t>>("PERCENT", sizes);
     sizes = core::divide_by_percentage(inStdb.size(),sizes);
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "Spliting by percentage. Resulting sizes: ", sizes);
+        "Splitting by percentage. Resulting sizes: ", sizes);
   }
   else if (taskContext.contains("CHUNK")) {
     sizes.resize(outFilesSize);

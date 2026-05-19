@@ -17,7 +17,7 @@ public:
                                                        //
   /** Periodic image flag for neigherest neighbours.
    *
-   * Indicate which periodic image the neigbouring atom belongs to.
+   * Indicate which periodic image the neighbouring atom belongs to.
    *
    * Example in two dimensions for illustration purposes:
    *

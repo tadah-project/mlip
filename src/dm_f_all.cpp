@@ -4,9 +4,13 @@
 namespace tadah {
 namespace mlip {
 
-template<> tadah::core::Registry<DM_Function_Base>::Map tadah::core::Registry<DM_Function_Base>::registry{};
-template<> tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::Map
-  tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::registry{};
+template<>
+tadah::core::Registry<DM_Function_Base>::Map& tadah::core::Registry<DM_Function_Base>::registry =
+  tadah::core::Registry<tadah::mlip::DM_Function_Base>::instance();
+template<>
+tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::Map&
+  tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::registry =
+  tadah::core::Registry<tadah::mlip::DM_Function_Base,const tadah::core::Context&>::instance();
 
 tadah::core::Registry<DM_Function_Base>::Register<DM_BF_Linear> DM_BF_Linear_1( "BF_Linear" );
 tadah::core::Registry<DM_Function_Base,const tadah::core::Context&>::Register<DM_BF_Linear> DM_BF_Linear_2( "BF_Linear" );

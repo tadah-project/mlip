@@ -67,6 +67,22 @@ void StructureTransformation::scale(Structure &st, double factor)
   checkNearSingular(st);
 }
 
+void StructureTransformation::rescaleLength(Structure &st, double s)
+{
+  if (s <= 0.0) {
+    throw std::invalid_argument("rescaleLength factor must be positive.");
+  }
+  st.cell = s * st.cell;
+  const double inv_s = 1.0 / s;
+  for (auto &atom : st.atoms) {
+    atom.position = s * atom.position;
+    atom.force    = inv_s * atom.force;
+  }
+  // Energy and stored virial stress are invariant under uniform length rescaling.
+  // (Tadah's stress is the virial V * sigma_Cauchy with units of energy.)
+  checkNearSingular(st);
+}
+
 void StructureTransformation::scaleToVolume(Structure &st, double targetVolume)
 {
   if (targetVolume <= 0.0) {
@@ -205,10 +221,10 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
   if ((h==0) && (k==0) && (l==0)) {
     throw std::invalid_argument("Miller indices (0,0,0) do not define a plane.");
   }
-  // Build a1,a2,a3 from st.cell columns:
-  tadah::core::Vec3d a1(st.cell(0,0), st.cell(1,0), st.cell(2,0));
-  tadah::core::Vec3d a2(st.cell(0,1), st.cell(1,1), st.cell(2,1));
-  tadah::core::Vec3d a3(st.cell(0,2), st.cell(1,2), st.cell(2,2));
+  // Build a1,a2,a3 from st.cell rows:
+  tadah::core::Vec3d a1 = st.cell.row(0);
+  tadah::core::Vec3d a2 = st.cell.row(1);
+  tadah::core::Vec3d a3 = st.cell.row(2);
 
   tadah::core::Vec3d crossA2A3 = a2.cross(a3);
   double denomA1  = a1*crossA2A3;
@@ -283,14 +299,16 @@ void StructureTransformation::remapToCell(Structure &st)
   if (std::fabs(vol) < 1e-14) {
     throw std::runtime_error("Volume is near zero, cannot remap to cell.");
   }
-  tadah::core::Matrix3d invCell = st.cell.inverse();
+  // Rows-as-lattice-vectors convention: r = cell^T * frac, so frac = (cell^T)^{-1} * r.
+  tadah::core::Matrix3d invCellT = st.cell.transpose().inverse();
 
   for (auto &atom : st.atoms) {
-    tadah::core::Vec3d frac = invCell * atom.position;
+    tadah::core::Vec3d frac = invCellT * atom.position;
     for (int i=0; i<3; i++) {
       frac[i] -= std::floor(frac[i]);
     }
-    atom.position = st.cell * frac;
+    // r[k] = sum_j frac[j] * cell(j, k)
+    atom.position = st.cell.transpose() * frac;
   }
 }
 
@@ -305,14 +323,14 @@ void StructureTransformation::addAtom(
 
   if (useRandomPosition) {
     // place randomly in [0,1) fractional, then convert => Cartesian
-    tadah::core::Matrix3d invCell = st.cell.inverse();
     double vol = StructureProperties::getVolume(st);
     if (std::fabs(vol) < 1e-14) {
       throw std::runtime_error("Cannot add atom randomly: volume near zero.");
     }
 
     tadah::core::Vec3d frac(rand01(), rand01(), rand01());
-    newAtom.position = st.cell * frac;
+    // Rows-as-lattice-vectors: r = cell^T * frac.
+    newAtom.position = st.cell.transpose() * frac;
   } else {
     newAtom.position = pos;
   }

@@ -81,13 +81,13 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
     size_t N = taskContext.get<size_t>("UNIFORM");
     size_t total = inStdb.size();
     if (N>total) throw std::runtime_error(
-        "Selected number is larger than total number of configurations availble.");
+        "Selected number is larger than total number of configurations available.");
   }
   if (taskContext.contains("RANDOM")) {
     size_t N = taskContext.get<size_t>("RANDOM");
     size_t total = inStdb.size();
     if (N>total) throw std::runtime_error(
-        "Selected number is larger than total number of configurations availble.");
+        "Selected number is larger than total number of configurations available.");
   }
   if (taskContext.contains("INDEX")) {
     if (!isIndexParsed) parseIndices(taskContext);

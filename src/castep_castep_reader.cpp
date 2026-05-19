@@ -163,9 +163,10 @@ void CastepCastepReader::parse_data() {
     }
     // We have to compute absolute positions here from temporary fractional positions
     // In case of volume-only relaxation fractional positions are reported only once
+    // Rows-as-lattice-vectors: r = cell^T * frac.
     s.atoms.resize(atoms.size());
     for (size_t i = 0; i < atoms.size(); ++i) {
-      s.atoms[i].position = s.cell * atoms[i].position;
+      s.atoms[i].position = s.cell.transpose() * atoms[i].position;
       s.atoms[i].force = atoms[i].force;
       s.atoms[i].symbol = atoms[i].symbol;
     }
@@ -273,7 +274,8 @@ void CastepCastepReader::parse_data() {
       
       jumpNLines(stream, 2);
 
-      // Read the 3 lattice vectors
+      // Read the 3 lattice vectors. Each row of the .castep file is a lattice
+      // vector a_i; store as row i of cell.
       for (int i = 0; i < 3; ++i) {
         if (!std::getline(stream, line)) {
           std::cerr << "Warning: Unexpected end of file while reading lattice vectors at row "
@@ -282,7 +284,7 @@ void CastepCastepReader::parse_data() {
         }
         ++line_counter;
         std::istringstream iss(line);
-        if (!(iss >> s.cell(0, i) >> s.cell(1, i) >> s.cell(2, i))) {
+        if (!(iss >> s.cell(i, 0) >> s.cell(i, 1) >> s.cell(i, 2))) {
           std::cerr << "Warning: Failed to parse lattice vector at row "
                     << i << " (line: " << line_counter << ")." << std::endl;
           break;
@@ -379,7 +381,7 @@ void CastepCastepReader::parse_data() {
       if (debug) std::cout << "reverting to earlier contexturation" << std::endl;
       for (int i = 0; i < 30; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Failed skiping over revered contexturation " << line_counter << ")." << std::endl;
+          std::cerr << "Warning: Failed skipping over reversed configuration " << line_counter << ")." << std::endl;
           break;
         }
         ++line_counter;

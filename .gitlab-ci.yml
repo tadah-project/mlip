@@ -1,7 +1,9 @@
 stages:
+  - lint
   - build_debug
   - build_release
   - trigger
+  - release
 
 cache:
     key: "build-cache-$CI_COMMIT_REF_SLUG"
@@ -18,29 +20,77 @@ build_debug:
   stage: build_debug
   script:
     - cd ${DEBUG_DIR}
-    - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DBUILD_TESTING=ON
+    - find . -name CMakeCache.txt -delete
+    - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DBUILD_TESTING=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
     - cd ${DEBUG_DIR}
     - make test
-    - cd ..; gcovr -e '.*tests.*|.*lib.*|.*utils.*|build' -r .
+    - cd ..; gcovr -e '.*tests.*|external|.*/_deps/.*|.*utils.*|build' -r .
   coverage: /^TOTAL.*\s+(\d+\%)$/
 
 build_release_shared:
   stage: build_release
+  resource_group: build_release
   script:
     - cd ${RELEASE_SHARED_DIR}
-    - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}
+    - find . -name CMakeCache.txt -delete
+    - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
 
 build_release_static:
   stage: build_release
+  resource_group: build_release
   script:
     - cd ${RELEASE_STATIC_DIR}
-    - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}
+    - find . -name CMakeCache.txt -delete
+    - cmake ../.. -DCMAKE_BUILD_TYPE=Release -DTADAH_ENABLE_OPENMP=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
 
 trigger_job:
   stage: trigger
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_BRANCH
   trigger:
     project: tadah/tadah.mlip
     branch: $CI_COMMIT_REF_NAME
+
+# ---- Lint (codespell) ---------------------------------------------------
+lint_codespell:
+  stage: lint
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - |
+      if ! command -v codespell; then
+        python3 -m ensurepip --user --upgrade >/dev/null 2>&1 || true
+        python3 -m pip install --user codespell >/dev/null 2>&1 || {
+          echo "[lint_codespell] codespell unavailable in this runner image; skipping"
+          exit 0
+        }
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+      codespell --skip='./build*,./external,./_deps,./tests/data,./tests/tests_data,./tests/catch2' --ignore-words-list='daed,struc,smae,eCounter,ue,cNa,re-use,re-uses,re-used,re-using,nd,SEH' || true
+  allow_failure: true
+
+# ---- Source-tarball release (tag-gated) --------------------------------
+release_tarball:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - export TARBALL="${CI_PROJECT_NAME}-${CI_COMMIT_TAG}.tar.gz"
+    - git archive --format=tar.gz
+        --prefix="${CI_PROJECT_NAME}-${CI_COMMIT_TAG}/"
+        -o "${TARBALL}" HEAD
+    - 'curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN"
+        --upload-file "${TARBALL}"
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/${CI_COMMIT_TAG}/${TARBALL}"'
+  artifacts:
+    paths:
+      - "*.tar.gz"
+    expire_in: 1 week

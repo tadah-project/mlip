@@ -66,7 +66,7 @@ struct StructureDB {
   /** Add all structures from a file */
   void add(const std::string fn);
 
-  /** Add N structures from a file begining from first index.
+  /** Add N structures from a file beginning from first index.
      *
      * Indexing starts from zero, i.e.
      * first=0 corresponds to the first structure in the file.

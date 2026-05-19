@@ -1,0 +1,40 @@
+  Synthetic minimal OUTCAR with a sheared cell for the cell-convention test.
+  a1 = ( 2.5, 0.0, 0.0)
+  a2 = ( 0.5, 2.0, 0.0)
+  a3 = ( 0.0, 0.0, 3.0)
+  Volume = 15.0 (det of the 3x3 with rows = a1, a2, a3)
+
+   VRHFIN =Ta:  5p6s5d
+   number of dos      NEDOS =    301   number of ions     NIONS =      1
+   ions per type =               1
+  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)
+  ---------------------------------------------------
+  FORCE on cell =-STRESS in cart. coord.  units (eV):
+  Total      0.00000      0.00000      0.00000      0.00000      0.00000      0.00000
+  in kB       0.00000      0.00000      0.00000      0.00000      0.00000      0.00000
+
+ VOLUME and BASIS-vectors are now :
+ -----------------------------------------------------------------------------
+  energy-cutoff  :      630.00
+  volume of cell :       15.00
+      direct lattice vectors                 reciprocal lattice vectors
+     2.500000000  0.000000000  0.000000000     0.400000000  0.000000000  0.000000000
+     0.500000000  2.000000000  0.000000000     0.000000000  0.500000000  0.000000000
+     0.000000000  0.000000000  3.000000000     0.000000000  0.000000000  0.333333333
+
+ POSITION                                       TOTAL-FORCE (eV/Angst)
+ -----------------------------------------------------------------------------------
+      0.00000      0.00000      0.00000        -0.000017      0.000053     -0.000056
+ -----------------------------------------------------------------------------------
+    total drift:                                0.000004     -0.000012      0.000000
+
+
+--------------------------------------------------------------------------------------------------------
+
+
+
+  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)
+  ---------------------------------------------------
+  free  energy   TOTEN  =      -42.000000 eV
+
+  energy  without entropy=     -42.000000  energy(sigma->0) =     -42.000000

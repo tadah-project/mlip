@@ -64,6 +64,106 @@ TEST_CASE("StructureTransformation scale()", "[transform]")
     }
 }
 
+TEST_CASE("StructureTransformation rescaleLength()", "[transform]")
+{
+    Structure st = makeSimpleStructure();
+
+    SECTION("Invalid rescale factor throws std::invalid_argument") {
+        REQUIRE_THROWS_AS(StructureTransformation::rescaleLength(st, 0.0), std::invalid_argument);
+        REQUIRE_THROWS_AS(StructureTransformation::rescaleLength(st, -1.0), std::invalid_argument);
+    }
+
+    SECTION("s = 1 is identity") {
+        // give atoms forces and stress so we can detect changes
+        st.atoms[0].force = Vec3d(1.0, 2.0, 3.0);
+        st.atoms[1].force = Vec3d(-0.5, 0.0, 0.5);
+        st.stress(0,0) = 1.0;
+        st.stress(1,2) = -0.25;
+        st.energy = -7.0;
+
+        const Vec3d pos0_before = st.atoms[0].position;
+        const Vec3d pos1_before = st.atoms[1].position;
+        const Matrix3d cell_before = st.cell;
+
+        StructureTransformation::rescaleLength(st, 1.0);
+
+        REQUIRE(st.cell(0,0) == Approx(cell_before(0,0)));
+        REQUIRE(st.cell(1,1) == Approx(cell_before(1,1)));
+        REQUIRE(st.cell(2,2) == Approx(cell_before(2,2)));
+        REQUIRE(st.atoms[0].position[0] == Approx(pos0_before[0]));
+        REQUIRE(st.atoms[1].position[0] == Approx(pos1_before[0]));
+        REQUIRE(st.atoms[0].force[0] == Approx(1.0));
+        REQUIRE(st.atoms[0].force[1] == Approx(2.0));
+        REQUIRE(st.atoms[0].force[2] == Approx(3.0));
+        REQUIRE(st.atoms[1].force[2] == Approx(0.5));
+        REQUIRE(st.stress(0,0) == Approx(1.0));
+        REQUIRE(st.stress(1,2) == Approx(-0.25));
+        REQUIRE(st.energy == Approx(-7.0));
+    }
+
+    SECTION("Length rescale transforms positions/cell/forces; stress and energy invariant") {
+        st.atoms[0].force = Vec3d(1.0, 2.0, 3.0);
+        st.atoms[1].force = Vec3d(-0.5, 0.0, 0.5);
+        st.stress.set_zero();
+        st.stress(0,0) = 1.0;
+        st.stress(1,1) = 1.5;
+        st.stress(2,2) = -0.4;
+        st.energy = -7.5;
+
+        const double s = 1.05;
+        StructureTransformation::rescaleLength(st, s);
+
+        // cell scaled
+        REQUIRE(st.cell(0,0) == Approx(2.0 * s));
+        REQUIRE(st.cell(1,1) == Approx(2.0 * s));
+        REQUIRE(st.cell(2,2) == Approx(2.0 * s));
+
+        // positions scaled
+        REQUIRE(st.atoms[0].position[0] == Approx(0.0));
+        REQUIRE(st.atoms[1].position[0] == Approx(1.0 * s));
+        REQUIRE(st.atoms[1].position[1] == Approx(1.0 * s));
+        REQUIRE(st.atoms[1].position[2] == Approx(1.0 * s));
+
+        // forces divided by s
+        REQUIRE(st.atoms[0].force[0] == Approx(1.0 / s));
+        REQUIRE(st.atoms[0].force[1] == Approx(2.0 / s));
+        REQUIRE(st.atoms[0].force[2] == Approx(3.0 / s));
+        REQUIRE(st.atoms[1].force[0] == Approx(-0.5 / s));
+        REQUIRE(st.atoms[1].force[2] == Approx(0.5 / s));
+
+        // stress invariant (Tadah stores virial in energy units)
+        REQUIRE(st.stress(0,0) == Approx(1.0));
+        REQUIRE(st.stress(1,1) == Approx(1.5));
+        REQUIRE(st.stress(2,2) == Approx(-0.4));
+
+        // energy invariant
+        REQUIRE(st.energy == Approx(-7.5));
+
+        // volume scales by s^3
+        const double newVol = StructureProperties::getVolume(st);
+        REQUIRE(newVol == Approx(8.0 * s * s * s));
+    }
+
+    SECTION("Round trip s and 1/s recovers original") {
+        st.atoms[0].force = Vec3d(1.0, 2.0, 3.0);
+        st.stress(0,0) = 1.234;
+        st.energy = -3.14;
+
+        const Vec3d pos1_before = st.atoms[1].position;
+        const Matrix3d cell_before = st.cell;
+        const double s = 1.05;
+
+        StructureTransformation::rescaleLength(st, s);
+        StructureTransformation::rescaleLength(st, 1.0 / s);
+
+        REQUIRE(st.cell(0,0) == Approx(cell_before(0,0)));
+        REQUIRE(st.atoms[1].position[0] == Approx(pos1_before[0]));
+        REQUIRE(st.atoms[0].force[0] == Approx(1.0));
+        REQUIRE(st.stress(0,0) == Approx(1.234));
+        REQUIRE(st.energy == Approx(-3.14));
+    }
+}
+
 TEST_CASE("StructureTransformation scaleToVolume()", "[transform]")
 {
     Structure st = makeSimpleStructure();

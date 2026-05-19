@@ -1,0 +1,44 @@
+# Reference numbers for bench_dphi_dtheta_walk
+#
+# Captured 2026-05-12 on Linux Xeon w7-2475X (single-socket), Phase 2F
+# baseline. Tree state: HPO Phase 2F (cost-aware scheduling) merged,
+# per-pair kernel sibling work NOT applied. Build: cmake mkz4_develop
+# preset, RelWithDebInfo, OPENMP enabled, gcc 13.
+#
+# Bench params (see bench_dphi_dtheta_walk.cpp):
+#   N_STRUCT = 10
+#   n_atoms_per_struct = 4
+#   rcut = 3.5 Å
+#   Lmax = 1
+#   n_cols = 6
+#   ITERS_SINGLE = 100
+#   ITERS_LOOP = 10
+#   N_PREFS_LOOP = 29
+#
+# Format: median is the within-run median across iterations. Use the
+# median_ms column for regression diffs; mean and min are sanity checks.
+# Future kernel optimisations (per-pair SIMD, F::calc_dF_dtheta fast
+# paths, etc.) should reduce the walk_median_ms / per_theta_median_ms
+# columns below.
+
+[BENCH_DPHI_WALK] config n_struct=10 n_atoms_per_struct=4 n_cols=6 rcut=3.50 Lmax=1
+[BENCH_DPHI_WALK] case=combined_dm_mblip theta=CGRIDMB[1] iters=100 median_ms=0.0628 mean_ms=0.0634 min_ms=0.0623
+[BENCH_DPHI_WALK] case=cached_dm_mblip theta=CGRIDMB[1] iters=100 cache_median_ms=0.0076 walk_median_ms=0.0556 walk_mean_ms=0.0560 walk_min_ms=0.0551
+[BENCH_DPHI_WALK] case=full_loop_emulation n_theta=29 iters=10 median_ms=1.7534 mean_ms=1.7558 min_ms=1.7461 per_theta_median_ms=0.0605
+
+# Notes on the numbers above:
+# - combined vs cached on this tiny config: cache trims ~12% off the
+#   per-call walk time (0.063 → 0.056 ms). The cache build (0.008 ms)
+#   amortises across all 29 θ in the live loop: 0.008 ms / 29 = 0.0003 ms
+#   per θ overhead.
+# - full_loop_emulation per_theta_median is 0.061 ms, close to the
+#   cached_dm_mblip walk_median (0.056 ms). The small difference
+#   reflects the palette of θ keys (mix of RCUTMB, CEMBFUNC, SEMBFUNC,
+#   WATOM, CGRIDMB, SGRIDMB) — not all kernel branches are equally
+#   expensive.
+# - These per-θ times are 4-5 orders of magnitude smaller than the
+#   live BASINSv2 per-θ wall (~2.4 s). The live config has n_train=1325
+#   structs (vs 10 here) and n_atoms ~50-100 per struct (vs 4 here),
+#   plus a larger n_cols (12 vs 6). The bench is a microbench — its
+#   value is catching kernel-level regressions, not predicting live
+#   wall time.

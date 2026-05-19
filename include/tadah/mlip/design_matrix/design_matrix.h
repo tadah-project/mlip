@@ -5,6 +5,7 @@
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/design_matrix/column_block.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -47,7 +48,7 @@ public:
  *     | force on the 1st atom in the x-dir
  *     | force on the 1st atom in the y-dir
  *     | force on the 1st atom in the z-dir
- *     | force on the 2st atom in the x-dir
+ *     | force on the 2nd atom in the x-dir
  *     | ...
  *     | force on the n-th atom in the z-dir
  *     | stress xx
@@ -77,6 +78,14 @@ public:
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws;
   bool w_copy_=false;  // keep copy of Phi and T witoout weights
+
+  /** \brief Per-block column layout populated at build()-time.
+   *
+   *  Empty until build() runs at least once. Consumed by Phase 5
+   *  pre-flight audit and Phase 6 per-iter health monitor.
+   */
+  ColumnLayout layout_;
+  const ColumnLayout& layout() const { return layout_; }
 
   double e_std_dev=1;
   double f_std_dev=1;
@@ -111,6 +120,18 @@ public:
       f_std_dev = context.get<double>("FSTDEV");
     if (context.contains("SSTDEV"))
       context.get<double[6]>("SSTDEV", s_std_dev);
+  }
+
+  /** Refresh per-iter scalars from (possibly updated) context.
+   *  Intended for HPO reinit paths where loss-weighting keys may
+   *  change between iters but the DesignMatrix object is reused. */
+  void refresh_context_scalars(const tadah::core::Context &c) {
+    eweightglob = c.get<double>("EWEIGHT");
+    fweightglob = c.get<double>("FWEIGHT");
+    sweightglob = c.get<double>("SWEIGHT");
+    if (c.contains("ESTDEV")) e_std_dev = c.get<double>("ESTDEV");
+    if (c.contains("FSTDEV")) f_std_dev = c.get<double>("FSTDEV");
+    if (c.contains("SSTDEV")) c.get<double[6]>("SSTDEV", s_std_dev);
   }
 
   // Constructor without workspaceManager_ parameter (delegating constructor)
@@ -178,6 +199,27 @@ public:
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
+
+    // Phase 2: capture per-block column layout and cross-check it
+    // against the canonical column count `cols` (set by calc_mn from
+    // f.get_phi_cols(context)). A disagreement here signals a stale
+    // descriptor / dsize mismatch and the audit pipeline (Phase 5)
+    // would silently flag every block as wrong, so fail loud.
+    //
+    // DC_Base's default layout() returns an empty ColumnLayout; in that
+    // case we leave layout_ empty and skip validation (legacy callers
+    // stay byte-identical). Concrete DescriptorsCalc<...>::layout()
+    // overrides return a populated layout that validate() must accept.
+    layout_ = dc.layout(context);
+    if (!layout_.blocks.empty()) {
+      const std::string err = layout_.validate(cols);
+      if (!err.empty()) {
+        throw std::runtime_error(
+            "DesignMatrix::build: " + err +
+            " — descriptors_calc layout disagrees with materialised matrix width.");
+      }
+    }
+
     compute_stdevs(stdb);
     fill_T(stdb);
     compute_wfactors(stdb); // call after fill_T
@@ -374,7 +416,7 @@ private:
 
   void copyAndScale()
   {
-    // first copy scalled Phi to Phi_cpy and T to T_cpy
+    // first copy scaled Phi to Phi_cpy and T to T_cpy
     // followed by swapping pointers
     for (std::size_t j = 0; j < ws->Phi.cols(); ++j) {
       for (std::size_t i = 0; i < ws->Phi.rows(); ++i) {

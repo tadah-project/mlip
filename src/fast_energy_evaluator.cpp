@@ -1,6 +1,8 @@
 #include <vector>
 #include <cmath>
+#include <array>
 #include <tadah/core/core_types.h>
+#include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/fast_cell_frac.h>
@@ -33,7 +35,20 @@ operator()( const Structure&            st,
     const double rc2b_sq    = init2b ? std::pow(dc.d2b->get_rcut(),2) : 0.0;
     const double rcmb_sq    = initmb ? std::pow(dc.dmb->get_rcut(),2) : 0.0;
     const int    D          = int(dc.descriptor_size());
-    const bool   bias  = ctx.get<bool>("BIAS");
+    const std::size_t n_bias = core::n_intercept_columns(ctx);
+
+    // Precompute species → intercept-column index for O(1) lookup.
+    // MAX_Z covers all elements with Z < 128; unmapped Z gets -1.
+    constexpr int MAX_Z = 128;
+    std::array<int, MAX_Z> z_to_intercept{};
+    z_to_intercept.fill(-1);
+    if (n_bias > 0) {
+      for (std::size_t k = 0; k < n_bias; ++k) {
+        const std::string sym = ctx.get<std::string>("ATOM", k);
+        const int Z = core::PeriodicTable::find_by_symbol(sym).Z;
+        if (Z >= 0 && Z < MAX_Z) z_to_intercept[Z] = static_cast<int>(k);
+      }
+    }
 
         /* ----------------------------------------------------------------
        Decide search backend                                           */
@@ -63,9 +78,13 @@ operator()( const Structure&            st,
 #pragma omp for schedule(static)
           for(std::size_t i=0;i<st.natoms();++i)
           {
-            aed.set_zero(); if(bias) aed(0)=1.0;
-            if(initmb) rho.set_zero();
+            aed.set_zero();
             int Zi = st.atoms[i].Z;
+            if(n_bias > 0 && Zi >= 0 && Zi < MAX_Z) {
+              const int k = z_to_intercept[Zi];
+              if (k >= 0) aed(k) = 1.0;
+            }
+            if(initmb) rho.set_zero();
 
             cl.for_neigh(i, rc_sq, [&](std::size_t j,const Vec3d& del)
                 {
@@ -100,10 +119,12 @@ operator()( const Structure&            st,
           for(std::size_t i = 0; i < st.natoms(); ++i)
           {
             aed.set_zero();
-            if(bias) aed(0) = 1.0;
-            if(initmb)    rho.set_zero();
-
             const int Zi = st.atoms[i].Z;
+            if(n_bias > 0 && Zi >= 0 && Zi < MAX_Z) {
+              const int k = z_to_intercept[Zi];
+              if (k >= 0) aed(k) = 1.0;
+            }
+            if(initmb)    rho.set_zero();
 
             const std::size_t nn_i = tbl.nn_size(i);
             for(std::size_t k = 0; k < nn_i; ++k)

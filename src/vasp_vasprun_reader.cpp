@@ -197,7 +197,8 @@ void VaspVasprunReader::extract_basis_vectors_and_positions(rx::xml_node<> *stru
           std::stringstream ss(v_node->value());
           if (ss >> x >> y >> z) { // relative positions
             _s.add_atom(Atom(tadah::core::Element(atom_types[index]), x, y, z, 0, 0, 0));
-            _s.atoms.back().position = _s.cell * _s.atoms.back().position;  // convert to abs
+            // Rows-as-lattice-vectors: r = cell^T * frac.
+            _s.atoms.back().position = _s.cell.transpose() * _s.atoms.back().position;
           } else {
             std::cerr << "Error parsing atom positions." << std::endl;
           }

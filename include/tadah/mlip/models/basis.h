@@ -40,7 +40,7 @@ public:
     }
 
     if (counter < s) {
-      throw std::runtime_error("The number of requestd basis vectors is\n \
+      throw std::runtime_error("The number of requested basis vectors is\n \
 larger than the amount of available AEDs\n");
     }
 
@@ -78,7 +78,7 @@ from StDescriptorsDB. This is likely to be a bug.\n");
     }
 
     if (indices.size() < s) {
-      throw std::runtime_error("The number of requestd basis vectors is\n \
+      throw std::runtime_error("The number of requested basis vectors is\n \
 larger than the amount of available AEDs\n");
     }
 

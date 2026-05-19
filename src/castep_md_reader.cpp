@@ -85,7 +85,7 @@ void CastepMDReader::parse_data() {
   size_t force_idx=0;
 
   // skip header if exists also deal with the case 
-  // where there is no blank line at the begining of the .md file
+  // where there is no blank line at the beginning of the .md file
   std::string time;
   while (std::getline(stream, line)) {
     std::istringstream iss(line);
@@ -133,7 +133,8 @@ void CastepMDReader::parse_data() {
         continue;
       }
       std::istringstream iss(line);
-      if (!(iss >> s.cell(0,cell_idx) >> s.cell(1,cell_idx) >> s.cell(2,cell_idx)))
+      // CASTEP-MD writes each lattice vector a_i on its own line; store as row i of cell.
+      if (!(iss >> s.cell(cell_idx,0) >> s.cell(cell_idx,1) >> s.cell(cell_idx,2)))
         std::cerr << "Warning: Unexpected end of data when reading lattice vectors at row " << cell_idx << std::endl;
       cell_idx++;
       H_flag++;
@@ -213,7 +214,7 @@ void CastepMDReader::parse_data() {
     }
   }
 
-  // in case there is no blank line at the end we have to add last strcuture here
+  // in case there is no blank line at the end we have to add last structure here
   if (s.natoms() && !error && complete_structure) {
     postproc_structure(s);
   }
