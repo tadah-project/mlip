@@ -5,7 +5,7 @@
 
 # MLIP (engine library)
 
-Engine library of the [Tadah!](https://tadah.readthedocs.io/) MLIP
+Engine library of the [Tadah!](https://tadah.readthedocs.io/develop/) MLIP
 toolchain. Implements the engines that back every `tadah` subcommand:
 
 - **Training** — design-matrix construction, regression dispatch,
@@ -31,7 +31,7 @@ by the umbrella project
 [Tadah!MLIP](https://git.ecdf.ed.ac.uk/tadah/tadah.mlip), which links
 this library and provides the `tadah` CLI binary plus documentation.
 End users install the umbrella project — see the
-[installation guide](https://tadah.readthedocs.io/en/latest/installation.html).
+[installation guide](https://tadah.readthedocs.io/develop/installation.html).
 
 This repository is broken out separately so the hyperparameter
 optimisation engine [HPO](https://git.ecdf.ed.ac.uk/tadah/hpo)
