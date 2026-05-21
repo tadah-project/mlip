@@ -15,8 +15,8 @@ toolchain. Implements the engines that back every `tadah` subcommand:
 - **Data engines** — dataset conversion (CASTEP / VASP / AFLOW / COD /
   CIF / dataset readers), de-duplication, merging, splitting,
   sampling, weight rebalancing.
-- **Analysis engines** — basis-function and cutoff-function plots,
-  descriptor calculation.
+- **Analysis engines** — cutoff-function plots, descriptor
+  calculation.
 - **Properties engine** — pairwise energy curves.
 - **Load-time data transforms** — `LSCALE`, `ESHIFT` (explicit /
   ATOM / DBATOM), `EFILTER`, `FFILTER`, `WDBFILE`, `WDBFILE_AUTO`,
