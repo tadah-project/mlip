@@ -1,10 +1,10 @@
-# Contributing to Tadah!MLIP (engine library)
+# Contributing to MLIP (engine library)
 
 The full multi-repo contributor guide for the Tadah! project lives on
 the umbrella repository:
 <https://git.ecdf.ed.ac.uk/tadah/tadah.mlip/-/blob/develop/CONTRIBUTING.md>
 
-This file covers what is specific to the Tadah!MLIP engine library.
+This file covers what is specific to the MLIP engine library.
 Bug reports and feature requests on this module use the GitLab issue
 tracker on this project; cross-cutting changes (work that touches more
 than one Tadah! module) should be discussed on the umbrella project
@@ -24,8 +24,8 @@ build directory.
 ### Dependencies
 
 - C++17 compiler.
-- [Tadah!CORE](https://git.ecdf.ed.ac.uk/tadah/core) and
-  [Tadah!MODELS](https://git.ecdf.ed.ac.uk/tadah/models) — fetched
+- [CORE](https://git.ecdf.ed.ac.uk/tadah/core) and
+  [MODELS](https://git.ecdf.ed.ac.uk/tadah/models) — fetched
   automatically.
 - [Boost.Iostreams](https://www.boost.org/) (linked at link time).
 - [Gemmi](https://gemmi.readthedocs.io/) — fetched automatically
