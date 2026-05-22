@@ -1,6 +1,7 @@
 #include "tadah/core/element.h"
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/core/utils.h>
 #include <cstdio>
 #include <cctype>   // For std::isspace
 namespace tadah {
@@ -226,19 +227,28 @@ void StructureDB::check_atom_key(tadah::core::Context &context, std::set<tadah::
   }
 }
 void StructureDB::check_watom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements) {
-  bool error=false;
-
   if (context.contains("WATOM")) {
-    // user set this key so here we check does it correspond to unique_elements
-    if (unique_elements.size()!=context.size("WATOM")) {
-      error=true;
+    const size_t n = context.size("WATOM");
+    if (n == 0) {
+      throw std::runtime_error("\nWATOM is empty.\n");
     }
-    if (error) {
-      throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and WATOM in the context file.\n"
-          "Please either update the WATOM in the context file or remove WATOM\n"
-          "key completely. In the latter case Tadah! will use default values.\n"
-          );
+    const bool per_species =
+      tadah::core::is_number(context.get<std::string>("WATOM", 0));
+    if (per_species) {
+      if (unique_elements.size() != n) {
+        throw std::runtime_error("\n"
+            "Mismatch between elements in datasets and WATOM in the context file.\n"
+            "Please either update the WATOM in the context file or remove WATOM\n"
+            "key completely. In the latter case Tadah! will use default values.\n"
+            );
+      }
+    } else {
+      if (n % 3 != 0) {
+        throw std::runtime_error("\n"
+            "WATOM pair format expects '<sym> <sym> <value>' triples.\n"
+            "Got a number of entries that is not a multiple of three.\n"
+            );
+      }
     }
   } else {
     for (const auto &s : unique_elements) context.add("WATOM", s.Z);
