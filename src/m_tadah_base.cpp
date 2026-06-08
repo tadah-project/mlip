@@ -71,7 +71,7 @@ predict(const tadah::core::Context &c, StDescriptorsDB &st_desc_db, const Struct
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
 #ifdef _OPENMP
-  #pragma omp parallel for
+  #pragma omp parallel for schedule(guided)
 #endif
   for (size_t i=0; i<stdb.size(); ++i) {
     stdb_(i) = predict(c,st_desc_db(i), stdb(i));
@@ -85,7 +85,7 @@ predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc)
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
 #ifdef _OPENMP
-  #pragma omp parallel for
+  #pragma omp parallel for schedule(guided)
 #endif
   for (size_t i=0; i<stdb.size(); ++i) {
     stdb_(i) = predict(c, stdb(i), dc);

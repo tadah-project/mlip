@@ -181,7 +181,7 @@ public:
     }
     // loop over all structures and build
 #ifdef _OPENMP
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(guided)
 #endif
     for (size_t s=0; s<stdb.size(); ++s) {
       build(rows[s], stdb(s),st_desc_db(s));
@@ -240,7 +240,7 @@ public:
       }
     }
 #ifdef _OPENMP
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(guided)
 #endif
     for (size_t s=0; s<stdb.size(); ++s) {
       StDescriptors st_d = dc.calc(stdb(s));

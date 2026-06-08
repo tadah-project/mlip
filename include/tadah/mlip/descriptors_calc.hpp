@@ -392,7 +392,7 @@ StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) cons
   StDescriptorsDB st_desc_db(stdb, context);
 
 #ifdef _OPENMP
-  #pragma omp parallel for
+  #pragma omp parallel for schedule(guided)
 #endif
   for(size_t i=0; i<stdb.size(); ++i)
     if (context.get<bool>("DIMER",0))
