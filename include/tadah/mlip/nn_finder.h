@@ -57,6 +57,13 @@ public:
     void calc_binned(const Structure &st,  std::shared_ptr<NNTable> tbl, double cutoff) const;
 
     /**
+     * Populate `tbl->disp` with real-space displacements derived from
+     * `tbl->shift` and the structure's cell. Called by build() once the
+     * integer-triple shifts are finalised (i.e. after deduplication).
+     */
+    void populate_disp(const Structure &st, std::shared_ptr<NNTable> tbl) const;
+
+    /**
      * Construct with cutoff from context("RCUTMAX").
      */
     NNFinder() = default;

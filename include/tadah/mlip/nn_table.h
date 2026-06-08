@@ -36,6 +36,18 @@ public:
    */
     std::vector<std::vector<tadah::core::Vec3d>>shift; // [atom][k] → integer (n1,n2,n3)
 
+    /** Real-space neighbour displacement, precomputed at NN-build time as
+     *  shift[i][k][0]*cell.row(0) + shift[i][k][1]*cell.row(1) + shift[i][k][2]*cell.row(2).
+     *
+     *  Cached so Structure::nn_pos() can return
+     *      atoms[idx[i][k]].position + disp[i][k]
+     *  without re-multiplying the cell on every call. The shift cost
+     *  dominated the descriptor calc inner loops (~12% of CPU in perf
+     *  reports). Keeping the integer-triple `shift` alongside lets
+     *  downstream tests that depend on lattice-image identities keep
+     *  working. */
+    std::vector<std::vector<tadah::core::Vec3d>>disp;  // [atom][k] → real shift displacement
+
     NNTable()  = default;
     NNTable(const NNTable&)            = default;
     NNTable& operator=(const NNTable&) = default;

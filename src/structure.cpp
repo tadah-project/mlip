@@ -101,25 +101,15 @@ void Structure::remove_atom(const size_t i) {
 //   // (D) Final neighbor position = unshifted position + shiftDisp
 //   return posNeighbor + shiftDisp;
 // }
-tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const 
+tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const
 {
-  // (A) index of neighbor
-  const size_t neighborIndex    = nn->idx  [i][n];
-
-  // (B) that neighbor's base ("home cell") position
-  const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
-
-  // (C) Convert the stored shift -> real displacement
-  //     We said nn->shift[i][n] is the integer triple (n1,n2,n3).
-  const auto& shift = nn->shift[i][n];
-
-  // row-based multiplication
-  tadah::core::Vec3d shiftDisp;
-  shiftDisp[0] = shift[0]*cell(0,0) + shift[1]*cell(1,0) + shift[2]*cell(2,0);
-  shiftDisp[1] = shift[0]*cell(0,1) + shift[1]*cell(1,1) + shift[2]*cell(2,1);
-  shiftDisp[2] = shift[0]*cell(0,2) + shift[1]*cell(1,2) + shift[2]*cell(2,2);
-
-  // (D) final position
+  // Real-space displacement is precomputed at NN-build time
+  // (NNFinder::populate_disp). The old form computed
+  // shift[0]*cell.row(0) + shift[1]*cell.row(1) + shift[2]*cell.row(2)
+  // on every call which dominated descriptor-loop inner cost (~12% of
+  // total CPU in perf). The disp cache makes nn_pos a pure vector add.
+  const tadah::core::Vec3d &posNeighbor = atoms[nn->idx[i][n]].position;
+  const tadah::core::Vec3d &shiftDisp   = nn->disp[i][n];
   return posNeighbor + shiftDisp;
 }
 

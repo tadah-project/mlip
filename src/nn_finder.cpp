@@ -465,6 +465,32 @@ void NNFinder::deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl ) 
 }
 
 // ---------------------------------------------------------------------------
+void NNFinder::populate_disp(const Structure &st,
+                              std::shared_ptr<NNTable> tbl) const
+{
+  // Row-based cell layout matches existing nn_pos() math:
+  //   disp = shift[0]*row(0) + shift[1]*row(1) + shift[2]*row(2)
+  const double c00 = st.cell(0,0), c10 = st.cell(1,0), c20 = st.cell(2,0);
+  const double c01 = st.cell(0,1), c11 = st.cell(1,1), c21 = st.cell(2,1);
+  const double c02 = st.cell(0,2), c12 = st.cell(1,2), c22 = st.cell(2,2);
+
+  const size_t natoms = tbl->idx.size();
+  tbl->disp.assign(natoms, {});
+  for (size_t i = 0; i < natoms; ++i) {
+    const auto& sh_i = tbl->shift[i];
+    auto& dp_i = tbl->disp[i];
+    dp_i.resize(sh_i.size());
+    for (size_t k = 0; k < sh_i.size(); ++k) {
+      const double s0 = sh_i[k][0];
+      const double s1 = sh_i[k][1];
+      const double s2 = sh_i[k][2];
+      dp_i[k][0] = s0*c00 + s1*c10 + s2*c20;
+      dp_i[k][1] = s0*c01 + s1*c11 + s2*c21;
+      dp_i[k][2] = s0*c02 + s1*c12 + s2*c22;
+    }
+  }
+}
+
 void NNFinder::calc(Structure &st, double cutoff) const
 {
   st.nn = build(st, cutoff);
@@ -514,6 +540,10 @@ NNFinder::NNTablePtr NNFinder::build(Structure& st, double cutoff) const
       calc_binned(st,tbl, cutoff);
     }
 
+    // Cache real-space displacement per (i, k) so Structure::nn_pos() can
+    // avoid the cell-row multiplication on every descriptor-loop visit.
+    populate_disp(st, tbl);
+
     return tbl;
 }
 NNFinder::NNTablePtr
@@ -528,6 +558,8 @@ NNFinder::build(const Structure& st, double cutoff) const
         calc_naive(st, tbl, cutoff);
     } else
         calc_binned(st, tbl, cutoff);
+
+    populate_disp(st, tbl);
 
     return tbl;
 }
