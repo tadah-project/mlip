@@ -2,6 +2,7 @@
 #include <tadah/mlip/engines/engine_factory.h>
 
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/engines/refit_engine.h>
 #include <tadah/mlip/engines/predict_engine.h>
 #include <tadah/mlip/engines/explain_engine.h>
 #include <tadah/mlip/engines/data_convert_engine.h>
@@ -31,6 +32,7 @@ namespace engines {
 
 void registerAllMLIPEngines() {
   EngineFactory::registerEngine("TRAIN", [](){ return std::make_unique<TrainEngine>(); });
+  EngineFactory::registerEngine("REFIT", [](){ return std::make_unique<RefitEngine>(); });
   EngineFactory::registerEngine("PREDICT", [](){ return std::make_unique<PredictEngine>(); });
   EngineFactory::registerEngine("EXPLAIN", [](){ return std::make_unique<ExplainEngine>(); });
 
