@@ -135,32 +135,33 @@ void write_hpotarget(const std::string &path, const Context &pot,
   os << "# ---- two-body shape ----\n";
   emit_optim_scalar(os, "RCUT2B", rcut, pct, 0.0, true);
   auto read_vec = [&pot](const std::string &k) {
-    tadah::core::v_type v(pot.size(k));
+    if (!pot.contains(k)) return tadah::core::v_type{};  // knot pots carry
+    tadah::core::v_type v(pot.size(k));                  // no width keys
     pot.get(k, v);
     return v;
   };
-  // Knot families: SGRID* entries are a PURE GAUGE ((c,eta)->(c s^k, eta/s)
-  // leaves the function invariant; pinned 1.0 by the fitter) — an OPTIM
-  // block on them searches a degenerate direction. Warn in the file.
+  // Knot families carry NO width keys (eta is a pure gauge — the pot has
+  // no SGRID2B/SGRIDMB/SEMBFUNC entries), so no degenerate OPTIM blocks can
+  // exist; emit_optim_group skips empty vectors. Leave a one-line note.
   const bool knot_family =
       refit.family() == models::EAMRefit::Family::Knot5;
   const char *gauge_note =
-      "# NOTE (knot family): SGRID* widths are a pure gauge (pinned 1.0) —\n"
-      "# do NOT enable their OPTIM blocks; tune CGRID* knots and FIXWEIGHT.\n";
+      "# NOTE (knot family): no width keys exist (eta is a pure gauge);\n"
+      "# tune the CGRID* knot positions, AMPGRIDMB and FIXWEIGHT.\n";
   if (knot_family) os << gauge_note;
   emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
   emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
 
   os << "# ---- many-body density shape (baked) ----\n";
   emit_optim_scalar(os, "RCUTMB", rcut, pct, 0.0, true);
-  emit_optim_group(os, "CGRIDRHOMB", read_vec("CGRIDRHOMB"), pct, false, true);
-  emit_optim_group(os, "SGRIDRHOMB", read_vec("SGRIDRHOMB"), pct, true, true);
-  emit_optim_group(os, "AGRIDMB", read_vec("AGRIDMB"), pct, false, true);
+  emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
+  emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
+  emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
 
   os << "# ---- many-body embedding shape ----\n";
   if (knot_family) os << gauge_note;
-  emit_optim_group(os, "CGRIDFMB", read_vec("CGRIDFMB"), pct, false, true);
-  emit_optim_group(os, "SGRIDFMB", read_vec("SGRIDFMB"), pct, true, true);
+  emit_optim_group(os, "CEMBFUNC", read_vec("CEMBFUNC"), pct, false, true);
+  emit_optim_group(os, "SEMBFUNC", read_vec("SEMBFUNC"), pct, true, true);
 
   os << "# ---- linear coefficients (M_BLR weights, held via FIXWEIGHT) ----\n";
   emit_optim_group(os, "FIXWEIGHT", read_vec("FIXWEIGHT"), pct, false);
