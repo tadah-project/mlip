@@ -309,7 +309,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const std::string eam_path  = c.get<std::string>("EAM");
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
   const std::string setfl_out = get_str(c, "SETFL_OUT", "refit.eam");
-  const std::string hpo_out   = get_str(c, "HPOTARGET", "refit.hpotarget");
+  const std::string hpo_out   = get_str(c, "HPOFILEOUT", "refit.hpotarget");
   const std::string level     = get_str(c, "REFIT_LEVEL", "balanced");
   // Default basis: Knot5 in compact mode (the measured-best family: worst-
   // case |dCij| 1.6 GPa vs Blip's 2.3 across the 5 reference EAMs, every
@@ -328,11 +328,21 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // ---- read the tabulated EAM ----
   models::EAMSetflIO eam;
   eam.read_setfl(eam_path);
-  eam.build_splines();
   core::Logger::instance().log(core::LogLevel::INFO,
       "tadah refit: read " + eam_path + " element=" + eam.element() +
       " nr=" + std::to_string(eam.nr()) + " nrho=" + std::to_string(eam.nrho()) +
       " rcut=" + std::to_string(eam.rcut()));
+
+  // ---- crystal gate (fail fast, before any fitting work): the self-test
+  //      (and, in compact mode, the rung-selection metric and reachability
+  //      window) needs a recognised ground-state lattice. The setfl label is
+  //      normalised to lower case on read, so FCC/BCC/HCP are accepted;
+  //      anything else (or a0<=0, e.g. a "NONE 0.0" header) is a hard stop with
+  //      a fix hint rather than a silently-skipped self-test. Shared by dense
+  //      and compact modes (compact_fit runs later).
+  models::eam_lattice::require_crystal(eam.lattice_raw(), eam.lattice_param());
+
+  eam.build_splines();
 
   // ---- configure + fit ----
   models::EAMRefitConfig cfg;
@@ -481,11 +491,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   models::EAMRefit &refit = *refit_ptr;
 
   // ---- report the automatic reachability/placement decisions ----
+  // (the lattice is guaranteed recognised by the crystal gate above)
   if (cfg.placement != "uniform") {
-    if (!refit.lattice_known())
-      core::Logger::instance().log(core::LogLevel::WARNING,
-          "tadah refit: header lattice '" + eam.lattice() +
-          "' not bcc/fcc/hcp — reachability analysis assumes bcc.");
     core::Logger::instance().log(core::LogLevel::WARNING,
         "tadah refit: windowed basis placement (reachability-driven):");
     core::Logger::instance().log(core::LogLevel::WARNING,
@@ -536,12 +543,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   core::Logger::instance().log(core::LogLevel::INFO, line("embed F(rho):", refit.F_stats(), F_amp));
 
   // ---- end-to-end fidelity report (computed by the escalation loop above) ----
-  if (!st.valid) {
-    core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: crystal energy self-test skipped (lattice '" + lat +
-        "' not bcc/fcc/hcp) — no internal faithfulness judge; validate "
-        "externally before use.");
-  } else {
+  // st is always valid here: the crystal gate guarantees a recognised lattice.
+  if (st.valid) {
     core::Logger::instance().log(core::LogLevel::INFO,
         "tadah refit: crystal energy vs original EAM (" + lat + ", a0=" +
         core::to_string(a0, 4) + " A; basis n2b=" + std::to_string(cfg.n2b) +
