@@ -3,7 +3,9 @@
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/models/dc_selector.h>
+#include <tadah/models/descriptors/basis_dispatch.h>
 #include <iostream>
+#include <optional>
 
 #ifdef TADAH_BUILD_MPI
 #include <mpi.h>
@@ -45,7 +47,6 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     tadah::core::Context &singleContext = contexts[i];
 
     models::Cut_Base *fcut = nullptr;
-    double (*fb)(double,double,double) = nullptr;
     std::string cgridtype;
     std::string sgridtype;
     std::string dtype;
@@ -75,21 +76,20 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     models::D_Base::get_grid(singleContext, sgridtype, sgrid);
 
     models::DC_Selector DCS(singleContext);
-    // only required for DM_mEAD types testing
-    models::D_Base *dm = nullptr;
-    if (types[0]=="MB") {
-      dm = DCS.dmb;
-    }
 
-    if (dtype == "D2_Blip" || dtype == "DM_Blip") {
-      if (singleContext.get<bool>("DERIVATIVE")) { fb = &models::dB;} else { fb = &models::B; }
-      // we have to test DM_mEAD types (for example DM_mRLR) by generic label
-      // so we do not have to modify line below each time we add new type
-    } else if (dtype == "D2_BP" || dtype == "DM_EAD" || dm->label() == "DM_mEAD") {
-      if (singleContext.get<bool>("DERIVATIVE")) { fb = &models::dG;} else { fb = &models::G; }
-    } else {
-      throw std::runtime_error("Unsupported: " + dtype);
+    // The descriptor reports its own radial basis family; the basis-analysis
+    // engine no longer branches on the descriptor NAME string (which forced a
+    // code edit here for every new descriptor). A descriptor with no analytic
+    // radial basis (tabulated / fixed) returns nullopt and is rejected exactly
+    // as the old "else throw" path did.
+    const std::optional<models::BasisKind> bk =
+        (types[0] == "2B") ? DCS.d2b->basis_kind() : DCS.dmb->basis_kind();
+    if (!bk) {
+      throw std::runtime_error(
+          "Unsupported: " + dtype +
+          " (descriptor has no analytic radial basis for bfunc analysis).");
     }
+    const bool deriv = singleContext.get<bool>("DERIVATIVE");
 
     std::vector<size_t> indices;
     if (singleContext.contains("INDEX")) {
@@ -141,7 +141,11 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
         oss << std::fixed << std::setprecision(numeric)
           << std::setw(numeric+5)
           << range[j] << "    "
-          << std::setw(numeric+5) << fb(range[j],s,c)*cutoff_values[j] << std::endl;
+          << std::setw(numeric+5)
+          << (deriv ? models::radial_deriv_bare(*bk, range[j], s, c)
+                    : models::radial_value_bare(*bk, range[j], s, c))
+             * cutoff_values[j]
+          << std::endl;
       }
       oss << std::endl;
     }
