@@ -5,6 +5,7 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/nn_finder.h>
+#include <tadah/mlip/weight_provisioning.h>
 #include <tadah/core/context.h>
 #include <tadah/models/dc_selector.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
@@ -51,6 +52,14 @@ class Trainer {
 
     void train(const StructureDB &stdb) {
       model->train(stdb,dc);
+    }
+
+    /** Set the model weights directly from FIXINDEX/FIXWEIGHT without any
+     *  training data. Requires FIXINDEX to cover every model weight; see
+     *  weight_provisioning.h for the contract. */
+    void provision_fixed_weights() {
+      tadah::mlip::provision_fixed_weights(*model, context,
+                                           fb->get_phi_cols(context));
     }
 
     /** Update descriptor parameters in-place from trainer.context.

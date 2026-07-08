@@ -156,6 +156,9 @@ void write_hpotarget(const std::string &path, const Context &pot,
   emit_optim_group(os, "CEMBFUNC", read_vec("CEMBFUNC"), pct, false, true);
   emit_optim_group(os, "SEMBFUNC", read_vec("SEMBFUNC"), pct, true, true);
 
+  // `OPTIM FIXWEIGHT (i)` indices name MODEL WEIGHTS. The refit pot pins
+  // every coefficient with FIXINDEX 1-K, so weight index == FIXWEIGHT slot
+  // here and the emitted 1..K lines are valid under both readings.
   os << "# ---- model linear coefficients (the default search space) ----\n";
   emit_optim_group(os, "FIXWEIGHT", read_vec("FIXWEIGHT"), pct, false);
 
