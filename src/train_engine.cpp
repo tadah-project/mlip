@@ -7,6 +7,7 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/load_transforms.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
@@ -72,6 +73,10 @@ namespace {
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
   models::D_mJoin::expand_grids(context);
+  // Knot-family refit configs: RCUT2B/RCUTMB are derived from the largest
+  // knot — a hand-tweaked/stale stated value is warned about and corrected
+  // here, BEFORE the neighbour list is sized from RCUTMAX.
+  models::potedit::normalize_knot_rcut(context, "tadah train");
   std::set<core::Element> unique_elements = StructureDB::find_unique_elements(context);
   StructureDB::check_atom_key(context, unique_elements);
   StructureDB::check_watom_key(context, unique_elements);

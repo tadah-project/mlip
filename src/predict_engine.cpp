@@ -11,6 +11,7 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 #include <tadah/models/dc_selector.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 #include <iostream>
 
 #ifdef TADAH_BUILD_MPI
@@ -47,6 +48,11 @@ int PredictEngine::run(mlip::Task &task) {
     core::Logger::instance().log(core::LogLevel::INFO,
         "--no-eshift: ignoring ESHIFT recorded in pot.tadah.");
   }
+
+  // Knot-family refit pots: RCUT2B/RCUTMB are derived from the largest knot
+  // — correct a stale stated value (warns) before the descriptors and the
+  // neighbour list read RCUT*MAX.
+  models::potedit::normalize_knot_rcut(potContext, "tadah predict");
 
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +

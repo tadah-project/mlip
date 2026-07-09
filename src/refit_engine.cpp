@@ -1,5 +1,7 @@
 #include <tadah/mlip/engines/refit_engine.h>
+#include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/refit_log.h>
+#include <tadah/mlip/engines/refit_modes.h>
 #include <tadah/mlip/engines/train_engine.h>
 
 #include <tadah/core/context.h>
@@ -52,118 +54,9 @@ void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
   else                          { n2b = 44; nrho = 36; nF = 100; }  // balanced
 }
 
-// One `OPTIM KEY (i) lo hi` line per parameter, each bound = v ± pct%·|v| with
-// an absolute floor (relative to the group's scale) so near-zero/negative
-// parameters don't collapse to a degenerate window.
-void emit_optim_group(std::ostream &os, const std::string &key,
-                      const tadah::core::v_type &vals, double pct,
-                      bool positive_only, bool commented = false) {
-  if (vals.empty()) return;
-  double gmax = 0.0;
-  for (double v : vals) gmax = std::max(gmax, std::fabs(v));
-  const double floor = std::max(1e-8, 1e-3 * gmax);
-  const char *pre = commented ? "# " : "";
-  os << std::defaultfloat;
-  os << "# " << key << "  (+-" << pct << "%, " << vals.size() << " params"
-     << (commented ? ", DISABLED by default — uncomment to search" : "")
-     << ")\n";
-  os << std::scientific << std::setprecision(8);
-  for (std::size_t i = 0; i < vals.size(); ++i) {
-    const double v = vals[i];
-    const double d = std::max(pct / 100.0 * std::fabs(v), floor);
-    double lo = v - d, hi = v + d;
-    if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
-    if (hi <= lo) hi = lo + std::max(floor, 1e-6);
-    os << pre << "OPTIM " << key << " (" << (i + 1) << ") " << lo << " " << hi
-       << "\n";
-  }
-  os << "\n";
-}
-
-void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
-                       double pct, double lo_clamp, bool commented = false) {
-  const double d = std::max(pct / 100.0 * std::fabs(v), 1e-6);
-  double lo = std::max(lo_clamp, v - d);
-  double hi = v + d;
-  if (hi <= lo) hi = lo + 1e-3;
-  os << std::scientific << std::setprecision(8);
-  os << (commented ? "# " : "") << "OPTIM " << key << " (1) " << lo << " "
-     << hi << "\n\n";
-}
-
-void write_hpotarget(const std::string &path, const Context &pot,
-                     double rcut, double pct) {
-  std::ofstream os(path);
-  if (!os) {
-    core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: cannot write hpotarget file: " + path);
-    return;
-  }
-  os << "# HPO starter target written by `tadah refit`. Run:\n"
-     << "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>\n"
-     << "# <config>: the refit potential with a DBFILE line appended naming a\n"
-     << "# training dataset; <val>: a file with DBFILE line(s) naming the\n"
-     << "# validation data the loss is measured on. See the Tadah docs (HPO).\n"
-     << "#\n"
-     << "# Search space: the active OPTIM lines below. Bounds are +-" << pct
-     << "%\n"
-     << "# around the fitted values (config key OPTIM_PCT). By default only\n"
-     << "# the model's linear coefficients (FIXWEIGHT) are searched; the\n"
-     << "# commented blocks add descriptor-shape parameters. Each uncommented\n"
-     << "# line adds one dimension to a derivative-free search — raise\n"
-     << "# MAXEVAL accordingly.\n\n";
-
-  os << "OPTIMIZER\n"
-     << "  STRATEGY\n"
-     << "    TYPE PLAIN\n"
-     << "    LIB NLOPT\n"
-     << "    ALGO LN_BOBYQA\n"   // derivative-free local polish of a smooth fit
-     << "    MAXEVAL 200\n"
-     << "  ENDSTRATEGY\n"
-     << "ENDOPTIMIZER\n\n";
-
-  os << "LOSS L2\n"
-     << "FAILSCORE 1e16\n"
-     << "# Energy RMSE on the validation data (<target> <weight>):\n"
-     << "PC_ERMSE 0 1\n"
-     << "# Force RMSE — needs a dataset with forces and a force-trained\n"
-     << "# model; the refit potential is fitted to energies only.\n"
-     << "# PC_FRMSE 0 1\n"
-     << "# LAMMPS-computed observables can be scored with PC_LAMMPS lines\n"
-     << "# (see the docs).\n\n";
-
-  os << "# ---- pair function (two-body) shape ----\n";
-  emit_optim_scalar(os, "RCUT2B", rcut, pct, 0.0, true);
-  auto read_vec = [&pot](const std::string &k) {
-    if (!pot.contains(k)) return tadah::core::v_type{};  // knot pots carry
-    tadah::core::v_type v(pot.size(k));                  // no width keys
-    pot.get(k, v);
-    return v;
-  };
-  // Knot families carry NO width keys (eta is a pure gauge — the pot has
-  // no SGRID2B/SGRIDMB/SEMBFUNC entries); emit_optim_group skips empty
-  // vectors, so no degenerate OPTIM blocks can appear.
-  emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
-  emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
-
-  os << "# ---- density function (many-body) shape ----\n";
-  emit_optim_scalar(os, "RCUTMB", rcut, pct, 0.0, true);
-  emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
-  emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
-  emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
-
-  os << "# ---- embedding function shape ----\n";
-  emit_optim_group(os, "CEMBFUNC", read_vec("CEMBFUNC"), pct, false, true);
-  emit_optim_group(os, "SEMBFUNC", read_vec("SEMBFUNC"), pct, true, true);
-
-  // `OPTIM FIXWEIGHT (i)` indices name MODEL WEIGHTS. The refit pot pins
-  // every coefficient with FIXINDEX 1-K, so weight index == FIXWEIGHT slot
-  // here and the emitted 1..K lines are valid under both readings.
-  os << "# ---- model linear coefficients (the default search space) ----\n";
-  emit_optim_group(os, "FIXWEIGHT", read_vec("FIXWEIGHT"), pct, false);
-
-  os << "OUTPUT 1\nBOUTPUT 1\n";
-}
+// The hpotarget emitter (emit_optim_group/emit_optim_scalar/write_hpotarget)
+// lives in hpotarget_writer.{h,cpp}: it is shared with the --edit mode's
+// target regeneration and the --retarget bound rewriter.
 
 // One plot-friendly file per function: value, 1st and 2nd derivatives
 // (central differences on the dense dump grid — inspection only), residual,
@@ -298,16 +191,31 @@ RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
 void RefitEngine::validate(const tadah::mlip::Task &task) {
   core::Logger::instance().log(core::LogLevel::INFO, "Validating RefitEngine...");
   const auto &c = task.getContext();
+  const bool edit = c.contains("EDIT") && c.size("EDIT") > 0;
+  const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
+  if (edit || retarget) {
+    // CLI needs/excludes only guard flag usage; the config-file path (and
+    // combinations the CLI cannot express) are re-validated here.
+    validate_refit_mode_keys(c);
+    return;
+  }
   if (!c.contains("EAM") || c.size("EAM") == 0) {
     throw std::runtime_error(
         "RefitEngine requires an input EAM file: declare `EAM <file>` in the "
-        "config file passed with -c. Supported: single-element setfl "
+        "config file passed with -c (or use --edit/--retarget to operate on "
+        "existing refit outputs). Supported: single-element setfl "
         "(eam/alloy or eam/fs).");
   }
 }
 
 int RefitEngine::run(tadah::mlip::Task &task) {
   core::Context c = task.getContext();
+
+  // ---- editing modes on existing refit outputs (no EAM input) ----
+  if (c.contains("RETARGET") && c.size("RETARGET") > 0)
+    return run_refit_retarget(c);
+  if (c.contains("EDIT") && c.size("EDIT") > 0)
+    return run_refit_edit(c);
 
   const std::string eam_path  = c.get<std::string>("EAM");
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
@@ -631,7 +539,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
       "(value/1st/2nd derivative, residual, in_window flag)");
 
   // ---- HPO-ready target ----
-  write_hpotarget(hpo_out, pot, eam.rcut(), optim_pct);
+  write_hpotarget(hpo_out, pot, optim_pct);
   core::Logger::instance().log(core::LogLevel::INFO,
       "tadah refit: wrote pot=" + out_pot + " hpotarget=" + hpo_out +
       " compare=refit_compare.dat");
