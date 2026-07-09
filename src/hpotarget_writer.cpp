@@ -26,6 +26,20 @@ const std::array<OptimGroupSpec, 8> &hpotarget_group_specs() {
   return specs;
 }
 
+double optim_group_floor(double gmax) {
+  const double f = std::max(1e-8, 1e-3 * gmax);
+  const double mag = std::pow(10.0, std::floor(std::log10(f)) - 5.0);
+  return std::round(f / mag) * mag;  // 6 significant digits
+}
+
+double optim_bound_quantum(double centre, double halfwidth) {
+  const double scale = std::fabs(centre) + std::fabs(halfwidth);
+  if (scale <= 0.0) return 1e-8;
+  return std::pow(10.0, std::floor(std::log10(scale)) - 6.0);
+}
+
+double quantize_optim(double x, double q) { return std::round(x / q) * q; }
+
 // One `OPTIM KEY (i) lo hi` line per parameter, each bound = v ± pct%·|v| with
 // an absolute floor (relative to the group's scale) so near-zero/negative
 // parameters don't collapse to a degenerate window.
@@ -35,7 +49,7 @@ void emit_optim_group(std::ostream &os, const std::string &key,
   if (vals.empty()) return;
   double gmax = 0.0;
   for (double v : vals) gmax = std::max(gmax, std::fabs(v));
-  const double floor = std::max(1e-8, 1e-3 * gmax);
+  const double floor = optim_group_floor(gmax);
   const char *pre = commented ? "# " : "";
   os << std::defaultfloat;
   os << "# " << key << "  (+-" << pct << "%, " << vals.size() << " params"
@@ -43,8 +57,13 @@ void emit_optim_group(std::ostream &os, const std::string &key,
      << ")\n";
   os << std::scientific << std::setprecision(8);
   for (std::size_t i = 0; i < vals.size(); ++i) {
-    const double v = vals[i];
-    const double d = std::max(pct / 100.0 * std::fabs(v), floor);
+    // centre and half-width snapped to the bound grid: the printed bounds
+    // are then exact decimals, so --retarget round-trips byte-for-byte
+    const double d_raw = std::max(pct / 100.0 * std::fabs(vals[i]), floor);
+    const double q = optim_bound_quantum(vals[i], d_raw);
+    const double v = quantize_optim(vals[i], q);
+    const double d =
+        quantize_optim(std::max(pct / 100.0 * std::fabs(v), floor), q);
     double lo = v - d, hi = v + d;
     if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
     if (hi <= lo) hi = lo + std::max(floor, 1e-6);
@@ -56,9 +75,13 @@ void emit_optim_group(std::ostream &os, const std::string &key,
 
 void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
                        double pct, double lo_clamp, bool commented) {
-  const double d = std::max(pct / 100.0 * std::fabs(v), 1e-6);
-  double lo = std::max(lo_clamp, v - d);
-  double hi = v + d;
+  const double d_raw = std::max(pct / 100.0 * std::fabs(v), 1e-6);
+  const double q = optim_bound_quantum(v, d_raw);
+  const double vq = quantize_optim(v, q);
+  const double d =
+      quantize_optim(std::max(pct / 100.0 * std::fabs(vq), 1e-6), q);
+  double lo = std::max(lo_clamp, vq - d);
+  double hi = vq + d;
   if (hi <= lo) hi = lo + 1e-3;
   os << std::scientific << std::setprecision(8);
   os << (commented ? "# " : "") << "OPTIM " << key << " (1) " << lo << " "

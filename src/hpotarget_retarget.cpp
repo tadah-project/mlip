@@ -144,8 +144,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     // never lo-clamped, so it is unbiased
     double gmax = 0.0;
     for (auto *ol : group) gmax = std::max(gmax, std::fabs(ol->centre));
-    const double floor =
-        is_rcut ? 1e-6 : std::max(1e-8, 1e-3 * gmax);
+    const double floor = is_rcut ? 1e-6 : optim_group_floor(gmax);
 
     // A clamped line cannot be detected by bound asymmetry (every interval
     // is symmetric about its own midpoint): instead check whether the
@@ -155,11 +154,16 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     const double p = hdr_pct / 100.0;
     for (auto *ol : group) {
       const double d_obs = 0.5 * (ol->hi - ol->lo);
-      const double d_exp = std::max(p * std::fabs(ol->centre), floor);
+      const double d_raw = std::max(p * std::fabs(ol->centre), floor);
+      const double qd = optim_bound_quantum(ol->centre, d_raw);
+      const double d_exp = quantize_optim(
+          std::max(p * std::fabs(quantize_optim(ol->centre, qd)), floor), qd);
       if (std::fabs(d_obs - d_exp) <= 1e-6 * std::max(d_obs, d_exp))
         continue;  // consistent with the rule: midpoint is the centre
       double v = ol->hi / (1.0 + p);         // branch p·v >= floor
       if (p * std::fabs(v) < floor) v = ol->hi - floor;  // floor branch
+      v = quantize_optim(v, optim_bound_quantum(v, std::max(p * std::fabs(v),
+                                                            floor)));
       rep.warnings.push_back(
           "OPTIM " + ol->key + " (" + std::to_string(ol->index) +
           "): bounds inconsistent with the +-" + pct_str(hdr_pct) +
@@ -200,16 +204,21 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     double gmax = 0.0;
     for (auto *g : groups[ol.key]) gmax = std::max(gmax, std::fabs(g->centre));
 
-    const double v = ol.centre;
+    // Same centre/half-width grid snapping as the emitter (see
+    // optim_bound_quantum): the printed bounds are exact decimals, so a
+    // subsequent retarget recovers this centre exactly (fixed point).
+    const double floor = ol.is_rcut ? 1e-6 : optim_group_floor(gmax);
+    const double d_raw = std::max(pct / 100.0 * std::fabs(ol.centre), floor);
+    const double q = optim_bound_quantum(ol.centre, d_raw);
+    const double v = quantize_optim(ol.centre, q);
+    const double d =
+        quantize_optim(std::max(pct / 100.0 * std::fabs(v), floor), q);
     double lo, hi;
     if (ol.is_rcut) {
-      const double d = std::max(pct / 100.0 * std::fabs(v), 1e-6);
       lo = std::max(0.0, v - d);
       hi = v + d;
       if (hi <= lo) hi = lo + 1e-3;
     } else {
-      const double floor = std::max(1e-8, 1e-3 * gmax);
-      const double d = std::max(pct / 100.0 * std::fabs(v), floor);
       lo = v - d;
       hi = v + d;
       if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
