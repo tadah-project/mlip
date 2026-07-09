@@ -12,6 +12,7 @@
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d_base.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
 namespace mlip {
@@ -231,6 +232,14 @@ AuditReport run_critical_optim_audit_with_metas(
       if (pm.crit != tadah::models::Criticality::Critical) continue;
       if (!seed.contains(pm.key)) continue;        // not configured
       if (optim_set.count(pm.key) > 0) continue;   // covered by HPO
+      // Knot channels: RCUT2B/RCUTMB are DERIVED from the largest knot and
+      // re-derived on every HPO evaluation — recommending an OPTIM block on
+      // them would contradict that contract (the search knob is CGRID*).
+      if ((pm.key == "RCUT2B" &&
+           tadah::models::potedit::derived_knot_rcut(seed, "2B")) ||
+          (pm.key == "RCUTMB" &&
+           tadah::models::potedit::derived_knot_rcut(seed, "MB")))
+        continue;
 
       AuditMessage msg;
       msg.descriptor_label = label;
