@@ -161,15 +161,21 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
   emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
 
-  os << "# ---- density function (many-body) shape ----\n";
-  emit_rcut("MB", "RCUTMB");
-  emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
-  emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
-  emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
+  // Pure two-body potentials carry no many-body keys at all — skip the
+  // section headers instead of printing them over nothing.
+  if (pot.contains("CGRIDMB") && pot.size("CGRIDMB") > 0) {
+    os << "# ---- density function (many-body) shape ----\n";
+    emit_rcut("MB", "RCUTMB");
+    emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
+    emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
+    emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
+  }
 
-  os << "# ---- embedding function shape ----\n";
-  emit_optim_group(os, "CEMBFUNC", read_vec("CEMBFUNC"), pct, false, true);
-  emit_optim_group(os, "SEMBFUNC", read_vec("SEMBFUNC"), pct, true, true);
+  if (pot.contains("CEMBFUNC") && pot.size("CEMBFUNC") > 0) {
+    os << "# ---- embedding function shape ----\n";
+    emit_optim_group(os, "CEMBFUNC", read_vec("CEMBFUNC"), pct, false, true);
+    emit_optim_group(os, "SEMBFUNC", read_vec("SEMBFUNC"), pct, true, true);
+  }
 
   // `OPTIM FIXWEIGHT (i)` indices name MODEL WEIGHTS. The refit pot pins
   // every coefficient with FIXINDEX 1-K, so weight index == FIXWEIGHT slot

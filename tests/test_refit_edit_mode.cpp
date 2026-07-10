@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <unistd.h>
 
@@ -157,6 +159,76 @@ TEST_CASE_METHOD(PTFixture, "refit --edit --remove: end-to-end",
   REQUIRE(out.get<int>("TYPEMB", 5) == 2);  // nEc
   REQUIRE(out.size("WEIGHTS") == 5);
   REQUIRE(out.get<std::string>("FIXINDEX") == "1-5");
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: pure two-body potentials (no many-body term)",
+                 "[refit][edit][integration]") {
+  ScopedTempDir tmp;
+  // the HPO_two_body_fit seed shape: TYPE2B only, WEIGHTS = pair block,
+  // RCUT2B deliberately stale (headroom-style, beyond the largest knot)
+  Context pot;
+  pot.add("MODEL", "M_BLR");
+  pot.add("MODEL", "BF_Linear");
+  pot.add("ATOM", "Kr");
+  pot.add("WATOM", 1.0);
+  pot.add("BIAS", "false");
+  pot.add("NORM", "false");
+  pot.add("FORCE", "false");
+  pot.add("STRESS", "false");
+  pot.add("LAMBDA", 0);
+  pot.add("OALGO", 2);
+  pot.add("INIT2B", "true");
+  pot.add("TYPE2B", "D2_Knot5");
+  pot.add("TYPE2B", 3); pot.add("TYPE2B", 0);
+  pot.add("TYPE2B", "Kr"); pot.add("TYPE2B", "Kr");
+  for (double v : {5.0, 3.0, 4.2}) pot.add("CGRID2B", v);
+  pot.add("RCUT2B", 6.3);
+  pot.add("RCTYPE2B", "Cut_Dummy");
+  for (double v : {1.5, -900.0, 12.0}) pot.add("WEIGHTS", v);
+  pot.add("FIXINDEX", "1-3");
+  for (double v : {1.5, -900.0, 12.0}) pot.add("FIXWEIGHT", v);
+  TrainEngine::dumpPotFile("in.tadah", pot);
+
+  SECTION("--add beyond the largest knot grows the derived cutoff") {
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("phi"));
+    c.add("ADD", 6.8);
+    Task task("refit", c);
+    RefitEngine engine;
+    REQUIRE(engine.run(task) == EXIT_SUCCESS);
+
+    const Context in = tadah::core::CoreUserConfigParser().parse("in.tadah");
+    const Context out =
+        tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
+    potedit::PotEAMView vi = potedit::parse_pot_view(in);
+    potedit::PotEAMView vo = potedit::parse_pot_view(out);
+    REQUIRE(vi.mb == potedit::MBKind::None);
+    REQUIRE(vo.phi.n() == 4);
+    REQUIRE(vo.phi.coeff.back() == 0.0);
+    REQUIRE(curve_maxdiff(vi.phi, vo.phi, 0.2, 9.0) == 0.0);
+    REQUIRE(out.get<double>("RCUT2B") == Approx(6.8));
+    REQUIRE(out.get<std::string>("FIXINDEX") == "1-4");
+    REQUIRE(!out.contains("TYPEMB"));
+    // the regenerated hpotarget has no many-body sections
+    std::ifstream hs("refit_edited.hpotarget");
+    const std::string body((std::istreambuf_iterator<char>(hs)),
+                           std::istreambuf_iterator<char>());
+    REQUIRE(body.find("OPTIM FIXWEIGHT (4)") != std::string::npos);
+    REQUIRE(body.find("density function") == std::string::npos);
+    REQUIRE(body.find("embedding function") == std::string::npos);
+  }
+  SECTION("--func rho/F is rejected with a pure-2B explanation") {
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("F"));
+    c.add("REMOVE", 0.5);
+    Task task("refit", c);
+    RefitEngine engine;
+    REQUIRE_THROWS_WITH(engine.run(task),
+                        Catch::Contains("pure two-body"));
+  }
 }
 
 TEST_CASE_METHOD(PTFixture, "refit --edit: output naming and clobber guard",

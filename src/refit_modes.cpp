@@ -124,6 +124,17 @@ int run_refit_edit(Context &c) {
 
   potedit::PotEAMView view = potedit::parse_pot_view(pot);
   const potedit::Channel ch = parse_channel(c.get<std::string>("FUNC"));
+  if (ch != potedit::Channel::Phi && view.mb != potedit::MBKind::Ream) {
+    if (view.mb == potedit::MBKind::None)
+      throw std::runtime_error(
+          "tadah refit --edit: this is a pure two-body potential (no active "
+          "many-body term), so there is no rho/F curve — only --func phi "
+          "can be edited.");
+    throw std::runtime_error(
+        "tadah refit --edit: the many-body descriptor '" + view.mb_name +
+        "' is not DM_REAM, so its rho/F curves cannot be edited — only the "
+        "pair channel (--func phi) of this potential is editable.");
+  }
   potedit::CurveView &cv = ch == potedit::Channel::Phi ? view.phi
                          : ch == potedit::Channel::Rho ? view.rho
                                                        : view.F;
