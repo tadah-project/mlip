@@ -3,7 +3,9 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <ostream>
+#include <vector>
 
 #include <tadah/core/logger.h>
 #include <tadah/models/eam/pot_curve_edit.h>
@@ -39,6 +41,71 @@ double optim_bound_quantum(double centre, double halfwidth) {
 }
 
 double quantize_optim(double x, double q) { return std::round(x / q) * q; }
+double quantize_optim_down(double x, double q) { return std::floor(x / q) * q; }
+double quantize_optim_up(double x, double q) { return std::ceil(x / q) * q; }
+
+// centre and half-width snapped to the bound grid: the printed bounds
+// are then exact decimals, so --retarget round-trips byte-for-byte
+OptimBound optim_group_bound(double val, double pct, double floor,
+                             bool positive_only) {
+  OptimBound b;
+  const double d_raw = std::max(pct / 100.0 * std::fabs(val), floor);
+  b.q = optim_bound_quantum(val, d_raw);
+  b.v = quantize_optim(val, b.q);
+  const double d =
+      quantize_optim(std::max(pct / 100.0 * std::fabs(b.v), floor), b.q);
+  b.lo = b.v - d;
+  b.hi = b.v + d;
+  if (positive_only && b.lo <= 0.0)
+    b.lo = std::max(1e-6, 0.5 * std::fabs(b.v));
+  if (b.hi <= b.lo) b.hi = b.lo + std::max(floor, 1e-6);
+  return b;
+}
+
+BumpCapResult apply_bump_cap(double v_c, double &hi_c, double q_c,
+                             double v_e, double &lo_e, double q_e,
+                             double w, double rcut) {
+  BumpCapResult r;
+  const double tol = tadah::models::bump_rcut_tol(rcut);
+  if (lo_e <= 0.0) return r;  // malformed width bound: hpo preflight's problem
+  if (hi_c + w / lo_e <= rcut + tol) return r;  // corner already compliant
+  if (v_e <= 0.0 || v_c + w / v_e > rcut + tol) {
+    r.seed_spill = true;  // the pot itself spills: leave the bounds alone
+    return r;
+  }
+  r.capped = true;
+  hi_c = std::max(v_c, quantize_optim_down(rcut - w / lo_e, q_c));
+  if (hi_c + w / lo_e <= rcut + tol) return r;
+  // hi_c is pinned at the (compliant) seed centre: raise the width floor.
+  // Seed compliance gives lo_e' <= v_e < hi_e, so the box stays alive.
+  lo_e = quantize_optim_up(w / (rcut - hi_c), q_e);
+  return r;
+}
+
+namespace {
+
+void emit_group_header(std::ostream &os, const std::string &key,
+                       std::size_t n, double pct, bool commented) {
+  os << std::defaultfloat;
+  os << "# " << key << "  (+-" << pct << "%, " << n << " params"
+     << (commented ? ", DISABLED by default — uncomment to search" : "")
+     << ")\n";
+  os << std::scientific << std::setprecision(8);
+}
+
+void emit_group_line(std::ostream &os, const std::string &key, std::size_t i,
+                     const OptimBound &b, bool commented) {
+  os << (commented ? "# " : "") << "OPTIM " << key << " (" << (i + 1) << ") "
+     << b.lo << " " << b.hi << "\n";
+}
+
+double group_floor_of(const tadah::core::v_type &vals) {
+  double gmax = 0.0;
+  for (double v : vals) gmax = std::max(gmax, std::fabs(v));
+  return optim_group_floor(gmax);
+}
+
+}  // namespace
 
 // One `OPTIM KEY (i) lo hi` line per parameter, each bound = v ± pct%·|v| with
 // an absolute floor (relative to the group's scale) so near-zero/negative
@@ -47,29 +114,54 @@ void emit_optim_group(std::ostream &os, const std::string &key,
                       const tadah::core::v_type &vals, double pct,
                       bool positive_only, bool commented) {
   if (vals.empty()) return;
-  double gmax = 0.0;
-  for (double v : vals) gmax = std::max(gmax, std::fabs(v));
-  const double floor = optim_group_floor(gmax);
-  const char *pre = commented ? "# " : "";
-  os << std::defaultfloat;
-  os << "# " << key << "  (+-" << pct << "%, " << vals.size() << " params"
-     << (commented ? ", DISABLED by default — uncomment to search" : "")
-     << ")\n";
-  os << std::scientific << std::setprecision(8);
-  for (std::size_t i = 0; i < vals.size(); ++i) {
-    // centre and half-width snapped to the bound grid: the printed bounds
-    // are then exact decimals, so --retarget round-trips byte-for-byte
-    const double d_raw = std::max(pct / 100.0 * std::fabs(vals[i]), floor);
-    const double q = optim_bound_quantum(vals[i], d_raw);
-    const double v = quantize_optim(vals[i], q);
-    const double d =
-        quantize_optim(std::max(pct / 100.0 * std::fabs(v), floor), q);
-    double lo = v - d, hi = v + d;
-    if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
-    if (hi <= lo) hi = lo + std::max(floor, 1e-6);
-    os << pre << "OPTIM " << key << " (" << (i + 1) << ") " << lo << " " << hi
-       << "\n";
+  const double floor = group_floor_of(vals);
+  emit_group_header(os, key, vals.size(), pct, commented);
+  for (std::size_t i = 0; i < vals.size(); ++i)
+    emit_group_line(os, key, i,
+                    optim_group_bound(vals[i], pct, floor, positive_only),
+                    commented);
+  os << "\n";
+}
+
+void emit_optim_group_pair(std::ostream &os, const std::string &ckey,
+                           const tadah::core::v_type &cvals,
+                           const std::string &skey,
+                           const tadah::core::v_type &svals, double pct,
+                           bool commented, double w, double rcut) {
+  if (cvals.empty() || cvals.size() != svals.size() || rcut <= 0.0) {
+    // not a well-formed bump channel: fall back to the plain emitters
+    emit_optim_group(os, ckey, cvals, pct, false, commented);
+    emit_optim_group(os, skey, svals, pct, true, commented);
+    return;
   }
+  const double cfloor = group_floor_of(cvals);
+  const double sfloor = group_floor_of(svals);
+  std::vector<OptimBound> cb(cvals.size()), sb(svals.size());
+  std::string spilled;
+  for (std::size_t i = 0; i < cvals.size(); ++i) {
+    cb[i] = optim_group_bound(cvals[i], pct, cfloor, false);
+    sb[i] = optim_group_bound(svals[i], pct, sfloor, true);
+    const BumpCapResult r = apply_bump_cap(cb[i].v, cb[i].hi, cb[i].q,
+                                           sb[i].v, sb[i].lo, sb[i].q,
+                                           w, rcut);
+    if (r.seed_spill)
+      spilled += (spilled.empty() ? "" : ", ") + std::to_string(i + 1);
+  }
+  if (!spilled.empty()) {
+    core::Logger::instance().log(core::LogLevel::WARNING,
+        "tadah refit: " + ckey + " bump(s) " + spilled + " of the potential "
+        "itself reach past the hard cutoff — the emitted OPTIM bounds are "
+        "left uncapped and `tadah hpo` will reject this hpotarget until the "
+        "pot is repaired (move/narrow the bump with `tadah refit --edit`, "
+        "or raise RCUT in the pot).");
+  }
+  emit_group_header(os, ckey, cvals.size(), pct, commented);
+  for (std::size_t i = 0; i < cvals.size(); ++i)
+    emit_group_line(os, ckey, i, cb[i], commented);
+  os << "\n";
+  emit_group_header(os, skey, svals.size(), pct, commented);
+  for (std::size_t i = 0; i < svals.size(); ++i)
+    emit_group_line(os, skey, i, sb[i], commented);
   os << "\n";
 }
 
@@ -136,10 +228,23 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
     pot.get(k, v);
     return v;
   };
+  // Bump channel under a hard (Cut_Dummy) cutoff: `tadah hpo` hard-errors
+  // when OPTIM bounds allow a bump's support (c + w/eta) past RCUT, so the
+  // emitted CGRID/SGRID bounds are capped to the invariant and the contract
+  // (with the half-width w) is recorded as a parsed comment for --retarget.
+  auto bump_gate = [&](const char *suffix,
+                       const std::string &rkey) -> std::optional<double> {
+    const auto w = potedit::bump_channel_halfwidth(pot, suffix);
+    if (!w || !potedit::channel_cutoff_is_discontinuous(pot, suffix))
+      return std::nullopt;
+    if (!pot.contains(rkey) || pot.size(rkey) == 0) return std::nullopt;
+    return w;
+  };
   // For a KNOT channel the effective cutoff is the largest knot: RCUT is a
   // DERIVED quantity, so no OPTIM scalar is offered — the knot positions
   // (CGRID*) are the search knobs. Bump channels keep the commented scalar.
-  auto emit_rcut = [&](const char *suffix, const std::string &key) {
+  auto emit_rcut = [&](const char *suffix, const std::string &key,
+                       const std::optional<double> &bump_w) {
     const auto derived = potedit::derived_knot_rcut(pot, suffix);
     if (derived) {
       os << "# " << key << " is DERIVED for the knot family (= the largest "
@@ -149,25 +254,46 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
          << "# vary the CGRID" << suffix
          << " knot positions to change the effective cutoff.\n\n";
     } else if (pot.contains(key) && pot.size(key) > 0) {
+      if (bump_w) {
+        os << std::defaultfloat
+           << "# " << key << " bump-support contract: w = " << *bump_w
+           << " (every bump keeps c + w/eta <= " << key << ";\n"
+           << "# the OPTIM CGRID" << suffix << "/SGRID" << suffix
+           << " bounds below are capped to enforce it)\n";
+      }
       emit_optim_scalar(os, key, pot.get<double>(key), pct, 0.0, true);
     }
   };
 
   os << "# ---- pair function (two-body) shape ----\n";
-  emit_rcut("2B", "RCUT2B");
+  const auto w2b = bump_gate("2B", "RCUT2B");
+  emit_rcut("2B", "RCUT2B", w2b);
   // Knot families carry NO width keys (eta is a pure gauge — the pot has
   // no SGRID2B/SGRIDMB/SEMBFUNC entries); emit_optim_group skips empty
   // vectors, so no degenerate OPTIM blocks can appear.
-  emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
-  emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
+  if (w2b) {
+    emit_optim_group_pair(os, "CGRID2B", read_vec("CGRID2B"), "SGRID2B",
+                          read_vec("SGRID2B"), pct, true, *w2b,
+                          pot.get<double>("RCUT2B"));
+  } else {
+    emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
+    emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
+  }
 
   // Pure two-body potentials carry no many-body keys at all — skip the
   // section headers instead of printing them over nothing.
   if (pot.contains("CGRIDMB") && pot.size("CGRIDMB") > 0) {
     os << "# ---- density function (many-body) shape ----\n";
-    emit_rcut("MB", "RCUTMB");
-    emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
-    emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
+    const auto wmb = bump_gate("MB", "RCUTMB");
+    emit_rcut("MB", "RCUTMB", wmb);
+    if (wmb) {
+      emit_optim_group_pair(os, "CGRIDMB", read_vec("CGRIDMB"), "SGRIDMB",
+                            read_vec("SGRIDMB"), pct, true, *wmb,
+                            pot.get<double>("RCUTMB"));
+    } else {
+      emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
+      emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
+    }
     emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
   }
 

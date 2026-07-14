@@ -148,7 +148,13 @@ int run_refit_edit(Context &c) {
     spec.centre = c.get<double>("ADD");
     if (has(c, "ETA")) spec.eta = c.get<double>("ETA");
     if (has(c, "DEG")) spec.deg = c.get<int>("DEG");
-    const potedit::AddReport rep = potedit::add_basis(cv, spec, radial);
+    // Crossing RCUT is an error only under a hard (Cut_Dummy) cutoff; a
+    // smooth cutoff damps the overhang to zero at RCUT (warn-only).
+    const bool hard_cutoff =
+        !radial || potedit::channel_cutoff_is_discontinuous(
+                       pot, ch == potedit::Channel::Phi ? "2B" : "MB");
+    const potedit::AddReport rep =
+        potedit::add_basis(cv, spec, radial, hard_cutoff);
     for (const auto &w : rep.warnings) log_warn("tadah refit --edit: " + w);
     std::ostringstream msg;
     msg << "tadah refit --edit: added a basis function to " << fname

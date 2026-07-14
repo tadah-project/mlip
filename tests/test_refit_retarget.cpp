@@ -48,6 +48,47 @@ Context make_knot_pot() {
   return c;
 }
 
+// Small BUMP-family (D2_Blip, w = 2) refit pot with a hard Cut_Dummy cutoff.
+// Both blips sit exactly at the support edge (c + 2/eta == RCUT2B == 5), so
+// the pot is gate-compliant but every symmetric OPTIM box corner spills and
+// must be capped by the writer.
+Context make_blip_pot(double c2 = 4.5, double e2 = 4.0) {
+  Context c;
+  c.add("ATOM", "Cu");
+  c.add("TYPE2B", "D2_Blip");
+  c.add("TYPE2B", 2); c.add("TYPE2B", 2);
+  c.add("TYPE2B", "Cu"); c.add("TYPE2B", "Cu");
+  c.add("CGRID2B", 3.0); c.add("CGRID2B", c2);
+  c.add("SGRID2B", 1.0); c.add("SGRID2B", e2);
+  c.add("RCUT2B", 5.0);
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("FIXWEIGHT", 1.5); c.add("FIXWEIGHT", -900.0);
+  return c;
+}
+
+// max over CGRID2B/SGRID2B OPTIM pairs of (c_hi + w/e_lo) in `lines`.
+double bump_corner_reach(const std::vector<std::string> &lines, double w) {
+  std::vector<double> chi, elo;
+  for (const auto &l : lines) {
+    std::istringstream is(l);
+    std::string h, a, key, idx;
+    double lo, hi;
+    if (l.rfind("# OPTIM CGRID2B", 0) == 0 &&
+        (is >> h >> a >> key >> idx >> lo >> hi))
+      chi.push_back(hi);
+    std::istringstream is2(l);
+    if (l.rfind("# OPTIM SGRID2B", 0) == 0 &&
+        (is2 >> h >> a >> key >> idx >> lo >> hi))
+      elo.push_back(lo);
+  }
+  REQUIRE(chi.size() == elo.size());
+  REQUIRE_FALSE(chi.empty());
+  double reach = 0.0;
+  for (std::size_t i = 0; i < chi.size(); ++i)
+    reach = std::max(reach, chi[i] + w / elo[i]);
+  return reach;
+}
+
 std::string slurp(const std::string &path) {
   std::ifstream is(path);
   return std::string((std::istreambuf_iterator<char>(is)),
@@ -268,4 +309,157 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(body.find("OPTIM RCUTMB") == std::string::npos);
   REQUIRE(body.find("RCUT2B is DERIVED") != std::string::npos);
   REQUIRE(body.find("OPTIM FIXWEIGHT (6)") != std::string::npos);
+  // knot channels carry no bump-support contract
+  REQUIRE(body.find("bump-support contract") == std::string::npos);
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "write_hpotarget: bump boxes are capped to the support gate",
+                 "[retarget][hpotarget_writer][bumpcap]") {
+  ScopedTempDir tmp;
+  const double w = 2.0, rcut = 5.0;
+  const double tol = 1e-6 * rcut;
+
+  SECTION("edge seeds: every emitted corner satisfies c_hi + w/e_lo <= rcut") {
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+    const std::string body = slurp("b.hpotarget");
+    REQUIRE(body.find("RCUT2B bump-support contract: w = 2") !=
+            std::string::npos);
+    REQUIRE(body.find("# OPTIM RCUT2B") != std::string::npos);
+    const auto lines = read_lines("b.hpotarget");
+    REQUIRE(bump_corner_reach(lines, w) <= rcut + tol);
+    // degenerate rule at the exact edge: boxes stay alive (lo < hi)
+    for (const auto &l : lines) {
+      if (l.rfind("# OPTIM CGRID2B", 0) != 0 &&
+          l.rfind("# OPTIM SGRID2B", 0) != 0)
+        continue;
+      std::istringstream is(l);
+      std::string h, a, key, idx;
+      double lo, hi;
+      REQUIRE((is >> h >> a >> key >> idx >> lo >> hi));
+      REQUIRE(lo < hi);
+    }
+  }
+
+  SECTION("hi-cap alone suffices when the seed sits well inside rcut") {
+    // c=3.5, eta=2.0 (reach 4.5), pct 20: hi_c 4.2, e_lo 1.6 -> corner 5.45;
+    // capping hi_c to rcut - w/e_lo = 3.75 restores the invariant without
+    // touching the width's lower bound.
+    Context pot;
+    pot.add("ATOM", "Cu");
+    pot.add("TYPE2B", "D2_Blip");
+    pot.add("TYPE2B", 1); pot.add("TYPE2B", 1);
+    pot.add("TYPE2B", "Cu"); pot.add("TYPE2B", "Cu");
+    pot.add("CGRID2B", 3.5);
+    pot.add("SGRID2B", 2.0);
+    pot.add("RCUT2B", 5.0);
+    pot.add("RCTYPE2B", "Cut_Dummy");
+    pot.add("FIXWEIGHT", 1.0);
+    write_hpotarget("c.hpotarget", pot, 20.0);
+    const auto lines = read_lines("c.hpotarget");
+    bool cg = false, sg = false;
+    for (const auto &l : lines) {
+      std::istringstream is(l);
+      std::string h, a, key, idx;
+      double lo, hi;
+      if (l.rfind("# OPTIM CGRID2B (1)", 0) == 0) {
+        REQUIRE((is >> h >> a >> key >> idx >> lo >> hi));
+        REQUIRE(hi == Approx(3.75));   // capped from 4.2
+        REQUIRE(lo == Approx(2.8));    // untouched
+        cg = true;
+      }
+      if (l.rfind("# OPTIM SGRID2B (1)", 0) == 0) {
+        REQUIRE((is >> h >> a >> key >> idx >> lo >> hi));
+        REQUIRE(lo == Approx(1.6));    // untouched
+        sg = true;
+      }
+    }
+    REQUIRE(cg);
+    REQUIRE(sg);
+  }
+
+  SECTION("a smooth cutoff disables the contract and the cap") {
+    Context pot = make_blip_pot();
+    pot.remove("RCTYPE2B");
+    pot.add("RCTYPE2B", "Cut_Poly");
+    write_hpotarget("s.hpotarget", pot, 10.0);
+    const std::string body = slurp("s.hpotarget");
+    REQUIRE(body.find("bump-support contract") == std::string::npos);
+    // symmetric bounds: blip 2 (c=4.5, pct 10) keeps hi = 4.95
+    REQUIRE(body.find("# OPTIM CGRID2B (2) 4.05000000e+00 4.95000000e+00") !=
+            std::string::npos);
+  }
+
+  SECTION("a pot whose own bump spills is emitted uncapped (warn-only)") {
+    write_hpotarget("d.hpotarget", make_blip_pot(4.8, 2.0), 10.0);  // 5.8 > 5
+    const std::string body = slurp("d.hpotarget");
+    // blip 2 bounds stay symmetric (uncapped): 4.8 +- 0.48
+    REQUIRE(body.find("# OPTIM CGRID2B (2) 4.32000000e+00 5.28000000e+00") !=
+            std::string::npos);
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "retarget preserves and re-applies the bump cap",
+                 "[retarget][bumpcap]") {
+  ScopedTempDir tmp;
+  const double w = 2.0, rcut = 5.0;
+  const double tol = 1e-6 * rcut;
+
+  SECTION("same-pct retarget of a capped file is byte-idempotent") {
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+    const std::string fresh = slurp("b.hpotarget");
+    RetargetOptions o10;
+    o10.pct = 10.0;
+    retarget_hpotarget_file("b.hpotarget", "b2.hpotarget", false, o10);
+    REQUIRE(slurp("b2.hpotarget") == fresh);
+  }
+
+  SECTION("re-pct retarget re-applies the cap and stays a fixed point") {
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+    RetargetOptions o25;
+    o25.pct = 25.0;
+    retarget_hpotarget_file("b.hpotarget", "b25.hpotarget", false, o25);
+    REQUIRE(bump_corner_reach(read_lines("b25.hpotarget"), w) <= rcut + tol);
+    retarget_hpotarget_file("b25.hpotarget", "b25b.hpotarget", false, o25);
+    REQUIRE(slurp("b25b.hpotarget") == slurp("b25.hpotarget"));
+  }
+
+  SECTION("--set past the cap wins but warns") {
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+    auto lines = read_lines("b.hpotarget");
+    RetargetOptions opts;
+    opts.pct = 10.0;
+    opts.sets.push_back({"SGRID2B", 2, 1.0, 4.4});  // e_lo 1.0 -> reach 6.5
+    RetargetReport rep = retarget_hpotarget_lines(lines, opts);
+    bool warned = false, applied = false;
+    for (const auto &wmsg : rep.warnings)
+      if (wmsg.find("bump-support contract") != std::string::npos)
+        warned = true;
+    for (const auto &l : lines)
+      if (l.rfind("# OPTIM SGRID2B (2)", 0) == 0 &&
+          l.find("1.00000000e+00") != std::string::npos)
+        applied = true;
+    REQUIRE(warned);
+    REQUIRE(applied);
+  }
+
+  SECTION("inherited seed spill: uncapped rewrite + spill warning") {
+    write_hpotarget("d.hpotarget", make_blip_pot(4.8, 2.0), 10.0);
+    auto lines = read_lines("d.hpotarget");
+    RetargetOptions o5;
+    o5.pct = 5.0;
+    RetargetReport rep = retarget_hpotarget_lines(lines, o5);
+    bool warned = false;
+    for (const auto &wmsg : rep.warnings)
+      if (wmsg.find("spill past") != std::string::npos) warned = true;
+    REQUIRE(warned);
+    // blip 2 rewritten symmetric at 5%: 4.8 +- 0.24, NOT capped
+    bool uncapped = false;
+    for (const auto &l : lines)
+      if (l.rfind("# OPTIM CGRID2B (2)", 0) == 0 &&
+          l.find("5.04000000e+00") != std::string::npos)
+        uncapped = true;
+    REQUIRE(uncapped);
+  }
 }

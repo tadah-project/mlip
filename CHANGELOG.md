@@ -7,7 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- **hpotarget writer: bump channels under a hard (Cut_Dummy) cutoff get gate-compliant OPTIM boxes.** Per blip, the emitted CGRID upper / SGRID lower bounds are capped (directionally quantized, so the cap is exact on the bound grid) to the bump-support invariant `c_hi + w/eta_lo <= RCUT` that `tadah hpo` now hard-errors on, and a parsed contract comment (`# RCUT2B bump-support contract: w = ...`) records the half-width for `--retarget`. A pot whose own bump spills is emitted uncapped with a warning (the repair tool `refit --edit remove` also writes an hpotarget, so the writer never throws); knot/Gaussian/FIXWEIGHT emissions are byte-identical to before.
+- **`--retarget` understands the bump-support contract**: recovers the centre of a hi-capped CGRID line from its LOWER bound (mirror of the existing lo-clamped SGRID repair), re-applies the cap after every rewrite (fresh(pct) -> retarget(pct) stays byte-identical; any retargeted file is byte-stable), and lets `--set` win with a warning when it violates the contract corner.
+- `refit --edit --add` passes the pot's cutoff kind to `potedit::add_basis`: a bump support crossing rcut is a hard error for Cut_Dummy pots (with the minimal `--eta` in the message), a warning for smooth cutoffs.
 
 ## [1.3.0-beta.1] — 2026-05-20
 

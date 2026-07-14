@@ -1,6 +1,8 @@
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 
+#include <tadah/models/descriptors/basis_kind.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -27,6 +29,7 @@ struct OptimLine {
   std::size_t index = 0;       // 1-based
   double lo = 0.0, hi = 0.0;
   double centre = 0.0;         // recovered value
+  double v = 0.0, q = 0.0;     // grid-snapped centre + bound grid (rewrite)
   bool is_rcut = false;
 };
 
@@ -35,6 +38,11 @@ const std::regex kOptimRe(
 const std::regex kHeaderPctRe(R"(Bounds are \+-([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)%)");
 const std::regex kGroupHeaderRe(
     R"(^(#\s*)([A-Za-z0-9_]+)(\s+\(\+-)([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(%.*)$)");
+// The bump-support contract the writer records next to a bump channel's
+// commented RCUT scalar: `# RCUT2B bump-support contract: w = 3 (...)`.
+// Files without it (knot channels, pre-contract emissions) get no capping.
+const std::regex kBumpContractRe(
+    R"(^#\s*RCUT(2B|MB)\s+bump-support contract:\s*w\s*=\s*([0-9]*\.?[0-9]+).*$)");
 
 std::string sci8(double v) {
   std::ostringstream os;
@@ -93,6 +101,18 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     return rep;
   }
 
+  // ---- bump-support contracts (writer-recorded metadata comments) ----
+  std::map<std::string, double> bump_w;  // suffix "2B"/"MB" -> half-width w
+  for (const auto &l : lines) {
+    std::smatch m;
+    if (std::regex_match(l, m, kBumpContractRe))
+      bump_w[m[1].str()] = std::stod(m[2].str());
+  }
+  auto bump_cgrid_key = [&bump_w](const std::string &key) {
+    return (key == "CGRID2B" && bump_w.count("2B")) ||
+           (key == "CGRIDMB" && bump_w.count("MB"));
+  };
+
   // ---- emission percentage from the file header (for clamp repair) ----
   double hdr_pct = -1.0;
   for (const auto &l : lines) {
@@ -137,7 +157,12 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       }
     }
 
-    if (!positive_only && !is_rcut) continue;  // midpoints are exact
+    // Midpoints are exact except for: positive-only groups (lo can be
+    // clamped), RCUT scalars, and bump-contract CGRID groups (hi can be
+    // capped by the bump-support rule) — those need the rule-consistency
+    // check + one-sided recovery below.
+    const bool is_bump_cgrid = bump_cgrid_key(key);
+    if (!positive_only && !is_rcut && !is_bump_cgrid) continue;
     if (hdr_pct <= 0.0) continue;  // cannot check/repair without the pct
 
     // group scale from the midpoints — the max element is (essentially)
@@ -149,8 +174,10 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     // A clamped line cannot be detected by bound asymmetry (every interval
     // is symmetric about its own midpoint): instead check whether the
     // OBSERVED half-width matches the emission rule at the midpoint. When
-    // it does not, the lo bound was clamped (or the line was hand-edited);
-    // either way the UPPER bound is authoritative: hi = v + max(p·|v|, floor).
+    // it does not, one bound was moved off the symmetric rule and the OTHER
+    // one is authoritative: positive-only groups / RCUT get the lo clamp
+    // (hi = v + max(p·|v|, floor) recovers v); bump-contract CGRID groups
+    // get the hi cap (lo = v - max(p·|v|, floor) recovers v).
     const double p = hdr_pct / 100.0;
     for (auto *ol : group) {
       const double d_obs = 0.5 * (ol->hi - ol->lo);
@@ -160,15 +187,26 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           std::max(p * std::fabs(quantize_optim(ol->centre, qd)), floor), qd);
       if (std::fabs(d_obs - d_exp) <= 1e-6 * std::max(d_obs, d_exp))
         continue;  // consistent with the rule: midpoint is the centre
-      double v = ol->hi / (1.0 + p);         // branch p·v >= floor
-      if (p * std::fabs(v) < floor) v = ol->hi - floor;  // floor branch
+      double v;
+      const bool from_lo = is_bump_cgrid && p < 1.0;
+      if (from_lo) {
+        v = ol->lo / (1.0 - p);              // branch p·v >= floor
+        if (p * std::fabs(v) < floor) v = ol->lo + floor;  // floor branch
+      } else {
+        v = ol->hi / (1.0 + p);              // branch p·v >= floor
+        if (p * std::fabs(v) < floor) v = ol->hi - floor;  // floor branch
+      }
       v = quantize_optim(v, optim_bound_quantum(v, std::max(p * std::fabs(v),
                                                             floor)));
       rep.warnings.push_back(
           "OPTIM " + ol->key + " (" + std::to_string(ol->index) +
           "): bounds inconsistent with the +-" + pct_str(hdr_pct) +
-          "% emission rule (lo-clamped or hand-edited) — centre recovered "
-          "from the upper bound: " + sci8(v) + ".");
+          (from_lo
+               ? "% emission rule (hi capped by the bump-support contract "
+                 "or hand-edited) — centre recovered from the lower bound: "
+               : "% emission rule (lo-clamped or hand-edited) — centre "
+                 "recovered from the upper bound: ") +
+          sci8(v) + ".");
       ol->centre = v;
     }
   }
@@ -226,6 +264,55 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     }
     ol.lo = lo;
     ol.hi = hi;
+    ol.v = v;
+    ol.q = q;
+  }
+
+  // ---- bump-support cap re-application (contract files only) ----
+  // Rewritten bounds are symmetric again; re-tighten CGRID hi / SGRID lo per
+  // index exactly like a fresh emission (shared apply_bump_cap), so
+  // retarget(fresh, same pct) stays byte-identical and any retargeted file
+  // is a fixed point.
+  for (const auto &[sfx, w] : bump_w) {
+    const std::string ckey = "CGRID" + sfx;
+    const std::string skey = "SGRID" + sfx;
+    const std::string rkey = "RCUT" + sfx;
+    if (!groups.count(ckey) && !groups.count(skey)) continue;
+    if (!groups.count(rkey) || !groups.count(ckey) || !groups.count(skey)) {
+      rep.warnings.push_back(
+          "bump-support contract for " + rkey + " is present but the " +
+          (groups.count(rkey) ? (groups.count(ckey) ? skey : ckey) : rkey) +
+          " lines are missing (hand-pruned?) — bounds left uncapped; the "
+          "`tadah hpo` startup gate is the backstop.");
+      continue;
+    }
+    const double rcut = groups[rkey].front()->centre;
+    std::map<std::size_t, OptimLine *> smap;
+    for (auto *ol : groups[skey]) smap[ol->index] = ol;
+    std::string spilled, orphans;
+    for (auto *c : groups[ckey]) {
+      const auto s = smap.find(c->index);
+      if (s == smap.end()) {
+        orphans += (orphans.empty() ? "" : ", ") + std::to_string(c->index);
+        continue;
+      }
+      const BumpCapResult r =
+          apply_bump_cap(c->v, c->hi, c->q, s->second->v, s->second->lo,
+                         s->second->q, w, rcut);
+      if (r.seed_spill)
+        spilled += (spilled.empty() ? "" : ", ") + std::to_string(c->index);
+    }
+    if (!orphans.empty())
+      rep.warnings.push_back(
+          ckey + " index(es) " + orphans + " have no matching " + skey +
+          " line — left uncapped; the `tadah hpo` startup gate is the "
+          "backstop.");
+    if (!spilled.empty())
+      rep.warnings.push_back(
+          ckey + " bump(s) " + spilled + " spill past " + rkey + " = " +
+          sci8(rcut) + " at their own centres — bounds left uncapped; "
+          "`tadah hpo` will reject this file until the pot is repaired "
+          "(tadah refit --edit).");
   }
 
   // ---- absolute --set overrides (applied last) ----
@@ -252,6 +339,36 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           "--set " + s.key + "(" + std::to_string(s.index) +
           "): no such OPTIM line in the file. Available:" + avail);
     }
+  }
+
+  // A --set on a bump channel wins over the cap, but warn when the chosen
+  // box violates the contract corner (`tadah hpo` will reject the file).
+  for (const auto &s : opts.sets) {
+    std::string sfx;
+    if ((s.key == "CGRID2B" || s.key == "SGRID2B") && bump_w.count("2B"))
+      sfx = "2B";
+    else if ((s.key == "CGRIDMB" || s.key == "SGRIDMB") && bump_w.count("MB"))
+      sfx = "MB";
+    else
+      continue;
+    const std::string ckey = "CGRID" + sfx;
+    const std::string skey = "SGRID" + sfx;
+    const std::string rkey = "RCUT" + sfx;
+    if (!groups.count(ckey) || !groups.count(skey) || !groups.count(rkey))
+      continue;
+    const double w = bump_w.at(sfx);
+    const double rcut = groups[rkey].front()->centre;
+    OptimLine *c = nullptr, *e = nullptr;
+    for (auto *ol : groups[ckey]) if (ol->index == s.index) c = ol;
+    for (auto *ol : groups[skey]) if (ol->index == s.index) e = ol;
+    if (!c || !e || e->lo <= 0.0) continue;
+    const double reach = c->hi + w / e->lo;
+    if (reach > rcut + tadah::models::bump_rcut_tol(rcut))
+      rep.warnings.push_back(
+          "--set " + s.key + "(" + std::to_string(s.index) +
+          "): the resulting box lets bump " + std::to_string(s.index) +
+          " reach " + sci8(reach) + ", past " + rkey + " = " + sci8(rcut) +
+          " — `tadah hpo` will reject this file (bump-support contract).");
   }
 
   // ---- serialise the rewritten lines ----
