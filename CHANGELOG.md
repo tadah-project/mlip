@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-07-14
+
 ### Added
 - **`--retarget --rcut2b <r> / --rcutmb <r>`**: declare a bump channel's fixed cutoff in the same run — the file's `OPTIM RCUT*` reference line is recentred on `r`, stray ACTIVE `OPTIM RCUT*` lines are commented out with a warning (searching RCUT on a gated bump channel is a wasted dimension), and the rewritten CGRID/SGRID boxes are truncated to `c + w/eta <= r`. Replaces the two-step `--set 'RCUT2B(1)=lo,hi'` + `--pct` dance after manually raising a pot's cutoff.
 
