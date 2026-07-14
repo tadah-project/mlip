@@ -31,6 +31,14 @@ struct RetargetOptions {
     double lo = 0.0, hi = 0.0;
   };
   std::vector<SetOverride> sets;           ///< --set 'KEY(i)=lo,hi' (last)
+  /** --rcut2b / --rcutmb: declare a bump channel's FIXED cutoff in one step.
+   *  Keyed by channel suffix ("2B" / "MB"). The file's OPTIM RCUT{sfx}
+   *  reference line(s) are recentred on the value (ACTIVE ones are commented
+   *  out with a warning: with the bump-support gate, searching RCUT on a
+   *  bump channel is a wasted dimension) and the bump-support cap binds
+   *  against it. Ignored with a warning on knot channels (RCUT is derived
+   *  from the largest knot there). */
+  std::map<std::string, double> rcut_override;
 };
 
 struct RetargetReport {

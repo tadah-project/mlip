@@ -12,6 +12,7 @@
 #include <limits>
 #include <map>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -131,10 +132,49 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   std::map<std::string, std::vector<OptimLine *>> groups;
   for (auto &ol : ols) groups[ol.key].push_back(&ol);
 
+  // ---- --rcut2b/--rcutmb: declared FIXED cutoffs for bump channels ----
+  // Forced centres for the RCUT reference lines (the repair loop skips
+  // them); the bump-support cap below binds against the declared value.
+  std::set<std::string> forced_rcut;  // rkey names with forced centres
+  for (const auto &[sfx, r] : opts.rcut_override) {
+    const std::string flag = std::string("--rcut") + (sfx == "2B" ? "2b" : "mb");
+    const std::string ckey = "CGRID" + sfx;
+    const std::string skey = "SGRID" + sfx;
+    const std::string rkey = "RCUT" + sfx;
+    if (groups.count(ckey) && !groups.count(skey)) {
+      rep.warnings.push_back(
+          flag + " ignored: " + ckey + " is a knot channel — " + rkey +
+          " is derived from the largest knot; move the knots instead.");
+      continue;
+    }
+    forced_rcut.insert(rkey);
+    if (!groups.count(rkey)) {
+      rep.warnings.push_back(
+          rkey + ": no OPTIM reference line in the file — the declared "
+          "cutoff " + sci8(r) + " still binds the bump-support cap; "
+          "remember to set " + rkey + " in the training config.");
+      continue;
+    }
+    for (auto *ol : groups[rkey]) {
+      if (ol->prefix.empty()) {
+        ol->prefix = "# ";
+        rep.warnings.push_back(
+            "OPTIM " + rkey + " (" + std::to_string(ol->index) +
+            "): ACTIVE line commented out — " + flag + " declares a FIXED "
+            "cutoff, and searching RCUT on a bump channel is a wasted "
+            "dimension (the bump-support gate keeps every bump inside the "
+            "cutoff's LOW bound). Set " + rkey + " in the training config.");
+      }
+      ol->centre = r;
+    }
+  }
+
   for (auto &[key, group] : groups) {
     bool known = false;
     const bool positive_only = group_positive_only(key, known);
     const bool is_rcut = group.front()->is_rcut;
+    if (is_rcut && forced_rcut.count(key))
+      continue;  // centre declared via --rcut2b/--rcutmb: nothing to recover
     if (!known && !is_rcut)
       rep.warnings.push_back(
           "OPTIM key '" + key +
@@ -277,8 +317,11 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     const std::string ckey = "CGRID" + sfx;
     const std::string skey = "SGRID" + sfx;
     const std::string rkey = "RCUT" + sfx;
+    const auto ov = opts.rcut_override.find(sfx);
+    const bool has_ov = ov != opts.rcut_override.end();
     if (!groups.count(ckey) && !groups.count(skey)) continue;
-    if (!groups.count(rkey) || !groups.count(ckey) || !groups.count(skey)) {
+    if (!groups.count(ckey) || !groups.count(skey) ||
+        (!groups.count(rkey) && !has_ov)) {
       rep.warnings.push_back(
           "bump-support contract for " + rkey + " is present but the " +
           (groups.count(rkey) ? (groups.count(ckey) ? skey : ckey) : rkey) +
@@ -286,29 +329,35 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           "`tadah hpo` startup gate is the backstop.");
       continue;
     }
-    // The binding cutoff for the cap. Normally the group is ONE commented
-    // scalar whose centre IS the fixed rcut. An ACTIVE OPTIM RCUT line makes
-    // rcut a search dimension — `tadah hpo`'s bump-support gate then binds
-    // at its LOW bound — and duplicate lines (e.g. a hand-added active line
-    // next to the emitted commented one) are ambiguous. Bind against the
-    // smallest reachable cutoff and say so, instead of silently trusting
-    // whichever line happens to come first in the file.
+    // The binding cutoff for the cap: an explicit --rcut2b/--rcutmb wins.
+    // Otherwise, the group is normally ONE commented scalar whose centre IS
+    // the fixed rcut. An ACTIVE OPTIM RCUT line makes rcut a search
+    // dimension — `tadah hpo`'s bump-support gate then binds at its LOW
+    // bound — and duplicate lines (e.g. a hand-added active line next to
+    // the emitted commented one) are ambiguous. Bind against the smallest
+    // reachable cutoff and say so, instead of silently trusting whichever
+    // line happens to come first in the file.
     double rcut = std::numeric_limits<double>::max();
-    bool any_active = false;
-    for (const auto *ol : groups[rkey]) {
-      rcut = std::min(rcut, ol->prefix.empty() ? ol->lo : ol->centre);
-      any_active |= ol->prefix.empty();
+    if (has_ov) {
+      rcut = ov->second;
+    } else {
+      bool any_active = false;
+      for (const auto *ol : groups[rkey]) {
+        rcut = std::min(rcut, ol->prefix.empty() ? ol->lo : ol->centre);
+        any_active |= ol->prefix.empty();
+      }
+      if (groups[rkey].size() > 1 || any_active)
+        rep.warnings.push_back(
+            rkey + ": " + std::to_string(groups[rkey].size()) +
+            " OPTIM line(s)" + (any_active ? ", some ACTIVE" : "") +
+            " — the bump-support cap binds against the smallest reachable "
+            "cutoff, " + sci8(rcut) + ". An active OPTIM " + rkey +
+            " is a wasted dimension on a bump channel (the support gate "
+            "keeps every bump inside its LOW bound, so the cutoff value "
+            "cannot affect the model): keep ONE commented line centred on "
+            "the fixed " + rkey + " and set " + rkey + " in the config — or "
+            "declare it in one step with --rcut2b/--rcutmb.");
     }
-    if (groups[rkey].size() > 1 || any_active)
-      rep.warnings.push_back(
-          rkey + ": " + std::to_string(groups[rkey].size()) +
-          " OPTIM line(s)" + (any_active ? ", some ACTIVE" : "") +
-          " — the bump-support cap binds against the smallest reachable "
-          "cutoff, " + sci8(rcut) + ". An active OPTIM " + rkey +
-          " is a wasted dimension on a bump channel (the support gate keeps "
-          "every bump inside its LOW bound, so the cutoff value cannot "
-          "affect the model): keep ONE commented line centred on the fixed " +
-          rkey + " and set " + rkey + " in the config.");
     std::map<std::size_t, OptimLine *> smap;
     for (auto *ol : groups[skey]) smap[ol->index] = ol;
     std::string spilled, orphans;

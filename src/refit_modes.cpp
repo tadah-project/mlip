@@ -100,7 +100,7 @@ void validate_refit_mode_keys(const Context &c) {
     if (!edit && has(c, k))
       throw std::runtime_error(std::string("tadah refit: the ") + k +
                                " key requires --edit <pot.tadah>.");
-  for (const char *k : {"PCT", "SET"})
+  for (const char *k : {"PCT", "SET", "RETARGET_RCUT2B", "RETARGET_RCUTMB"})
     if (!retarget && has(c, k))
       throw std::runtime_error(std::string("tadah refit: the ") + k +
                                " key requires --retarget <file.hpotarget>.");
@@ -237,6 +237,19 @@ int run_refit_retarget(Context &c) {
             "(e.g. --pct 10 FIXWEIGHT=2).");
       }
     }
+  }
+
+  // --rcut2b / --rcutmb: declared fixed cutoffs for the bump channels
+  for (const auto &[key, sfx] : {std::pair<const char *, const char *>{
+                                     "RETARGET_RCUT2B", "2B"},
+                                 {"RETARGET_RCUTMB", "MB"}}) {
+    if (!has(c, key)) continue;
+    const double r = c.get<double>(key);
+    if (r <= 0.0)
+      throw std::runtime_error(std::string("tadah refit --retarget: --rcut") +
+                               (std::string(sfx) == "2B" ? "2b" : "mb") +
+                               " must be positive.");
+    opts.rcut_override[sfx] = r;
   }
 
   // --set 'KEY(i)=lo,hi'

@@ -486,6 +486,55 @@ TEST_CASE_METHOD(PTFixture,
       REQUIRE(chi[i] + w / elo[i] <= rcut + tol);
   }
 
+  SECTION("--rcut2b declares the cutoff in one step") {
+    // One command replaces the recentre-then-widen dance: the RCUT2B
+    // reference is recentred on 6.0, a stray ACTIVE line is demoted to a
+    // comment, and the widened boxes are truncated against 6.0 (not the
+    // file's old 5.0) — so boxes may legally reach past the old cap.
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);  // capped at 5.0
+    auto lines = read_lines("b.hpotarget");
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+      if (lines[i].rfind("# OPTIM RCUT2B (1)", 0) == 0) {
+        lines.insert(lines.begin() + i + 1, "OPTIM RCUT2B (1) 5.9 6.1");
+        break;
+      }
+    }
+    RetargetOptions o;
+    o.pct = 10.0;
+    o.rcut_override["2B"] = 6.0;
+    RetargetReport rep = retarget_hpotarget_lines(lines, o);
+    bool demote_warn = false;
+    for (const auto &wmsg : rep.warnings)
+      if (wmsg.find("commented out") != std::string::npos) demote_warn = true;
+    REQUIRE(demote_warn);
+    bool recentred = false;
+    double max_corner_over_old = 0.0;
+    std::vector<double> chi, elo;
+    for (const auto &l : lines) {
+      REQUIRE(l.rfind("OPTIM RCUT2B", 0) != 0);  // no ACTIVE RCUT line left
+      if (l.rfind("# OPTIM RCUT2B (1) 5.40000000e+00 6.60000000e+00", 0) == 0)
+        recentred = true;  // 6.0 +- 10%
+      std::istringstream is(l);
+      std::string h, a, key, idx;
+      double lo, hi;
+      if (l.rfind("# OPTIM CGRID2B", 0) == 0 &&
+          (is >> h >> a >> key >> idx >> lo >> hi))
+        chi.push_back(hi);
+      std::istringstream is2(l);
+      if (l.rfind("# OPTIM SGRID2B", 0) == 0 &&
+          (is2 >> h >> a >> key >> idx >> lo >> hi))
+        elo.push_back(lo);
+    }
+    REQUIRE(recentred);
+    REQUIRE(chi.size() == elo.size());
+    for (std::size_t i = 0; i < chi.size(); ++i) {
+      const double corner = chi[i] + w / elo[i];
+      REQUIRE(corner <= 6.0 * (1.0 + 1e-6));
+      max_corner_over_old = std::max(max_corner_over_old, corner);
+    }
+    REQUIRE(max_corner_over_old > rcut + tol);  // genuinely wider than 5.0
+  }
+
   SECTION("inherited seed spill: uncapped rewrite + spill warning") {
     write_hpotarget("d.hpotarget", make_blip_pot(4.8, 2.0), 10.0);
     auto lines = read_lines("d.hpotarget");
