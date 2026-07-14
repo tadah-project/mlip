@@ -286,7 +286,29 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           "`tadah hpo` startup gate is the backstop.");
       continue;
     }
-    const double rcut = groups[rkey].front()->centre;
+    // The binding cutoff for the cap. Normally the group is ONE commented
+    // scalar whose centre IS the fixed rcut. An ACTIVE OPTIM RCUT line makes
+    // rcut a search dimension — `tadah hpo`'s bump-support gate then binds
+    // at its LOW bound — and duplicate lines (e.g. a hand-added active line
+    // next to the emitted commented one) are ambiguous. Bind against the
+    // smallest reachable cutoff and say so, instead of silently trusting
+    // whichever line happens to come first in the file.
+    double rcut = std::numeric_limits<double>::max();
+    bool any_active = false;
+    for (const auto *ol : groups[rkey]) {
+      rcut = std::min(rcut, ol->prefix.empty() ? ol->lo : ol->centre);
+      any_active |= ol->prefix.empty();
+    }
+    if (groups[rkey].size() > 1 || any_active)
+      rep.warnings.push_back(
+          rkey + ": " + std::to_string(groups[rkey].size()) +
+          " OPTIM line(s)" + (any_active ? ", some ACTIVE" : "") +
+          " — the bump-support cap binds against the smallest reachable "
+          "cutoff, " + sci8(rcut) + ". An active OPTIM " + rkey +
+          " is a wasted dimension on a bump channel (the support gate keeps "
+          "every bump inside its LOW bound, so the cutoff value cannot "
+          "affect the model): keep ONE commented line centred on the fixed " +
+          rkey + " and set " + rkey + " in the config.");
     std::map<std::size_t, OptimLine *> smap;
     for (auto *ol : groups[skey]) smap[ol->index] = ol;
     std::string spilled, orphans;

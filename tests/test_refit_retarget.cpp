@@ -444,6 +444,48 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE(applied);
   }
 
+  SECTION("duplicate/ACTIVE RCUT lines: cap binds the smallest reachable") {
+    // A hand-added ACTIVE `OPTIM RCUT2B` next to the emitted commented one
+    // must not silently win (or lose) by file order: the cap binds against
+    // the smallest reachable cutoff — min(commented centre, active
+    // REWRITTEN low bound) — and warns. The header pct is 10, so the active
+    // line's centre recovers from its upper bound as 6.2/1.1 = 5.6364 and
+    // its rewritten low bound is 5.0727: min(5.0, 5.0727) = 5.0 — the boxes
+    // stay capped at the true rcut despite the wider active line.
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+    auto lines = read_lines("b.hpotarget");
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+      if (lines[i].rfind("# OPTIM RCUT2B (1)", 0) == 0) {
+        lines.insert(lines.begin() + i + 1, "OPTIM RCUT2B (1) 6.0 6.2");
+        break;
+      }
+    }
+    RetargetOptions o10;
+    o10.pct = 10.0;
+    RetargetReport rep = retarget_hpotarget_lines(lines, o10);
+    bool warned = false;
+    for (const auto &wmsg : rep.warnings)
+      if (wmsg.find("smallest reachable cutoff") != std::string::npos)
+        warned = true;
+    REQUIRE(warned);
+    std::vector<double> chi, elo;
+    for (const auto &l : lines) {
+      std::istringstream is(l);
+      std::string h, a, key, idx;
+      double lo, hi;
+      if (l.rfind("# OPTIM CGRID2B", 0) == 0 &&
+          (is >> h >> a >> key >> idx >> lo >> hi))
+        chi.push_back(hi);
+      std::istringstream is2(l);
+      if (l.rfind("# OPTIM SGRID2B", 0) == 0 &&
+          (is2 >> h >> a >> key >> idx >> lo >> hi))
+        elo.push_back(lo);
+    }
+    REQUIRE(chi.size() == elo.size());
+    for (std::size_t i = 0; i < chi.size(); ++i)
+      REQUIRE(chi[i] + w / elo[i] <= rcut + tol);
+  }
+
   SECTION("inherited seed spill: uncapped rewrite + spill warning") {
     write_hpotarget("d.hpotarget", make_blip_pot(4.8, 2.0), 10.0);
     auto lines = read_lines("d.hpotarget");
