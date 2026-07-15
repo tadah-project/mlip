@@ -7,6 +7,7 @@
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/column_block.h>
 #include <tadah/mlip/normaliser.h>
+#include <tadah/mlip/parallel.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
@@ -179,13 +180,12 @@ public:
         row+=6;
       }
     }
-    // loop over all structures and build
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(guided)
-#endif
-    for (size_t s=0; s<stdb.size(); ++s) {
-      build(rows[s], stdb(s),st_desc_db(s));
-    }
+    // loop over all structures and build. Stage 2.3: routes onto the shared
+    // ScriptExecutor pool when HPO installs a backend, else the historical
+    // OpenMP loop. Each s writes a disjoint Phi row-block => order-independent.
+    parallel_for(stdb.size(), [&](size_t s) {
+      build(rows[s], stdb(s), st_desc_db(s));
+    });
   };
 
   /** \brief Calculate descriptors and build design matrix. */
@@ -239,17 +239,16 @@ public:
         row+=6;
       }
     }
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(guided)
-#endif
-    for (size_t s=0; s<stdb.size(); ++s) {
+    // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
+    // Each s writes a disjoint Phi row-block (rows[s]) => order-independent.
+    parallel_for(stdb.size(), [&](size_t s) {
       StDescriptors st_d = dc.calc(stdb(s));
 
       if(context.get<bool>("NORM"))  // TODO move to scale()
-    norm.normalise(st_d);
+        norm.normalise(st_d);
 
       build(rows[s], stdb(s), st_d);
-    }
+    });
     if (w_copy_) {
       copyAndScale();
     }

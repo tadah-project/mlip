@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/parallel.h>
 #include <tadah/core/periodic_table.h>
 
 #include <cstdio>
@@ -391,14 +392,14 @@ template <typename D2, typename DM, typename C2, typename CM>
 StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) const {
   StDescriptorsDB st_desc_db(stdb, context);
 
-#ifdef _OPENMP
-  #pragma omp parallel for schedule(guided)
-#endif
-  for(size_t i=0; i<stdb.size(); ++i)
+  // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
+  // Each i writes a disjoint st_desc_db(i) => order-independent.
+  parallel_for(stdb.size(), [&](size_t i) {
     if (context.get<bool>("DIMER",0))
       calc_dimer(stdb(i),st_desc_db(i));
     else
       calc(stdb(i),st_desc_db(i));
+  });
   return st_desc_db;
 }
 template <typename D2, typename DM, typename C2, typename CM>

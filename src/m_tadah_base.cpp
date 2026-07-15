@@ -1,4 +1,5 @@
 #include <tadah/mlip/models/m_tadah_base.h>
+#include <tadah/mlip/parallel.h>
 namespace tadah {
 namespace mlip {
 
@@ -70,12 +71,11 @@ predict(const tadah::core::Context &c, StDescriptorsDB &st_desc_db, const Struct
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
-#ifdef _OPENMP
-  #pragma omp parallel for schedule(guided)
-#endif
-  for (size_t i=0; i<stdb.size(); ++i) {
+  // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
+  // Each i writes a disjoint stdb_(i) => order-independent.
+  parallel_for(stdb.size(), [&](size_t i) {
     stdb_(i) = predict(c,st_desc_db(i), stdb(i));
-  }
+  });
   return stdb_;
 }
 
@@ -84,12 +84,11 @@ predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc)
 {
   StructureDB stdb_;
   stdb_.structures.resize(stdb.size());
-#ifdef _OPENMP
-  #pragma omp parallel for schedule(guided)
-#endif
-  for (size_t i=0; i<stdb.size(); ++i) {
+  // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
+  // Each i writes a disjoint stdb_(i) => order-independent.
+  parallel_for(stdb.size(), [&](size_t i) {
     stdb_(i) = predict(c, stdb(i), dc);
-  }
+  });
   return stdb_;
 }
 Structure M_Tadah_Base::
