@@ -50,8 +50,8 @@ Context make_knot_pot() {
 
 // Small BUMP-family (D2_Blip, w = 2) refit pot with a hard Cut_Dummy cutoff.
 // Both blips sit exactly at the support edge (c + 2/eta == RCUT2B == 5), so
-// the pot is gate-compliant but every symmetric OPTIM box corner spills and
-// must be capped by the writer.
+// the pot is gate-compliant but every symmetric OPTIM box corner overhangs —
+// emitted at full width; `tadah hpo`'s per-candidate gate owns the invariant.
 Context make_blip_pot(double c2 = 4.5, double e2 = 4.0) {
   Context c;
   c.add("ATOM", "Cu");
@@ -314,21 +314,28 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 TEST_CASE_METHOD(PTFixture,
-                 "write_hpotarget: bump boxes are capped to the support gate",
+                 "write_hpotarget: bump boxes are emitted at full width",
                  "[retarget][hpotarget_writer][bumpcap]") {
   ScopedTempDir tmp;
   const double w = 2.0, rcut = 5.0;
   const double tol = 1e-6 * rcut;
 
-  SECTION("edge seeds: every emitted corner satisfies c_hi + w/e_lo <= rcut") {
+  SECTION("edge seeds: contract recorded, symmetric boxes may overhang") {
     write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     const std::string body = slurp("b.hpotarget");
     REQUIRE(body.find("RCUT2B bump-support contract: w = 2") !=
             std::string::npos);
+    REQUIRE(body.find("rejected per evaluation") != std::string::npos);
     REQUIRE(body.find("# OPTIM RCUT2B") != std::string::npos);
+    // blip 2 (c=4.5, pct 10) keeps its symmetric bounds
+    REQUIRE(body.find("# OPTIM CGRID2B (2) 4.05000000e+00 4.95000000e+00") !=
+            std::string::npos);
     const auto lines = read_lines("b.hpotarget");
-    REQUIRE(bump_corner_reach(lines, w) <= rcut + tol);
-    // degenerate rule at the exact edge: boxes stay alive (lo < hi)
+    // edge seeds + full-width boxes: the worst corner overhangs — the
+    // per-candidate gate in `tadah hpo`, not the writer, enforces the
+    // invariant now
+    REQUIRE(bump_corner_reach(lines, w) > rcut + tol);
+    // boxes stay alive (lo < hi)
     for (const auto &l : lines) {
       if (l.rfind("# OPTIM CGRID2B", 0) != 0 &&
           l.rfind("# OPTIM SGRID2B", 0) != 0)
@@ -341,10 +348,10 @@ TEST_CASE_METHOD(PTFixture,
     }
   }
 
-  SECTION("hi-cap alone suffices when the seed sits well inside rcut") {
-    // c=3.5, eta=2.0 (reach 4.5), pct 20: hi_c 4.2, e_lo 1.6 -> corner 5.45;
-    // capping hi_c to rcut - w/e_lo = 3.75 restores the invariant without
-    // touching the width's lower bound.
+  SECTION("a seed well inside rcut also keeps symmetric bounds (no cap)") {
+    // c=3.5, eta=2.0 (reach 4.5), pct 20: symmetric hi_c 4.2, e_lo 1.6
+    // (corner 5.45 > 5 — previously capped to 3.75, now left at full
+    // width for the per-candidate gate).
     Context pot;
     pot.add("ATOM", "Cu");
     pot.add("TYPE2B", "D2_Blip");
@@ -364,8 +371,8 @@ TEST_CASE_METHOD(PTFixture,
       double lo, hi;
       if (l.rfind("# OPTIM CGRID2B (1)", 0) == 0) {
         REQUIRE((is >> h >> a >> key >> idx >> lo >> hi));
-        REQUIRE(hi == Approx(3.75));   // capped from 4.2
-        REQUIRE(lo == Approx(2.8));    // untouched
+        REQUIRE(hi == Approx(4.2));    // symmetric, not capped
+        REQUIRE(lo == Approx(2.8));
         cg = true;
       }
       if (l.rfind("# OPTIM SGRID2B (1)", 0) == 0) {
@@ -400,13 +407,13 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 TEST_CASE_METHOD(PTFixture,
-                 "retarget preserves and re-applies the bump cap",
+                 "retarget: full-width bump boxes and contract diagnostics",
                  "[retarget][bumpcap]") {
   ScopedTempDir tmp;
   const double w = 2.0, rcut = 5.0;
   const double tol = 1e-6 * rcut;
 
-  SECTION("same-pct retarget of a capped file is byte-idempotent") {
+  SECTION("same-pct retarget of a fresh file is byte-idempotent") {
     write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     const std::string fresh = slurp("b.hpotarget");
     RetargetOptions o10;
@@ -415,17 +422,19 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE(slurp("b2.hpotarget") == fresh);
   }
 
-  SECTION("re-pct retarget re-applies the cap and stays a fixed point") {
+  SECTION("re-pct retarget keeps full-width boxes and stays a fixed point") {
     write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     RetargetOptions o25;
     o25.pct = 25.0;
     retarget_hpotarget_file("b.hpotarget", "b25.hpotarget", false, o25);
-    REQUIRE(bump_corner_reach(read_lines("b25.hpotarget"), w) <= rcut + tol);
+    // edge seeds at +-25%: the symmetric worst corner overhangs — the
+    // per-candidate gate in `tadah hpo` owns the invariant now
+    REQUIRE(bump_corner_reach(read_lines("b25.hpotarget"), w) > rcut + tol);
     retarget_hpotarget_file("b25.hpotarget", "b25b.hpotarget", false, o25);
     REQUIRE(slurp("b25b.hpotarget") == slurp("b25.hpotarget"));
   }
 
-  SECTION("--set past the cap wins but warns") {
+  SECTION("--set with an infeasible corner wins but warns") {
     write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     auto lines = read_lines("b.hpotarget");
     RetargetOptions opts;
@@ -444,14 +453,11 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE(applied);
   }
 
-  SECTION("duplicate/ACTIVE RCUT lines: cap binds the smallest reachable") {
+  SECTION("an ACTIVE RCUT line draws the wasted-dimension warning") {
     // A hand-added ACTIVE `OPTIM RCUT2B` next to the emitted commented one
-    // must not silently win (or lose) by file order: the cap binds against
-    // the smallest reachable cutoff — min(commented centre, active
-    // REWRITTEN low bound) — and warns. The header pct is 10, so the active
-    // line's centre recovers from its upper bound as 6.2/1.1 = 5.6364 and
-    // its rewritten low bound is 5.0727: min(5.0, 5.0727) = 5.0 — the boxes
-    // stay capped at the true rcut despite the wider active line.
+    // is usually a wasted search dimension on a bump channel (feasible
+    // candidates vanish inside the cutoff regardless of its value): warn,
+    // and leave the CGRID/SGRID boxes at full symmetric width.
     write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     auto lines = read_lines("b.hpotarget");
     for (std::size_t i = 0; i < lines.size(); ++i) {
@@ -465,33 +471,18 @@ TEST_CASE_METHOD(PTFixture,
     RetargetReport rep = retarget_hpotarget_lines(lines, o10);
     bool warned = false;
     for (const auto &wmsg : rep.warnings)
-      if (wmsg.find("smallest reachable cutoff") != std::string::npos)
+      if (wmsg.find("wasted dimension") != std::string::npos)
         warned = true;
     REQUIRE(warned);
-    std::vector<double> chi, elo;
-    for (const auto &l : lines) {
-      std::istringstream is(l);
-      std::string h, a, key, idx;
-      double lo, hi;
-      if (l.rfind("# OPTIM CGRID2B", 0) == 0 &&
-          (is >> h >> a >> key >> idx >> lo >> hi))
-        chi.push_back(hi);
-      std::istringstream is2(l);
-      if (l.rfind("# OPTIM SGRID2B", 0) == 0 &&
-          (is2 >> h >> a >> key >> idx >> lo >> hi))
-        elo.push_back(lo);
-    }
-    REQUIRE(chi.size() == elo.size());
-    for (std::size_t i = 0; i < chi.size(); ++i)
-      REQUIRE(chi[i] + w / elo[i] <= rcut + tol);
+    // full-width edge-seed boxes: the worst corner overhangs (uncapped)
+    REQUIRE(bump_corner_reach(lines, w) > rcut + tol);
   }
 
   SECTION("--rcut2b declares the cutoff in one step") {
-    // One command replaces the recentre-then-widen dance: the RCUT2B
-    // reference is recentred on 6.0, a stray ACTIVE line is demoted to a
-    // comment, and the widened boxes are truncated against 6.0 (not the
-    // file's old 5.0) — so boxes may legally reach past the old cap.
-    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);  // capped at 5.0
+    // The RCUT2B reference is recentred on 6.0 and a stray ACTIVE line is
+    // demoted to a comment. The CGRID/SGRID boxes are symmetric full-width
+    // either way (nothing is capped any more).
+    write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
     auto lines = read_lines("b.hpotarget");
     for (std::size_t i = 0; i < lines.size(); ++i) {
       if (lines[i].rfind("# OPTIM RCUT2B (1)", 0) == 0) {
@@ -508,31 +499,15 @@ TEST_CASE_METHOD(PTFixture,
       if (wmsg.find("commented out") != std::string::npos) demote_warn = true;
     REQUIRE(demote_warn);
     bool recentred = false;
-    double max_corner_over_old = 0.0;
-    std::vector<double> chi, elo;
     for (const auto &l : lines) {
       REQUIRE(l.rfind("OPTIM RCUT2B", 0) != 0);  // no ACTIVE RCUT line left
       if (l.rfind("# OPTIM RCUT2B (1) 5.40000000e+00 6.60000000e+00", 0) == 0)
         recentred = true;  // 6.0 +- 10%
-      std::istringstream is(l);
-      std::string h, a, key, idx;
-      double lo, hi;
-      if (l.rfind("# OPTIM CGRID2B", 0) == 0 &&
-          (is >> h >> a >> key >> idx >> lo >> hi))
-        chi.push_back(hi);
-      std::istringstream is2(l);
-      if (l.rfind("# OPTIM SGRID2B", 0) == 0 &&
-          (is2 >> h >> a >> key >> idx >> lo >> hi))
-        elo.push_back(lo);
     }
     REQUIRE(recentred);
-    REQUIRE(chi.size() == elo.size());
-    for (std::size_t i = 0; i < chi.size(); ++i) {
-      const double corner = chi[i] + w / elo[i];
-      REQUIRE(corner <= 6.0 * (1.0 + 1e-6));
-      max_corner_over_old = std::max(max_corner_over_old, corner);
-    }
-    REQUIRE(max_corner_over_old > rcut + tol);  // genuinely wider than 5.0
+    // symmetric full-width boxes: the edge-seed corner overhangs the OLD
+    // 5.0 cutoff (nothing truncates against it any more)
+    REQUIRE(bump_corner_reach(lines, w) > rcut + tol);
   }
 
   SECTION("inherited seed spill: uncapped rewrite + spill warning") {

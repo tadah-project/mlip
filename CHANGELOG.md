@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **hpotarget writer/`--retarget`: bump-channel OPTIM boxes are no longer capped.** `tadah hpo` now enforces the bump-support invariant `c + w/eta <= RCUT` per candidate (`BUMPGATE CANDIDATE`, its new default — violating combinations are rejected before training), so the writer emits CGRID/SGRID bounds at full symmetric width and `--retarget` stops re-applying the cap (`apply_bump_cap`/`BumpCapResult` removed). The parsed contract comment (`# RCUT2B bump-support contract: w = ...`) is kept — reworded — and still drives the seed-spill warning (a pot whose own bumps spill is rejected by hpo's startup SEED check) and the `--set` infeasible-corner warning; the ACTIVE-`OPTIM RCUT*` wasted-dimension note is softened to the new semantics (the sampled cutoff only reshapes the feasible region). Old capped files retarget fine: the centre-recovery rule for asymmetric (hi-capped) lines is unchanged, and retarget(fresh, same pct) remains byte-idempotent.
+
 ## [1.4.0] — 2026-07-14
 
 ### Added

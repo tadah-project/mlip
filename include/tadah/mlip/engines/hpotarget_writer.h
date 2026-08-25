@@ -47,9 +47,8 @@ double optim_bound_quantum(double centre, double halfwidth);
 /** \brief Snap x to the decimal grid q (round-half-away like the printer). */
 double quantize_optim(double x, double q);
 
-/** \brief Directional snaps for the bump-support cap: down = toward -inf,
- *  up = toward +inf, so the capped bound satisfies its inequality EXACTLY
- *  on the decimal grid (no half-quantum overshoot past rcut). */
+/** \brief Directional snaps: down = toward -inf, up = toward +inf, so a
+ *  derived bound satisfies its inequality EXACTLY on the decimal grid. */
 double quantize_optim_down(double x, double q);
 double quantize_optim_up(double x, double q);
 
@@ -64,24 +63,6 @@ struct OptimBound {
 OptimBound optim_group_bound(double val, double pct, double floor,
                              bool positive_only);
 
-/** \brief Bump-support cap for one (centre, width) bound pair of a bump
- *  channel under a hard (Cut_Dummy) cutoff: enforce the box-corner
- *  invariant `hi_c + w/lo_e <= rcut` (+tol) that `tadah hpo` preflight
- *  hard-errors on. Caps the CGRID upper bound first (never below the seed
- *  centre v_c), then — when the corner still spills — raises the SGRID
- *  lower bound; directional quantization keeps the result exact on the
- *  bound grids and seed compliance keeps both boxes non-degenerate.
- *  A seed that itself spills (v_c + w/v_e > rcut) is left UNCAPPED
- *  (seed_spill = true): the emitter warns and `tadah hpo` rejects the file
- *  until the pot is repaired (refit --edit). */
-struct BumpCapResult {
-  bool seed_spill = false;  ///< pot's own bump spills; bounds left alone
-  bool capped = false;      ///< hi_c and/or lo_e were tightened
-};
-BumpCapResult apply_bump_cap(double v_c, double &hi_c, double q_c,
-                             double v_e, double &lo_e, double q_e,
-                             double w, double rcut);
-
 /** \brief One `OPTIM KEY (i) lo hi` line per parameter; bounds are
  *  v +- max(pct%·|v|, floor) with floor = max(1e-8, 1e-3·max|v| of the
  *  group) so near-zero parameters keep a searchable window. */
@@ -94,12 +75,11 @@ void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
                        double pct, double lo_clamp, bool commented = false);
 
 /** \brief Paired (CGRID*, SGRID*) emission for a BUMP channel under a hard
- *  cutoff: identical bytes to two emit_optim_group calls except where
- *  apply_bump_cap must tighten a CGRID hi / SGRID lo so the emitted file
- *  passes the `tadah hpo` bump-support preflight gate. Warns (once per
- *  channel, naming the indices) when the pot's own bumps spill — those
- *  lines are emitted uncapped and the file is rejected by hpo until the
- *  pot is repaired. */
+ *  cutoff: identical bytes to two emit_optim_group calls (bounds are
+ *  emitted at full width — `tadah hpo`'s per-candidate bump-support gate
+ *  rejects infeasible combinations at evaluation time). Warns (once per
+ *  channel, naming the indices) when the pot's own bumps spill — hpo's
+ *  startup SEED check rejects such a file until the pot is repaired. */
 void emit_optim_group_pair(std::ostream &os, const std::string &ckey,
                            const tadah::core::v_type &cvals,
                            const std::string &skey,

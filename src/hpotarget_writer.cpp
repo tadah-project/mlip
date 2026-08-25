@@ -62,26 +62,6 @@ OptimBound optim_group_bound(double val, double pct, double floor,
   return b;
 }
 
-BumpCapResult apply_bump_cap(double v_c, double &hi_c, double q_c,
-                             double v_e, double &lo_e, double q_e,
-                             double w, double rcut) {
-  BumpCapResult r;
-  const double tol = tadah::models::bump_rcut_tol(rcut);
-  if (lo_e <= 0.0) return r;  // malformed width bound: hpo preflight's problem
-  if (hi_c + w / lo_e <= rcut + tol) return r;  // corner already compliant
-  if (v_e <= 0.0 || v_c + w / v_e > rcut + tol) {
-    r.seed_spill = true;  // the pot itself spills: leave the bounds alone
-    return r;
-  }
-  r.capped = true;
-  hi_c = std::max(v_c, quantize_optim_down(rcut - w / lo_e, q_c));
-  if (hi_c + w / lo_e <= rcut + tol) return r;
-  // hi_c is pinned at the (compliant) seed centre: raise the width floor.
-  // Seed compliance gives lo_e' <= v_e < hi_e, so the box stays alive.
-  lo_e = quantize_optim_up(w / (rcut - hi_c), q_e);
-  return r;
-}
-
 namespace {
 
 void emit_group_header(std::ostream &os, const std::string &key,
@@ -136,24 +116,27 @@ void emit_optim_group_pair(std::ostream &os, const std::string &ckey,
   }
   const double cfloor = group_floor_of(cvals);
   const double sfloor = group_floor_of(svals);
+  const double tol = tadah::models::bump_rcut_tol(rcut);
   std::vector<OptimBound> cb(cvals.size()), sb(svals.size());
   std::string spilled;
   for (std::size_t i = 0; i < cvals.size(); ++i) {
     cb[i] = optim_group_bound(cvals[i], pct, cfloor, false);
     sb[i] = optim_group_bound(svals[i], pct, sfloor, true);
-    const BumpCapResult r = apply_bump_cap(cb[i].v, cb[i].hi, cb[i].q,
-                                           sb[i].v, sb[i].lo, sb[i].q,
-                                           w, rcut);
-    if (r.seed_spill)
+    /* Bounds are emitted at FULL width: `tadah hpo` (BUMPGATE CANDIDATE)
+     * accepts partially infeasible boxes and rejects violating candidates
+     * per evaluation, so pre-shrinking the box here would only re-create
+     * the near-cutoff spike problem the per-candidate gate removed. A pot
+     * whose own bump spills is still worth a warning: hpo's startup SEED
+     * check rejects it. */
+    if (sb[i].v <= 0.0 || cb[i].v + w / sb[i].v > rcut + tol)
       spilled += (spilled.empty() ? "" : ", ") + std::to_string(i + 1);
   }
   if (!spilled.empty()) {
     core::Logger::instance().log(core::LogLevel::WARNING,
         "tadah refit: " + ckey + " bump(s) " + spilled + " of the potential "
-        "itself reach past the hard cutoff — the emitted OPTIM bounds are "
-        "left uncapped and `tadah hpo` will reject this hpotarget until the "
-        "pot is repaired (move/narrow the bump with `tadah refit --edit`, "
-        "or raise RCUT in the pot).");
+        "itself reach past the hard cutoff — `tadah hpo` rejects a spilling "
+        "seed pot at startup until it is repaired (move/narrow the bump "
+        "with `tadah refit --edit`, or raise RCUT in the pot).");
   }
   emit_group_header(os, ckey, cvals.size(), pct, commented);
   for (std::size_t i = 0; i < cvals.size(); ++i)
@@ -228,10 +211,11 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
     pot.get(k, v);
     return v;
   };
-  // Bump channel under a hard (Cut_Dummy) cutoff: `tadah hpo` hard-errors
-  // when OPTIM bounds allow a bump's support (c + w/eta) past RCUT, so the
-  // emitted CGRID/SGRID bounds are capped to the invariant and the contract
-  // (with the half-width w) is recorded as a parsed comment for --retarget.
+  // Bump channel under a hard (Cut_Dummy) cutoff: every candidate `tadah
+  // hpo` trains keeps c + w/eta <= RCUT (BUMPGATE CANDIDATE rejects the
+  // rest per evaluation), so the CGRID/SGRID bounds are emitted at full
+  // width; the contract (with the half-width w) is recorded as a parsed
+  // comment so --retarget can keep warning about spilling seed pots.
   auto bump_gate = [&](const char *suffix,
                        const std::string &rkey) -> std::optional<double> {
     const auto w = potedit::bump_channel_halfwidth(pot, suffix);
@@ -257,9 +241,11 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
       if (bump_w) {
         os << std::defaultfloat
            << "# " << key << " bump-support contract: w = " << *bump_w
-           << " (every bump keeps c + w/eta <= " << key << ";\n"
-           << "# the OPTIM CGRID" << suffix << "/SGRID" << suffix
-           << " bounds below are capped to enforce it)\n";
+           << " (every candidate trained keeps c + w/eta <= " << key << ";\n"
+           << "# combinations outside it are rejected per evaluation, so the "
+           << "OPTIM CGRID" << suffix << "/SGRID" << suffix << "\n"
+           << "# bounds below are emitted at full width — BUMPGATE STRICT "
+           << "restores the startup box check)\n";
       }
       emit_optim_scalar(os, key, pot.get<double>(key), pct, 0.0, true);
     }

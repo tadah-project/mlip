@@ -308,35 +308,25 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     ol.q = q;
   }
 
-  // ---- bump-support cap re-application (contract files only) ----
-  // Rewritten bounds are symmetric again; re-tighten CGRID hi / SGRID lo per
-  // index exactly like a fresh emission (shared apply_bump_cap), so
-  // retarget(fresh, same pct) stays byte-identical and any retargeted file
-  // is a fixed point.
+  // ---- bump-support contract diagnostics (contract files only) ----
+  // Bounds are no longer capped: `tadah hpo` (BUMPGATE CANDIDATE, the
+  // default) accepts partially infeasible boxes at full width and rejects
+  // violating candidates per evaluation, so retarget rewrites symmetric
+  // bounds untouched — retarget(fresh, same pct) stays a fixed point
+  // trivially. The parsed contract still drives two warnings: a seed
+  // whose own bumps spill (hpo's startup SEED check rejects such a file),
+  // and the wasted-dimension note for an ACTIVE OPTIM RCUT line.
   for (const auto &[sfx, w] : bump_w) {
     const std::string ckey = "CGRID" + sfx;
     const std::string skey = "SGRID" + sfx;
     const std::string rkey = "RCUT" + sfx;
     const auto ov = opts.rcut_override.find(sfx);
     const bool has_ov = ov != opts.rcut_override.end();
-    if (!groups.count(ckey) && !groups.count(skey)) continue;
-    if (!groups.count(ckey) || !groups.count(skey) ||
-        (!groups.count(rkey) && !has_ov)) {
-      rep.warnings.push_back(
-          "bump-support contract for " + rkey + " is present but the " +
-          (groups.count(rkey) ? (groups.count(ckey) ? skey : ckey) : rkey) +
-          " lines are missing (hand-pruned?) — bounds left uncapped; the "
-          "`tadah hpo` startup gate is the backstop.");
-      continue;
-    }
-    // The binding cutoff for the cap: an explicit --rcut2b/--rcutmb wins.
-    // Otherwise, the group is normally ONE commented scalar whose centre IS
-    // the fixed rcut. An ACTIVE OPTIM RCUT line makes rcut a search
-    // dimension — `tadah hpo`'s bump-support gate then binds at its LOW
-    // bound — and duplicate lines (e.g. a hand-added active line next to
-    // the emitted commented one) are ambiguous. Bind against the smallest
-    // reachable cutoff and say so, instead of silently trusting whichever
-    // line happens to come first in the file.
+    if (!groups.count(ckey) || !groups.count(skey)) continue;
+    if (!groups.count(rkey) && !has_ov) continue;
+    // The seed's cutoff: an explicit --rcut2b/--rcutmb wins. Otherwise the
+    // group is normally ONE commented scalar whose centre IS the fixed
+    // rcut; with active/duplicate lines, use the smallest reachable value.
     double rcut = std::numeric_limits<double>::max();
     if (has_ov) {
       rcut = ov->second;
@@ -346,44 +336,32 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
         rcut = std::min(rcut, ol->prefix.empty() ? ol->lo : ol->centre);
         any_active |= ol->prefix.empty();
       }
-      if (groups[rkey].size() > 1 || any_active)
+      if (any_active)
         rep.warnings.push_back(
-            rkey + ": " + std::to_string(groups[rkey].size()) +
-            " OPTIM line(s)" + (any_active ? ", some ACTIVE" : "") +
-            " — the bump-support cap binds against the smallest reachable "
-            "cutoff, " + sci8(rcut) + ". An active OPTIM " + rkey +
-            " is a wasted dimension on a bump channel (the support gate "
-            "keeps every bump inside its LOW bound, so the cutoff value "
-            "cannot affect the model): keep ONE commented line centred on "
-            "the fixed " + rkey + " and set " + rkey + " in the config — or "
-            "declare it in one step with --rcut2b/--rcutmb.");
+            rkey + ": an ACTIVE OPTIM " + rkey + " line is usually a "
+            "wasted dimension on a bump channel — every feasible "
+            "candidate's bumps vanish at their own support edge inside "
+            "the cutoff, so the sampled value only widens or narrows the "
+            "feasible (c, eta) region. Keep ONE commented line centred on "
+            "the fixed " + rkey + " and set " + rkey + " in the config — "
+            "or declare it in one step with --rcut2b/--rcutmb.");
     }
+    const double tol = tadah::models::bump_rcut_tol(rcut);
     std::map<std::size_t, OptimLine *> smap;
     for (auto *ol : groups[skey]) smap[ol->index] = ol;
-    std::string spilled, orphans;
+    std::string spilled;
     for (auto *c : groups[ckey]) {
       const auto s = smap.find(c->index);
-      if (s == smap.end()) {
-        orphans += (orphans.empty() ? "" : ", ") + std::to_string(c->index);
-        continue;
-      }
-      const BumpCapResult r =
-          apply_bump_cap(c->v, c->hi, c->q, s->second->v, s->second->lo,
-                         s->second->q, w, rcut);
-      if (r.seed_spill)
+      if (s == smap.end()) continue;
+      if (s->second->v <= 0.0 || c->v + w / s->second->v > rcut + tol)
         spilled += (spilled.empty() ? "" : ", ") + std::to_string(c->index);
     }
-    if (!orphans.empty())
-      rep.warnings.push_back(
-          ckey + " index(es) " + orphans + " have no matching " + skey +
-          " line — left uncapped; the `tadah hpo` startup gate is the "
-          "backstop.");
     if (!spilled.empty())
       rep.warnings.push_back(
           ckey + " bump(s) " + spilled + " spill past " + rkey + " = " +
-          sci8(rcut) + " at their own centres — bounds left uncapped; "
-          "`tadah hpo` will reject this file until the pot is repaired "
-          "(tadah refit --edit).");
+          sci8(rcut) + " at their own centres — the pot itself is invalid "
+          "under a hard cutoff; `tadah hpo` rejects a spilling seed at "
+          "startup until it is repaired (tadah refit --edit).");
   }
 
   // ---- absolute --set overrides (applied last) ----
@@ -412,8 +390,9 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     }
   }
 
-  // A --set on a bump channel wins over the cap, but warn when the chosen
-  // box violates the contract corner (`tadah hpo` will reject the file).
+  // A --set on a bump channel always wins, but warn when the chosen box
+  // has an infeasible corner: those combinations are per-candidate rejects
+  // in `tadah hpo` (and a startup error under BUMPGATE STRICT).
   for (const auto &s : opts.sets) {
     std::string sfx;
     if ((s.key == "CGRID2B" || s.key == "SGRID2B") && bump_w.count("2B"))
@@ -439,7 +418,9 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           "--set " + s.key + "(" + std::to_string(s.index) +
           "): the resulting box lets bump " + std::to_string(s.index) +
           " reach " + sci8(reach) + ", past " + rkey + " = " + sci8(rcut) +
-          " — `tadah hpo` will reject this file (bump-support contract).");
+          " (bump-support contract) — `tadah hpo` rejects those "
+          "combinations per evaluation (or the whole file at startup "
+          "under BUMPGATE STRICT).");
   }
 
   // ---- serialise the rewritten lines ----
