@@ -16,6 +16,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/stats/data_stats.h>
 #include <tadah/mlip/preflight_audit.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/param_meta.h>
 
 #include <sstream>
@@ -204,6 +205,138 @@ TEST_CASE("preflight_audit: critical_optim_audit flags BASINS-style fixed CGRIDM
     REQUIRE(m.param_key != "CGRIDMB");
     REQUIRE(m.param_key != "RCUTMB");
     REQUIRE(m.param_key != "SGRIDMB");
+  }
+}
+
+// Bump-family metas: RCUT* Critical as in the real D2_Blip5 / DM_REAM
+// meta(); CGRID2B is promoted to Critical here (the real meta says
+// Recommended) only to prove that the skip is RCUT-specific.
+static DescriptorMeta make_bump_pair_like_meta(const std::string& label) {
+  DescriptorMeta dm;
+  dm.label = label;
+  ParamMeta rcut;
+  rcut.key   = "RCUT2B";
+  rcut.arg_pos = -1;
+  rcut.scale = Scale::Distance;
+  rcut.units = "Å";
+  rcut.role  = "Outer cutoff for the 2-body neighbour sum.";
+  rcut.crit  = Criticality::Critical;
+  rcut.scope = PairScope::Global;
+  dm.params.push_back(std::move(rcut));
+  ParamMeta cgrid;
+  cgrid.key   = "CGRID2B";
+  cgrid.arg_pos = -1;
+  cgrid.scale = Scale::Distance;
+  cgrid.units = "Å";
+  cgrid.role  = "Bump centres";
+  cgrid.crit  = Criticality::Critical;
+  cgrid.scope = PairScope::PerElementPair;
+  dm.params.push_back(std::move(cgrid));
+  return dm;
+}
+
+static DescriptorMeta make_dm_ream_like_meta() {
+  DescriptorMeta dm;
+  dm.label = "DM_REAM";
+  ParamMeta rcut;
+  rcut.key   = "RCUTMB";
+  rcut.arg_pos = -1;
+  rcut.scale = Scale::Distance;
+  rcut.units = "Å";
+  rcut.role  = "Real-space cutoff for the EAM density neighbour sum.";
+  rcut.crit  = Criticality::Critical;
+  rcut.scope = PairScope::Global;
+  dm.params.push_back(std::move(rcut));
+  return dm;
+}
+
+// A refit-style bump seed: TYPE2B D2_Blip5 <n> <n> Ta Ta, TYPEMB DM_REAM 3
+// (Blip5 code) <sizes...> Ta Ta, hard cutoffs unless the caller adds RCTYPE*.
+static Context make_bump_seed(const std::string& pair_family) {
+  Context seed;
+  seed.add("TYPE2B", pair_family);
+  seed.add("TYPE2B", 2);
+  seed.add("TYPE2B", 2);
+  seed.add("TYPE2B", "Ta");
+  seed.add("TYPE2B", "Ta");
+  seed.add("TYPEMB", "DM_REAM");
+  seed.add("TYPEMB", 3);      // basis code 3 = Blip5 (bump family)
+  seed.add("TYPEMB", 2);
+  seed.add("TYPEMB", 2);
+  seed.add("TYPEMB", 2);
+  seed.add("TYPEMB", 2);
+  seed.add("TYPEMB", 2);
+  seed.add("TYPEMB", 0);
+  seed.add("TYPEMB", 0);
+  seed.add("TYPEMB", "Ta");
+  seed.add("TYPEMB", "Ta");
+  seed.add<double>("RCUT2B", 5.58);
+  seed.add<double>("RCUTMB", 5.58);
+  seed.add<double>("CGRID2B", 2.0);
+  seed.add<double>("CGRID2B", 3.0);
+  return seed;
+}
+
+TEST_CASE("preflight_audit: critical_optim_audit does not flag RCUT of bump channels under a hard cutoff",
+          "[preflight_audit]") {
+  // For D2_Blip/D2_Blip5 pair channels and DM_REAM bump densities the stated
+  // RCUT is the fitted truncation (every bump support ends at or before it),
+  // so "add OPTIM RCUT2B" is the wrong advice: the dimension is flat above
+  // the seed value and only trips the bump-support gate below it. Knot
+  // channels were already exempt (RCUT derived from the largest knot).
+  std::vector<MetaPair> metas;
+  metas.emplace_back("D2_Blip5", make_bump_pair_like_meta("D2_Blip5"));
+  metas.emplace_back("DM_REAM",  make_dm_ream_like_meta());
+  const std::vector<std::string> no_optim;
+  auto flagged = [](const AuditReport& r, const std::string& key) {
+    for (const auto& m : r.messages)
+      if (m.param_key == key) return true;
+    return false;
+  };
+
+  SECTION("RCTYPE absent (constructor default Cut_Dummy): RCUT2B/RCUTMB skipped, CGRID2B still flagged") {
+    Context seed = make_bump_seed("D2_Blip5");
+    auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+    CHECK_FALSE(flagged(rep, "RCUT2B"));
+    CHECK_FALSE(flagged(rep, "RCUTMB"));
+    CHECK(flagged(rep, "CGRID2B"));
+  }
+  SECTION("explicit Cut_Dummy on both channels: skipped") {
+    Context seed = make_bump_seed("D2_Blip5");
+    seed.add("RCTYPE2B", "Cut_Dummy");
+    seed.add("RCTYPEMB", "Cut_Dummy");
+    auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+    CHECK_FALSE(flagged(rep, "RCUT2B"));
+    CHECK_FALSE(flagged(rep, "RCUTMB"));
+  }
+  SECTION("cubic D2_Blip pair channel is a bump family too: skipped") {
+    metas[0] = MetaPair("D2_Blip", make_bump_pair_like_meta("D2_Blip"));
+    Context seed = make_bump_seed("D2_Blip");
+    auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+    CHECK_FALSE(flagged(rep, "RCUT2B"));
+  }
+  SECTION("smooth cutoff (Cut_Cos): the damping tail depends on RCUT, the warning stays") {
+    Context seed = make_bump_seed("D2_Blip5");
+    seed.add("RCTYPE2B", "Cut_Cos");
+    seed.add("RCTYPEMB", "Cut_Cos");
+    REQUIRE_FALSE(tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B"));
+    auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+    CHECK(flagged(rep, "RCUT2B"));
+    CHECK(flagged(rep, "RCUTMB"));
+  }
+  SECTION("non-bump pair family (D2_BP) is unaffected: RCUT2B flagged") {
+    metas[0] = MetaPair("D2_BP", make_bump_pair_like_meta("D2_BP"));
+    Context seed = make_bump_seed("D2_BP");
+    auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+    CHECK(flagged(rep, "RCUT2B"));
+    CHECK_FALSE(flagged(rep, "RCUTMB"));   // the DM_REAM density is still a bump channel
+  }
+  SECTION("OPTIM coverage still silences everything") {
+    Context seed = make_bump_seed("D2_Blip5");
+    seed.add("RCTYPE2B", "Cut_Cos");
+    const std::vector<std::string> with_optim = {"RCUT2B", "CGRID2B", "RCUTMB"};
+    auto rep = run_critical_optim_audit_with_metas(seed, with_optim, metas);
+    CHECK(rep.messages.empty());
   }
 }
 

@@ -240,6 +240,22 @@ AuditReport run_critical_optim_audit_with_metas(
           (pm.key == "RCUTMB" &&
            tadah::models::potedit::derived_knot_rcut(seed, "MB")))
         continue;
+      // Bump channels (D2_Blip/D2_Blip5, DM_REAM bump density) under a HARD
+      // cutoff: RCUT is the fitted truncation and every bump support ends at
+      // or before it (the bump-support gate keeps it so), so a larger cutoff
+      // changes no prediction and a smaller one only trips the gate --
+      // searching it is a flat dimension with a cliff, and `tadah hpo`
+      // already warns when someone does. The range is searched through the
+      // bump centres/widths (CGRID*/SGRID*); the per-candidate bump-support
+      // gate in tadah hpo is what keeps them consistent with RCUT. Under a
+      // SMOOTH cutoff the damping tail depends on RCUT, so the warning stays.
+      if ((pm.key == "RCUT2B" &&
+           tadah::models::potedit::bump_channel_halfwidth(seed, "2B") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B")) ||
+          (pm.key == "RCUTMB" &&
+           tadah::models::potedit::bump_channel_halfwidth(seed, "MB") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
+        continue;
 
       AuditMessage msg;
       msg.descriptor_label = label;
