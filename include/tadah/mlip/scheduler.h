@@ -42,9 +42,11 @@ public:
   /**
    * @brief Executes scheduled tasks sequentially.
    *
-   * Execution is simulated by printing task details.
+   * @return 0 when every task's engine returned 0; otherwise the status
+   *         returned by the first failing engine, after which the
+   *         remaining tasks are not run.
    */
-  void execute();
+  int execute();
 
   /**
    * @brief Sets a dependency rule (stub) for task ordering.

@@ -76,7 +76,7 @@ void Scheduler::distributeTasks() {
 #endif
 }
 
-void Scheduler::execute() {
+int Scheduler::execute() {
   int rank=0;
 #ifdef TADAH_BUILD_MPI
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -91,13 +91,18 @@ void Scheduler::execute() {
 
     auto engine = mlip::engines::EngineFactory::create(task.getTaskName());
     engine->validate(task);
-    engine->run(task);
+    const int status = engine->run(task);
 
 #ifdef TADAH_BUILD_MPI
     // Barrier per task (should not be required, but for safety)
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
+
+    // An engine that reports failure through its status stops the run;
+    // the status reaches the process exit code through the CLI.
+    if (status != 0) return status;
   }
+  return 0;
 }
 
 } // namespace mlip
