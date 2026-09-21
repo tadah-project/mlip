@@ -110,12 +110,16 @@ void emae(const StructureDB& truth, const StructureDB& pred,
  * If metric_s is zero (perfect fit on that segment) the gradient is
  * formally undefined; we emit zero for that segment, matching the FD
  * limit at a flat minimum. Other segments are unaffected. */
+// Emits (dataset_index, structure_index, kind, component, partial), with
+// zero-based dataset indices and NO dataset averaging in partial.
 template<class F>
-void ermse(const StructureDB& truth, const StructureDB& pred,
+void ermse_per_dataset(const StructureDB& truth, const StructureDB& pred,
            double scale, F set_dydp)
 {
     if (truth.size() != pred.size())
         throw std::runtime_error("analytics_grad::ermse: size mismatch");
+    if (truth.dbidx != pred.dbidx)
+        throw std::runtime_error("analytics_grad::ermse: dataset layout mismatch");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
@@ -142,12 +146,23 @@ void ermse(const StructureDB& truth, const StructureDB& pred,
             const double n = static_cast<double>(truth(i).natoms());
             const double e = (truth(i).energy - pred(i).energy) / n;
             const double v = -scale * e
-                           / (static_cast<double>(S)
-                              * static_cast<double>(N_s)
+                           / (static_cast<double>(N_s)
                               * metric_per_seg[s] * n);
-            set_dydp(i, PredCellKind::ENERGY, std::size_t{0}, v);
+            set_dydp(s, i, PredCellKind::ENERGY, std::size_t{0}, v);
         }
     }
+}
+
+// Compatibility wrapper: derivative of the arithmetic mean of dataset metrics.
+template<class F>
+void ermse(const StructureDB& truth, const StructureDB& pred,
+           double scale, F set_dydp)
+{
+    const auto count = truth.dbidx.size() > 1 ? truth.dbidx.size() - 1 : 0;
+    ermse_per_dataset(truth, pred, scale,
+        [&](std::size_t, std::size_t i, PredCellKind kind, std::size_t comp, double partial) {
+            set_dydp(i, kind, comp, partial / static_cast<double>(count));
+        });
 }
 
 /* d(errmse)/d(E_pred_i) where
@@ -261,12 +276,16 @@ void ersq(const StructureDB& truth, const StructureDB& pred,
  * Analytics::calc_f_rmse uses truth.dbidx to detect segment boundaries:
  * each segment's frmse is built from the force cells of its structures
  * only. */
+// Emits (dataset_index, structure_index, kind, component, partial), with
+// zero-based dataset indices and NO dataset averaging in partial.
 template<class F>
-void frmse(const StructureDB& truth, const StructureDB& pred,
+void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
            double scale, F set_dydp)
 {
     if (truth.size() != pred.size())
         throw std::runtime_error("analytics_grad::frmse: size mismatch");
+    if (truth.dbidx != pred.dbidx)
+        throw std::runtime_error("analytics_grad::frmse: dataset layout mismatch");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
@@ -302,15 +321,26 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
                     const double d = truth(i).atoms[a].force(k)
                                    - pred(i).atoms[a].force(k);
                     const double v = -scale * d
-                                   / (static_cast<double>(S)
-                                      * static_cast<double>(N_F)
+                                   / (static_cast<double>(N_F)
                                       * metric_per_seg[s]);
                     const std::size_t comp = 3 * a + k;
-                    set_dydp(i, PredCellKind::FORCE, comp, v);
+                    set_dydp(s, i, PredCellKind::FORCE, comp, v);
                 }
             }
         }
     }
+}
+
+// Compatibility wrapper: derivative of the arithmetic mean of dataset metrics.
+template<class F>
+void frmse(const StructureDB& truth, const StructureDB& pred,
+           double scale, F set_dydp)
+{
+    const auto count = truth.dbidx.size() > 1 ? truth.dbidx.size() - 1 : 0;
+    frmse_per_dataset(truth, pred, scale,
+        [&](std::size_t, std::size_t i, PredCellKind kind, std::size_t comp, double partial) {
+            set_dydp(i, kind, comp, partial / static_cast<double>(count));
+        });
 }
 
 /* d(srmse)/d(S_pred_ixy) where
