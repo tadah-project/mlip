@@ -75,7 +75,7 @@ TEST_CASE("cells::bcc composes with Structure::replicate for a supercell",
     const double a0 = 3.30;
     auto st = tadah::mlip::cells::bcc("Ta", a0);
 
-    /* Replicate 4×4×4: matches BASINSv2_blip6/Ecoh_fast.in's
+    /* Replicate 4×4×4: matches the reference Ecoh_fast.in's
      * `region box block 0 4 0 4 0 4 units lattice` (which generates 128
      * atoms with `lattice bcc a0`). */
     tadah::mlip::StructureTransformation::replicate(st, 4, 4, 4);

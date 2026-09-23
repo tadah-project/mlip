@@ -20,9 +20,9 @@
 
 using namespace tadah::mlip;
 
-static ColumnLayout make_basins_like_layout() {
+static ColumnLayout make_blip_layout() {
   // Mirrors what DescriptorsCalc::layout() produces for a typical
-  // 2-body + many-body BASINS-style configuration with BIAS=false:
+  // 2-body + many-body blip configuration with BIAS=false:
   //   cols [0..6]   D2_Blip       (7 cols)
   //   cols [7..13]  DM_mBlipEnv   (7 cols)
   ColumnLayout L;
@@ -42,12 +42,12 @@ static ColumnLayout make_basins_like_layout() {
 }
 
 TEST_CASE("ColumnLayout: total_cols sums block.col_count") {
-  auto L = make_basins_like_layout();
+  auto L = make_blip_layout();
   REQUIRE(L.total_cols() == 14);
 }
 
 TEST_CASE("ColumnLayout: block_for_col attributes every column to the right block") {
-  auto L = make_basins_like_layout();
+  auto L = make_blip_layout();
   for (std::size_t i = 0; i < 7; ++i) {
     REQUIRE(L.block_for_col(i).descriptor_label == "D2_Blip");
     REQUIRE(L.block_for_col(i).family == "D2");
@@ -60,7 +60,7 @@ TEST_CASE("ColumnLayout: block_for_col attributes every column to the right bloc
 }
 
 TEST_CASE("ColumnLayout: block_index finds labels and returns -1 on miss") {
-  auto L = make_basins_like_layout();
+  auto L = make_blip_layout();
   REQUIRE(L.block_index("D2_Blip") == 0);
   REQUIRE(L.block_index("DM_mBlipEnv") == 1);
   REQUIRE(L.block_index("does_not_exist") == static_cast<std::size_t>(-1));
@@ -80,7 +80,7 @@ TEST_CASE("ColumnLayout::validate reports gaps and overlaps") {
 }
 
 TEST_CASE("ColumnLayout::validate detects width mismatch with materialised matrix") {
-  auto L = make_basins_like_layout();
+  auto L = make_blip_layout();
   // Layout total_cols == 14; pretend the matrix says 13.
   const std::string err = L.validate(13);
   REQUIRE_FALSE(err.empty());
@@ -88,7 +88,7 @@ TEST_CASE("ColumnLayout::validate detects width mismatch with materialised matri
 }
 
 TEST_CASE("ColumnLayout::validate accepts a contiguous, exact layout") {
-  auto L = make_basins_like_layout();
+  auto L = make_blip_layout();
   REQUIRE(L.validate(14).empty());
 }
 

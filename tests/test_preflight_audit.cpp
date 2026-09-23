@@ -9,7 +9,7 @@
 //   * run_critical_optim_audit flags Critical seed params absent from
 //     the OPTIM key set, ignores those that are covered.
 //   * run_preflight_soft on a synthetic ρ-collapse data set fires the
-//     DM_mBlipEnv cross_param_check (the BASINS regression).
+//     DM_mBlipEnv cross_param_check (the silent ρ-collapse regression).
 
 #include "catch2/catch.hpp"
 
@@ -88,7 +88,7 @@ static DescriptorMeta make_dm_mblipenv_like_meta() {
   rcutmb.scope     = PairScope::Global;
   dm.params.push_back(std::move(rcutmb));
 
-  // ρ-collapse cross-param check (the BASINS test).
+  // ρ-collapse cross-param check.
   dm.cross_param_checks.push_back(
     [](const DataStats& d, const SeedView&) -> HealthVerdict {
       auto it = d.rho_percentiles_per_descriptor.find("DM_mBlipEnv");
@@ -170,11 +170,10 @@ TEST_CASE("preflight_audit: AuditReport::any_fail / any_warn", "[preflight_audit
   REQUIRE(rep.any_fail());
 }
 
-TEST_CASE("preflight_audit: critical_optim_audit flags BASINS-style fixed CGRIDMB", "[preflight_audit]") {
-  // BASINS-style minimal seed: fixed CGRIDMB, RCUTMB, SGRIDMB and no
-  // OPTIM coverage. We supply the descriptor meta directly so the
-  // test does not depend on dm_all.cpp's static registrations being
-  // live in the test binary.
+TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out of OPTIM", "[preflight_audit]") {
+  // Minimal seed: fixed CGRIDMB, RCUTMB, SGRIDMB and no OPTIM coverage.
+  // We supply the descriptor meta directly so the test does not depend
+  // on dm_all.cpp's static registrations being live in the test binary.
   Context seed;
   seed.add<double>("CGRIDMB", 0.0);
   seed.add<double>("SGRIDMB", 0.2);
@@ -187,13 +186,27 @@ TEST_CASE("preflight_audit: critical_optim_audit flags BASINS-style fixed CGRIDM
   std::vector<std::string> no_optim;
   auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
 
-  // We expect at least CGRIDMB to be flagged (the BASINS smoking gun).
+  // We expect at least CGRIDMB to be flagged: a fixed CGRIDMB outside the
+  // data's support collapses the density block without any error.
+  const std::vector<std::string> critical_keys = {"CGRIDMB", "SGRIDMB", "RCUTMB"};
   bool saw_cgridmb = false;
   bool saw_rcutmb  = false;
   for (const auto& m : rep.messages) {
+    INFO(m.param_key << ": " << m.text);
     if (m.param_key == "CGRIDMB") saw_cgridmb = true;
     if (m.param_key == "RCUTMB")  saw_rcutmb  = true;
     REQUIRE(m.level == AuditMessage::Level::Warn);
+    // The hint explains the failure in terms of the data and names the
+    // remedy for this key; it does not refer to the removed BASINS HPO
+    // strategy, and it does not illustrate the risk with another key
+    // (the text is shared by every Critical parameter).
+    CHECK_THAT(m.text, Catch::Matchers::Contains(
+        "misses the neighbour distances of the training data"));
+    CHECK_THAT(m.text, Catch::Matchers::Contains("OPTIM " + m.param_key));
+    CHECK_THAT(m.text, !Catch::Matchers::Contains("BASINS"));
+    for (const auto& other : critical_keys)
+      if (other != m.param_key)
+        CHECK_THAT(m.text, !Catch::Matchers::Contains(other));
   }
   REQUIRE(saw_cgridmb);
   REQUIRE(saw_rcutmb);
@@ -357,7 +370,7 @@ static DataStats make_collapsed_rho_data() {
     pp.r_percentiles[i] = 2.5 + 0.4 * static_cast<double>(i);
   }
   d.per_pair.push_back(pp);
-  // ρ collapsed near zero across percentiles — the BASINS signature.
+  // ρ collapsed near zero across percentiles — the collapse signature.
   std::array<double, 11> rho{};
   for (auto& v : rho) v = 1e-12;
   d.rho_percentiles_per_descriptor["DM_mBlipEnv"] = rho;
