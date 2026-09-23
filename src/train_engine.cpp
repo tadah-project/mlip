@@ -162,7 +162,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       " cutoff distance...");
   tr.nnf.calc(stdb, tr.context);
 
-  // Pre-flight audit. Default mode is `warn`; users opt into `error`
+  // Pre-flight audit. Default mode is `off` (AUDIT unset); users opt into `warn`, or `error`
   // for hard refusal-to-launch via the AUDIT context key. Reads
   // dataset stats (cheap — same NN list) and walks every configured
   // descriptor's meta() to flag ρ-collapse and out-of-range parameter

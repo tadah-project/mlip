@@ -7,9 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-09-23
+
+### Added
+- Per-dataset energy and force RMSE derivatives (used by per-dataset HPO validation targets).
+- `mlip::parallel_for` facade for the train/predict kernels; defaults to the previous OpenMP loop, and lets `tadah hpo` route the work onto its shared worker pool.
+
 ### Changed
 - **Pre-flight audit: no "critical hyperparameter RCUT2B/RCUTMB is fixed" warning for bump potentials under a hard cutoff.** `run_critical_optim_audit` already skipped knot channels (RCUT is derived from the largest knot); it now also skips `D2_Blip`/`D2_Blip5` pair channels and `DM_REAM` bump densities whose cutoff is discontinuous (`Cut_Dummy`, the refit default): there RCUT is the fitted truncation, every bump support ends at or before it, a larger value changes no prediction and a smaller one only trips the bump-support gate, and `tadah hpo` warns when `OPTIM RCUT*` is written anyway. Under a smooth cutoff the warning stays (the damping tail depends on RCUT). Test: `test_preflight_audit.cpp`.
 - **hpotarget writer/`--retarget`: bump-channel OPTIM boxes are no longer capped.** `tadah hpo` now enforces the bump-support invariant `c + w/eta <= RCUT` per candidate (`BUMPGATE CANDIDATE`, its new default — violating combinations are rejected before training), so the writer emits CGRID/SGRID bounds at full symmetric width and `--retarget` stops re-applying the cap (`apply_bump_cap`/`BumpCapResult` removed). The parsed contract comment (`# RCUT2B bump-support contract: w = ...`) is kept — reworded — and still drives the seed-spill warning (a pot whose own bumps spill is rejected by hpo's startup SEED check) and the `--set` infeasible-corner warning; the ACTIVE-`OPTIM RCUT*` wasted-dimension note is softened to the new semantics (the sampled cutoff only reshapes the feasible region). Old capped files retarget fine: the centre-recovery rule for asymmetric (hi-capped) lines is unchanged, and retarget(fresh, same pct) remains byte-idempotent.
+- Framework version `1.5.1`, read from CORE's `blueprint/blueprint_tadah.toml` after the Tadah dependencies are fetched, so the module reports the right version in every layout (sibling checkout or FetchContent). A missing blueprint is now a configure error instead of a silent `0.0.0`.
+
+### Fixed
+- `Scheduler::execute` returns the first non-zero engine status (and stops) instead of discarding it, so a failed task no longer exits with success.
 
 ## [1.4.0] — 2026-07-14
 
