@@ -37,8 +37,8 @@
 #   WATOM, CGRIDMB, SGRIDMB) — not all kernel branches are equally
 #   expensive.
 # - These per-θ times are 4-5 orders of magnitude smaller than the
-#   live BASINSv2 per-θ wall (~2.4 s). The live config has n_train=1325
-#   structs (vs 10 here) and n_atoms ~50-100 per struct (vs 4 here),
-#   plus a larger n_cols (12 vs 6). The bench is a microbench — its
-#   value is catching kernel-level regressions, not predicting live
-#   wall time.
+#   per-θ wall of a live production blip6 run (~2.4 s). The live
+#   config has n_train=1325 structs (vs 10 here) and n_atoms ~50-100
+#   per struct (vs 4 here), plus a larger n_cols (12 vs 6). The bench
+#   is a microbench — its value is catching kernel-level regressions,
+#   not predicting live wall time.

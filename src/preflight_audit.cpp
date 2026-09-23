@@ -262,8 +262,10 @@ AuditReport run_critical_optim_audit_with_metas(
       msg.param_key        = pm.key;
       msg.text =
           "Critical hyperparameter is fixed in the seed config and is "
-          "not in any OPTIM block. If the seed value is unfortunate "
-          "(BASINS-style), the descriptor block can collapse silently. "
+          "not in any OPTIM block. If the seed value misses the "
+          "neighbour distances of the training data (e.g. a cutoff or "
+          "radial grid that does not overlap the neighbour shells), the "
+          "descriptor block can collapse silently. "
           "Consider adding `OPTIM " + pm.key + " (...) <lo> <hi>` "
           "from `tadah analysis suggest_bounds`.";
       msg.level = AuditMessage::Level::Warn;

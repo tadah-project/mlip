@@ -1071,7 +1071,7 @@ assemble_dphi_train_both_rows_dm(
  * Storage: rhoi_per_struct[s][a] is a rho_type of size dm.rhoi_size() +
  * dm.rhoip_size() with the rho field at [rfidx..] and F'(rho) tail at
  * [drfidx..] populated. Empty when dm.rhoi_size() == 0 (DM_Dummy or
- * INITMB=false). Memory budget for the user's BASINSv2 config:
+ * INITMB=false). Memory budget for a production blip6 config:
  * ~2650 structs × ~50 atoms × ~30 doubles ≈ 32 MB total.
  */
 struct DMRhoCache {

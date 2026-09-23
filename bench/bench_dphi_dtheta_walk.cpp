@@ -3,8 +3,8 @@
 // Phase 2F microbench gate for the per-θ walker stack.
 //
 // Times three call paths that dominate the HPO analytical gradient
-// per-θ wall on configs with a DM_mBlip arm + WATOM bias (the
-// BASINSv2_blip6_lambda_fix surface):
+// per-θ wall on configs with a DM_mBlip arm + WATOM bias (a production
+// blip6 search):
 //
 //   case=combined_dm_mblip   — assemble_dphi_train_both_rows on a
 //                               10-struct DM_mBlip db, one θ

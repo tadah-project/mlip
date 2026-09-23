@@ -161,7 +161,7 @@ CheckBoundsResult check_bounds_at_corners(
   // set. Per-param `RCUT < r_min` checks still fire correctly because
   // `r_min` is the smallest pair distance seen regardless of cutoff.
   // The previous implementation re-ran `compute_data_stats` per
-  // corner — O(corners × n_atoms) — which on a 38-dim BASINS-style box
+  // corner — O(corners × n_atoms) — which on a 38-dim blip search box
   // (200 LHS samples × 326k atoms) takes ~80 minutes. With the
   // pre-compute it drops to one full-dataset pass plus one O(K) audit
   // per corner.
