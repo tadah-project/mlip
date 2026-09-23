@@ -19,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Framework version `1.5.1`, read from CORE's `blueprint/blueprint_tadah.toml` after the Tadah dependencies are fetched, so the module reports the right version in every layout (sibling checkout or FetchContent). A missing blueprint is now a configure error instead of a silent `0.0.0`.
 - Tests take Catch2 and its test discovery from cmake-tools (`tadah_setup_tests()`, `include(Catch)`); the vendored `tests/catch2/catch.hpp`, `tests/Catch.cmake` and `tests/CatchAddTests.cmake` are removed. Every discovered CTest entry now selects exactly its own test case and passes `--warn NoTests`, so an entry that matches no test case fails instead of passing.
 - cmake-tools is fetched at `v1-dev` instead of `main`.
+- The pre-flight audit hint for a critical hyperparameter that is fixed in the seed and absent from every `OPTIM` block names the cause: the seed value "misses the neighbour distances of the training data (e.g. a cutoff or radial grid that does not overlap the neighbour shells)". It said "(BASINS-style)", after an experimental HPO strategy that the user documentation never described and that is removed in 1.5.1.
 
 ### Fixed
 - `Scheduler::execute` returns the first non-zero engine status (and stops) instead of discarding it, so a failed task no longer exits with success.
