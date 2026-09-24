@@ -28,6 +28,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - `Scheduler::execute` returns the first non-zero engine status (and stops) instead of discarding it, so a failed task no longer exits with success.
 - The test `write_optim_block: scalar -> (1) ; vector -> (1-N)` never ran under CTest: the vendored Catch discovery script split its name at the `;` into two entries, which matched no test case and still passed. It now runs and passes.
+- **`DIMER` models: every interatomic distance was zero.** `DescriptorsCalc::calc_dimer` assigned each displacement to the copy that `Mat6R3C::row()` returns, so the six distances of a molecule pair stayed zero and every configuration got the same descriptors, in training and in `tadah predict`. The displacements are stored element by element. `pair_style tadah` computes its own distances and was not affected; `tadah predict` with the published `Tadah!N2` potential now gives the energies LAMMPS gives. Test: `test_descriptors_calc_dimer.cpp`.
 
 ## [1.4.0] — 2026-07-14
 
