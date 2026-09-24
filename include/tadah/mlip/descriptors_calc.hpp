@@ -338,8 +338,12 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
   }
 
   // compute all 6 distances
+  // Mat6R3C::row() returns a copy, so each displacement is stored element
+  // by element (assigning to row() would leave delM zero).
   for (size_t n=0; n<6; ++n) {
-    delM.row(n) = atoms[idx[n].first].position - atoms[idx[n].second].position;
+    const tadah::core::Vec3d del =
+      atoms[idx[n].first].position - atoms[idx[n].second].position;
+    for (size_t k=0; k<3; ++k) delM(n,k) = del[k];
     r_sq[n] =  delM.row(n) * delM.row(n);
     r[n] = sqrt(r_sq[n]);
   }
