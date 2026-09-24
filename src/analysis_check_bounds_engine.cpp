@@ -9,10 +9,6 @@
 #include <tadah/mlip/check_bounds.h>
 #include <tadah/mlip/structure_db.h>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
@@ -24,12 +20,6 @@ void AnalysisCheckBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
 }
 
 int AnalysisCheckBoundsEngine::run(tadah::mlip::Task& task) {
-#ifdef TADAH_BUILD_MPI
-  int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank != 0) return EXIT_SUCCESS;
-#endif
-
   auto& taskCtx = task.getContext();
   if (!taskCtx.contains("HPOTARGET")) {
     throw std::runtime_error(

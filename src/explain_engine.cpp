@@ -4,21 +4,11 @@
 #include <iostream>
 #include <boost/algorithm/string.hpp> // for boost::split
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
 
 int ExplainEngine::run(mlip::Task &task) {
-#ifdef TADAH_BUILD_MPI
-  int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank!=0) return EXIT_SUCCESS;
-#endif
-
   const auto &taskContext = task.getContext();
   std::string option = taskContext.get<std::string>("OPTION", 0);
   std::vector<std::string> tokens;

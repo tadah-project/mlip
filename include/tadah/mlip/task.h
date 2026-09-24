@@ -104,21 +104,6 @@ public:
   void deserialize(const std::string &data);
 
   /**
-   * @brief Serializes selected fields to a binary representation (e.g. for HPC distribution).
-   *
-   * @return A vector of bytes representing ID, command, timestamp, etc.
-   */
-  std::vector<char> serializeBinary() const;
-
-  /**
-   * @brief Deserializes a Task from a binary representation.
-   *
-   * @param data A string containing the serialized binary data.
-   * @throws std::runtime_error if the format is invalid.
-   */
-  void deserializeBinary(const std::vector<char> &buffer);
-
-  /**
    * @brief Prints debug information about the task to standard output.
    */
   void print() const;

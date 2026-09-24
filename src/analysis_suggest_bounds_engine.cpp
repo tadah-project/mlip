@@ -17,10 +17,6 @@
 #include <tadah/models/descriptors/d2/d2_base.h>
 #include <tadah/models/descriptors/dm/dm_base.h>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
@@ -32,12 +28,6 @@ void AnalysisSuggestBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
 }
 
 int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
-#ifdef TADAH_BUILD_MPI
-  int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank != 0) return EXIT_SUCCESS;
-#endif
-
   auto& taskCtx = task.getContext();
   tadah::core::Context workCtx = taskCtx;
 

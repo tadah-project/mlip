@@ -4,21 +4,12 @@
 
 
 #include <iostream>
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
 
 namespace tadah {
 namespace mlip {
 namespace engines {
 
 int DataMergeEngine::run(tadah::mlip::Task &task) {
-  int rank = 0;
-#ifdef TADAH_BUILD_MPI
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
-  if (rank!=0) return EXIT_SUCCESS;
-
   try {
     core::Context taskContext = task.getContext();
 

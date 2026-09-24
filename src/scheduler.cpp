@@ -4,10 +4,6 @@
 #include <iostream>
 #include <sstream>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 
@@ -30,58 +26,7 @@ void Scheduler::schedule() {
     });
 }
 
-void Scheduler::distributeTasks() {
-#ifdef TADAH_BUILD_MPI
-  int rank=0, nprocs=1;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-
-  // If only 1 process, do nothing
-  if (nprocs < 2) return;
-
-  // On rank 0, we have tasks_. On other ranks, we will reconstruct it.
-  int numTasks = 0;
-  if (rank == 0) {
-    numTasks = static_cast<int>(tasks_.size());
-  }
-
-  // Broadcast how many tasks to expect
-  MPI_Bcast(&numTasks, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-  for (int i = 0; i < numTasks; ++i) {
-    // Rank 0 serializes the i-th Task
-    std::vector<char> buffer;
-    if (rank == 0) {
-      buffer = tasks_[i].serializeBinary(); 
-    }
-
-    // Broadcast the buffer size
-    int bufSize = static_cast<int>(buffer.size());
-    MPI_Bcast(&bufSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Resize on non-root ranks
-    buffer.resize(bufSize);
-
-    // Broadcast the actual bytes
-    if (bufSize > 0) {
-      MPI_Bcast(buffer.data(), bufSize, MPI_CHAR, 0, MPI_COMM_WORLD);
-    }
-
-    // Reconstruct the Task on each rank except rank 0
-    if (rank != 0) {
-      tasks_.push_back(Task());
-      tasks_.back().deserializeBinary(buffer);
-    }
-  }
-#endif
-}
-
 int Scheduler::execute() {
-  int rank=0;
-#ifdef TADAH_BUILD_MPI
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
-
   for (auto &task : tasks_) {
 
     core::Context context = task.getContext();
@@ -92,11 +37,6 @@ int Scheduler::execute() {
     auto engine = mlip::engines::EngineFactory::create(task.getTaskName());
     engine->validate(task);
     const int status = engine->run(task);
-
-#ifdef TADAH_BUILD_MPI
-    // Barrier per task (should not be required, but for safety)
-    MPI_Barrier(MPI_COMM_WORLD);
-#endif
 
     // An engine that reports failure through its status stops the run;
     // the status reaches the process exit code through the CLI.

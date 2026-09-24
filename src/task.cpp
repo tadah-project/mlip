@@ -130,16 +130,6 @@ void Task::deserialize(const std::string &data) {
   context_.deserialize(contextData);
 }
 
-std::vector<char> Task::serializeBinary() const {
-  std::string text = this->serialize();
-  return std::vector<char>(text.begin(), text.end());
-}
-
-void Task::deserializeBinary(const std::vector<char> &buffer) {
-  std::string text(buffer.begin(), buffer.end());
-  this->deserialize(text);
-}
-
 //-------------------------------------------------------------------------
 // print(): for quick debug
 //-------------------------------------------------------------------------

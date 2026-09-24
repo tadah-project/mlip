@@ -14,10 +14,6 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
@@ -28,12 +24,6 @@ void AnalysisDatasetStatsEngine::validate(const tadah::mlip::Task& /*task*/) {
 }
 
 int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
-#ifdef TADAH_BUILD_MPI
-  int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank != 0) return EXIT_SUCCESS;
-#endif
-
   auto& taskContext = task.getContext();
 
   // Build a working context. If the user passed `-c train.tadah`, the

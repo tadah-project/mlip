@@ -224,12 +224,6 @@ if(TADAH_ENABLE_OPENMP)
   target_link_libraries(tadah.mlip PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-if (TADAH_BUILD_MPI)
-  find_package(MPI REQUIRED)
-  target_link_libraries(tadah.mlip PUBLIC MPI::MPI_CXX)
-  add_compile_definitions(TADAH_BUILD_MPI)
-endif()
-
 tadah_add_tests()
 if(BUILD_TESTING)
   add_subdirectory(bench)

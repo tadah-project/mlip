@@ -14,7 +14,7 @@ namespace mlip {
  *
  * The Scheduler collects Task objects,
  * orders them based on original order, global priority, and task type groupings.
- * Stubs for dependency rules are provided along with serialization for MPI broadcast.
+ * A stub for dependency rules is provided.
  */
 class Scheduler {
 public:
@@ -54,12 +54,6 @@ public:
    * @param rule A string representing the dependency rule.
    */
   // void setDependencyRule(const std::string &rule);
-
-  /**
-   * @brief Broadcast tasks_ from rank 0 to all other ranks,
-   *        ensuring all ranks see the same tasks in the same order.
-   */
-  void distributeTasks();
 
 private:
   std::vector<Task> tasks_;

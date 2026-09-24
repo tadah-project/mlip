@@ -15,38 +15,13 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
 
 namespace {
 
-// Detect global-view features that are not yet supported under MPI training.
-[[maybe_unused]] void check_mpi_unsupported_features(const core::Context &ctx) {
-  std::vector<std::string> bad;
-  if (ctx.contains("ESHIFT_ATOM") && ctx.get<bool>("ESHIFT_ATOM"))
-    bad.emplace_back("ESHIFT_ATOM");
-  if (ctx.contains("ESHIFT_DBATOM") && ctx.get<bool>("ESHIFT_DBATOM"))
-    bad.emplace_back("ESHIFT_DBATOM");
-  if (ctx.contains("EWEIGHT_TEMP") && ctx.get<double>("EWEIGHT_TEMP") > 0.0)
-    bad.emplace_back("EWEIGHT_TEMP");
-  if (ctx.contains("WDBFILE_AUTO") && ctx.get<double>("WDBFILE_AUTO") > 0.0)
-    bad.emplace_back("WDBFILE_AUTO");
-  if (!bad.empty()) {
-    std::string msg =
-        "The following load-time transforms require a global view of the "
-        "dataset and are not yet supported in the MPI training build:";
-    for (const auto &k : bad) msg += " " + k;
-    msg += ". Run without MPI, set explicit ESHIFT, or omit these keys.";
-    throw std::runtime_error(msg);
-  }
-}
-
-[[maybe_unused]] void check_bias_constraints(const core::Context &ctx) {
+void check_bias_constraints(const core::Context &ctx) {
   const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
   const bool bias = ctx.contains("BIAS") && ctx.get<bool>("BIAS");
   const std::string model_bf =
@@ -81,67 +56,6 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   StructureDB::check_atom_key(context, unique_elements);
   StructureDB::check_watom_key(context, unique_elements);
   check_bias_constraints(context);
-
-#ifdef TADAH_BUILD_MPI
-  // MPI: workers load chunks incrementally, so global-view transforms are not
-  // yet supported. Local-only transforms (LSCALE, explicit ESHIFT, EFILTER,
-  // FFILTER, ZERO_COM_FORCE, WDBFILE) would still need TrainerWorker plumbing,
-  // which is a separate change. For now, fail fast if any of these are set.
-  check_mpi_unsupported_features(context);
-  if (context.contains("LSCALE") && context.get<double>("LSCALE") != 1.0) {
-    throw std::runtime_error(
-        "LSCALE is not yet wired into the MPI training path. Run without MPI.");
-  }
-  if (context.contains("ESHIFT") && context.size("ESHIFT") > 0) {
-    throw std::runtime_error(
-        "ESHIFT is not yet wired into the MPI training path. Run without MPI.");
-  }
-#endif
-
-#ifdef TADAH_BUILD_MPI
-  int rank = 0;
-  int ncpu = 1;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ncpu);
-  // Execute host or worker code based on rank
-  if (rank == 0) { // Host code
-    if (ncpu<2) {
-      core::Logger::instance().log(
-          tadah::core::LogLevel::ERROR,
-          "Minimum number of cpus for an MPI version is 2");
-      return EXIT_FAILURE;
-    }
-
-    // The uncertainty flag is incompatible with MPI
-    if (context.get<bool>("UNCERTAINTY")) {
-      core::Logger::instance().log(
-          tadah::core::LogLevel::ERROR,
-          "The --uncertainty flag is not supported by MPI build.");
-      return EXIT_FAILURE;
-    }
-
-    // Start training timer if verbose mode is enabled
-    core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training...");
-    // Initialize host MPI trainer
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
-    TrainerHost host(context, workspaceManager, workspaceManager2);
-    host.run();
-
-    // Perform the final computation and save parameters
-    host.solve();
-
-    tadah::core::Context param_file = host.model->get_param_file();
-    dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
-  } else { // Worker code
-           // Initialize worker MPI trainer
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
-    tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
-    TrainerWorker worker(context, workspaceManager, workspaceManager2);
-    worker.run();
-    worker.solve(); // Perform worker computations
-  }
-#else // Non-MPI version
 
   tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
   Trainer tr(context, workspaceManager);
@@ -201,7 +115,6 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     tadah::core::t_type unc = tr.model->get_weights_uncertainty();
     Output(param_file).print_train_unc(weights, unc);
   }
-#endif
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {

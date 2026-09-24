@@ -14,21 +14,11 @@
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <iostream>
 
-#ifdef TADAH_BUILD_MPI
-#include <mpi.h>
-#endif
-
 namespace tadah {
 namespace mlip {
 namespace engines {
 
 int PredictEngine::run(mlip::Task &task) {
-  int rank = 0;
-  #ifdef TADAH_BUILD_MPI
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  #endif
-  if (rank!=0) return EXIT_SUCCESS;
-
   const auto &taskContext = task.getContext();
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
