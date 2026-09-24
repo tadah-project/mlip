@@ -20,6 +20,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tests take Catch2 and its test discovery from cmake-tools (`tadah_setup_tests()`, `include(Catch)`); the vendored `tests/catch2/catch.hpp`, `tests/Catch.cmake` and `tests/CatchAddTests.cmake` are removed. Every discovered CTest entry now selects exactly its own test case and passes `--warn NoTests`, so an entry that matches no test case fails instead of passing.
 - cmake-tools is fetched at `v1-dev` instead of `main`.
 - The pre-flight audit hint for a critical hyperparameter that is fixed in the seed and absent from every `OPTIM` block names the cause: the seed value "misses the neighbour distances of the training data (e.g. a cutoff or radial grid that does not overlap the neighbour shells)". It said "(BASINS-style)", after an experimental HPO strategy that the user documentation never described and that is removed in 1.5.1.
+- The documentation of `classify_dataset` states its decision rules instead of pointing to a BASINS investigation note that is not in the repository.
+
+### Removed
+- The legacy MPI training build (`TADAH_BUILD_MPI`), documented as not functional: `MPI_Trainer`, `TrainerHost`, `TrainerWorker` and their ScaLAPACK/BLACS declarations (`trainer.h`), the host/worker paths of `TrainEngine` with their MPI-only rejections of `LSCALE`, `ESHIFT`, `EWEIGHT_TEMP`, `WDBFILE_AUTO` and `--uncertainty`, the rank-0 guards of the engines, `Scheduler::distributeTasks` and the per-task barrier, `Task::serializeBinary` and `Task::deserializeBinary` (only `distributeTasks` called them), and the MPI link. It never linked ScaLAPACK outside HPO, its `Logger` differed from CORE's, and its solver ignored `LAMBDA`, `NORM`, `BIAS` and KRR. Training runs in one process, with OpenMP threads.
 
 ### Fixed
 - `Scheduler::execute` returns the first non-zero engine status (and stops) instead of discarding it, so a failed task no longer exits with success.
