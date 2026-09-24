@@ -52,11 +52,12 @@ compute_data_stats(StructureDB& stdb,
  *  returns the material-class label (also written into
  *  `DataStats::class_label` by `compute_data_stats`).
  *
- *  Decision rules are summarised in
- *  `BASINS_BETA_INVESTIGATION_…/DESIGN_GENERALITY_ACROSS_MATERIALS.md`
- *  §"Material-class templates as the user's first stop". Classes:
- *  "metal_like", "covalent_or_ionic", "molecular_crystal",
- *  "amorphous_or_liquid", "cluster_or_dimer", "unclassified".
+ *  Decision rules, in order: no elements or pair data gives
+ *  "unclassified"; a largest per-element median neighbour count below 10
+ *  gives "cluster_or_dimer"; with two or more elements, a pair whose second
+ *  RDF peak lies beyond 1.6x the first gives "molecular_crystal", otherwise
+ *  "covalent_or_ionic"; a single element gives "metal_like" when its pair
+ *  RDF resolves two or more peaks, otherwise "amorphous_or_liquid".
  */
 std::string classify_dataset(const tadah::core::stats::DataStats& d);
 
