@@ -37,17 +37,24 @@ namespace {
 constexpr double kBond = 1.1;
 constexpr double kRcut = 6.0;
 
-/* A two-body (D2_Blip) and a many-body (DM_Blip, Lmax 1) descriptor, both
- * for every element pair, as in the published Tadah!N2 potential. */
-Context dimer_context(bool bond) {
+/* A two-body (D2_Blip) and a many-body (DM_Blip, Lmax 1) descriptor, for
+ * the element pairs `pairs2b` and `pairsmb`; DIMER on or off. */
+Context descriptor_context(bool dimer, bool bond, const std::string &pairs2b,
+                           const std::string &pairsmb) {
   return CoreUserConfigParser().parse(std::vector<std::string>{
       "ATOM N", "BIAS false", "INIT2B true", "INITMB true",
-      "TYPE2B D2_Blip 2 2 * *", "CGRID2B 2.0 3.5", "SGRID2B 0.8 0.5",
-      "TYPEMB DM_Blip 1 2 2 * *", "CGRIDMB 1.5 3.0", "SGRIDMB 0.6 0.4",
+      "TYPE2B D2_Blip 2 2 " + pairs2b, "CGRID2B 2.0 3.5", "SGRID2B 0.8 0.5",
+      "TYPEMB DM_Blip 1 2 2 " + pairsmb, "CGRIDMB 1.5 3.0", "SGRIDMB 0.6 0.4",
       "RCTYPE2B Cut_Cos", "RCTYPEMB Cut_Cos",
       "RCUT2B " + std::to_string(kRcut), "RCUTMB " + std::to_string(kRcut),
-      std::string("DIMER true ") + std::to_string(kBond) +
-          (bond ? " true" : " false")});
+      std::string("DIMER ") + (dimer ? "true " : "false ") +
+          std::to_string(kBond) + (bond ? " true" : " false")});
+}
+
+/* Both descriptors for every element pair, as in the published Tadah!N2
+ * potential. */
+Context dimer_context(bool bond) {
+  return descriptor_context(true, bond, "* *", "* *");
 }
 
 /* Two N2 molecules whose centres of mass are `d` apart along x. Molecule J
@@ -156,5 +163,48 @@ TEST_CASE("DescriptorsCalc DIMER: the descriptors follow the separation of "
     for (size_t k = 0; k < near.dim(); ++k)
       diff += std::fabs(near.get_aed(a)(k) - far.get_aed(a)(k));
     CHECK(diff > 1e-3);
+  }
+}
+
+TEST_CASE("DescriptorsCalc DIMER: descriptors that name specific element "
+          "pairs are refused", "[descriptors_calc][dimer]") {
+  /* calc_dimer evaluates every atom as Z = 1, whatever its element. A
+   * descriptor declared for specific element pairs (`N N`) applies to no
+   * pair of Z = 1 atoms, so every descriptor of every atom was zero and
+   * the model predicted from zero descriptors without a word. Every
+   * DescriptorsCalc constructor -- the one `tadah train` (Trainer) and
+   * `tadah predict` (PredictEngine) use, with the descriptors of a
+   * DC_Selector, and the one that builds its own -- refuses it. */
+  const std::string msg =
+      "DIMER evaluates every atom as Z=1; declare TYPE2B/TYPEMB with * * "
+      "element pairs";
+  PeriodicTable::initialize();
+  for (const auto &pairs : {std::make_pair("N N", "N N"),
+                            std::make_pair("N N", "* *"),
+                            std::make_pair("* *", "N N"),
+                            std::make_pair("* N", "* *"),
+                            std::make_pair("* *", "N *")}) {
+    INFO("TYPE2B ... " << pairs.first << ", TYPEMB ... " << pairs.second);
+    Context ctx = descriptor_context(true, true, pairs.first, pairs.second);
+    DC_Selector dcs(ctx);
+    CHECK_THROWS_WITH(
+        (DescriptorsCalc<>(ctx, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb)),
+        Catch::Contains(msg));
+    Context own = descriptor_context(true, true, pairs.first, pairs.second);
+    CHECK_THROWS_WITH((DescriptorsCalc<tadah::models::D2_Blip,
+                                       tadah::models::DM_Blip,
+                                       tadah::models::Cut_Cos,
+                                       tadah::models::Cut_Cos>(own)),
+                      Catch::Contains(msg));
+  }
+
+  /* `* *` is accepted, and so are specific pairs without DIMER. */
+  for (const bool dimer : {true, false}) {
+    INFO("DIMER " << dimer);
+    const std::string pairs = dimer ? "* *" : "N N";
+    Context ctx = descriptor_context(dimer, true, pairs, pairs);
+    DC_Selector dcs(ctx);
+    CHECK_NOTHROW(
+        DescriptorsCalc<>(ctx, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb));
   }
 }
