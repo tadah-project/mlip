@@ -5,6 +5,7 @@
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/parallel.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/models/descriptors/dimer_element_pairs.h>
 
 #include <cstdio>
 
@@ -31,6 +32,8 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T
       dm.set_fidx(bias+d2.size());
     }
   }
+  // calc_dimer evaluates every atom as Z=1
+  tadah::models::require_dimer_element_pairs(context, d2, dm);
 }
 template <typename D2, typename DM, typename C2, typename CM>
 DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
@@ -88,6 +91,8 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T
 
   if (context.get<size_t>("DSIZE")==0)
     common_constructor();
+  // calc_dimer evaluates every atom as Z=1
+  tadah::models::require_dimer_element_pairs(context, d2, dm);
 }
 template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
