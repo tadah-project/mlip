@@ -15,6 +15,7 @@
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
@@ -137,6 +138,25 @@ int run_refit_edit(Context &c) {
   const bool exact_output = pot_digits.digits >= core::kRoundTripDigits;
 
   potedit::PotEAMView view = potedit::parse_pot_view(pot);
+  if (view.mb == potedit::MBKind::Ream) {
+    // EMBF0 is a property of the potential: the F curve is edited in the
+    // reference DM_REAM evaluates, and the edited potential declares it.
+    const bool zero = view.embf0 == models::EmbF0Mode::Zero;
+    // A key-less input is (typically) a tadah <= 1.5.0 fit: once the edited
+    // potential declares EMBF0 ZERO the load-time notice no longer fires, so
+    // say it here at WARNING level.
+    const bool declared = models::stored_embf0(pot).has_value();
+    (declared ? log_info : log_warn)(std::string("tadah refit --edit: EMBF0 ") +
+             models::embf0_name(view.embf0) +
+             (declared
+                  ? ""
+                  : " (key absent -> default ZERO; add 'EMBF0 FREE' to the "
+                    "input to keep the raw embedding of a tadah <= 1.5.0 fit)") +
+             (zero ? ": F is the zero-referenced embedding, F(0) = 0"
+                   : ": F is the raw embedding of tadah 1.5.0 and earlier") +
+             "; the edited potential declares EMBF0 " +
+             models::embf0_name(view.embf0) + ".");
+  }
   const potedit::Channel ch = parse_channel(c.get<std::string>("FUNC"));
   if (ch != potedit::Channel::Phi && view.mb != potedit::MBKind::Ream) {
     if (view.mb == potedit::MBKind::None)
@@ -188,6 +208,7 @@ int run_refit_edit(Context &c) {
     const potedit::RemoveReport rep =
         potedit::remove_basis(cv, c.get<double>("REMOVE"), radial);
     for (const auto &w : rep.warnings) log_warn("tadah refit --edit: " + w);
+    for (const auto &n : rep.notes) log_info("tadah refit --edit: " + n);
     std::ostringstream msg;
     msg << "tadah refit --edit: removed the " << fname
         << " basis function at " << rep.removed_mu << " (coefficient "

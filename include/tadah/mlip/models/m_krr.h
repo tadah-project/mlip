@@ -8,6 +8,7 @@
 #include <tadah/mlip/normaliser.h>
 #include <tadah/models/m_krr_train.h>
 #include <tadah/core/context.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/mlip/models/basis.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 
@@ -203,6 +204,10 @@ public:
 
 tadah::core::Context get_param_file() {
     tadah::core::Context c = context;
+    // DM_REAM potentials always carry an explicit EMBF0 line (also for a
+    // DM_mJoin parent, whose children read copies of the context); any
+    // other potential never does.
+    tadah::models::normalise_embf0_key(c);
     c.remove("ALPHA");
     c.remove("BETA");
     c.remove("DBFILE");

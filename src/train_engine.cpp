@@ -9,6 +9,7 @@
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/load_transforms.h>
 #include <tadah/models/eam/pot_curve_edit.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
@@ -71,6 +72,27 @@ namespace {
 }  // namespace
 
 
+namespace {
+// EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
+// ESHIFT the model then has no free per-atom constant, which matters when the
+// reference energies are absolute (e.g. DFT totals).
+[[maybe_unused]] void hint_embf0_reference(const Trainer &tr,
+                                           const LoadTransformReport &report) {
+  if (!tr.DCS.dmb) return;
+  const auto mode = tr.DCS.dmb->embf0_mode();
+  if (!mode || *mode != tadah::models::EmbF0Mode::Zero) return;
+  if (tr.DCS.bias > 0 || !report.eshift.empty()) return;
+  tadah::core::Logger::instance().log(
+      tadah::core::LogLevel::WARNING,
+      "HINT: EMBF0 ZERO fixes the DM_REAM isolated-atom energy at 0 and the "
+      "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
+      "reference energies are absolute (e.g. DFT totals), set ESHIFT_ATOM, "
+      "ESHIFT_DBATOM or ESHIFT (compatible with EAMFAST), or BIAS true "
+      "(disables EAMFAST; its intercept column precedes the descriptor "
+      "weights, so FIXINDEX/FIXWEIGHT indices shift).");
+}
+}  // namespace
+
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
   models::D_mJoin::expand_grids(context);
@@ -128,6 +150,8 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     tadah::mlip::memory::MLIPWorkspaceManager workspaceManager2;
     TrainerHost host(context, workspaceManager, workspaceManager2);
     host.run();
+    // MPI training refuses ESHIFT up front, so the report is empty here.
+    hint_embf0_reference(host, LoadTransformReport{});
 
     // Perform the final computation and save parameters
     host.solve();
@@ -155,6 +179,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // before any neighbour-finding or descriptor calculation, so downstream code
   // sees the already-transformed positions, energies, and weights.
   LoadTransformReport report = apply_load_transforms(stdb, tr.context);
+  hint_embf0_reference(tr, report);
 
   // Calculate nearest neighbors and provide feedback
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
@@ -238,6 +263,7 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // error during pair_coeff and a downstream null-deref in calc_rho.
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
+  tadah::models::normalise_embf0_key(modContext);
   if (outstream.is_open()) {
     modContext.write_potential(outstream, pd.digits);
     outstream << std::endl;

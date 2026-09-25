@@ -93,6 +93,47 @@ struct ScopedTempDir {
   }
 };
 
+// A potential file as tadah <= 1.5.0 wrote it: dumpPotFile now declares
+// EMBF0 for every DM_REAM potential, so drop that line again.
+void strip_embf0_line(const std::string &file) {
+  std::ifstream in(file);
+  std::string line, body;
+  while (std::getline(in, line)) {
+    std::istringstream ls(line);
+    std::string key;
+    ls >> key;
+    if (key != "EMBF0") body += line + "\n";
+  }
+  in.close();
+  std::ofstream(file) << body;
+}
+
+std::string stored_embf0_text(const Context &c) {
+  return c.stored_value("EMBF0").value_or("");
+}
+
+// Runs one refit --edit and returns what it logged at INFO and above.
+std::string run_edit_capturing(Context c) {
+  Task task("refit", c);
+  auto &log = tadah::core::Logger::instance();
+  const auto old_level = log.getLogLevel();
+  log.setLogLevel(tadah::core::LogLevel::INFO);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  int rc = -1;
+  try {
+    rc = RefitEngine().run(task);
+  } catch (...) {
+    std::cout.rdbuf(old_buf);
+    log.setLogLevel(old_level);
+    throw;
+  }
+  std::cout.rdbuf(old_buf);
+  log.setLogLevel(old_level);
+  REQUIRE(rc == EXIT_SUCCESS);
+  return captured.str();
+}
+
 double curve_maxdiff(const potedit::CurveView &a, const potedit::CurveView &b,
                      double lo, double hi, int N = 1500) {
   double mx = 0.0;
@@ -142,6 +183,10 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(out.get<std::string>("FIXINDEX") == "1-7");
   REQUIRE(out.size("FIXWEIGHT") == 7);
   REQUIRE(out.get<int>("TYPE2B", 1) == 4);
+  // dumpPotFile declared the default on the input; the edit keeps it
+  REQUIRE(stored_embf0_text(in) == "ZERO");
+  REQUIRE(stored_embf0_text(out) == "ZERO");
+  REQUIRE(vo.F.zero_ref);
 }
 
 TEST_CASE_METHOD(PTFixture,
@@ -223,24 +268,54 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 TEST_CASE_METHOD(PTFixture, "refit --edit --remove: end-to-end",
-                 "[refit][edit][integration]") {
+                 "[refit][edit][integration][embf0]") {
   ScopedTempDir tmp;
-  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
-
   Context c;
   c.add("EDIT", std::string("in.tadah"));
   c.add("FUNC", std::string("F"));
-  c.add("REMOVE", -2.9);
-  Task task("refit", c);
+  c.add("REMOVE", -2.9);  // knot with g(0) = 2.9^5 != 0
 
-  RefitEngine engine;
-  REQUIRE(engine.run(task) == EXIT_SUCCESS);
-  const Context out =
-      tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
-  REQUIRE(out.size("CEMBFUNC") == 2);
-  REQUIRE(out.get<int>("TYPEMB", 5) == 2);  // nEc
-  REQUIRE(out.size("WEIGHTS") == 5);
-  REQUIRE(out.get<std::string>("FIXINDEX") == "1-5");
+  // The layout expectations hold in both embedding references; the
+  // reference itself decides the compensation region (ZERO widens it).
+  auto check_layout = [](const Context &out) {
+    REQUIRE(out.size("CEMBFUNC") == 2);
+    REQUIRE(out.get<int>("TYPEMB", 5) == 2);  // nEc
+    REQUIRE(out.size("WEIGHTS") == 5);
+    REQUIRE(out.get<std::string>("FIXINDEX") == "1-5");
+  };
+
+  SECTION("legacy input (no EMBF0 line): edited and written as ZERO") {
+    TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+    strip_embf0_line("in.tadah");
+    REQUIRE_FALSE(tadah::core::CoreUserConfigParser()
+                      .parse("in.tadah")
+                      .has_stored("EMBF0"));
+    const std::string log = run_edit_capturing(c);
+    CHECK(log.find("EMBF0 ZERO (key absent -> default ZERO") !=
+          std::string::npos);
+    CHECK(log.find("widened to the F domain") != std::string::npos);
+    const Context out =
+        tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
+    check_layout(out);
+    REQUIRE(stored_embf0_text(out) == "ZERO");
+    const potedit::PotEAMView vo = potedit::parse_pot_view(out);
+    REQUIRE(vo.F.zero_ref);
+    REQUIRE(vo.F.value(0.0) == 0.0);
+  }
+  SECTION("EMBF0 FREE input: edited with the raw basis, written FREE") {
+    Context pot = make_knot_pot();
+    pot.add("EMBF0", std::string("FREE"));
+    TrainEngine::dumpPotFile("in.tadah", pot);
+    const std::string log = run_edit_capturing(c);
+    CHECK(log.find("EMBF0 FREE: F is the raw embedding") != std::string::npos);
+    CHECK(log.find("key absent") == std::string::npos);
+    CHECK(log.find("widened") == std::string::npos);
+    const Context out =
+        tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
+    check_layout(out);
+    REQUIRE(stored_embf0_text(out) == "FREE");
+    REQUIRE_FALSE(potedit::parse_pot_view(out).F.zero_ref);
+  }
 }
 
 TEST_CASE_METHOD(PTFixture,
@@ -293,6 +368,7 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE(out.get<double>("RCUT2B") == Approx(6.8));
     REQUIRE(out.get<std::string>("FIXINDEX") == "1-4");
     REQUIRE(!out.contains("TYPEMB"));
+    REQUIRE_FALSE(out.has_stored("EMBF0"));  // no DM_REAM block, no key
     // the regenerated hpotarget has no many-body sections
     std::ifstream hs("refit_edited.hpotarget");
     const std::string body((std::istreambuf_iterator<char>(hs)),

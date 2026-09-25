@@ -6,6 +6,7 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/eam/eam_setfl_io.h>
 #include <tadah/models/eam/eam_refit.h>
 #include <tadah/models/eam/eam_lattice.h>
@@ -108,8 +109,13 @@ void write_curve_files(const models::EAMSetflIO &eam,
   write_curve_file("refit_curve_rho.dat", "density rho(r)", r_lo, rcut,
                    [&](double r) { return eam.rho_tab(r); },
                    [&](double r) { return refit.rho_fit(r); }, rwin, rcut);
-  write_curve_file("refit_curve_F.dat", "embedding F(rho)", 0.0, eam.rhomax(),
-                   [&](double x) { return eam.F_tab(x); },
+  // The table in the reference the native F represents (EMBF0 ZERO:
+  // F_tab - F_tab(0); FREE: F_tab verbatim).
+  write_curve_file("refit_curve_F.dat",
+                   refit.embf0_zero() ? "embedding F(rho) - F(0) (EMBF0 ZERO)"
+                                      : "embedding F(rho)",
+                   0.0, eam.rhomax(),
+                   [&](double x) { return refit.F_ref(x); },
                    [&](double x) { return refit.F_fit(x); }, 0.0, rhow);
 }
 
@@ -124,13 +130,16 @@ void write_compare_dump(const std::string &path, const models::EAMSetflIO &eam,
   const double rhomax = eam.rhomax();
   os << "# tadah refit comparison: original (tabulated) vs native fit\n"
      << "# r_phi phi_tab phi_fit  r_rho rho_tab rho_fit  rho F_tab F_fit\n";
+  if (refit.embf0_zero())
+    os << "# EMBF0 ZERO: F_tab = table F(rho) - F(0), the reference the "
+          "native embedding represents\n";
   os << std::scientific << std::setprecision(10);
   for (int i = 0; i < N; ++i) {
     const double rr   = r_lo + (rcut - r_lo) * i / (N - 1);
     const double rhx  = rhomax * i / (N - 1);
     os << rr << " " << eam.phi_tab(rr) << " " << refit.phi_fit(rr) << "  "
        << rr << " " << eam.rho_tab(rr) << " " << refit.rho_fit(rr) << "  "
-       << rhx << " " << eam.F_tab(rhx) << " " << refit.F_fit(rhx) << "\n";
+       << rhx << " " << refit.F_ref(rhx) << " " << refit.F_fit(rhx) << "\n";
   }
 }
 
@@ -153,7 +162,10 @@ RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
   const double rc = eam.rcut();
   auto ophi = [&](double r) { return eam.phi_tab(r); };
   auto orho = [&](double r) { return eam.rho_tab(r); };
-  auto oF = [&](double x) { return eam.F_tab(x); };
+  // the table embedding in the fit's reference (EMBF0 ZERO: F_tab - F_tab(0),
+  // energies relative to the isolated atom; FREE: F_tab verbatim) — also the
+  // reference of the per-function attribution below
+  auto oF = [&](double x) { return rf.F_ref(x); };
   auto fphi = [&](double r) { return rf.phi_fit(r); };
   auto frho = [&](double r) { return rf.rho_fit(r); };
   auto fF = [&](double x) { return rf.F_fit(x); };
@@ -269,6 +281,28 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   cfg.r_lo_frac    = get_dbl(c, "REFIT_R_LO_FRAC", cfg.r_lo_frac);
   if (c.contains("REFIT_CONSTRAIN_F0") && c.size("REFIT_CONSTRAIN_F0") > 0)
     cfg.constrain_F0 = c.get<bool>("REFIT_CONSTRAIN_F0");
+
+  // ---- EMBF0: the embedding reference fitted, self-tested and written ----
+  // Non-inserting lookup (absent -> the default ZERO); dense and compact
+  // modes both read cfg.embf0_zero.
+  cfg.embf0_zero = (models::stored_embf0(c).value_or(models::EmbF0Mode::Zero) ==
+                    models::EmbF0Mode::Zero);
+  if (cfg.embf0_zero) {
+    if (!cfg.constrain_F0)  // the blueprint default is true: set by the user
+      core::Logger::instance().log(core::LogLevel::WARNING,
+          "tadah refit: REFIT_CONSTRAIN_F0 false has no effect under EMBF0 "
+          "ZERO — F(0) = 0 exactly by construction (zero-referenced "
+          "embedding). Use EMBF0 FREE for an unpinned raw fit.");
+    // The one constant the zero-referenced fit drops from every atom's energy.
+    const double F0 = eam.F_tab(0.0);
+    const std::string xs = core::to_string(F0);
+    core::Logger::instance().log(
+        F0 != 0.0 ? core::LogLevel::WARNING : core::LogLevel::INFO,
+        "tadah refit: EMBF0 ZERO: table F(0) = " + xs + " eV removed; the "
+        "native potential and " + setfl_out + " give energies = table - " +
+        (F0 < 0.0 ? "(" + xs + ")" : xs) + " per atom (forces and cohesive "
+        "energies unchanged)");
+  }
 
   // ---- faithfulness tolerances driving automatic basis escalation ----
   // The compression-aware crystal self-test below is the judge; when it fails,
@@ -462,8 +496,14 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         core::to_string(a0, 4) + " A; basis n2b=" + std::to_string(cfg.n2b) +
         " nrho=" + std::to_string(cfg.nrho) + " nF=" + std::to_string(cfg.nF) +
         "):");
+    // EMBF0 ZERO: the table reference is F_tab - F_tab(0), so these are
+    // energies relative to the isolated atom
     core::Logger::instance().log(core::LogLevel::INFO,
-        "  cohesive E/atom: original=" + core::to_string(st.e_orig, 5) +
+        std::string(refit.embf0_zero()
+                        ? "  cohesive E/atom (relative to the isolated atom): "
+                          "original="
+                        : "  cohesive E/atom: original=") +
+        core::to_string(st.e_orig, 5) +
         " refit=" + core::to_string(st.e_fit, 5) +
         " delta=" + core::to_string(1000.0 * (st.e_fit - st.e_orig), 3) +
         " meV/atom");

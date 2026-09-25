@@ -1,3 +1,4 @@
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/mlip/engines/predict_engine.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
@@ -32,6 +33,7 @@ int PredictEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
+  tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
   potContext  = tadah::core::Context::merge(potContext, taskContext);
 
   // Honour --no-lscale / --no-eshift cancellation flags by removing the
