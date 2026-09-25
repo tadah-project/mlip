@@ -51,8 +51,8 @@ namespace {
 // EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
 // ESHIFT the model then has no free per-atom constant, which matters when the
 // reference energies are absolute (e.g. DFT totals).
-[[maybe_unused]] void hint_embf0_reference(const Trainer &tr,
-                                           const LoadTransformReport &report) {
+void hint_embf0_reference(const Trainer &tr,
+                          const LoadTransformReport &report) {
   if (!tr.DCS.dmb) return;
   const auto mode = tr.DCS.dmb->embf0_mode();
   if (!mode || *mode != tadah::models::EmbF0Mode::Zero) return;
