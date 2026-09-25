@@ -18,6 +18,7 @@
 #include <functional>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -485,6 +486,13 @@ int RefitEngine::run(tadah::mlip::Task &task) {
 
   // ---- write pot.tadah ----
   core::Context pot = refit.build_pot_context();
+  // A NUMERIC in the refit configuration sets the precision of pot.tadah
+  // like it does for train/hpo: dumpPotFile honours it (WARNING below 17)
+  // and never writes it. Non-inserting lookup: absent -> 18, exact.
+  if (const std::optional<std::string> numeric = c.stored_value("NUMERIC")) {
+    pot.remove("NUMERIC");
+    pot.add("NUMERIC", *numeric);
+  }
   TrainEngine::dumpPotFile(out_pot, pot);
 
   // ---- write the round-trip setfl from the NATIVE fitted functions ----

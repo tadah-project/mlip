@@ -1,5 +1,6 @@
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
+#include <tadah/core/number_format.h>
 
 #include <tadah/models/descriptors/basis_kind.h>
 
@@ -86,8 +87,8 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     ol.key = m[3].str();
     ol.index = std::stoul(m[4].str());
     try {
-      ol.lo = std::stod(m[5].str());
-      ol.hi = std::stod(m[6].str());
+      ol.lo = tadah::core::to_double(m[5].str());
+      ol.hi = tadah::core::to_double(m[6].str());
     } catch (const std::exception &) {
       rep.warnings.push_back("line " + std::to_string(i + 1) +
                              ": non-numeric OPTIM bounds — left untouched.");
@@ -107,7 +108,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   for (const auto &l : lines) {
     std::smatch m;
     if (std::regex_match(l, m, kBumpContractRe))
-      bump_w[m[1].str()] = std::stod(m[2].str());
+      bump_w[m[1].str()] = tadah::core::to_double(m[2].str());
   }
   auto bump_cgrid_key = [&bump_w](const std::string &key) {
     return (key == "CGRID2B" && bump_w.count("2B")) ||
@@ -119,7 +120,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   for (const auto &l : lines) {
     std::smatch m;
     if (std::regex_search(l, m, kHeaderPctRe)) {
-      hdr_pct = std::stod(m[1].str());
+      hdr_pct = tadah::core::to_double(m[1].str());
       break;
     }
   }

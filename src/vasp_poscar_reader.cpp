@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <tadah/core/number_format.h>
 #include <tadah/mlip/structure_readers/vasp_poscar_reader.h>
 #include <vector>
 namespace tadah {
@@ -163,9 +164,11 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
         "VaspPoscarReader: not enough coords for atom line " +
         std::to_string(nextLineIndex + i));
     }
-    double x = std::stod(cfields[0]);
-    double y = std::stod(cfields[1]);
-    double z = std::stod(cfields[2]);
+    // core::to_double: std::stod, but an underflowing literal (a subnormal
+    // coordinate, as the POSCAR export writes it) is a value, not an error.
+    double x = tadah::core::to_double(cfields[0]);
+    double y = tadah::core::to_double(cfields[1]);
+    double z = tadah::core::to_double(cfields[2]);
 
     Atom a;
     // parse element from atomSymbols[i] if you maintain a map

@@ -12,6 +12,7 @@
 #include <tadah/mlip/weight_provisioning.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -168,6 +169,34 @@ TEST_CASE("provision_fixed_weights: scatter + trained flag on real M_BLR",
   REQUIRE(w[K - 1] == 0.5);
   for (std::size_t i = 1; i < K; ++i)
     REQUIRE(w[i - 1] == 0.5 + static_cast<double>(i));
+}
+
+TEST_CASE("provision_fixed_weights: a subnormal FIXWEIGHT is a number",
+          "[weight_provisioning][lossless]") {
+  // Context::add(double) now keeps a subnormal ("1e-310"; the old
+  // fixed-decimal text flushed it to 0), and the refit writer / HPO put
+  // computed values into FIXWEIGHT. std::stod rejected it (ERANGE):
+  // "FIXWEIGHT entry is not a number".
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  std::size_t K = 0;
+  {
+    Context probe_ctx = make_model_context();
+    Trainer probe(probe_ctx, ws);
+    K = probe.fb->get_phi_cols(probe.context);
+  }
+  REQUIRE(K >= 2);
+  Context ctx = make_model_context();
+  ctx.add("FIXINDEX", "1-" + std::to_string(K));
+  ctx.add("FIXWEIGHT", 1e-310);
+  for (std::size_t k = 1; k < K; ++k)
+    ctx.add("FIXWEIGHT", -std::numeric_limits<double>::denorm_min());
+  Trainer tr(ctx, ws);
+  REQUIRE_NOTHROW(tr.provision_fixed_weights());
+  const auto &w = tr.model->get_weights();
+  REQUIRE(w.size() == K);
+  CHECK(w[0] == 1e-310);
+  CHECK(w[K - 1] == -std::numeric_limits<double>::denorm_min());
 }
 
 TEST_CASE("provision_fixed_weights: incomplete coverage throws",

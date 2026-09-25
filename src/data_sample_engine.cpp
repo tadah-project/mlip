@@ -26,7 +26,7 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
 
   std::string outFile = taskContext.get<std::string>("OUTFILE");
   bool append = taskContext.get<bool>("APPEND");
-  size_t numeric = taskContext.get<size_t>("NUMERIC");
+  size_t numeric = StructureDB::dataset_digits(taskContext);
 
   if (!areDataLoaded) loadInput(taskContext);
 

@@ -170,8 +170,28 @@ struct StructureDB {
   std::vector<Structure>::const_iterator begin() const;
   std::vector<Structure>::const_iterator end() const;
 
-  /** Method to dump class content to a file */
-  void dump_to_file(const std::string& filepath, bool append, size_t prec=12) const;
+  /** Method to dump class content to a file (dataset format).
+   *
+   * Every number is written with `prec` SIGNIFICANT digits (%.{N}g); the
+   * default 18 reads back bit-identically.
+   */
+  void dump_to_file(const std::string& filepath, bool append, size_t prec=18) const;
+
+  /** Significant digits for the dataset files the `tadah data` engines
+   *  write: NUMERIC from @p ctx, looked up without default insertion
+   *  (absent -> 18, exact). An explicit NUMERIC below 17 is honoured, with
+   *  a WARNING (the written dataset then differs from the one in memory).
+   */
+  static size_t dataset_digits(const tadah::core::Context &ctx);
+
+  /** Significant digits for the structure exports of `tadah data write`
+   *  that write %.{N}g reals (LAMMPS data file, VASP POSCAR): the same
+   *  resolution as dataset_digits(), and the same WARNING below 17, naming
+   *  @p file_noun (e.g. "LAMMPS data file"). Not for the CASTEP cell
+   *  export, whose NUMERIC is decimal places.
+   */
+  static size_t export_digits(const tadah::core::Context &ctx,
+                              const std::string &file_noun);
 
   // Public method that reads the file, counts blocks and line counts per block,
   // then prints the results to std::cout.

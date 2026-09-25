@@ -6,6 +6,7 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
+#include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/task.h>
 #include <tadah/mlip/engines/refit_engine.h>
@@ -17,8 +18,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
+#include <sstream>
 #include <string>
+#include <vector>
 #include <unistd.h>
 
 using tadah::core::Context;
@@ -138,6 +142,84 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(out.get<std::string>("FIXINDEX") == "1-7");
   REQUIRE(out.size("FIXWEIGHT") == 7);
   REQUIRE(out.get<int>("TYPE2B", 1) == 4);
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: NUMERIC is honoured and the messages say when "
+                 "the edit is not exact", "[refit][edit][numeric][lossless]") {
+  ScopedTempDir tmp;
+  Context pot = make_knot_pot();
+  pot.remove("WEIGHTS");
+  pot.remove("FIXWEIGHT");
+  const std::vector<double> w = {1.0 / 3.0, -900.0, 12.0, 220.0, -160.0,
+                                 5300.0};
+  for (double v : w) pot.add("WEIGHTS", v);
+  for (double v : w) pot.add("FIXWEIGHT", v);
+  TrainEngine::dumpPotFile("in.tadah", pot);
+  {  // a 1.5.0 hpo best_pot carries an auto-inserted NUMERIC 12
+    std::ofstream app("in12.tadah");
+    std::ifstream src("in.tadah");
+    app << src.rdbuf() << "NUMERIC 12\n";
+  }
+
+  auto run_edit = [](const std::string &in, const std::string &out,
+                     const char *numeric) {
+    Context c;
+    c.add("EDIT", in);
+    c.add("FUNC", std::string("phi"));
+    c.add("ADD", 3.6);
+    c.add("OUTFILE", out);
+    c.add("HPOFILEOUT", out + ".hpotarget");
+    if (numeric) c.add("NUMERIC", std::string(numeric));
+    Task task("refit", c);
+    auto &log = tadah::core::Logger::instance();
+    const auto old_level = log.getLogLevel();
+    log.setLogLevel(tadah::core::LogLevel::WARNING);
+    std::ostringstream captured;
+    std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+    int rc = -1;
+    try {
+      rc = RefitEngine().run(task);
+    } catch (...) {
+      std::cout.rdbuf(old_buf);
+      log.setLogLevel(old_level);
+      throw;
+    }
+    std::cout.rdbuf(old_buf);
+    log.setLogLevel(old_level);
+    REQUIRE(rc == EXIT_SUCCESS);
+    return captured.str();
+  };
+  auto first_weight = [](const std::string &file) {
+    const Context c = tadah::core::CoreUserConfigParser().parse(file);
+    return c.get<std::string>("WEIGHTS", 0);
+  };
+
+  SECTION("no NUMERIC: exact edit, no warning") {
+    const std::string log = run_edit("in.tadah", "out.tadah", nullptr);
+    CHECK(log.find("NUMERIC") == std::string::npos);
+    const Context out = tadah::core::CoreUserConfigParser().parse("out.tadah");
+    CHECK(out.get<double>("WEIGHTS", 0) == 1.0 / 3.0);
+  }
+  SECTION("NUMERIC 12 carried by the input: honoured, warning names it") {
+    const std::string log = run_edit("in12.tadah", "out12.tadah", nullptr);
+    CHECK(log.find("NUMERIC 12 (carried by in12.tadah)") != std::string::npos);
+    CHECK(log.find("Delete the NUMERIC line from in12.tadah") !=
+          std::string::npos);
+    CHECK(log.find("only up to that rounding") != std::string::npos);
+    CHECK(first_weight("out12.tadah") == "0.333333333333");
+    std::ifstream f("out12.tadah");
+    const std::string body((std::istreambuf_iterator<char>(f)),
+                           std::istreambuf_iterator<char>());
+    CHECK(body.find("NUMERIC") == std::string::npos);
+  }
+  SECTION("a NUMERIC set for the run wins over the input's") {
+    const std::string log = run_edit("in12.tadah", "out18.tadah", "18");
+    CHECK(log.find("rounding") == std::string::npos);
+    const Context out =
+        tadah::core::CoreUserConfigParser().parse("out18.tadah");
+    CHECK(out.get<double>("WEIGHTS", 0) == 1.0 / 3.0);
+  }
 }
 
 TEST_CASE_METHOD(PTFixture, "refit --edit --remove: end-to-end",

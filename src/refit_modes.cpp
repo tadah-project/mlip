@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -10,6 +11,7 @@
 
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
@@ -122,6 +124,18 @@ int run_refit_edit(Context &c) {
   // F2: a hand-tweaked knot pot may carry a stale RCUT — warn + use derived.
   potedit::normalize_knot_rcut(pot, "tadah refit --edit");
 
+  // NUMERIC shapes only the written file (significant digits; never
+  // written into it). A NUMERIC set for this run wins over one the input
+  // carries (every 1.5.0 `tadah hpo` pot has an auto-inserted NUMERIC 12);
+  // either is honoured, so below 17 the edit is exact only up to rounding.
+  const std::optional<std::string> run_numeric = c.stored_value("NUMERIC");
+  if (run_numeric) {
+    pot.remove("NUMERIC");
+    pot.add("NUMERIC", *run_numeric);
+  }
+  const core::PotDigits pot_digits = core::resolve_pot_digits(pot);
+  const bool exact_output = pot_digits.digits >= core::kRoundTripDigits;
+
   potedit::PotEAMView view = potedit::parse_pot_view(pot);
   const potedit::Channel ch = parse_channel(c.get<std::string>("FUNC"));
   if (ch != potedit::Channel::Phi && view.mb != potedit::MBKind::Ream) {
@@ -163,8 +177,12 @@ int run_refit_edit(Context &c) {
       msg << ", eta " << rep.eta_used;
     else
       msg << ", degree " << rep.deg_used;
-    msg << ") — the edited potential predicts identically to the input "
-           "until the new coefficient is varied (e.g. by `tadah hpo`).";
+    msg << ")";
+    if (exact_output)
+      msg << " — the edited potential predicts identically to the input "
+             "until the new coefficient is varied (e.g. by `tadah hpo`).";
+    else
+      msg << ".";
     log_info(msg.str());
   } else {
     const potedit::RemoveReport rep =
@@ -182,6 +200,22 @@ int run_refit_edit(Context &c) {
     }
     msg << ". Removal is lossy: re-validate the potential.";
     log_info(msg.str());
+  }
+
+  if (!exact_output) {
+    const std::string n = std::to_string(pot_digits.digits);
+    log_warn(
+        "tadah refit --edit: NUMERIC " + n +
+        (run_numeric ? " (set for this run)" : " (carried by " + in_pot + ")") +
+        ": the edited potential is written with " + n +
+        " significant digits, so it predicts identically to the input only up "
+        "to that rounding. " +
+        (run_numeric
+             ? std::string("Omit NUMERIC (default 18, exact) for an exact "
+                           "edit.")
+             : "Delete the NUMERIC line from " + in_pot +
+                   " (1.5.0 `tadah hpo` pots carry an auto-inserted "
+                   "NUMERIC 12) and re-run for an exact edit."));
   }
 
   Context out = potedit::rebuild_pot_context(view);
@@ -220,13 +254,13 @@ int run_refit_retarget(Context &c) {
       const auto eq = tok.find('=');
       try {
         if (eq == std::string::npos) {
-          opts.pct = std::stod(tok);
+          opts.pct = core::to_double(tok);
           if (opts.pct <= 0.0) throw std::invalid_argument("non-positive");
         } else {
           std::string key = tok.substr(0, eq);
           std::transform(key.begin(), key.end(), key.begin(),
                          [](unsigned char ch) { return std::toupper(ch); });
-          const double p = std::stod(tok.substr(eq + 1));
+          const double p = core::to_double(tok.substr(eq + 1));
           if (p <= 0.0) throw std::invalid_argument("non-positive");
           opts.pct_per_key[key] = p;
         }
@@ -269,8 +303,8 @@ int run_refit_retarget(Context &c) {
                      [](unsigned char ch) { return std::toupper(ch); });
       s.index = std::stoul(m[2].str());
       try {
-        s.lo = std::stod(m[3].str());
-        s.hi = std::stod(m[4].str());
+        s.lo = core::to_double(m[3].str());
+        s.hi = core::to_double(m[4].str());
       } catch (const std::exception &) {
         throw std::runtime_error(
             "tadah refit --retarget: non-numeric bounds in --set token '" +

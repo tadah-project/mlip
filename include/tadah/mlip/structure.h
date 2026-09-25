@@ -292,11 +292,15 @@ struct Structure {
   std::vector<Atom>::const_iterator begin() const;
   std::vector<Atom>::const_iterator end() const;
 
-  /** Method to dump class content to a file */
-  void dump_to_file(std::ostream &file, size_t prec=12) const;
+  /** Method to dump class content to a file (dataset format).
+   *
+   * Every number is written with `prec` SIGNIFICANT digits (%.{N}g); the
+   * default 18 reads back bit-identically.
+   */
+  void dump_to_file(std::ostream &file, size_t prec=18) const;
 
-  /** Method to dump class content to a file */
-  void dump_to_file(const std::string& filepath, size_t prec=12) const;
+  /** Method to dump class content to a file (appends; see above) */
+  void dump_to_file(const std::string& filepath, size_t prec=18) const;
 
   /** List of chemical elements in this structure. */
   std::set<tadah::core::Element> get_unique_elements() const;

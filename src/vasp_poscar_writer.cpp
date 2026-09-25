@@ -25,14 +25,12 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
   file << st.label << std::endl;
   file << "1.0" << std::endl;
 
-  // write cell
+  // write cell. Reals are written with NUMERIC significant digits (POSCAR
+  // is read list-directed: Fortran accepts E-notation; 18 is exact).
   for (int i=0; i<3; ++i) {
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,0);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,1);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,2);
+    put_sig(file, st.cell(i,0));
+    put_sig(file, st.cell(i,1));
+    put_sig(file, st.cell(i,2));
     file << std::endl;
   }
 
@@ -66,12 +64,9 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
   for (const auto& pair: nelements) {
     for (const auto &atom : st) {
       if (pair.first == atom.symbol) {
-        file << std::right << std::fixed << std::setw(w)
-          << std::setprecision(p) << atom.position(0);
-        file << std::right << std::fixed << std::setw(w)
-          << std::setprecision(p) << atom.position(1);
-        file << std::right << std::fixed << std::setw(w)
-          << std::setprecision(p) << atom.position(2);
+        put_sig(file, atom.position(0));
+        put_sig(file, atom.position(1));
+        put_sig(file, atom.position(2));
         file << std::endl;
       }
     }

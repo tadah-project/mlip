@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/load_transforms.h>
@@ -218,6 +219,14 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
 void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &context) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Saving parameters to file: " + outfile);
+  // NUMERIC = significant digits of the numbers written below; absent ->
+  // 18 (exact round trip). Looked up without default insertion, and never
+  // written into the potential itself (write_potential skips it).
+  const core::PotDigits pd = core::resolve_pot_digits(context);
+  const std::string digits_warning = core::pot_digits_warning(pd);
+  if (!digits_warning.empty())
+    core::Logger::instance().log(core::LogLevel::WARNING,
+        outfile + ": " + digits_warning);
   std::ofstream outstream(outfile);
   core::Context modContext = context;
   modContext.remove("VERBOSE");
@@ -230,7 +239,8 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
   if (outstream.is_open()) {
-    outstream << modContext << std::endl;
+    modContext.write_potential(outstream, pd.digits);
+    outstream << std::endl;
   } else {
     tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
         "Error: Unable to open file: ", outfile);

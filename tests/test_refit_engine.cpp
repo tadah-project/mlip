@@ -9,12 +9,14 @@
 #include <tadah/mlip/task.h>
 #include <tadah/mlip/engines/refit_engine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -113,6 +115,57 @@ TEST_CASE_METHOD(PTFixture,
   const std::string body((std::istreambuf_iterator<char>(log)),
                          std::istreambuf_iterator<char>());
   REQUIRE(body.find("self-test") != std::string::npos);
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine honours NUMERIC from the refit configuration",
+                 "[refit][engine][integration][numeric][lossless]") {
+  // build_pot_context() starts from an empty Context, so the configuration's
+  // NUMERIC never reached dumpPotFile: pot.tadah was always written at 18
+  // digits, unlike train/hpo. NUMERIC is honoured now and never written.
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+
+  Context c;
+  c.add("EAM", std::string("synth_fcc.eam.alloy"));
+  c.add("REFIT_MODE", std::string("dense"));
+  c.add("REFIT_BASIS", std::string("Blip"));
+  c.add("REFIT_MAX_ESCALATIONS", 0);
+  c.add("NUMERIC", 12);
+  Task task("refit", c);
+  RefitEngine engine;
+  REQUIRE(engine.run(task) == EXIT_SUCCESS);
+
+  std::ifstream in("pot.tadah");
+  REQUIRE(in.good());
+  std::string line;
+  bool saw_weights = false;
+  std::size_t max_sig = 0;
+  while (std::getline(in, line)) {
+    std::istringstream ls(line);
+    std::string key;
+    if (!(ls >> key)) continue;
+    REQUIRE(key != "NUMERIC");
+    if (key != "WEIGHTS") continue;
+    saw_weights = true;
+    std::string tok;
+    while (ls >> tok) {
+      // significant digits of the mantissa (leading zeros do not count)
+      const std::string mant = tok.substr(0, tok.find_first_of("eE"));
+      std::size_t n = 0;
+      bool lead = true;
+      for (char ch : mant) {
+        if (ch < '0' || ch > '9') continue;
+        if (lead && ch == '0') continue;
+        lead = false;
+        ++n;
+      }
+      max_sig = std::max(max_sig, n);
+    }
+  }
+  REQUIRE(saw_weights);
+  CHECK(max_sig <= 12);
+  CHECK(max_sig >= 10);   // fitted weights are not short decimals
 }
 
 TEST_CASE_METHOD(PTFixture,

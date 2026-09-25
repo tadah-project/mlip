@@ -164,7 +164,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
   taskContext.get("OUTFILE", outFiles);
   bool append = taskContext.get<bool>("APPEND");
   bool merge = taskContext.get<bool>("MERGE");
-  size_t numeric = taskContext.get<size_t>("NUMERIC");
+  size_t numeric = StructureDB::dataset_digits(taskContext);
 
   if (merge) {  // merge all stdbs into one
     StructureDB stdb;
