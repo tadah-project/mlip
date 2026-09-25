@@ -1,3 +1,7 @@
+#include <cstdio>
+#include <fstream>
+#include <iomanip>
+#include <stdexcept>
 #include <string>
 #include "catch2/catch.hpp"
 #include "tadah/core/element.h"
@@ -147,4 +151,85 @@ TEST_CASE("Testing Structure Unique Element") {
   Structure st;
   st.add_atom(Atom(Element("Ta"),0,0,0,0,0,0));
   REQUIRE(st.get_unique_elements().size()==1);
+}
+TEST_CASE("Structure::save -> read round-trips every double bit-exactly",
+          "[structure_read_write][structure_save]") {
+  // Full-precision values, small magnitudes and fz != fy: the old writer
+  // kept 6 significant digits for weights/energy, 6 fixed decimals for the
+  // rest, and wrote force(1) twice instead of force(2).
+  Structure st;
+  st.label = "save round trip";
+  st.eweight = 8.100000072900001e-05;
+  st.fweight = 1.0 / 3.0;
+  st.sweight = 7.65e-9;
+  st.energy = -12345.678901234567;
+  st.cell.load(9.9321641234567, 1e-7, -0.1,
+               0.30000000000000004, 14.87106012345678, 2.0 / 3.0,
+               -1e-20, 0.0, 17.525592123456789);
+  st.stress.load(3.3333333333333335e-05, 1e-20, -0.1,
+                 1e-20, 257.0893807653, 1.0 / 7.0,
+                 -0.1, 1.0 / 7.0, -123456.789012345);
+  st.add_atom(Atom(Element("Ta"), 9.9321641234567, -0.004522, 1e-7,
+                   1e-7, 0.5, -0.3));
+  st.add_atom(Atom(Element("H"), 1.0 / 3.0, 2.0 / 3.0, 0.1,
+                   -1.2345678901234566e-07, 0.25, 0.75));
+
+  std::FILE* tmpFile = std::tmpfile();
+  REQUIRE(tmpFile);
+  const int fd = fileno(tmpFile);
+  REQUIRE(fd != -1);
+  char tempfile[256];
+  snprintf(tempfile, sizeof(tempfile), "/proc/self/fd/%d", fd);
+
+  st.save(tempfile);
+  Structure rt;
+  rt.read(tempfile);
+  std::fclose(tmpFile);
+
+  CHECK(rt.label == st.label);
+  CHECK(rt.eweight == st.eweight);
+  CHECK(rt.fweight == st.fweight);
+  CHECK(rt.sweight == st.sweight);
+  CHECK(rt.energy == st.energy);
+  for (int i = 0; i < 3; ++i)
+    for (int j = 0; j < 3; ++j) {
+      INFO("i=" << i << " j=" << j);
+      CHECK(rt.cell(i, j) == st.cell(i, j));
+      CHECK(rt.stress(i, j) == st.stress(i, j));
+    }
+  REQUIRE(rt.natoms() == st.natoms());
+  for (size_t a = 0; a < st.natoms(); ++a) {
+    INFO("atom " << a);
+    CHECK(rt.atoms[a].symbol == st.atoms[a].symbol);
+    for (int k = 0; k < 3; ++k) {
+      INFO("k=" << k);
+      CHECK(rt.atoms[a].position(k) == st.atoms[a].position(k));
+      CHECK(rt.atoms[a].force(k) == st.atoms[a].force(k));
+    }
+  }
+  CHECK(rt.atoms[0].force(2) != rt.atoms[0].force(1));
+  CHECK(rt == st);
+}
+
+TEST_CASE("Structure::save keeps the caller's stream format and reports "
+          "an unwritable path", "[structure_save]") {
+  Structure st;
+  st.label = "fmt";
+  st.add_atom(Atom(Element("Ta"), 0.5, 0.25, 0.125, 0, 0, 0));
+
+  std::FILE* tmpFile = std::tmpfile();
+  REQUIRE(tmpFile);
+  char tempfile[256];
+  snprintf(tempfile, sizeof(tempfile), "/proc/self/fd/%d", fileno(tmpFile));
+  std::ofstream ofs(tempfile);
+  REQUIRE(ofs.is_open());
+  ofs << std::fixed << std::setprecision(3);
+  st.save(ofs);
+  CHECK((ofs.flags() & std::ios_base::floatfield) == std::ios_base::fixed);
+  CHECK(ofs.precision() == 3);
+  ofs.close();
+  std::fclose(tmpFile);
+
+  CHECK_THROWS_AS(st.save("/nonexistent_dir_for_tadah_test/x.dat"),
+                  std::runtime_error);
 }

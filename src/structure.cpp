@@ -255,49 +255,52 @@ void Structure::read(const std::string fn) {
  * Saves the current structure data to a given output file stream.
  * Reason: Writes out all attributes of Structure in a formatted manner.
  *
+ * Every double (weights, energy, cell, stress, positions, forces) is
+ * written with max_digits10 (17) significant digits, so read() returns
+ * bit-identical values; columns are separated by at least one space. The
+ * stream's formatting state is restored before returning.
+ *
  * Example usage:
  *     std::ofstream ofs("my_structure_output.dat");
  *     st.save(ofs);
  */
 void Structure::save(std::ofstream &ofs) const {
-  ofs << label << std::endl;
-  ofs << eweight << " " << fweight << " " << sweight << std::endl;
-  ofs << energy << std::endl;
+  const std::ios_base::fmtflags flags = ofs.flags();
+  const std::streamsize precision = ofs.precision();
+  ofs << std::defaultfloat
+      << std::setprecision(std::numeric_limits<double>::max_digits10);
+  auto col = [&ofs](double v) {
+    ofs << ' ' << std::right << std::setw(w - 1) << v;
+  };
+
+  ofs << label << '\n';
+  ofs << eweight << ' ' << fweight << ' ' << sweight << '\n';
+  ofs << energy << '\n';
   for (int i = 0; i < 3; ++i) {
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,0);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,1);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,2);
-    ofs << std::endl;
+    col(cell(i,0)); col(cell(i,1)); col(cell(i,2));
+    ofs << '\n';
   }
 
   for (int i = 0; i < 3; ++i) {
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,0);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,1);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,2);
-    ofs << std::endl;
+    col(stress(i,0)); col(stress(i,1)); col(stress(i,2));
+    ofs << '\n';
   }
 
   for (const Atom &a : atoms) {
-    ofs << a.symbol[0] << a.symbol[1];
-    ofs << std::setw(w-2) << std::fixed << std::right
-        << std::setprecision(p) << a.position(0);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.position(1);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.position(2);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(0);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(1);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(1); // Notice potential mistake: repeated a.force(1)
-    ofs << std::endl;
+    ofs << std::left << std::setw(2) << a.symbol;
+    col(a.position(0)); col(a.position(1)); col(a.position(2));
+    col(a.force(0)); col(a.force(1)); col(a.force(2));
+    ofs << '\n';
   }
+  ofs.flags(flags);
+  ofs.precision(precision);
 }
 
 /**
  * Saves the current structure data to a file.
  * Reason: Directly writes all attributes of Structure to a user-specified file path.
+ *
+ * Throws std::runtime_error if the file cannot be opened or written.
  *
  * Example usage:
  *     st.save("my_structure_output.dat");
@@ -306,8 +309,14 @@ void Structure::save(std::ofstream &ofs) const {
  */
 void Structure::save(const std::string fn) const {
   std::ofstream ofs(fn);
+  if (!ofs.is_open()) {
+    throw std::runtime_error("Could not open file for writing: " + fn);
+  }
   save(ofs);
   ofs.close();
+  if (!ofs) {
+    throw std::runtime_error("Error writing structure to file: " + fn);
+  }
 }
 
 /**
