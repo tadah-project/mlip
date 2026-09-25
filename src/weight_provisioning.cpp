@@ -1,6 +1,7 @@
 #include <tadah/mlip/weight_provisioning.h>
 
 #include <tadah/core/core_types.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/utils.h>
 
 #include <algorithm>
@@ -50,7 +51,8 @@ FixedSpec parse_fixed_spec(const tadah::core::Context &ctx,
   spec.values.reserve(fw.size());
   for (const std::string &v : fw) {
     try {
-      spec.values.push_back(std::stod(v));
+      // to_double: std::stod that also accepts a subnormal value.
+      spec.values.push_back(tadah::core::to_double(v));
     } catch (const std::exception &) {
       throw std::runtime_error("FIXWEIGHT entry is not a number: '" + v + "'");
     }

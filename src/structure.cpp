@@ -1,5 +1,7 @@
 #include <tadah/mlip/structure.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/core/utils.h>
 
 #include <stdexcept>
 #include <cmath>
@@ -10,6 +12,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstddef>
+#include <string_view>
 namespace tadah {
 namespace mlip {
 
@@ -187,8 +190,8 @@ int Structure::read(std::ifstream &ifs) {
     stream >> energy >> T;
   }
   else {
-    // only energy
-    energy = std::stod(line);
+    // only energy (to_double: std::stod that also accepts a subnormal)
+    energy = tadah::core::to_double(tadah::core::trim(line));
   }
 
   // 3x3 cell matrix
@@ -252,49 +255,52 @@ void Structure::read(const std::string fn) {
  * Saves the current structure data to a given output file stream.
  * Reason: Writes out all attributes of Structure in a formatted manner.
  *
+ * Every double (weights, energy, cell, stress, positions, forces) is
+ * written with max_digits10 (17) significant digits, so read() returns
+ * bit-identical values; columns are separated by at least one space. The
+ * stream's formatting state is restored before returning.
+ *
  * Example usage:
  *     std::ofstream ofs("my_structure_output.dat");
  *     st.save(ofs);
  */
 void Structure::save(std::ofstream &ofs) const {
-  ofs << label << std::endl;
-  ofs << eweight << " " << fweight << " " << sweight << std::endl;
-  ofs << energy << std::endl;
+  const std::ios_base::fmtflags flags = ofs.flags();
+  const std::streamsize precision = ofs.precision();
+  ofs << std::defaultfloat
+      << std::setprecision(std::numeric_limits<double>::max_digits10);
+  auto col = [&ofs](double v) {
+    ofs << ' ' << std::right << std::setw(w - 1) << v;
+  };
+
+  ofs << label << '\n';
+  ofs << eweight << ' ' << fweight << ' ' << sweight << '\n';
+  ofs << energy << '\n';
   for (int i = 0; i < 3; ++i) {
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,0);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,1);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << cell(i,2);
-    ofs << std::endl;
+    col(cell(i,0)); col(cell(i,1)); col(cell(i,2));
+    ofs << '\n';
   }
 
   for (int i = 0; i < 3; ++i) {
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,0);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,1);
-    ofs << std::fixed << std::right << std::setw(w) << std::setprecision(p) << stress(i,2);
-    ofs << std::endl;
+    col(stress(i,0)); col(stress(i,1)); col(stress(i,2));
+    ofs << '\n';
   }
 
   for (const Atom &a : atoms) {
-    ofs << a.symbol[0] << a.symbol[1];
-    ofs << std::setw(w-2) << std::fixed << std::right
-        << std::setprecision(p) << a.position(0);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.position(1);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.position(2);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(0);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(1);
-    ofs << std::setw(w) << std::fixed << std::right
-        << std::setprecision(p) << a.force(1); // Notice potential mistake: repeated a.force(1)
-    ofs << std::endl;
+    ofs << std::left << std::setw(2) << a.symbol;
+    col(a.position(0)); col(a.position(1)); col(a.position(2));
+    col(a.force(0)); col(a.force(1)); col(a.force(2));
+    ofs << '\n';
   }
+  ofs.flags(flags);
+  ofs.precision(precision);
 }
 
 /**
  * Saves the current structure data to a file.
  * Reason: Directly writes all attributes of Structure to a user-specified file path.
+ *
+ * Throws std::runtime_error if the file cannot be opened or written.
  *
  * Example usage:
  *     st.save("my_structure_output.dat");
@@ -303,8 +309,14 @@ void Structure::save(std::ofstream &ofs) const {
  */
 void Structure::save(const std::string fn) const {
   std::ofstream ofs(fn);
+  if (!ofs.is_open()) {
+    throw std::runtime_error("Could not open file for writing: " + fn);
+  }
   save(ofs);
   ofs.close();
+  if (!ofs) {
+    throw std::runtime_error("Error writing structure to file: " + fn);
+  }
 }
 
 /**
@@ -509,48 +521,52 @@ std::vector<Atom>::const_iterator Structure::end() const {
  * Dumps the content of the structure to a stream in a detailed format.
  * Reason: Provides a user-friendly ASCII representation of the Structure.
  *
+ * Every number is written with `prec` SIGNIFICANT digits (%.{N}g, NUMERIC
+ * of the data engines): the default 18 reads back bit-identically. Each
+ * number column is prec + 7 characters wide (the widest rendering,
+ * "-d.<N-1 digits>e-308"), so columns stay aligned.
+ *
  * Example usage:
  *     st.dump_to_file(std::cout);
  */
 void Structure::dump_to_file(std::ostream &file, size_t prec) const {
-  const int n = 5;
-  file << label << std::endl;
-  file << std::fixed << std::setprecision(prec);
-  file << eweight << " " << fweight << " " << sweight << std::endl;
-  file << energy << " " << T << std::endl;
+  const int digits = static_cast<int>(
+      std::min<size_t>(std::max<size_t>(prec, 1), tadah::core::kMaxSigDigits));
+  const int width = digits + 7;
+  char buf[tadah::core::kReformatBufferSize];
+  // One number, optionally right-aligned in `w` characters (no allocation).
+  auto put = [&](double v, int w) {
+    const std::size_t len =
+        tadah::core::format_sig_chars(v, digits, buf, sizeof buf);
+    if (w > 0) file << std::setw(w);
+    file << std::string_view(buf, len);
+  };
+  auto row = [&](const tadah::core::Matrix3d &m, int i) {
+    put(m(i,0), width); file << " ";
+    put(m(i,1), width); file << " ";
+    put(m(i,2), width); file << " " << '\n';
+  };
 
-  file
-    << std::setw(prec + n) << cell(0,0) << " "
-    << std::setw(prec + n) << cell(0,1) << " "
-    << std::setw(prec + n) << cell(0,2) << " " << std::endl
-    << std::setw(prec + n) << cell(1,0) << " "
-    << std::setw(prec + n) << cell(1,1) << " "
-    << std::setw(prec + n) << cell(1,2) << " " << std::endl
-    << std::setw(prec + n) << cell(2,0) << " "
-    << std::setw(prec + n) << cell(2,1) << " "
-    << std::setw(prec + n) << cell(2,2) << " " << std::endl;
+  file << label << '\n';
+  put(eweight, 0); file << " ";
+  put(fweight, 0); file << " ";
+  put(sweight, 0); file << '\n';
+  put(energy, 0); file << " ";
+  put(T, 0); file << '\n';
 
-  file
-    << std::setw(prec + n) << stress(0,0) << " "
-    << std::setw(prec + n) << stress(0,1) << " "
-    << std::setw(prec + n) << stress(0,2) << " " << std::endl
-    << std::setw(prec + n) << stress(1,0) << " "
-    << std::setw(prec + n) << stress(1,1) << " "
-    << std::setw(prec + n) << stress(1,2) << " " << std::endl
-    << std::setw(prec + n) << stress(2,0) << " "
-    << std::setw(prec + n) << stress(2,1) << " "
-    << std::setw(prec + n) << stress(2,2) << " " << std::endl;
+  for (int i = 0; i < 3; ++i) row(cell, i);
+  for (int i = 0; i < 3; ++i) row(stress, i);
 
   for (const auto &a : atoms) {
-    file << std::setw(2) << a.symbol << " "
-         << std::setw(prec + n) << a.position[0] << " "
-         << std::setw(prec + n) << a.position[1] << " "
-         << std::setw(prec + n) << a.position[2] << " "
-         << std::setw(prec + n) << a.force[0] << " "
-         << std::setw(prec + n) << a.force[1] << " "
-         << std::setw(prec + n) << a.force[2] << std::endl;
+    file << std::setw(2) << a.symbol << " ";
+    put(a.position[0], width); file << " ";
+    put(a.position[1], width); file << " ";
+    put(a.position[2], width); file << " ";
+    put(a.force[0], width); file << " ";
+    put(a.force[1], width); file << " ";
+    put(a.force[2], width); file << '\n';
   }
-  file << std::endl;
+  file << '\n';
 }
 
 /**

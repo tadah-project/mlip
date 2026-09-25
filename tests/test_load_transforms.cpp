@@ -8,6 +8,8 @@
 #include <tadah/mlip/structure_db.h>
 
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 
 using namespace tadah::core;
 using namespace tadah::mlip;
@@ -227,6 +229,32 @@ TEST_CASE("stamp_into_param_file populates LSCALE / ESHIFT keys",
   // ESHIFT entries are written sorted by Z; Ti=22 < Nb=41
   REQUIRE(pot.get<double>("ESHIFT", 0) == Approx(-3.0));
   REQUIRE(pot.get<double>("ESHIFT", 1) == Approx(-7.0));
+}
+
+TEST_CASE("stamp_into_param_file stores LSCALE / ESHIFT bit-exactly",
+          "[load_transforms][lossless]") {
+  // They used to be stamped via a 6-significant-digit text, so predict/HPO
+  // reapplied a different transform than training used (~1e-5 eV/atom).
+  PeriodicTable::initialize();
+  LoadTransformReport rep;
+  rep.applied = true;
+  rep.lscale = 1.0 / 0.997;
+  const int ti = PeriodicTable::find_by_symbol("Ti").Z;
+  const int nb = PeriodicTable::find_by_symbol("Nb").Z;
+  rep.eshift[ti] = -3.1234567890123456;
+  rep.eshift[nb] = -7.000000123456789e-5;
+
+  Context pot;
+  stamp_into_param_file(pot, rep);
+  auto bits = [](double v) {
+    std::uint64_t u;
+    std::memcpy(&u, &v, sizeof u);
+    return u;
+  };
+  REQUIRE(bits(pot.get<double>("LSCALE")) == bits(rep.lscale));
+  REQUIRE(pot.size("ESHIFT") == 2);
+  REQUIRE(bits(pot.get<double>("ESHIFT", 0)) == bits(rep.eshift[ti]));
+  REQUIRE(bits(pot.get<double>("ESHIFT", 1)) == bits(rep.eshift[nb]));
 }
 
 TEST_CASE("apply_load_transforms — round trip ESHIFT_ATOM + LSCALE",

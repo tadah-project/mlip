@@ -1,4 +1,5 @@
 #include <tadah/mlip/structure_readers/castep_cell_reader.h>
+#include <tadah/core/number_format.h>
 
 #include <algorithm>
 #include <cctype>
@@ -133,9 +134,9 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
         if (toks.size() < 3) {
           throw std::runtime_error("CastepCellReader: LATTICE_CART line missing coords.");
         }
-        double x = std::stod(toks[0]);
-        double y = std::stod(toks[1]);
-        double z = std::stod(toks[2]);
+        double x = tadah::core::to_double(toks[0]);
+        double y = tadah::core::to_double(toks[1]);
+        double z = tadah::core::to_double(toks[2]);
 
         m_structure.cell(lcCount,0) = x;
         m_structure.cell(lcCount,1) = y;
@@ -161,9 +162,9 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       tadah::core::Element e = parseSpecies(toks[0]);
 
       // fractional coords
-      double fx = std::stod(toks[1]);
-      double fy = std::stod(toks[2]);
-      double fz = std::stod(toks[3]);
+      double fx = tadah::core::to_double(toks[1]);
+      double fy = tadah::core::to_double(toks[2]);
+      double fz = tadah::core::to_double(toks[3]);
 
       double cx, cy, cz;
       fracToAbs(fx, fy, fz, cx, cy, cz);
@@ -186,9 +187,9 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
 
       tadah::core::Element e = parseSpecies(toks[0]);
 
-      double x = std::stod(toks[1]);
-      double y = std::stod(toks[2]);
-      double z = std::stod(toks[3]);
+      double x = tadah::core::to_double(toks[1]);
+      double y = tadah::core::to_double(toks[2]);
+      double z = tadah::core::to_double(toks[3]);
 
       Atom a;
       static_cast<tadah::core::Element&>(a) = e;
@@ -218,16 +219,16 @@ void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines) {
   for (auto &ln : lines) {
     auto toks = split_line(ln);
     if (toks.size() >= 3 && !haveABC) {
-      aVal = std::stod(toks[0]);
-      bVal = std::stod(toks[1]);
-      cVal = std::stod(toks[2]);
+      aVal = tadah::core::to_double(toks[0]);
+      bVal = tadah::core::to_double(toks[1]);
+      cVal = tadah::core::to_double(toks[2]);
       haveABC = true;
       continue;
     }
     else if (toks.size() >= 3 && haveABC && !haveAngles) {
-      alphaDeg = std::stod(toks[0]);
-      betaDeg  = std::stod(toks[1]);
-      gammaDeg = std::stod(toks[2]);
+      alphaDeg = tadah::core::to_double(toks[0]);
+      betaDeg  = tadah::core::to_double(toks[1]);
+      gammaDeg = tadah::core::to_double(toks[2]);
       haveAngles = true;
       break;
     }

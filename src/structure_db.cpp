@@ -2,6 +2,8 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/utils.h>
+#include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <cstdio>
 #include <cctype>   // For std::isspace
 namespace tadah {
@@ -292,6 +294,41 @@ void StructureDB::dump_to_file(const std::string& filepath, bool append, size_t 
         s.dump_to_file(file, prec);  
     }
     file.close();
+}
+
+namespace {
+// NUMERIC for a written structure file, looked up without default
+// insertion; an explicit value below 17 is honoured with a WARNING.
+size_t structure_file_digits(const tadah::core::Context &ctx,
+                             const std::string &numbers,
+                             const std::string &consequence) {
+  const tadah::core::PotDigits pd = tadah::core::resolve_pot_digits(ctx);
+  if (pd.explicit_ && pd.digits < tadah::core::kRoundTripDigits) {
+    const std::string n = std::to_string(pd.digits);
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING,
+        "NUMERIC " + n + " limits " + numbers + " to " + n +
+        " significant digits: values do not round-trip exactly "
+        "(a double needs " + std::to_string(tadah::core::kRoundTripDigits) +
+        "), so " + consequence + ". Omit NUMERIC (default " +
+        std::to_string(tadah::core::kPotDigitsDefault) +
+        ", exact) or set NUMERIC >= " +
+        std::to_string(tadah::core::kRoundTripDigits) + ".");
+  }
+  return static_cast<size_t>(pd.digits);
+}
+}  // namespace
+
+size_t StructureDB::dataset_digits(const tadah::core::Context &ctx) {
+  return structure_file_digits(
+      ctx, "every number in the written dataset file",
+      "a dataset reloaded from it differs from the one in memory");
+}
+
+size_t StructureDB::export_digits(const tadah::core::Context &ctx,
+                                  const std::string &file_noun) {
+  return structure_file_digits(
+      ctx, "every real number in the written " + file_noun,
+      "the exported structure differs from the one in memory");
 }
 
 std::string StructureDB::summary() const {

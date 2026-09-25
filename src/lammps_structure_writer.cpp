@@ -43,16 +43,14 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
   file << nelements.size() << " atom types" << std::endl;
   file << std::endl;
 
-  // General triclinic box format
+  // General triclinic box format. Reals are written with NUMERIC
+  // significant digits (read_data parses E-notation; 18 is exact).
   std::vector<std::string> abcvec = {"avec", "bvec", "cvec"};
   for (int i=0; i<3; ++i) {
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,0);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,1);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << st.cell(i,2)
-      << "    " << abcvec[i];
+    put_sig(file, st.cell(i,0));
+    put_sig(file, st.cell(i,1));
+    put_sig(file, st.cell(i,2));
+    file << "    " << abcvec[i];
     file << std::endl;
   }
   file << "    0.0 0.0 0.0 abc origin" << std::endl;
@@ -63,7 +61,9 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
   file << "Masses" << std::endl;
   file << std::endl;
   for (const auto &t: type) {
-    file << t.second << " " << tadah::core::PeriodicTable::get_mass(t.first) << "    # " << t.first << std::endl;
+    file << t.second << " ";
+    put_sig(file, tadah::core::PeriodicTable::get_mass(t.first), false);
+    file << "    # " << t.first << std::endl;
   }
 
   file << std::endl;
@@ -73,14 +73,11 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
 
   size_t idx=1;
   for (const auto &atom : st) {
-    file << std::right << std::fixed << std::setw(w) << idx;
-    file << std::right << std::fixed << std::setw(w) << type[atom.symbol];
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << atom.position(0);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << atom.position(1);
-    file << std::right << std::fixed << std::setw(w)
-      << std::setprecision(p) << atom.position(2);
+    file << std::right << std::setw(w) << idx;
+    file << std::right << std::setw(w) << type[atom.symbol];
+    put_sig(file, atom.position(0));
+    put_sig(file, atom.position(1));
+    put_sig(file, atom.position(2));
     file << std::endl;
     idx++;
   }

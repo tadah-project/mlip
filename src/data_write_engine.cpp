@@ -42,10 +42,17 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
   // Adjust for 0-based indexing
   for (auto &i : indices) i--;
 
-  std::string format = taskContext.get<std::string>("FORMAT");
-  auto writer = StructureWriterSelector::get_writer(core::to_upper(format),stdb);
+  const std::string format = core::to_upper(taskContext.get<std::string>("FORMAT"));
+  auto writer = StructureWriterSelector::get_writer(format,stdb);
 
-  if (taskContext.contains("NUMERIC")) {
+  if (format == "LAMMPS" || format == "VASP") {
+    // Reals are written with NUMERIC significant digits (%.{N}g): default
+    // 18 = exact; an explicit NUMERIC below 17 is honoured with a WARNING,
+    // as for dataset files.
+    writer->set_precision(StructureDB::export_digits(taskContext,
+        format == "LAMMPS" ? "LAMMPS data file" : "VASP POSCAR file"));
+  } else if (taskContext.contains("NUMERIC")) {
+    // CASTEP cell: NUMERIC is the number of decimal places (fixed).
     writer->set_precision(taskContext.get<size_t>("NUMERIC"));
   }
 

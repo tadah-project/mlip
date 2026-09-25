@@ -598,7 +598,9 @@ void stamp_into_param_file(tadah::core::Context &param_file,
                            const LoadTransformReport &report) {
   if (report.lscale != 1.0) {
     param_file.remove("LSCALE");
-    param_file.add("LSCALE", core::to_string(report.lscale));
+    // Added as doubles: Context stores them losslessly, so predict/HPO
+    // reapply exactly the transform the model was trained with.
+    param_file.add("LSCALE", report.lscale);
   }
   if (!report.eshift.empty()) {
     std::vector<int> Z_sorted;
@@ -607,7 +609,7 @@ void stamp_into_param_file(tadah::core::Context &param_file,
     std::sort(Z_sorted.begin(), Z_sorted.end());
     param_file.remove("ESHIFT");
     for (int Z : Z_sorted) {
-      param_file.add("ESHIFT", core::to_string(report.eshift.at(Z)));
+      param_file.add("ESHIFT", report.eshift.at(Z));
     }
   }
 }

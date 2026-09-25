@@ -36,7 +36,8 @@ public:
   void validate(const tadah::mlip::Task &task) override;
 
   /** Compression-aware crystal E-V self-test result (also the escalation
-   *  judge). Energies in eV/atom. */
+   *  judge). Energies in eV/atom; the table side uses EAMRefit::F_ref, so
+   *  under EMBF0 ZERO they are relative to the isolated atom. */
   struct SelfTest {
     bool valid = false;
     double e_orig = 0, e_fit = 0;
@@ -55,9 +56,10 @@ protected:
                            std::unique_ptr<models::EAMRefit> &refit,
                            SelfTest &st);
 
-  /** Run the E-V self-test of `rf` against the original tables: scan
-   *  a/a0 in [smin, 1.10], ambient/compressed split + per-function error
-   *  attribution at the worst scale. */
+  /** Run the E-V self-test of `rf` against the original tables (the
+   *  embedding as rf.F_ref, the reference rf fits): scan a/a0 in
+   *  [smin, 1.10], ambient/compressed split + per-function error attribution
+   *  at the worst scale. */
   SelfTest run_self_test(const models::EAMSetflIO &eam,
                          const models::EAMRefit &rf, double smin) const;
 };

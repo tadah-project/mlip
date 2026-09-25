@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <tadah/core/logger.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
@@ -176,8 +177,18 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
      << "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>\n"
      << "# <config>: the refit potential with a DBFILE line appended naming a\n"
      << "# training dataset; <val>: a file with DBFILE line(s) naming the\n"
-     << "# validation data the loss is measured on. See the Tadah docs (HPO).\n"
-     << "#\n"
+     << "# validation data the loss is measured on. See the Tadah docs (HPO).\n";
+  // EMBF0 ZERO (DM_REAM default; an absent key reads as ZERO): F(0) = 0, so
+  // with the refit pot's BIAS false the model has no per-atom constant.
+  if (tadah::models::context_has_ream(pot) &&
+      tadah::models::stored_embf0(pot).value_or(
+          tadah::models::EmbF0Mode::Zero) == tadah::models::EmbF0Mode::Zero)
+    os << "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no\n"
+       << "# per-atom energy constant. For absolute reference energies (e.g.\n"
+       << "# DFT totals) add ESHIFT_ATOM, ESHIFT_DBATOM or ESHIFT to <config>.\n"
+       << "# (Not BIAS true: its intercept column precedes the weights that\n"
+       << "# FIXINDEX/FIXWEIGHT and the OPTIM FIXWEIGHT lines below index.)\n";
+  os << "#\n"
      << "# Search space: the active OPTIM lines below. Bounds are +-" << pct
      << "%\n"
      << "# around the fitted values (config key OPTIM_PCT). By default only\n"

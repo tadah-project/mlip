@@ -17,7 +17,7 @@ int DataSplitEngine::run(tadah::mlip::Task &task) {
   std::vector<std::string> outFiles(taskContext.size("OUTFILE"));
   taskContext.get<>("OUTFILE",outFiles);
   bool append = taskContext.get<bool>("APPEND");
-  size_t numeric = taskContext.get<size_t>("NUMERIC");
+  size_t numeric = StructureDB::dataset_digits(taskContext);
 
   if (!areDataLoaded) loadInput(taskContext);
   if (!areSizesCalculated) calculateSizes(taskContext);

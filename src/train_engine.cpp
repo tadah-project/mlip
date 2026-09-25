@@ -4,10 +4,12 @@
 #include <stdexcept>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/load_transforms.h>
 #include <tadah/models/eam/pot_curve_edit.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
@@ -45,6 +47,27 @@ void check_bias_constraints(const core::Context &ctx) {
 }  // namespace
 
 
+namespace {
+// EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
+// ESHIFT the model then has no free per-atom constant, which matters when the
+// reference energies are absolute (e.g. DFT totals).
+[[maybe_unused]] void hint_embf0_reference(const Trainer &tr,
+                                           const LoadTransformReport &report) {
+  if (!tr.DCS.dmb) return;
+  const auto mode = tr.DCS.dmb->embf0_mode();
+  if (!mode || *mode != tadah::models::EmbF0Mode::Zero) return;
+  if (tr.DCS.bias > 0 || !report.eshift.empty()) return;
+  tadah::core::Logger::instance().log(
+      tadah::core::LogLevel::WARNING,
+      "HINT: EMBF0 ZERO fixes the DM_REAM isolated-atom energy at 0 and the "
+      "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
+      "reference energies are absolute (e.g. DFT totals), set ESHIFT_ATOM, "
+      "ESHIFT_DBATOM or ESHIFT (compatible with EAMFAST), or BIAS true "
+      "(disables EAMFAST; its intercept column precedes the descriptor "
+      "weights, so FIXINDEX/FIXWEIGHT indices shift).");
+}
+}  // namespace
+
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
   models::D_mJoin::expand_grids(context);
@@ -68,6 +91,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // before any neighbour-finding or descriptor calculation, so downstream code
   // sees the already-transformed positions, energies, and weights.
   LoadTransformReport report = apply_load_transforms(stdb, tr.context);
+  hint_embf0_reference(tr, report);
 
   // Calculate nearest neighbors and provide feedback
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
@@ -131,6 +155,14 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
 void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &context) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Saving parameters to file: " + outfile);
+  // NUMERIC = significant digits of the numbers written below; absent ->
+  // 18 (exact round trip). Looked up without default insertion, and never
+  // written into the potential itself (write_potential skips it).
+  const core::PotDigits pd = core::resolve_pot_digits(context);
+  const std::string digits_warning = core::pot_digits_warning(pd);
+  if (!digits_warning.empty())
+    core::Logger::instance().log(core::LogLevel::WARNING,
+        outfile + ": " + digits_warning);
   std::ofstream outstream(outfile);
   core::Context modContext = context;
   modContext.remove("VERBOSE");
@@ -142,8 +174,10 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // error during pair_coeff and a downstream null-deref in calc_rho.
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
+  tadah::models::normalise_embf0_key(modContext);
   if (outstream.is_open()) {
-    outstream << modContext << std::endl;
+    modContext.write_potential(outstream, pd.digits);
+    outstream << std::endl;
   } else {
     tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
         "Error: Unable to open file: ", outfile);
