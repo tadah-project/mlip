@@ -1,11 +1,11 @@
-[![pipeline](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/develop/pipeline.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/develop)
-[![coverage](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/develop/coverage.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/develop)
+[![pipeline](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/v1-dev/pipeline.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/v1-dev)
+[![coverage](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/v1-dev/coverage.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/v1-dev)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/tags)
+[![version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/tags)
 
 # MLIP (engine library)
 
-Engine library of the [Tadah!](https://tadah.readthedocs.io/develop/) MLIP
+Engine library of the [Tadah!](https://tadah.readthedocs.io/v1-dev/) MLIP
 toolchain. Implements the engines that back every `tadah` subcommand:
 
 - **Training** — design-matrix construction, regression dispatch,
@@ -31,7 +31,7 @@ by the umbrella project
 [Tadah!MLIP](https://git.ecdf.ed.ac.uk/tadah/tadah.mlip), which links
 this library and provides the `tadah` CLI binary plus documentation.
 End users install the umbrella project — see the
-[installation guide](https://tadah.readthedocs.io/develop/installation.html).
+[installation guide](https://tadah.readthedocs.io/v1-dev/installation.html).
 
 This repository is broken out separately so the hyperparameter
 optimisation engine [HPO](https://git.ecdf.ed.ac.uk/tadah/hpo)

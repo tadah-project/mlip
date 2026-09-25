@@ -2,7 +2,7 @@
 
 The full multi-repo contributor guide for the Tadah! project lives on
 the umbrella repository:
-<https://git.ecdf.ed.ac.uk/tadah/tadah.mlip/-/blob/develop/CONTRIBUTING.md>
+<https://git.ecdf.ed.ac.uk/tadah/tadah.mlip/-/blob/v1-dev/CONTRIBUTING.md>
 
 This file covers what is specific to the MLIP engine library.
 Bug reports and feature requests on this module use the GitLab issue
