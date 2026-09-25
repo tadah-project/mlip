@@ -50,7 +50,7 @@ MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
     lines.push_back(line);
   }
 
-  return parse(lines, mergeFlag);
+  return parseNamed(lines, mergeFlag, filename);
 }
 
 /**
@@ -62,9 +62,16 @@ MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
 std::vector<std::pair<std::string, core::Context>>
 MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFlag) const
 {
+  return parseNamed(lines, mergeFlag, "");
+}
+
+std::vector<std::pair<std::string, core::Context>>
+MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
+                                 bool mergeFlag,
+                                 const std::string& source) const
+{
   // Split into named sections: "GLOBAL" + each "TASK...." 
-  std::vector<std::pair<std::string, std::vector<std::string>>> namedSections =
-      splitSections(lines);
+  const std::vector<Section> namedSections = splitSections(lines);
 
   // The final result: vec of <sectionName, Context>
   std::vector<std::pair<std::string, core::Context>> resultVec;
@@ -74,8 +81,8 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
 
   // Parse each section. If it's not "GLOBAL", validate it using blueprint tasks.
   for (std::size_t i = 0; i < namedSections.size(); ++i) {
-    const std::string &sectionName = namedSections[i].first;
-    const auto &sectionLines       = namedSections[i].second;
+    const std::string &sectionName = namedSections[i].name;
+    const auto &sectionLines       = namedSections[i].lines;
 
     // If sectionName is not "GLOBAL", confirm it exists in the blueprint tasks
     if (sectionName != "GLOBAL") {
@@ -96,11 +103,10 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
       // If found, we consider it valid. The backend parser will parse the lines themselves.
     }
 
-    // Parse the lines for this section to produce a Context.  
-    core::Context ctx;
-    if (!sectionLines.empty()) {
-      ctx = backendParser_->parse(sectionLines);
-    }
+    // Parse the lines for this section to produce a Context. Its errors
+    // name the line of the input (and the input's file).
+    const core::Context ctx = backendParser_->parse(
+        sectionLines, namedSections[i].first_line, source);
 
     // Put it in the vec
     resultVec.push_back(std::make_pair(sectionName, ctx));
@@ -122,22 +128,30 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
  * Only returns "GLOBAL" if it was non-empty. If no lines for global,
  * we skip it. 
  */
-std::vector<std::pair<std::string, std::vector<std::string>>>
+std::vector<MLIPUserConfigParser::Section>
 MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
 {
-  // We'll build a list of (sectionName, linesForThisSection)
-  std::vector<std::pair<std::string, std::vector<std::string>>> sections;
+  std::vector<Section> sections;
   sections.reserve(8); // optional
 
-  std::string currentSectionName = "GLOBAL";
-  std::vector<std::string> currentSectionLines;
+  // The section being read. Its blank and comment lines are kept, so that
+  // its lines keep the input's line numbers; it is returned only when it
+  // has another line (hasContent).
+  Section current{"GLOBAL", 1, {}};
+  bool hasContent = false;
+  auto finish = [&]() {
+    if (hasContent) {
+      sections.push_back(std::move(current));
+    }
+  };
 
-  for (auto &rawLine : lines) {
+  for (std::size_t n = 0; n < lines.size(); ++n) {
     // Trim using core::trim(...)
-    std::string line = core::trim(rawLine);
+    std::string line = core::trim(lines[n]);
 
-    // Skip empty or comment lines
+    // Empty or comment lines: kept for the numbering only
     if (line.empty() || line[0] == '#') {
+      current.lines.push_back(line);
       continue;
     }
 
@@ -147,10 +161,7 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
     if (uppercaseLine.size() >= 4 && uppercaseLine.compare(0, 4, "TASK") == 0) {
       // We're about to switch to a new section:
       // finalize the current one if it has lines
-      if (!currentSectionLines.empty()) {
-        sections.push_back(std::make_pair(currentSectionName, currentSectionLines));
-        currentSectionLines.clear();
-      }
+      finish();
 
       // Parse tokens from this line
       std::istringstream iss(line);
@@ -175,28 +186,20 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
         newSectionName += "." + core::to_lower(tokens[i]);
       }
 
-      // Switch to the new section
-      currentSectionName = newSectionName;
+      // Switch to the new section, which starts on the next line (line n
+      // is line n + 1 of the input).
+      current = Section{newSectionName, n + 2, {}};
+      hasContent = false;
     }
     else {
       // This line belongs to the current section (GLOBAL or a previous TASK).
-      currentSectionLines.push_back(line);
+      current.lines.push_back(line);
+      hasContent = true;
     }
   }
 
   // If there's anything left, push it
-  if (!currentSectionLines.empty()) {
-    sections.push_back(std::make_pair(currentSectionName, currentSectionLines));
-  }
-
-  // If the only section is "GLOBAL" but it's empty, remove it
-  // so we do not end up with an empty "GLOBAL" in the parse phase.
-  if (sections.size() == 1 &&
-      sections[0].first == "GLOBAL" &&
-      sections[0].second.empty())
-  {
-    sections.clear();
-  }
+  finish();
 
   return sections;
 }
@@ -209,7 +212,7 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
 void MLIPUserConfigParser::mergeAllSections(
     std::vector<std::pair<std::string, core::Context>> &resultVec) const
 {
-  if (resultVec[0].first != "GLOBAL") {
+  if (resultVec.empty() || resultVec[0].first != "GLOBAL") {
     // No global section present, nothing to merge
     return;
   }

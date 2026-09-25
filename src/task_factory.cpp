@@ -80,8 +80,10 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   bool hasConfig = baseContext.contains("CONFIG");  // --config given in CLI
   bool hasTask = baseContext.contains("TASK");  // --task given in CLI
   std::vector<std::pair<std::string, core::Context>> configVec;
+  std::string taskFile;   // the --task file, for its error
   if (hasConfig || hasTask) {
     std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
+    if (hasTask) taskFile = userFile;
     // parser returns a vec of <taskName, Context> so we can keep multiple tasks of the same type
     configVec = parser_->parse(userFile, /*mergeFlag=*/true);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
@@ -101,15 +103,24 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     }
   }
 
-  // the taskInput.getTaskName() as a single task.
-  if (configVec.empty()) {
+  // the taskInput.getTaskName() as a single task. A --task file's tasks are
+  // its TASK sections (below).
+  if (configVec.empty() && !hasTask) {
     tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
   }
 
   if (hasTask) {
     // remove the GLOBAL section from the configVec for --task input
-    if (configVec.begin()->first == "GLOBAL") {
+    if (!configVec.empty() && configVec.front().first == "GLOBAL") {
       configVec.erase(configVec.begin());
+    }
+    // A task file without a TASK section has nothing to run: say so rather
+    // than run nothing (or read the first element of an empty list).
+    if (configVec.empty()) {
+      throw std::runtime_error(
+          "TaskFactory::createTasksFromInput - the task file '" + taskFile +
+          "' has no TASK section (a line 'TASK <name>' followed by the "
+          "task's keys)");
     }
     // baseContext should be empty by now, we can ignore it.
     // iterate configVec and copy the contexts to the tasksResult
@@ -119,8 +130,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       // TODO only add the tasks allowed by the subcommand
       tasksResult.emplace_back(Task(taskName, taskCtx));
     }
-  } else if (hasConfig) {
-    const core::Context &globalCtx = configVec.begin()->second;
+  } else if (hasConfig && !configVec.empty()) {
+    const core::Context &globalCtx = configVec.front().second;
     const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
 

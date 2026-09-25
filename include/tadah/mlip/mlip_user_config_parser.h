@@ -1,6 +1,7 @@
 #ifndef TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
 #define TADAH_MLIP_MLIP_USER_CONFIG_PARSER_H
 
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <tadah/core/iuser_config_parser.h>
@@ -89,6 +90,28 @@ private:
   // const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
   // bool ownsBackend_; std::shared_ptr<core::IUserConfigParser> backendParser_; 
 std::shared_ptr<core::IUserConfigParser> backendParser_;
+
+  /**
+   * @brief One section of the input: its name, and its lines with the line
+   *        number of the first one.
+   *
+   * `lines` holds every line of the section, blank and comment lines
+   * included, so that lines[i] is line first_line + i of the input: the
+   * backend parser names the input's line in its errors.
+   */
+  struct Section {
+    std::string name;
+    std::size_t first_line = 1;       ///< 1-based line number of lines[0]
+    std::vector<std::string> lines;
+  };
+
+  /**
+   * @brief parse(lines) for the lines of @p source (a file name, or empty).
+   */
+  std::vector<std::pair<std::string, core::Context>>
+  parseNamed(const std::vector<std::string>& lines, bool merge,
+             const std::string& source) const;
+
   /**
    * @brief Splits lines into named sections based on "TASK" delimiter.
    *
@@ -99,11 +122,11 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    * is thrown.
    *
    * @param lines The raw config file lines.
-   * @return A vector of (sectionName, vector-of-lines) for each section.
-   *         Will not return a "GLOBAL" pair if no lines existed before 
-   *         the first TASK (i.e. truly empty).
+   * @return The sections that have at least one line other than a blank or
+   *         comment line: a "GLOBAL" section only when such a line comes
+   *         before the first TASK.
    */
-  std::vector<std::pair<std::string, std::vector<std::string>>>
+  std::vector<Section>
   splitSections(const std::vector<std::string>& lines) const;
 
 
