@@ -16,6 +16,8 @@
  *  - 10.0 Å cubic (both use binned, but nx=2 for 4.5 Å and nx=1 for 7.0 Å)
  */
 
+#include "tadah_test_skip.hpp"  // before catch2/catch.hpp (it needs Catch's
+                                 // listener interface)
 #include "catch2/catch.hpp"
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
@@ -311,23 +313,35 @@ TEST_CASE("NNFinder: symmetry — 4.5 Å list for 5.9 Å cell: binned=naive",
 // where both 4.5 Å and 7.0 Å cutoffs use calc_binned (nx=2 vs nx=1).
 // ===========================================================================
 
-// Path to the CH4 phase I validation database used during the HPO run.
-// Skip the test gracefully if the file is not present.
-// Set the TADAH_TEST_PHASEI_DB environment variable to override; the
-// dataset is not redistributed with this repository.
-static const char* PHASEI_DB = []() {
+// The CH4 phase I validation database used during the HPO run; the dataset
+// is not redistributed with this repository. The TADAH_TEST_PHASEI_DB
+// environment variable names it; unset, the test cases look for
+// ch4_phasei_S_U67.tadahdb in the working directory and report themselves
+// as skipped when it is not there (TADAH_SKIP: CTest lists them as Skipped,
+// not Passed). A database named by TADAH_TEST_PHASEI_DB that cannot be
+// opened is a failure: the variable asks for the checks to run.
+struct PhaseIDb {
+    std::string path;
+    bool from_env = false;   // named by TADAH_TEST_PHASEI_DB
+};
+
+static PhaseIDb phasei_db() {
     const char* env = std::getenv("TADAH_TEST_PHASEI_DB");
-    return (env && *env) ? env : "ch4_phasei_S_U67.tadahdb";
-}();
+    if (env && *env) return {env, true};
+    return {"ch4_phasei_S_U67.tadahdb", false};
+}
 
 TEST_CASE("NNFinder: real CH4 phase-I structure — 7.0 Å list is superset of 4.5 Å list",
           "[nn][equivalence][real_ch4_phasei]")
 {
     // Load first structure from the database
-    std::ifstream ifs(PHASEI_DB);
+    const PhaseIDb db = phasei_db();
+    std::ifstream ifs(db.path);
     if (!ifs.is_open()) {
-        WARN("Skipping: database not found at " << PHASEI_DB);
-        return;
+        if (db.from_env)
+            FAIL("TADAH_TEST_PHASEI_DB=" << db.path << " cannot be opened");
+        TADAH_SKIP("CH4 phase-I database not found at " << db.path
+                   << " (set TADAH_TEST_PHASEI_DB)");
     }
 
     PeriodicTable::initialize();
@@ -371,10 +385,13 @@ TEST_CASE("NNFinder: real CH4 phase-I structure — 7.0 Å list is superset of 4
 TEST_CASE("NNFinder: real CH4 phase-I structure — reverse: 4.5 Å list contains all pairs within 4.5 Å from 7.0 Å list",
           "[nn][equivalence][real_ch4_phasei]")
 {
-    std::ifstream ifs(PHASEI_DB);
+    const PhaseIDb db = phasei_db();
+    std::ifstream ifs(db.path);
     if (!ifs.is_open()) {
-        WARN("Skipping: database not found at " << PHASEI_DB);
-        return;
+        if (db.from_env)
+            FAIL("TADAH_TEST_PHASEI_DB=" << db.path << " cannot be opened");
+        TADAH_SKIP("CH4 phase-I database not found at " << db.path
+                   << " (set TADAH_TEST_PHASEI_DB)");
     }
 
     PeriodicTable::initialize();
