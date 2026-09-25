@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-09-25
+
 ### Fixed
 - **Potential files are written losslessly.** `TrainEngine::dumpPotFile` (train, `refit`, `refit --edit`) writes through `Context::write_potential`: every non-integer number with NUMERIC significant digits, default 18, so a potential reloaded from pot.tadah is bit-identical to the one in memory. NUMERIC is never written into the file; an explicit NUMERIC below 17 is honoured with a WARNING. `tadah refit` now honours NUMERIC from its configuration (it was ignored). `refit --edit` also honours a NUMERIC carried by the edited potential -- every 1.5.0 `tadah hpo` potential has `NUMERIC 12`; delete that line -- with a WARNING naming its source, and no longer promises an identical prediction when NUMERIC < 17. Tests: `test_dump_pot_file.cpp`, `test_refit_engine.cpp`, `test_refit_edit_mode.cpp`.
 - **LSCALE / ESHIFT are stamped into pot.tadah exactly.** They had 6 significant digits, so predict and HPO applied a slightly different transform than training; newly trained potentials may differ from older ones by up to ~1e-5 eV/atom. Test: `test_load_transforms.cpp`.
