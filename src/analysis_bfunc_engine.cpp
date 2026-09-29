@@ -4,6 +4,8 @@
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/models/dc_selector.h>
 #include <tadah/models/descriptors/basis_dispatch.h>
+#include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <iostream>
 #include <optional>
 
@@ -19,6 +21,11 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
 
     const std::string inFile = taskContext.get<std::string>(inputKey);
     core::Context tempContext = core::CoreUserConfigParser().parse(inFile);
+    // EMBF0 and RHOFORM belong to the potential, as in tadah predict and
+    // analysis descriptor: a task value that differs, or a task RHOFORM for
+    // a DM_REAM potential without one, is refused before the merge.
+    tadah::models::check_embf0_precedence(tempContext, taskContext, inFile);
+    tadah::models::check_rhoform_precedence(tempContext, taskContext, inFile);
     taskContext = tadah::core::Context::merge(taskContext, tempContext);
   }
 
