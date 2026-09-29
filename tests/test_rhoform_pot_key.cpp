@@ -13,6 +13,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/engines/analysis_bfunc_engine.h>
 #include <tadah/mlip/engines/predict_engine.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
@@ -254,4 +255,57 @@ TEST_CASE("RHOFORM: tadah predict refuses a key-less DM_REAM potential "
                       Catch::Contains("old.tadah: the task configuration's "
                                       "RHOFORM does not apply") &&
                           Catch::Contains("DM_REAM: RHOFORM is required"));
+}
+
+TEST_CASE("RHOFORM and EMBF0: tadah analysis bfunc applies the "
+          "potential-versus-task precedence of predict",
+          "[rhoform][embf0][precedence][bfunc]") {
+  // analysis bfunc merged the task over the potential without the checks
+  // of predict and analysis descriptor: a task RHOFORM replaced the
+  // potential's form, and supplied one to a key-less DM_REAM potential.
+  PeriodicTable::initialize();
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("pot.tadah", make_ream_context("SIGNED"));
+  {  // the same potential as tadah wrote it before 1.6.0: no RHOFORM line
+    std::istringstream in(slurp("pot.tadah"));
+    std::ofstream out("old.tadah");
+    for (std::string line; std::getline(in, line);)
+      if (line.rfind("RHOFORM", 0) != 0) out << line << "\n";
+  }
+  auto bfunc = [](const char *pot, const char *key, const char *value) {
+    Context c;
+    c.add("POTENTIAL", std::string(pot));
+    c.add("TYPE", std::string("MB"));
+    c.add("RANGE", std::string("0.5 4.0 8"));
+    c.add("OUTFILE", std::string("bfunc.txt"));
+    if (key) c.add(key, std::string(value));
+    return tadah::mlip::Task("analysis", c);
+  };
+  tadah::mlip::engines::AnalysisBfuncEngine engine;
+  {
+    auto t = bfunc("pot.tadah", "RHOFORM", "NONNEG");
+    REQUIRE_THROWS_AS(engine.run(t), DensityFormError);
+    REQUIRE_THROWS_WITH(engine.run(t),
+                        Catch::Contains("RHOFORM conflict: pot.tadah declares "
+                                        "RHOFORM SIGNED but the task "
+                                        "configuration sets RHOFORM NONNEG"));
+  }
+  {
+    auto t = bfunc("old.tadah", "RHOFORM", "SIGNED");
+    REQUIRE_THROWS_WITH(engine.run(t),
+                        Catch::Contains("old.tadah: the task configuration's "
+                                        "RHOFORM does not apply"));
+  }
+  {
+    auto t = bfunc("pot.tadah", "EMBF0", "FREE");
+    REQUIRE_THROWS_WITH(engine.run(t),
+                        Catch::Contains("EMBF0 conflict: pot.tadah declares "
+                                        "EMBF0 ZERO but the task "
+                                        "configuration sets EMBF0 FREE"));
+  }
+  REQUIRE_FALSE(fs::exists("bfunc.txt"));
+  // the potential's own values in the task: the analysis runs
+  auto t = bfunc("pot.tadah", "RHOFORM", "signed");
+  REQUIRE(engine.run(t) == EXIT_SUCCESS);
+  REQUIRE(fs::exists("bfunc.txt"));
 }
