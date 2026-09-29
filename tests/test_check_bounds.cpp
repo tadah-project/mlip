@@ -238,10 +238,33 @@ TEST_CASE("check_bounds: under NONNEG a Gaussian density's SGRIDMB box needs "
   const auto g = run_corners(stdb, ream_seed("NONNEG", 1), b);
   CHECK(g.n_corners == 2);
   CHECK(g.n_corners_failing == 1);
-  // the Blip5 bumps are even in s: NONNEG sets no width rule for them
-  CHECK(run_corners(stdb, ream_seed("NONNEG", 3), b).n_corners_failing == 0);
+  // a Gaussian density is not a bump channel: no width rule under SIGNED
   CHECK(run_corners(stdb, ream_seed("SIGNED", 1), b).n_corners_failing == 0);
   CHECK(run_corners(stdb, ream_seed("MONOTONE", 3), b).n_corners_failing == 1);
+}
+
+TEST_CASE("check_bounds: a radial bump width box needs lo > 0 in every form",
+          "[check_bounds][rhoform][bump_width]") {
+  // Owner decision (2026-09-29, C8): every radial bump width > 0 -- SGRIDMB
+  // of a DM_REAM Blip/Blip5 density and SGRID2B of a D2_Blip/D2_Blip5 pair
+  // term, in every RHOFORM (models::optim_low_bound_rule(key, ctx), the
+  // rule tadah hpo refuses such a box by). The Blip5 density under NONNEG
+  // and SIGNED set no width rule before.
+  tadah::mlip::StructureDB stdb;
+  for (const char *form : {"SIGNED", "NONNEG", "MONOTONE"}) {
+    INFO(form);
+    for (const Bound &b : {box("SGRIDMB", -1, -0.5, 2.0),
+                           box("SGRIDMB", 1, 0.0, 4.0),
+                           box("SGRID2B", -1, 0.0, 4.0),
+                           box("SGRID2B", 2, -1.0, 4.0)}) {
+      INFO(b.key << " (" << b.arg_pos << ") " << b.lo);
+      const auto res = run_corners(stdb, ream_seed(form, 3), {b});
+      CHECK(res.n_corners == 2);
+      CHECK(res.n_corners_failing == 1);
+    }
+    CHECK(run_corners(stdb, ream_seed(form, 3), {box("SGRID2B", 1, 0.5, 4.0)})
+              .n_corners_failing == 0);
+  }
 }
 
 TEST_CASE("check_bounds: a corner of a vector key changes only its own entry",
