@@ -9,7 +9,7 @@
 // Phase 5 pre-flight audit at each corner. For a DM_REAM seed under
 // RHOFORM NONNEG / MONOTONE a corner value the density form forbids
 // (models::optim_low_bound_rule, the boxes tadah hpo refuses) is a FAIL
-// finding too. Returns 1 if ANY corner produces a FAIL finding, 0
+// finding too; a DM_REAM seed must declare RHOFORM. Returns 1 if ANY corner produces a FAIL finding, 0
 // otherwise. Intended for CI gating.
 
 #include <cstdint>
@@ -48,9 +48,25 @@ std::vector<Bound> parse_hpo_target_bounds(const std::string& path);
 std::vector<std::vector<double>>
 sample_corners(const std::vector<Bound>& bounds, std::uint64_t seed = 0);
 
-/** \brief Run the Phase 5 audit at every corner of the bound box, plus
- *  the density form's low-bound rules (RHOFORM NONNEG / MONOTONE of a
- *  DM_REAM `seed`: AMPGRIDMB >= 0, WATOM > 0, MONOTONE SGRIDMB > 0).
+/** \brief The context a corner is audited in, the one tadah hpo evaluates
+ *  (update_candidate_context): a copy of @p seed with entry i of each
+ *  bound's key (arg_pos, or the first entry for a scalar `(1)` bound) set
+ *  to the corner value and every other entry kept. Several bounds on one
+ *  key each set their own entry. A key the seed does not set takes the
+ *  corner value alone. Throws when a bound names an entry past the seed's
+ *  values (std::runtime_error) or @p corner and @p bounds differ in size
+ *  (std::invalid_argument). */
+tadah::core::Context corner_context(const tadah::core::Context& seed,
+                                    const std::vector<Bound>& bounds,
+                                    const std::vector<double>& corner);
+
+/** \brief Run the Phase 5 audit at every corner of the bound box (in the
+ *  corner_context of each corner), plus the density form's low-bound rules
+ *  (RHOFORM NONNEG / MONOTONE of a DM_REAM `seed`,
+ *  models::optim_low_bound_rule with the seed's basis: AMPGRIDMB >= 0,
+ *  WATOM > 0, SGRIDMB > 0 under MONOTONE and, for the Gaussian basis,
+ *  under NONNEG). A DM_REAM `seed` without RHOFORM throws
+ *  models::DensityFormError (the migration text), as tadah hpo does.
  *
  *  Side-effect: emits one INFO line per corner via Logger and a
  *  WARNING summarising the worst corner.

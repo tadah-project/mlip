@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
@@ -146,6 +147,39 @@ sample_corners(const std::vector<Bound>& bounds, std::uint64_t seed) {
   return out;
 }
 
+tadah::core::Context corner_context(const tadah::core::Context& seed,
+                                    const std::vector<Bound>& bounds,
+                                    const std::vector<double>& corner) {
+  if (corner.size() != bounds.size())
+    throw std::invalid_argument(
+        "check_bounds: a corner has " + std::to_string(corner.size()) +
+        " values for " + std::to_string(bounds.size()) + " bounds");
+  tadah::core::Context ctx = seed;
+  for (std::size_t j = 0; j < bounds.size(); ++j) {
+    const Bound& b = bounds[j];
+    // OPTIM KEY (i) sets entry i of the key; (1) (arg_pos -1) is entry 1.
+    const std::size_t entry =
+        b.arg_pos < 0 ? 0 : static_cast<std::size_t>(b.arg_pos);
+    std::vector<std::string> tokens;
+    for (std::size_t n = 0;; ++n) {
+      const auto t = ctx.stored_value(b.key, n);
+      if (!t) break;
+      tokens.push_back(*t);
+    }
+    if (tokens.empty() ? entry > 0 : entry >= tokens.size())
+      throw std::runtime_error(
+          "check_bounds: OPTIM " + b.key + " (" + std::to_string(entry + 1) +
+          "): the seed configuration has " + std::to_string(tokens.size()) +
+          " value(s) for " + b.key);
+    // A key the seed does not set takes the corner value alone.
+    if (tokens.empty()) tokens.emplace_back();
+    tokens[entry] = tadah::core::format_roundtrip(corner[j]);
+    ctx.remove(b.key);
+    for (const auto& t : tokens) ctx.add(b.key, t);
+  }
+  return ctx;
+}
+
 CheckBoundsResult check_bounds_at_corners(
     StructureDB&                     stdb,
     tadah::core::Context             seed,
@@ -199,16 +233,22 @@ CheckBoundsResult check_bounds_at_corners(
 
   // RHOFORM NONNEG / MONOTONE (a DM_REAM seed): a corner value below the
   // low bound the density form allows (models::optim_low_bound_rule:
-  // AMPGRIDMB >= 0, WATOM > 0, MONOTONE SGRIDMB > 0) is a density DM_REAM
-  // refuses, and tadah hpo refuses such a box at startup, so it is a FAIL
-  // finding whatever the dataset says.
+  // AMPGRIDMB >= 0, WATOM > 0, SGRIDMB > 0 under MONOTONE and, for the
+  // Gaussian basis, under NONNEG) is a density DM_REAM refuses, and tadah
+  // hpo refuses such a box at startup, so it is a FAIL finding whatever the
+  // dataset says. A DM_REAM seed must declare its form (require_rhoform:
+  // the migration text), as tadah hpo requires.
   std::optional<tadah::models::RhoForm> form;
-  if (tadah::models::context_has_ream(seed))
-    form = tadah::models::stored_rhoform(seed);
+  std::optional<tadah::models::BasisKind> basis;
+  if (tadah::models::context_has_ream(seed)) {
+    form = tadah::models::require_rhoform(seed, "tadah analysis check_bounds");
+    basis = tadah::models::optim_rule_basis(seed);
+  }
   auto form_findings = [&](const std::vector<double>& c) {
     std::vector<std::string> out;
     for (std::size_t j = 0; j < bounds.size(); ++j) {
-      const auto rule = tadah::models::optim_low_bound_rule(bounds[j].key, form);
+      const auto rule =
+          tadah::models::optim_low_bound_rule(bounds[j].key, form, basis);
       if (!rule || rule->admits(c[j])) continue;
       std::ostringstream os;
       os << bounds[j].key << "("
@@ -223,24 +263,7 @@ CheckBoundsResult check_bounds_at_corners(
 
   for (std::size_t ci = 0; ci < corners.size(); ++ci) {
     const auto& c = corners[ci];
-    tadah::core::Context corner_ctx = seed;
-    // Override seed values with the corner's choices.
-    for (std::size_t j = 0; j < bounds.size(); ++j) {
-      const auto& b = bounds[j];
-      corner_ctx.remove(b.key);
-      try {
-        if (b.arg_pos < 0) {
-          corner_ctx.add<double>(b.key, c[j]);
-        } else {
-          for (int i = 0; i <= b.arg_pos; ++i) {
-            corner_ctx.add<double>(b.key, c[j]);
-          }
-        }
-      } catch (...) {
-        // Internal-only key — skip silently; the audit handles missing
-        // values gracefully via per-param presence checks.
-      }
-    }
+    const tadah::core::Context corner_ctx = corner_context(seed, bounds, c);
 
     // Audit this corner against the pre-computed dataset stats.
     AuditReport rep = run_preflight_soft(data, corner_ctx, AuditMode::Warn);
