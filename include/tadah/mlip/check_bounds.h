@@ -6,10 +6,10 @@
 // Reads an HPOTARGET file's `OPTIM <KEY> (range) <lo> <hi>` lines,
 // builds a bound box, samples corners (full 2^k for k ≤ 12, otherwise
 // `min(2^k, ⌈k·log₂(k)⌉)` Latin-hypercube samples), and runs the
-// Phase 5 pre-flight audit at each corner. For a DM_REAM seed under
-// RHOFORM NONNEG / MONOTONE a corner value the density form forbids
-// (models::optim_low_bound_rule, the boxes tadah hpo refuses) is a FAIL
-// finding too; a DM_REAM seed must declare RHOFORM. Returns 1 if ANY corner produces a FAIL finding, 0
+// Phase 5 pre-flight audit at each corner. A corner value below the low
+// bound the seed's density form or a radial bump channel allows
+// (models::optim_low_bound_rule(key, seed), the boxes tadah hpo refuses)
+// is a FAIL finding too; a DM_REAM seed must declare RHOFORM. Returns 1 if ANY corner produces a FAIL finding, 0
 // otherwise. Intended for CI gating.
 
 #include <cstdint>
@@ -61,11 +61,12 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
                                     const std::vector<double>& corner);
 
 /** \brief Run the Phase 5 audit at every corner of the bound box (in the
- *  corner_context of each corner), plus the density form's low-bound rules
- *  (RHOFORM NONNEG / MONOTONE of a DM_REAM `seed`,
- *  models::optim_low_bound_rule with the seed's basis: AMPGRIDMB >= 0,
- *  WATOM > 0, SGRIDMB > 0 under MONOTONE and, for the Gaussian basis,
- *  under NONNEG). A DM_REAM `seed` without RHOFORM throws
+ *  corner_context of each corner), plus the low-bound rules of `seed`
+ *  (models::optim_low_bound_rule(key, seed): under RHOFORM NONNEG /
+ *  MONOTONE AMPGRIDMB >= 0, WATOM > 0, SGRIDMB > 0 under MONOTONE and, for
+ *  the Gaussian basis, under NONNEG; in every form every radial bump width
+ *  > 0, SGRIDMB of a Blip/Blip5 density and SGRID2B of a D2_Blip/D2_Blip5
+ *  pair term). A DM_REAM `seed` without RHOFORM throws
  *  models::DensityFormError (the migration text), as tadah hpo does.
  *
  *  Side-effect: emits one INFO line per corner via Logger and a

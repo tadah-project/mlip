@@ -231,30 +231,26 @@ CheckBoundsResult check_bounds_at_corners(
         "); per-corner audits will run with empty stats.");
   }
 
-  // RHOFORM NONNEG / MONOTONE (a DM_REAM seed): a corner value below the
-  // low bound the density form allows (models::optim_low_bound_rule:
-  // AMPGRIDMB >= 0, WATOM > 0, SGRIDMB > 0 under MONOTONE and, for the
-  // Gaussian basis, under NONNEG) is a density DM_REAM refuses, and tadah
-  // hpo refuses such a box at startup, so it is a FAIL finding whatever the
-  // dataset says. A DM_REAM seed must declare its form (require_rhoform:
-  // the migration text), as tadah hpo requires.
-  std::optional<tadah::models::RhoForm> form;
-  std::optional<tadah::models::BasisKind> basis;
-  if (tadah::models::context_has_ream(seed)) {
-    form = tadah::models::require_rhoform(seed, "tadah analysis check_bounds");
-    basis = tadah::models::optim_rule_basis(seed);
-  }
+  // The low-bound rules of the seed (models::optim_low_bound_rule(key,
+  // ctx)): under RHOFORM NONNEG / MONOTONE AMPGRIDMB >= 0, WATOM > 0 and
+  // SGRIDMB > 0 under MONOTONE and, for the Gaussian basis, under NONNEG
+  // (densities DM_REAM refuses), and in every form every radial bump width
+  // > 0 (SGRIDMB of a Blip/Blip5 density, SGRID2B of a D2_Blip/D2_Blip5
+  // pair term). tadah hpo refuses a box below them at startup, so a corner
+  // below one is a FAIL finding whatever the dataset says. A DM_REAM seed
+  // must declare its form (require_rhoform: the migration text), as tadah
+  // hpo requires.
+  if (tadah::models::context_has_ream(seed))
+    (void)tadah::models::require_rhoform(seed, "tadah analysis check_bounds");
   auto form_findings = [&](const std::vector<double>& c) {
     std::vector<std::string> out;
     for (std::size_t j = 0; j < bounds.size(); ++j) {
-      const auto rule =
-          tadah::models::optim_low_bound_rule(bounds[j].key, form, basis);
+      const auto rule = tadah::models::optim_low_bound_rule(bounds[j].key, seed);
       if (!rule || rule->admits(c[j])) continue;
       std::ostringstream os;
       os << bounds[j].key << "("
          << (bounds[j].arg_pos < 0 ? 1 : bounds[j].arg_pos + 1) << ") = "
-         << c[j] << ": RHOFORM " << tadah::models::rhoform_name(*form)
-         << " requires " << rule->requirement
+         << c[j] << ": " << rule->by << " requires " << rule->requirement
          << " (tadah hpo refuses this OPTIM box)";
       out.push_back(os.str());
     }
