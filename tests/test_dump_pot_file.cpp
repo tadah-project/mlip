@@ -8,6 +8,7 @@
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/number_format.h>
+#include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
 
 #include <cstdint>
@@ -180,4 +181,26 @@ TEST_CASE("dumpPotFile: explicit NUMERIC 12 -> 12 digits and a warning",
   const Context back = CoreUserConfigParser().parse("pot17.tadah");
   for (std::size_t i = 0; i < kWeights.size(); ++i)
     CHECK(dp_bits(back.get<double>("WEIGHTS", i)) == dp_bits(kWeights[i]));
+}
+
+TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
+          "is an error naming the path",
+          "[dump_pot][writer]") {
+  // dumpPotFile logged an ERROR and returned, write_hpotarget a WARNING, so
+  // `tadah train -o no_such_dir/pot.tadah` exited 0 without a potential.
+  DumpTempDir tmp;
+  const Context pot = make_pot();
+  REQUIRE_THROWS_WITH(TrainEngine::dumpPotFile("no_such_dir/pot.tadah", pot),
+                      Catch::Contains("no_such_dir/pot.tadah"));
+  REQUIRE_THROWS_WITH(tadah::mlip::engines::write_hpotarget(
+                          "no_such_dir/refit.hpotarget", pot, 5.0),
+                      Catch::Contains("no_such_dir/refit.hpotarget"));
+  REQUIRE_FALSE(fs::exists("no_such_dir"));
+  // a directory in place of the file
+  fs::create_directories("a_dir");
+  REQUIRE_THROWS_WITH(TrainEngine::dumpPotFile("a_dir", pot),
+                      Catch::Contains("a_dir"));
+  REQUIRE_THROWS_WITH(
+      tadah::mlip::engines::write_hpotarget("a_dir", pot, 5.0),
+      Catch::Contains("a_dir"));
 }
