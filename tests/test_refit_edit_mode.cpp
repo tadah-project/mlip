@@ -593,3 +593,83 @@ TEST_CASE_METHOD(PTFixture,
           std::string::npos);
   }
 }
+
+// ---------------------------------------------------------------------------
+//  RHOFORM / EMBF0 in the configuration of --edit and --retarget (C7)
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: a RHOFORM or EMBF0 in the configuration that "
+                 "differs from the potential's is a conflict",
+                 "[refit][edit][rhoform][embf0]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_blip_ream_pot("NONNEG"));
+  auto edit = [](const char *key, const char *value) {
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("phi"));
+    c.add("ADD", 3.6);
+    if (key) c.add(key, std::string(value));
+    return Task("refit", c);
+  };
+  SECTION("RHOFORM") {
+    Task t = edit("RHOFORM", "MONOTONE");
+    REQUIRE_THROWS_AS(RefitEngine().run(t), tadah::models::DensityFormError);
+    REQUIRE_THROWS_WITH(RefitEngine().run(t),
+                        Catch::Contains("RHOFORM conflict: in.tadah declares "
+                                        "RHOFORM NONNEG but the task "
+                                        "configuration sets RHOFORM "
+                                        "MONOTONE"));
+    REQUIRE_FALSE(fs::exists("pot_edited.tadah"));
+  }
+  SECTION("EMBF0") {
+    Task t = edit("EMBF0", "FREE");
+    REQUIRE_THROWS_WITH(RefitEngine().run(t),
+                        Catch::Contains("EMBF0 conflict: in.tadah declares "
+                                        "EMBF0 ZERO but the task "
+                                        "configuration sets EMBF0 FREE"));
+    REQUIRE_FALSE(fs::exists("pot_edited.tadah"));
+  }
+  SECTION("the potential's own values are accepted") {
+    for (const auto &kv : std::vector<std::pair<const char *, const char *>>{
+             {"RHOFORM", "nonneg"}, {"EMBF0", "ZERO"}}) {
+      INFO(kv.first);
+      Task t = edit(kv.first, kv.second);
+      REQUIRE(RefitEngine().run(t) == EXIT_SUCCESS);
+      REQUIRE(fs::exists("pot_edited.tadah"));
+      fs::remove("pot_edited.tadah");
+    }
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget: RHOFORM and EMBF0 in the configuration are "
+                 "refused; --rhoform needs --retarget",
+                 "[refit][retarget][rhoform][embf0]") {
+  auto ctx = [](std::initializer_list<std::pair<const char *, const char *>>
+                    keys) {
+    Context c;
+    for (const auto &[k, v] : keys) c.add(k, std::string(v));
+    return c;
+  };
+  // an hpotarget carries no potential: the keys would have no effect
+  REQUIRE_THROWS_WITH(
+      validate_refit_mode_keys(
+          ctx({{"RETARGET", "b"}, {"RHOFORM", "NONNEG"}})),
+      Catch::Contains("RHOFORM has no effect on --retarget") &&
+          Catch::Contains("--rhoform"));
+  REQUIRE_THROWS_WITH(
+      validate_refit_mode_keys(ctx({{"RETARGET", "b"}, {"EMBF0", "FREE"}})),
+      Catch::Contains("EMBF0 has no effect on --retarget"));
+  // through the engine's validate (the config-file path) as well
+  Task t("refit", ctx({{"RETARGET", "b"}, {"RHOFORM", "SIGNED"}}));
+  REQUIRE_THROWS_WITH(RefitEngine().validate(t),
+                      Catch::Contains("RHOFORM has no effect on --retarget"));
+  // --rhoform belongs to --retarget
+  REQUIRE_THROWS_WITH(
+      validate_refit_mode_keys(ctx({{"EAM", "x"},
+                                    {"RETARGET_RHOFORM", "NONNEG"}})),
+      Catch::Contains("requires --retarget"));
+  REQUIRE_NOTHROW(validate_refit_mode_keys(
+      ctx({{"RETARGET", "b"}, {"RETARGET_RHOFORM", "NONNEG"}})));
+}

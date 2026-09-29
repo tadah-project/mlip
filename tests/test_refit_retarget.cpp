@@ -899,3 +899,86 @@ TEST_CASE_METHOD(PTFixture,
   CHECK_THROWS_WITH(retarget("PCT", "SGRID2B=-5"),
                     Catch::Contains("--pct token 'SGRID2B=-5'"));
 }
+
+// ---------------------------------------------------------------------------
+//  refit --retarget --rhoform (owner decision C7)
+// ---------------------------------------------------------------------------
+namespace {
+int retarget_with(const std::string &in, const std::string &out,
+                  const char *rhoform) {
+  Context c;
+  c.add("RETARGET", in);
+  c.add("OUTFILE", out);
+  if (rhoform) c.add("RETARGET_RHOFORM", std::string(rhoform));
+  return tadah::mlip::engines::run_refit_retarget(c);
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget --rhoform NONNEG|MONOTONE: non-negative "
+                 "AMPGRIDMB boxes and the parsed RHOFORM header",
+                 "[retarget][rhoform][rhoform_option]") {
+  for (const char *form : {"NONNEG", "MONOTONE"}) {
+    INFO(form);
+    ScopedTempDir tmp;
+    write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+    // the example of the decision: AMPGRIDMB (3) = 2.5e-5 with the group
+    // floor 6e-5, a SIGNED box reaching below 0
+    REQUIRE(slurp("s.hpotarget").find(
+                "# OPTIM AMPGRIDMB (3) -3.50000000e-05 8.50000000e-05\n") !=
+            std::string::npos);
+    REQUIRE(retarget_with("s.hpotarget", "r.hpotarget", form) ==
+            EXIT_SUCCESS);
+    const std::string body = slurp("r.hpotarget");
+    CHECK(body.find("# OPTIM AMPGRIDMB (3) 0.00000000e+00 8.50000000e-05\n") !=
+          std::string::npos);
+    CHECK(body.find(rhoform_bounds_line(tadah::models::parse_rhoform(form)) +
+                    "\n") != std::string::npos);
+    for (const auto &x : amp_bounds(read_lines("r.hpotarget")))
+      CHECK(x.first >= 0.0);
+    // byte for byte the file the writer emits for a potential in that form
+    write_hpotarget("f.hpotarget", make_ream_blip5_pot(form), 5.0);
+    CHECK(body == slurp("f.hpotarget"));
+    // the header now declares the form: the same --rhoform again, or none,
+    // is a fixed point
+    REQUIRE(retarget_with("r.hpotarget", "r2.hpotarget", form) ==
+            EXIT_SUCCESS);
+    CHECK(slurp("r2.hpotarget") == body);
+    REQUIRE(retarget_with("r.hpotarget", "r3.hpotarget", nullptr) ==
+            EXIT_SUCCESS);
+    CHECK(slurp("r3.hpotarget") == body);
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget --rhoform: a header naming another form is "
+                 "an error; SIGNED adds no header",
+                 "[retarget][rhoform][rhoform_option]") {
+  ScopedTempDir tmp;
+  write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+  std::size_t at = 0;
+  {
+    const auto lines = read_lines("n.hpotarget");
+    for (std::size_t i = 0; i < lines.size(); ++i)
+      if (lines[i].rfind("# RHOFORM NONNEG:", 0) == 0) at = i + 1;
+  }
+  REQUIRE(at > 0);
+  for (const char *other : {"MONOTONE", "SIGNED", "signed"}) {
+    INFO(other);
+    CHECK_THROWS_WITH(
+        retarget_with("n.hpotarget", "o.hpotarget", other),
+        Catch::Contains("--rhoform") &&
+            Catch::Contains("line " + std::to_string(at) +
+                            " declares RHOFORM NONNEG"));
+  }
+  REQUIRE_FALSE(fs::exists("o.hpotarget"));
+  // an unknown form is refused
+  CHECK_THROWS_WITH(retarget_with("n.hpotarget", "o.hpotarget", "SQUARE"),
+                    Catch::Contains("SQUARE"));
+  // SIGNED over a SIGNED file (no header): the plain rewrite, no header
+  write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+  REQUIRE(retarget_with("s.hpotarget", "o.hpotarget", "SIGNED") ==
+          EXIT_SUCCESS);
+  CHECK(slurp("o.hpotarget") == slurp("s.hpotarget"));
+  CHECK(slurp("o.hpotarget").find("# RHOFORM") == std::string::npos);
+}
