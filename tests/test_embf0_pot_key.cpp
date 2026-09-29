@@ -73,6 +73,7 @@ Context make_ream_context(bool bias = false) {
   c.add("CGRIDMB", "1.0 2.0 3.0");
   c.add("SGRIDMB", "1.0 1.0 1.0");
   c.add("AMPGRIDMB", "0.40 0.25 0.12");
+  c.add("RHOFORM", "SIGNED");  // mandatory for DM_REAM
   c.add("CEMBFUNC", "0.0 0.5 1.0 1.5");
   c.add("SEMBFUNC", "1.5 1.5 1.5 1.5");
   c.add("RCTYPE2B", "Cut_Cos");

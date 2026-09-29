@@ -29,6 +29,19 @@ namespace engines {
  *    Ceres polish). Implemented by the HPO library's engine, which overrides
  *    the "REFIT" registration and the compact_fit() hook below; in an
  *    HPO-less build this base falls back to dense with a warning.
+ *
+ * The configuration must declare the density form of the written DM_REAM
+ * potential, RHOFORM SIGNED | NONNEG | MONOTONE (validate() and run() throw
+ * the migration text without it). The density is fitted, self-tested
+ * (EAMRefit::rho_fit) and written in that form, in both modes: the compact
+ * fitter (non-negative amplitudes under NONNEG / MONOTONE) and the dense
+ * windowed LSQ (NNLS under NONNEG / MONOTONE). MONOTONE refuses the knot
+ * families (Knot3/Knot5/KnotMix), including the defaulted compact Knot5, and
+ * a cutoff off the MONOTONE whitelist. NONNEG with a knot family locks the
+ * density to non-increasing convex shapes: a HINT when REFIT_BASIS names the
+ * family, a WARNING naming REFIT_BASIS Blip5 when the knot basis is the
+ * REFIT_MODE compact default (a table with a concave core can then fail
+ * the self-test).
  */
 class RefitEngine : public IEngine {
 public:

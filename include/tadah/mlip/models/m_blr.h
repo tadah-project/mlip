@@ -9,6 +9,7 @@
 #include <tadah/models/m_blr_train.h>
 #include <tadah/core/context.h>
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 
@@ -153,10 +154,12 @@ public:
 
   tadah::core::Context get_param_file() {
     tadah::core::Context c = context;
-    // DM_REAM potentials always carry an explicit EMBF0 line (also for a
-    // DM_mJoin parent, whose children read copies of the context); any
-    // other potential never does.
+    // DM_REAM potentials always carry explicit EMBF0 and RHOFORM lines (also
+    // for a DM_mJoin parent, whose children read copies of the context); any
+    // other potential never does. RHOFORM is never supplied: a DM_REAM
+    // context without it throws (the DM_REAM ctor refused it already).
     tadah::models::normalise_embf0_key(c);
+    tadah::models::normalise_rhoform_key(c);
     //c.remove("ALPHA");
     //c.remove("BETA");
     // c.remove("DBFILE");

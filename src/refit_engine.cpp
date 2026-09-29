@@ -7,6 +7,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/eam_setfl_io.h>
 #include <tadah/models/eam/eam_refit.h>
 #include <tadah/models/eam/eam_lattice.h>
@@ -44,6 +45,71 @@ double get_dbl(const Context &c, const std::string &k, double def) {
 // crystal_epa now lives in MODELS (eam_lattice.h) so the HPO compact engine
 // can share it.
 using tadah::models::eam_lattice::crystal_epa;
+
+// Prefix of the missing-RHOFORM message: the refit configuration, not a
+// potential, must declare the form of the DM_REAM potential it writes.
+const char *const kRefitRhoFormWho = "tadah refit configuration";
+
+// The one-sided knot families in the spellings REFIT_BASIS accepts: Knot5,
+// Knot3 and KnotMix (alias Mixed).
+bool is_knot_family(const std::string &b) {
+  return b == "Knot5" || b == "KNOT5" || b == "knot5" || b == "Knot3" ||
+         b == "KNOT3" || b == "knot3" || b == "KnotMix" || b == "KNOTMIX" ||
+         b == "knotmix" || b == "Mixed" || b == "MIXED";
+}
+
+// The RHOFORM x REFIT_BASIS x REFIT_MODE matrix, checked before any fitting.
+// `knot_family`: Knot3/Knot5/KnotMix; `basis_user_set`: REFIT_BASIS given
+// (else `basis` is the mode's default); `rctype`: the many-body cutoff the
+// refit writes (EAMRefitConfig::rctype). Every form fits in both modes (the
+// compact fitter in the HPO build, the dense windowed LSQ otherwise); what
+// remains are MONOTONE's own conditions, then the NONNEG x knot convex lock
+// (a HINT for a chosen knot basis, a WARNING for the defaulted one).
+void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
+                          bool knot_family, bool basis_user_set,
+                          const std::string &mode, const std::string &rctype) {
+  // MONOTONE is defined for the bump families only; a defaulted knot basis
+  // (REFIT_MODE compact) is named as such, since the remedy is to set one.
+  if (form == models::RhoForm::Monotone && knot_family)
+    throw std::runtime_error(
+        "tadah refit: RHOFORM MONOTONE is not defined for REFIT_BASIS " +
+        basis +
+        (basis_user_set ? " (the one-sided knot family)"
+                        : " (the REFIT_MODE compact default, a one-sided "
+                          "knot family)") +
+        ": use a bump basis (Blip, Blip5) or RHOFORM NONNEG (" +
+        models::monotone_knot_refusal_text() + ").");
+  if (form == models::RhoForm::Monotone &&
+      !models::rhoform_cutoff_whitelisted(rctype))
+    throw std::runtime_error(
+        "tadah refit: RHOFORM MONOTONE requires a non-negative, "
+        "non-increasing many-body cutoff (" +
+        models::rhoform_cutoff_whitelist_text() + "); the refit writes " +
+        rctype + ".");
+  // The knot families fit in compact mode only (dense + knot is refused
+  // later), so the lock is reported for a refit that goes ahead: a HINT when
+  // the user chose the knot family, a WARNING when it is the compact default
+  // (on a table with a concave core, such as the Ravelo Ta setfl, the
+  // defaulted refit fails its self-test; Blip5 fits it in NONNEG).
+  if (form == models::RhoForm::NonNeg && knot_family && mode == "compact") {
+    if (basis_user_set)
+      core::Logger::instance().log(core::LogLevel::WARNING,
+          "HINT: RHOFORM NONNEG with REFIT_BASIS " + basis +
+          ": a knot density with every amplitude >= 0 is non-increasing and "
+          "convex (knots <= RCUTMB, non-increasing cutoff), so the fit is "
+          "locked to such shapes and a table with a concave core is fitted "
+          "poorly. RHOFORM SIGNED or a bump basis lifts the lock.");
+    else
+      core::Logger::instance().log(core::LogLevel::WARNING,
+          "tadah refit: RHOFORM NONNEG with the REFIT_MODE compact default "
+          "basis " + basis + ": a knot density with every amplitude >= 0 "
+          "is non-increasing and convex (knots <= RCUTMB, non-increasing "
+          "cutoff), so a table whose density is concave anywhere in the fit "
+          "window (e.g. near the core) is fitted poorly and the self-test "
+          "can fail. Set REFIT_BASIS Blip5 (a non-negative bump density "
+          "without the convex lock), or use RHOFORM SIGNED.");
+  }
+}
 
 void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
   // nF (embedding) dominates the energy fidelity — see EAMRefitConfig. Energy
@@ -219,6 +285,9 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
         "existing refit outputs). Supported: single-element setfl "
         "(eam/alloy or eam/fs).");
   }
+  // The written DM_REAM potential declares its density form, which only the
+  // configuration can choose (no default).
+  models::require_rhoform(c, kRefitRhoFormWho);
 }
 
 int RefitEngine::run(tadah::mlip::Task &task) {
@@ -229,6 +298,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     return run_refit_retarget(c);
   if (c.contains("EDIT") && c.size("EDIT") > 0)
     return run_refit_edit(c);
+
+  // ---- RHOFORM: the density form fitted, self-tested and written ----
+  // Mandatory in the configuration (no default, never inserted); checked
+  // before the table is read.
+  const models::RhoForm rho_form = models::require_rhoform(c, kRefitRhoFormWho);
 
   const std::string eam_path  = c.get<std::string>("EAM");
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
@@ -241,11 +315,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // when the compact fitter is unavailable (no Ceres). An EXPLICIT
   // REFIT_BASIS always wins (and explicit knot families on a Ceres-less
   // build remain a hard error rather than a silent substitution).
-  const std::string mode_for_basis = get_str(c, "REFIT_MODE", "compact");
+  const std::string mode = get_str(c, "REFIT_MODE", "compact");
   std::string basis = get_str(c, "REFIT_BASIS", "");
   const bool basis_user_set = !basis.empty();
   if (!basis_user_set)
-    basis = (mode_for_basis == "compact") ? "Knot5" : "Blip";
+    basis = (mode == "compact") ? "Knot5" : "Blip";
   const double optim_pct      = get_dbl(c, "OPTIM_PCT", 5.0);
   const double grid_scale     = get_dbl(c, "OUTPUT_GRID_SCALE", 1.0);
 
@@ -304,6 +378,31 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "energies unchanged)");
   }
 
+  // ---- the basis family (REFIT_BASIS, else the mode's default) ----
+  const bool basis_blip = (cfg.basis == "Blip" || cfg.basis == "blip");
+  const bool basis_blip5 =
+      (cfg.basis == "Blip5" || cfg.basis == "BLIP5" || cfg.basis == "blip5" ||
+       cfg.basis == "M6");
+  const bool basis_knotfam = is_knot_family(cfg.basis);
+
+  // ---- RHOFORM: form x basis x mode, then the fit in the declared form ----
+  check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
+                       mode, cfg.rctype);
+  cfg.rho_form = rho_form;
+  core::Logger::instance().log(core::LogLevel::INFO,
+      std::string("tadah refit: RHOFORM ") + models::rhoform_name(rho_form) +
+      (rho_form == models::RhoForm::Signed
+           ? ": the density rho = f_c sum_n a_n psi_n(r) with signed "
+             "amplitudes (the tadah <= 1.5.1 density)"
+       : rho_form == models::RhoForm::NonNeg
+           ? ": the density amplitudes a_n of rho = f_c sum_n a_n psi_n(r) "
+             "are fitted by non-negative least squares (rho >= 0)"
+           : ": the density rho = f_c sum_n a_n S_n(r) in integrated-bump "
+             "steps S_n, amplitudes fitted by non-negative least squares "
+             "(rho >= 0 and non-increasing)") +
+      "; the potential declares RHOFORM " + models::rhoform_name(rho_form) +
+      ".");
+
   // ---- faithfulness tolerances driving automatic basis escalation ----
   // The compression-aware crystal self-test below is the judge; when it fails,
   // the dominant offender (phi / rho / F, attributed by swapping one fitted
@@ -324,19 +423,6 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   SelfTest st;
 
   // ---- compact mode (optimised blip centres/widths; HPO engine hook) ----
-  const std::string mode = get_str(c, "REFIT_MODE", "compact");
-  const bool basis_blip = (cfg.basis == "Blip" || cfg.basis == "blip");
-  const bool basis_knot5 =
-      (cfg.basis == "Knot5" || cfg.basis == "KNOT5" || cfg.basis == "knot5");
-  const bool basis_blip5 =
-      (cfg.basis == "Blip5" || cfg.basis == "BLIP5" || cfg.basis == "blip5" ||
-       cfg.basis == "M6");
-  const bool basis_knot3 =
-      (cfg.basis == "Knot3" || cfg.basis == "KNOT3" || cfg.basis == "knot3");
-  const bool basis_knotmix =
-      (cfg.basis == "KnotMix" || cfg.basis == "KNOTMIX" ||
-       cfg.basis == "knotmix" || cfg.basis == "Mixed" || cfg.basis == "MIXED");
-  const bool basis_knotfam = basis_knot5 || basis_knot3 || basis_knotmix;
   bool fitted = false;
   if (mode == "compact") {
     // The compact fitter must optimise the SAME family the receiving
@@ -365,12 +451,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "tadah refit: unknown REFIT_MODE '" + mode + "' — using dense.");
   }
 
-  const bool dense_is_knot =
-      (cfg.basis == "Knot5" || cfg.basis == "KNOT5" || cfg.basis == "knot5" ||
-       cfg.basis == "Knot3" || cfg.basis == "KNOT3" || cfg.basis == "knot3" ||
-       cfg.basis == "KnotMix" || cfg.basis == "KNOTMIX" ||
-       cfg.basis == "knotmix" || cfg.basis == "Mixed" || cfg.basis == "MIXED");
-  if (!fitted && dense_is_knot)
+  // (cfg.basis, not basis_knotfam: a defaulted Knot5 fell back to Blip)
+  if (!fitted && is_knot_family(cfg.basis))
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
         "compact on an HPO (Ceres) build — the one-sided knot families have "
@@ -391,7 +473,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     dlog.open(get_str(c, "REFIT_LOG", "refit_opt.log"), /*append=*/false);
     dlog.raw("# tadah refit optimisation log (dense windowed-LSQ path)");
     dlog.line("input " + eam_path + "  element=" + eam.element() +
-              "  basis=" + cfg.basis + "  mode=dense");
+              "  basis=" + cfg.basis + "  mode=dense  rhoform=" +
+              models::rhoform_name(cfg.rho_form));
   }
   if (!fitted)
   for (int attempt = 0; ; ++attempt) {

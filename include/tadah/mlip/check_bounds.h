@@ -6,8 +6,11 @@
 // Reads an HPOTARGET file's `OPTIM <KEY> (range) <lo> <hi>` lines,
 // builds a bound box, samples corners (full 2^k for k ≤ 12, otherwise
 // `min(2^k, ⌈k·log₂(k)⌉)` Latin-hypercube samples), and runs the
-// Phase 5 pre-flight audit at each corner. Returns 1 if ANY corner
-// produces a FAIL finding, 0 otherwise. Intended for CI gating.
+// Phase 5 pre-flight audit at each corner. For a DM_REAM seed under
+// RHOFORM NONNEG / MONOTONE a corner value the density form forbids
+// (models::optim_low_bound_rule, the boxes tadah hpo refuses) is a FAIL
+// finding too. Returns 1 if ANY corner produces a FAIL finding, 0
+// otherwise. Intended for CI gating.
 
 #include <cstdint>
 #include <string>
@@ -45,7 +48,9 @@ std::vector<Bound> parse_hpo_target_bounds(const std::string& path);
 std::vector<std::vector<double>>
 sample_corners(const std::vector<Bound>& bounds, std::uint64_t seed = 0);
 
-/** \brief Run the Phase 5 audit at every corner of the bound box.
+/** \brief Run the Phase 5 audit at every corner of the bound box, plus
+ *  the density form's low-bound rules (RHOFORM NONNEG / MONOTONE of a
+ *  DM_REAM `seed`: AMPGRIDMB >= 0, WATOM > 0, MONOTONE SGRIDMB > 0).
  *
  *  Side-effect: emits one INFO line per corner via Logger and a
  *  WARNING summarising the worst corner.

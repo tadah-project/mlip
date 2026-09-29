@@ -529,3 +529,213 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE(uncapped);
   }
 }
+
+// ---------------------------------------------------------------------------
+//  RHOFORM (FEAT-02): non-negative AMPGRIDMB boxes under NONNEG / MONOTONE
+// ---------------------------------------------------------------------------
+namespace {
+// A DM_REAM Blip5 refit pot (INITMB true) declared in `form`: amplitudes
+// include an exact 0 (an NNLS active constraint) and small values whose
+// symmetric box would reach below 0.
+Context make_ream_blip5_pot(const std::string &form) {
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("INITMB", "true");
+  c.add("TYPE2B", "D2_Blip5");
+  c.add("TYPE2B", 2); c.add("TYPE2B", 2);
+  c.add("TYPE2B", "Ta"); c.add("TYPE2B", "Ta");
+  c.add("CGRID2B", 2.5); c.add("CGRID2B", 3.5);
+  c.add("SGRID2B", 2.0); c.add("SGRID2B", 2.0);
+  c.add("RCUT2B", 5.0);
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("TYPEMB", "DM_REAM");
+  for (int v : {3, 5, 5, 5, 2, 2, 0, 0}) c.add("TYPEMB", v);
+  c.add("TYPEMB", "Ta"); c.add("TYPEMB", "Ta");
+  for (double v : {1.5, 2.3, 3.1, 3.9, 4.4}) c.add("CGRIDMB", v);
+  for (double v : {2.0, 2.0, 2.0, 2.0, 5.0}) c.add("SGRIDMB", v);
+  for (double v : {0.06, 0.0, 2.5e-5, 0.012, 3.0e-7}) c.add("AMPGRIDMB", v);
+  c.add("RHOFORM", form);
+  c.add("RCUTMB", 5.0);
+  c.add("RCTYPEMB", "Cut_Dummy");
+  c.add("CEMBFUNC", 0.5); c.add("CEMBFUNC", 1.5);
+  c.add("SEMBFUNC", 1.0); c.add("SEMBFUNC", 1.0);
+  for (double v : {1.5, -9.0, 0.2, -0.7}) c.add("FIXWEIGHT", v);
+  return c;
+}
+
+std::vector<std::pair<double, double>> amp_bounds(
+    const std::vector<std::string> &lines) {
+  std::vector<std::pair<double, double>> out;
+  for (const auto &l : lines) {
+    const auto p = l.find("OPTIM AMPGRIDMB (");
+    if (p == std::string::npos) continue;
+    std::istringstream ls(l.substr(l.find(')', p) + 1));
+    double lo, hi;
+    ls >> lo >> hi;
+    out.emplace_back(lo, hi);
+  }
+  return out;
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "hpotarget under RHOFORM NONNEG / MONOTONE: non-negative "
+                 "AMPGRIDMB boxes, retarget fixed point",
+                 "[retarget][rhoform]") {
+  for (const char *form : {"NONNEG", "MONOTONE"}) {
+    INFO(form);
+    ScopedTempDir tmp;
+    write_hpotarget("n.hpotarget", make_ream_blip5_pot(form), 5.0);
+    const std::string fresh = slurp("n.hpotarget");
+    const auto lines = read_lines("n.hpotarget");
+    // the parsed header line
+    REQUIRE(fresh.find(rhoform_bounds_line(tadah::models::parse_rhoform(form)) +
+                       "\n") != std::string::npos);
+    const auto b = amp_bounds(lines);
+    REQUIRE(b.size() == 5);
+    for (const auto &x : b) REQUIRE(x.first >= 0.0);
+    REQUIRE(b[1].first == 0.0);   // amplitude 0: [0, group floor]
+    REQUIRE(b[1].second > 0.0);
+    REQUIRE(b[2].first == 0.0);   // 2.5e-5 - floor(6e-5) < 0: clamped
+    REQUIRE(b[4].first == 0.0);
+    REQUIRE(b[0].first == Approx(0.06 * 0.95));  // unclamped: v - 5%
+    // the positive-only width groups are unchanged
+    REQUIRE(fresh.find("OPTIM SGRIDMB (1) 1.90000000e+00 2.10000000e+00") !=
+            std::string::npos);
+
+    // same percentage: byte-identical (the clamped centres come back from hi)
+    RetargetOptions o5;
+    const RetargetReport rep =
+        retarget_hpotarget_file("n.hpotarget", "r5.hpotarget", false, o5);
+    REQUIRE(rep.rhoform == tadah::models::rhoform_name(
+                               tadah::models::parse_rhoform(form)));
+    REQUIRE(slurp("r5.hpotarget") == fresh);
+    // via another percentage and back: still the fresh file
+    RetargetOptions o10;
+    o10.pct = 10.0;
+    retarget_hpotarget_file("n.hpotarget", "r10.hpotarget", false, o10);
+    retarget_hpotarget_file("r10.hpotarget", "r10b.hpotarget", false, o10);
+    REQUIRE(slurp("r10b.hpotarget") == slurp("r10.hpotarget"));
+    for (const auto &x : amp_bounds(read_lines("r10.hpotarget")))
+      REQUIRE(x.first >= 0.0);
+    retarget_hpotarget_file("r10.hpotarget", "back5.hpotarget", false, o5);
+    REQUIRE(slurp("back5.hpotarget") == fresh);
+    // a wide percentage clamps every box and still returns
+    RetargetOptions o80;
+    o80.pct = 80.0;
+    retarget_hpotarget_file("n.hpotarget", "r80.hpotarget", false, o80);
+    for (const auto &x : amp_bounds(read_lines("r80.hpotarget")))
+      REQUIRE(x.first >= 0.0);
+    retarget_hpotarget_file("r80.hpotarget", "back5b.hpotarget", false, o5);
+    REQUIRE(slurp("back5b.hpotarget") == fresh);
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "hpotarget under RHOFORM NONNEG: per-key and above-100% "
+                 "retargets keep the fitted amplitudes",
+                 "[retarget][rhoform]") {
+  const std::vector<double> amps{0.06, 0.0, 2.5e-5, 0.012, 3.0e-7};
+  auto contains_amps = [&amps](const std::string &file) {
+    const auto b = amp_bounds(read_lines(file));
+    REQUIRE(b.size() == amps.size());
+    for (std::size_t i = 0; i < b.size(); ++i) {
+      INFO(file << " AMPGRIDMB(" << i + 1 << ") [" << b[i].first << ", "
+                << b[i].second << "] vs " << amps[i]);
+      CHECK(b[i].first >= 0.0);
+      CHECK(b[i].first <= amps[i]);
+      CHECK(amps[i] <= b[i].second);
+    }
+  };
+  ScopedTempDir tmp;
+  write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+  const std::string fresh = slurp("n.hpotarget");
+  RetargetOptions o5;
+  SECTION("a per-key percentage: the group comment's percentage drives the "
+          "repair") {
+    for (double k : {50.0, 150.0}) {
+      INFO("AMPGRIDMB=" << k);
+      RetargetOptions ok;
+      ok.pct_per_key["AMPGRIDMB"] = k;
+      retarget_hpotarget_file("n.hpotarget", "k1.hpotarget", false, ok);
+      // the same command again: a fixed point, with no repair warnings
+      const RetargetReport rep =
+          retarget_hpotarget_file("k1.hpotarget", "k2.hpotarget", false, ok);
+      REQUIRE(slurp("k2.hpotarget") == slurp("k1.hpotarget"));
+      for (const auto &w : rep.warnings)
+        CHECK(w.find("AMPGRIDMB") == std::string::npos);
+      contains_amps("k1.hpotarget");
+      retarget_hpotarget_file("k2.hpotarget", "k5.hpotarget", false, o5);
+      REQUIRE(slurp("k5.hpotarget") == fresh);
+    }
+  }
+  SECTION("above 100%: every box clamped, the centres still come back") {
+    RetargetOptions o150;
+    o150.pct = 150.0;
+    retarget_hpotarget_file("n.hpotarget", "r150.hpotarget", false, o150);
+    for (const auto &x : amp_bounds(read_lines("r150.hpotarget")))
+      REQUIRE(x.first == 0.0);
+    contains_amps("r150.hpotarget");
+    const RetargetReport rep = retarget_hpotarget_file(
+        "r150.hpotarget", "r150b.hpotarget", false, o150);
+    REQUIRE(slurp("r150b.hpotarget") == slurp("r150.hpotarget"));
+    for (const auto &w : rep.warnings)
+      CHECK(w.find("AMPGRIDMB") == std::string::npos);
+    retarget_hpotarget_file("r150.hpotarget", "back5.hpotarget", false, o5);
+    REQUIRE(slurp("back5.hpotarget") == fresh);
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "hpotarget RHOFORM: SIGNED keeps the symmetric boxes, the "
+                 "form header is enforced",
+                 "[retarget][rhoform]") {
+  ScopedTempDir tmp;
+  SECTION("SIGNED: no header line, the symmetric rule (lo may be < 0)") {
+    write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+    const std::string body = slurp("s.hpotarget");
+    REQUIRE(body.find("# RHOFORM") == std::string::npos);
+    const auto b = amp_bounds(read_lines("s.hpotarget"));
+    REQUIRE(b.size() == 5);
+    REQUIRE(b[1].first < 0.0);
+    RetargetOptions o5;
+    const RetargetReport rep =
+        retarget_hpotarget_file("s.hpotarget", "r.hpotarget", false, o5);
+    REQUIRE(rep.rhoform.empty());
+    REQUIRE(slurp("r.hpotarget") == body);
+  }
+  SECTION("--set: AMPGRIDMB lo < 0 is refused under NONNEG only") {
+    write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+    RetargetOptions bad;
+    bad.sets.push_back({"AMPGRIDMB", 2, -0.1, 0.2});
+    auto lines = read_lines("n.hpotarget");
+    REQUIRE_THROWS_WITH(retarget_hpotarget_lines(lines, bad),
+                        Catch::Contains("--set AMPGRIDMB(2): lo must be >= 0: "
+                                        "the file declares RHOFORM NONNEG"));
+    RetargetOptions ok;
+    ok.sets.push_back({"AMPGRIDMB", 2, 0.0, 0.2});
+    auto lines2 = read_lines("n.hpotarget");
+    REQUIRE_NOTHROW(retarget_hpotarget_lines(lines2, ok));
+    write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+    auto lines3 = read_lines("s.hpotarget");
+    REQUIRE_NOTHROW(retarget_hpotarget_lines(lines3, bad));
+  }
+  SECTION("a RHOFORM header naming no density form is refused") {
+    write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+    auto lines = read_lines("n.hpotarget");
+    for (auto &l : lines)
+      if (l.rfind("# RHOFORM NONNEG:", 0) == 0)
+        l = "# RHOFORM POSITIVE: AMPGRIDMB bounds are non-negative";
+    RetargetOptions o5;
+    REQUIRE_THROWS_WITH(retarget_hpotarget_lines(lines, o5),
+                        Catch::Contains("names no density form"));
+  }
+  SECTION("a DM_REAM pot without RHOFORM is refused by the writer") {
+    Context pot = make_ream_blip5_pot("SIGNED");
+    pot.remove("RHOFORM");
+    REQUIRE_THROWS_AS(write_hpotarget("k.hpotarget", pot, 5.0),
+                      tadah::models::DensityFormError);
+    REQUIRE_THROWS_WITH(write_hpotarget("k.hpotarget", pot, 5.0),
+                        Catch::Contains("RHOFORM is required"));
+  }
+}

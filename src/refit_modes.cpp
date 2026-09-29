@@ -16,6 +16,7 @@
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
@@ -156,6 +157,21 @@ int run_refit_edit(Context &c) {
                    : ": F is the raw embedding of tadah 1.5.0 and earlier") +
              "; the edited potential declares EMBF0 " +
              models::embf0_name(view.embf0) + ".");
+    // RHOFORM is a property of the potential too (parse_pot_view required
+    // it): the rho curve is edited in that form and the edited potential
+    // keeps it.
+    const models::RhoForm form = view.rho.form;
+    log_info(std::string("tadah refit --edit: RHOFORM ") +
+             models::rhoform_name(form) +
+             (form == models::RhoForm::Signed
+                  ? ": rho is sum_k a_k psi_k(r) with signed amplitudes"
+              : form == models::RhoForm::NonNeg
+                  ? ": rho is sum_k a_k psi_k(r) with every a_k >= 0, which "
+                    "an edit keeps"
+                  : ": rho is sum_k a_k S_k(r) in integrated-bump steps with "
+                    "every a_k >= 0, which an edit keeps") +
+             "; the edited potential declares RHOFORM " +
+             models::rhoform_name(form) + ".");
   }
   const potedit::Channel ch = parse_channel(c.get<std::string>("FUNC"));
   if (ch != potedit::Channel::Phi && view.mb != potedit::MBKind::Ream) {
@@ -355,6 +371,10 @@ int run_refit_retarget(Context &c) {
 
   const RetargetReport rep = retarget_hpotarget_file(in, out, in_place, opts);
   for (const auto &w : rep.warnings) log_warn("tadah refit --retarget: " + w);
+  if (!rep.rhoform.empty())
+    log_info("tadah refit --retarget: " + in + " declares RHOFORM " +
+             rep.rhoform + ": its AMPGRIDMB bounds stay non-negative (lo = "
+             "max(0, v - d)), and the rewritten file keeps the declaration.");
   std::ostringstream msg;
   msg << "tadah refit --retarget: rewrote " << rep.n_rewritten
       << " OPTIM line(s) (" << rep.n_active << " active, " << rep.n_commented

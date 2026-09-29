@@ -10,6 +10,7 @@
 #include <tadah/mlip/load_transforms.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
@@ -163,7 +164,6 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   if (!digits_warning.empty())
     core::Logger::instance().log(core::LogLevel::WARNING,
         outfile + ": " + digits_warning);
-  std::ofstream outstream(outfile);
   core::Context modContext = context;
   modContext.remove("VERBOSE");
   modContext.remove("NUMERIC");
@@ -175,6 +175,11 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
   tadah::models::normalise_embf0_key(modContext);
+  // A DM_REAM potential must declare its density form (absent -> throws
+  // before the file is opened, so nothing is written); the key is
+  // canonicalised, or stripped from a potential without a DM_REAM block.
+  tadah::models::normalise_rhoform_key(modContext);
+  std::ofstream outstream(outfile);
   if (outstream.is_open()) {
     modContext.write_potential(outstream, pd.digits);
     outstream << std::endl;

@@ -8,7 +8,11 @@
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/task.h>
+#include <tadah/core/core_user_config_parser.h>
+#include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/refit_engine.h>
+#include <tadah/models/descriptors/dm/dm_ream.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/eam_setfl_io.h>
 
 #include <algorithm>
@@ -16,6 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -34,11 +39,13 @@ struct PTFixture { PTFixture() { tadah::core::PeriodicTable::initialize(); } };
 
 // A smooth, physically-sane single-element setfl: rho(r)=(1-r/rcut)^2,
 // phi(r)=3(1-r/rcut)^3 (stored as z2r=phi*r), F(rho)=-2*sqrt(rho)+0.05*rho
-// (+ F_shift: a constant that moves the table's F(0) off zero).
+// (+ F_shift: a constant that moves the table's F(0) off zero; rho_fn, when
+// given, replaces the density table).
 // rhomax is generous so the crystal stays in range even under compression.
 void write_synth_eam(const std::string &path, const std::string &lat,
                      double a0, int nr = 400, int nrho = 400,
-                     double F_shift = 0.0) {
+                     double F_shift = 0.0,
+                     const std::function<double(double)> &rho_fn = nullptr) {
   const double rcut = 5.0;
   const double dr = rcut / (nr - 1);
   const double rhomax = 60.0;
@@ -58,7 +65,8 @@ void write_synth_eam(const std::string &path, const std::string &lat,
   os << "\n";
   for (int i = 0; i < nr; ++i) {
     const double x = 1.0 - i * dr / rcut;
-    os << (x > 0 ? x * x : 0.0) << ((i % 5 == 4) ? "\n" : " ");
+    os << (rho_fn ? rho_fn(i * dr) : x > 0 ? x * x : 0.0)
+       << ((i % 5 == 4) ? "\n" : " ");
   }
   os << "\n";
   for (int i = 0; i < nr; ++i) {
@@ -93,6 +101,8 @@ struct ScopedTempDir {
 struct RefitOutputs {
   std::string log;              ///< Logger output (INFO and above)
   std::string embf0;            ///< EMBF0 value in pot.tadah ("" if absent)
+  std::string rhoform;          ///< RHOFORM value in pot.tadah ("" if absent)
+  std::vector<double> amps;     ///< pot.tadah AMPGRIDMB
   std::vector<double> weights;  ///< pot.tadah WEIGHTS
   double setfl_F0 = 1.0;        ///< refit.eam F(rho = 0)
   int attempts = 0;             ///< dense escalation attempts (refit_opt.log)
@@ -133,8 +143,11 @@ RefitOutputs run_refit(const Context &c) {
     std::string key, tok;
     if (!(ls >> key)) continue;
     if (key == "EMBF0") ls >> out.embf0;
+    if (key == "RHOFORM") ls >> out.rhoform;
     if (key == "WEIGHTS")
       while (ls >> tok) out.weights.push_back(std::stod(tok));
+    if (key == "AMPGRIDMB")
+      while (ls >> tok) out.amps.push_back(std::stod(tok));
   }
   tadah::models::EAMSetflIO setfl;
   setfl.read_setfl("refit.eam");
@@ -148,11 +161,13 @@ RefitOutputs run_refit(const Context &c) {
 // Dense, coarse (small-N) refit of `eam_file`. The tolerances are relaxed to
 // meV scale so the smooth synthetic table passes robustly; a table
 // reference error (0.37 eV in the shifted case) still fails them by far.
-Context dense_refit_context(const std::string &eam_file) {
+Context dense_refit_context(const std::string &eam_file,
+                            const std::string &rhoform = "SIGNED") {
   Context c;
   c.add("EAM", eam_file);
   c.add("REFIT_MODE", std::string("dense"));
   c.add("REFIT_BASIS", std::string("Blip"));
+  c.add("RHOFORM", rhoform);
   c.add("REFIT_LEVEL", std::string("coarse"));
   // The coarse synthetic fit ends at ~2 meV ambient / ~1.5 meV compressed in
   // BOTH references (measured); 5 / 20 meV still flags a raw F_tab left in
@@ -174,6 +189,7 @@ TEST_CASE_METHOD(PTFixture,
   c.add("EAM", std::string("synth_fcc.eam.alloy"));
   c.add("REFIT_MODE", std::string("dense"));
   c.add("REFIT_BASIS", std::string("Blip"));
+  c.add("RHOFORM", std::string("SIGNED"));
   c.add("REFIT_MAX_ESCALATIONS", 1);     // bound the dense escalation loop
   Task task("refit", c);
 
@@ -211,6 +227,7 @@ TEST_CASE_METHOD(PTFixture,
   c.add("EAM", std::string("synth_fcc.eam.alloy"));
   c.add("REFIT_MODE", std::string("dense"));
   c.add("REFIT_BASIS", std::string("Blip"));
+  c.add("RHOFORM", std::string("SIGNED"));
   c.add("REFIT_MAX_ESCALATIONS", 0);
   c.add("NUMERIC", 12);
   Task task("refit", c);
@@ -259,6 +276,7 @@ TEST_CASE_METHOD(PTFixture,
   c.add("EAM", std::string("synth_none.eam.fs"));
   c.add("REFIT_MODE", std::string("dense"));
   c.add("REFIT_BASIS", std::string("Blip"));
+  c.add("RHOFORM", std::string("SIGNED"));
   Task task("refit", c);
 
   RefitEngine engine;
@@ -351,4 +369,266 @@ TEST_CASE_METHOD(PTFixture,
     dmax = std::max(dmax, std::fabs(shifted.weights[k] - base.weights[k]));
   }
   CHECK(dmax <= 1e-7 * wmax);
+}
+
+// ---------------------------------------------------------------------------
+//  RHOFORM (FEAT-02): the refit configuration declares the density form
+// ---------------------------------------------------------------------------
+namespace {
+std::string slurp(const std::string &f) {
+  std::ifstream in(f);
+  return std::string((std::istreambuf_iterator<char>(in)),
+                     std::istreambuf_iterator<char>());
+}
+
+// The (lo, hi) of every `[# ]OPTIM AMPGRIDMB (i) lo hi` line of a file.
+std::vector<std::pair<double, double>> ampgrid_bounds(const std::string &f) {
+  std::vector<std::pair<double, double>> out;
+  std::ifstream in(f);
+  for (std::string line; std::getline(in, line);) {
+    const auto p = line.find("OPTIM AMPGRIDMB (");
+    if (p == std::string::npos) continue;
+    std::istringstream ls(line.substr(line.find(')', p) + 1));
+    double lo, hi;
+    ls >> lo >> hi;
+    out.emplace_back(lo, hi);
+  }
+  return out;
+}
+
+// Runs one refit expecting it to throw; returns the message and what the
+// Logger printed (INFO and above) before it.
+std::pair<std::string, std::string> refit_error(const Context &c) {
+  Task task("refit", c);
+  auto &logger = tadah::core::Logger::instance();
+  const auto old_level = logger.getLogLevel();
+  logger.setLogLevel(tadah::core::LogLevel::INFO);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  std::string what;
+  try {
+    RefitEngine().run(task);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  std::cout.rdbuf(old_buf);
+  logger.setLogLevel(old_level);
+  return {what, captured.str()};
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine: RHOFORM is mandatory in the refit configuration",
+                 "[refit][engine][rhoform]") {
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  Context c = dense_refit_context("synth_fcc.eam.alloy");
+  c.remove("RHOFORM");
+  Task task("refit", c);
+  RefitEngine engine;
+  REQUIRE_THROWS_AS(engine.validate(task), tadah::models::DensityFormError);
+  REQUIRE_THROWS_WITH(engine.validate(task),
+                      Catch::Contains("tadah refit configuration: DM_REAM: "
+                                      "RHOFORM is required: SIGNED"));
+  REQUIRE_THROWS_AS(engine.run(task), tadah::models::DensityFormError);
+  REQUIRE_FALSE(fs::exists("pot.tadah"));
+  // an invalid value is refused the same way
+  c.add("RHOFORM", std::string("POSITIVE"));
+  REQUIRE_THROWS_WITH(RefitEngine().validate(Task("refit", c)),
+                      Catch::Contains("RHOFORM 'POSITIVE' is not a density "
+                                      "form"));
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine fits, self-tests and writes every RHOFORM "
+                 "(dense)",
+                 "[refit][engine][integration][rhoform]") {
+  for (const char *form : {"SIGNED", "NONNEG", "MONOTONE", "monotone"}) {
+    INFO("RHOFORM " << form);
+    ScopedTempDir tmp;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = dense_refit_context("synth_fcc.eam.alloy", form);
+    // measured: SIGNED passes after 2 escalations, MONOTONE after 3 (its
+    // steps need more density functions near the cutoff of this table)
+    c.remove("REFIT_MAX_ESCALATIONS");
+    c.add("REFIT_MAX_ESCALATIONS", 4);
+    const RefitOutputs out = run_refit(c);
+    const tadah::models::RhoForm f = tadah::models::parse_rhoform(form);
+    const std::string name = tadah::models::rhoform_name(f);
+    INFO(out.log);
+    CHECK(out.rhoform == name);
+    CHECK(out.self_test_passed());
+    CHECK(out.log.find("tadah refit: RHOFORM " + name + ": ") !=
+          std::string::npos);
+    CHECK(slurp("refit_opt.log").find("rhoform=" + name) !=
+          std::string::npos);
+    REQUIRE_FALSE(out.amps.empty());
+    // the written potential loads in its form
+    Context pot = tadah::core::CoreUserConfigParser().parse("pot.tadah");
+    pot.add("VERBOSE", 0);
+    tadah::models::DM_REAM dm(pot);
+    CHECK(dm.density().form == f);
+    // the hpotarget: non-negative AMPGRIDMB boxes under the positive forms,
+    // recorded in the parsed header line
+    const std::string hpo = slurp("refit.hpotarget");
+    const bool positive = tadah::models::rhoform_is_positive(f);
+    CHECK((hpo.find(tadah::mlip::engines::rhoform_bounds_line(
+               tadah::models::RhoForm::NonNeg)) != std::string::npos) ==
+          (f == tadah::models::RhoForm::NonNeg));
+    CHECK((hpo.find("# RHOFORM ") != std::string::npos) == positive);
+    const auto bounds = ampgrid_bounds("refit.hpotarget");
+    REQUIRE(bounds.size() == out.amps.size());
+    if (positive) {
+      for (double a : out.amps) REQUIRE(a >= 0.0);
+      for (const auto &b : bounds) REQUIRE(b.first >= 0.0);
+    }
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine RHOFORM: table pre-checks stop a refit the form "
+                 "cannot pass",
+                 "[refit][engine][rhoform]") {
+  SECTION("NONNEG and a negative table") {
+    ScopedTempDir tmp;
+    write_synth_eam("neg.eam.alloy", "fcc", 3.6, 400, 400, 0.0, [](double r) {
+      const double x = 1.0 - r / 5.0;
+      return x * x - 0.02;
+    });
+    const auto [what, logged] =
+        refit_error(dense_refit_context("neg.eam.alloy", "NONNEG"));
+    CHECK(what.find("RHOFORM NONNEG cannot fit this table") !=
+          std::string::npos);
+    CHECK(what.find("< 0 at r = 4.29") != std::string::npos);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    // SIGNED fits it
+    const RefitOutputs ok = run_refit(dense_refit_context("neg.eam.alloy"));
+    CHECK(ok.rhoform == "SIGNED");
+  }
+  SECTION("MONOTONE and a rising table") {
+    ScopedTempDir tmp;
+    write_synth_eam("rise.eam.alloy", "fcc", 3.6, 400, 400, 0.0,
+                    [](double r) {
+                      const double x = 1.0 - r / 5.0, g = (r - 3.5) / 0.2;
+                      return x * x + 0.05 * std::exp(-g * g);
+                    });
+    const auto [what, logged] =
+        refit_error(dense_refit_context("rise.eam.alloy", "MONOTONE"));
+    CHECK(what.find("RHOFORM MONOTONE cannot fit this table: the tabulated "
+                    "density rises") != std::string::npos);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine RHOFORM x REFIT_BASIS x REFIT_MODE",
+                 "[refit][engine][rhoform]") {
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  auto config = [](const char *form, const char *basis, const char *mode) {
+    Context c;
+    c.add("EAM", std::string("synth_fcc.eam.alloy"));
+    c.add("RHOFORM", std::string(form));
+    if (basis) c.add("REFIT_BASIS", std::string(basis));
+    if (mode) c.add("REFIT_MODE", std::string(mode));
+    return c;
+  };
+  SECTION("MONOTONE is not defined for the knot families") {
+    for (const char *b : {"Knot5", "Knot3", "KnotMix"}) {
+      INFO(b);
+      const auto [what, logged] = refit_error(config("MONOTONE", b, "dense"));
+      CHECK(what.find(std::string("RHOFORM MONOTONE is not defined for "
+                                  "REFIT_BASIS ") + b) != std::string::npos);
+      CHECK(what.find("use a bump basis (Blip, Blip5) or RHOFORM NONNEG") !=
+            std::string::npos);
+    }
+  }
+  SECTION("compact mode accepts the positive forms with a bump basis") {
+    // The HPO engine fits them in the compact fitter (HPO test_compact_*);
+    // this MLIP-only RefitEngine has no compact hook, so it falls back to
+    // the dense path, in the declared form.
+    for (const char *form : {"NONNEG", "MONOTONE"}) {
+      INFO(form);
+      ScopedTempDir sub;
+      write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+      Context c = dense_refit_context("synth_fcc.eam.alloy", form);
+      c.remove("REFIT_MODE");
+      c.add("REFIT_MODE", std::string("compact"));
+      const RefitOutputs out = run_refit(c);
+      INFO(out.log);
+      CHECK(out.rhoform == form);
+      CHECK(out.log.find("falling back to dense fitting") !=
+            std::string::npos);
+      // a bump basis: no knot convex-lock HINT or WARNING
+      CHECK(out.log.find("RHOFORM NONNEG with") == std::string::npos);
+      REQUIRE_FALSE(out.amps.empty());
+      for (double a : out.amps) CHECK(a >= 0.0);
+    }
+  }
+  SECTION("compact mode: MONOTONE names a defaulted knot basis") {
+    // REFIT_MODE compact defaults to Knot5, for which MONOTONE is not
+    // defined: the message says the basis is the default, with the remedy
+    for (const char *mode : {static_cast<const char *>(nullptr), "compact"}) {
+      INFO((mode ? mode : "(default mode)"));
+      const auto [what, logged] =
+          refit_error(config("MONOTONE", nullptr, mode));
+      CHECK(what.find("RHOFORM MONOTONE is not defined for REFIT_BASIS Knot5 "
+                      "(the REFIT_MODE compact default, a one-sided knot "
+                      "family): use a bump basis (Blip, Blip5) or RHOFORM "
+                      "NONNEG") != std::string::npos);
+      CHECK_FALSE(fs::exists("pot.tadah"));
+    }
+    // an explicit knot basis in compact mode: the same refusal, no default
+    const auto [what, logged] =
+        refit_error(config("MONOTONE", "Knot3", nullptr));
+    CHECK(what.find("REFIT_BASIS Knot3 (the one-sided knot family)") !=
+          std::string::npos);
+  }
+  SECTION("compact mode: NONNEG with a knot family: the convex-lock HINT "
+          "for a chosen basis, a WARNING for the default") {
+    // Explicit Knot5: the HINT, then (MLIP-only build, no compact fitter)
+    // the knot families' refusal of the dense path.
+    const auto [what, logged] =
+        refit_error(config("NONNEG", "Knot5", nullptr));
+    CHECK(logged.find("WARNING: HINT: RHOFORM NONNEG with REFIT_BASIS Knot5: "
+                      "a knot density with every amplitude >= 0 is "
+                      "non-increasing and convex") != std::string::npos);
+    CHECK(logged.find("compact default") == std::string::npos);
+    CHECK(what.find("REFIT_BASIS Knot5 requires REFIT_MODE compact on an HPO "
+                    "(Ceres) build") != std::string::npos);
+    // The defaulted Knot5 (no REFIT_BASIS): a WARNING, not a HINT, naming
+    // REFIT_BASIS Blip5 as the remedy (a concave-core table can fail the
+    // self-test in the non-negative knot density); without the compact
+    // fitter the refit then falls back to a dense Blip fit, in NONNEG.
+    ScopedTempDir sub;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = dense_refit_context("synth_fcc.eam.alloy", "NONNEG");
+    c.remove("REFIT_MODE");
+    c.remove("REFIT_BASIS");
+    const RefitOutputs out = run_refit(c);
+    INFO(out.log);
+    CHECK(out.log.find("WARNING: tadah refit: RHOFORM NONNEG with the "
+                       "REFIT_MODE compact default basis Knot5: a knot "
+                       "density with every amplitude >= 0 is non-increasing "
+                       "and convex") != std::string::npos);
+    CHECK(out.log.find("Set REFIT_BASIS Blip5 (a non-negative bump density "
+                       "without the convex lock), or use RHOFORM SIGNED.") !=
+          std::string::npos);
+    CHECK(out.log.find("HINT: RHOFORM NONNEG") == std::string::npos);
+    CHECK(out.rhoform == "NONNEG");
+    // REFIT_MODE compact given explicitly, basis still defaulted: the same
+    c.add("REFIT_MODE", std::string("compact"));
+    const RefitOutputs out2 = run_refit(c);
+    CHECK(out2.log.find("WARNING: tadah refit: RHOFORM NONNEG with the "
+                        "REFIT_MODE compact default basis Knot5") !=
+          std::string::npos);
+  }
+  SECTION("NONNEG with a knot family in dense mode: the knot refusal, no "
+          "HINT") {
+    const auto [what, logged] =
+        refit_error(config("NONNEG", "Knot5", "dense"));
+    CHECK(what.find("REFIT_BASIS Knot5 requires REFIT_MODE compact") !=
+          std::string::npos);
+    CHECK(logged.find("HINT: RHOFORM NONNEG") == std::string::npos);
+  }
 }
