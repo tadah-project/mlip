@@ -8,6 +8,10 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
+#include <tadah/mlip/engines/refit_modes.h>
+
+#include <cmath>
+#include <limits>
 
 #include <filesystem>
 #include <fstream>
@@ -738,4 +742,160 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE_THROWS_WITH(write_hpotarget("k.hpotarget", pot, 5.0),
                         Catch::Contains("RHOFORM is required"));
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Per-key percentages on every line, the --pct / --set checks
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(PTFixture,
+                 "retarget: a per-key percentage is a fixed point for a width "
+                 "group and for an RCUT scalar line",
+                 "[retarget][pct]") {
+  ScopedTempDir tmp;
+  write_hpotarget("a.hpotarget", make_blip_pot(), 5.0);
+  const std::string fresh = slurp("a.hpotarget");
+  RetargetOptions o5;
+  for (const char *key : {"SGRID2B", "RCUT2B"}) {
+    INFO(key << "=50");
+    RetargetOptions o;
+    o.pct_per_key[key] = 50.0;
+    retarget_hpotarget_file("a.hpotarget", "b.hpotarget", false, o);
+    // the same command again: byte-identical, no repair warning
+    const RetargetReport rep =
+        retarget_hpotarget_file("b.hpotarget", "c.hpotarget", false, o);
+    REQUIRE(slurp("c.hpotarget") == slurp("b.hpotarget"));
+    for (const auto &w : rep.warnings)
+      CHECK(w.find("inconsistent") == std::string::npos);
+    // back to the emission percentage: the fresh file again
+    retarget_hpotarget_file("c.hpotarget", "d.hpotarget", false, o5);
+    REQUIRE(slurp("d.hpotarget") == fresh);
+  }
+  // RCUT2B = 5 at +-50%: [2.5, 7.5]
+  RetargetOptions o;
+  o.pct_per_key["RCUT2B"] = 50.0;
+  retarget_hpotarget_file("a.hpotarget", "r.hpotarget", false, o);
+  CHECK(slurp("r.hpotarget").find(
+            "# OPTIM RCUT2B (1) 2.50000000e+00 7.50000000e+00") !=
+        std::string::npos);
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "retarget: --pct KEY=N needs an OPTIM line on KEY",
+                 "[retarget][pct]") {
+  ScopedTempDir tmp;
+  write_hpotarget("a.hpotarget", make_blip_pot(), 5.0);
+  auto lines = read_lines("a.hpotarget");
+  RetargetOptions o;
+  o.pct_per_key["AMPGRIDMB"] = 10.0;  // the pair-only pot has none
+  REQUIRE_THROWS_WITH(retarget_hpotarget_lines(lines, o),
+                      Catch::Contains("--pct AMPGRIDMB=10: the file has no "
+                                      "OPTIM AMPGRIDMB line") &&
+                          Catch::Contains("SGRID2B"));
+  // a commented line counts (it is rewritten)
+  RetargetOptions ok;
+  ok.pct_per_key["CGRID2B"] = 10.0;
+  auto lines2 = read_lines("a.hpotarget");
+  REQUIRE_NOTHROW(retarget_hpotarget_lines(lines2, ok));
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "retarget: --set bounds must be finite, lo < hi, and lo "
+                 "within the density form's rule",
+                 "[retarget][set]") {
+  ScopedTempDir tmp;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+  write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+  auto refused = [](const std::string &file, RetargetOptions::SetOverride s,
+                    const std::string &what) {
+    RetargetOptions o;
+    o.sets.push_back(s);
+    auto lines = read_lines(file);
+    INFO(file << " --set " << s.key << "(" << s.index << ")=" << s.lo << ","
+              << s.hi);
+    CHECK_THROWS_WITH(retarget_hpotarget_lines(lines, o),
+                      Catch::Contains(what));
+  };
+  // NaN passed the lo < 0 test of a non-negative AMPGRIDMB box
+  refused("n.hpotarget", {"AMPGRIDMB", 2, nan, 0.2},
+          "--set AMPGRIDMB(2): lo must be a finite number");
+  refused("n.hpotarget", {"AMPGRIDMB", 2, -0.1, 0.2},
+          "--set AMPGRIDMB(2): lo must be >= 0");
+  refused("s.hpotarget", {"CGRIDMB", 1, 1.4, nan},
+          "--set CGRIDMB(1): hi must be a finite number");
+  refused("s.hpotarget", {"CGRIDMB", 1, -inf, 1.6},
+          "--set CGRIDMB(1): lo must be a finite number");
+  refused("s.hpotarget", {"CGRIDMB", 1, 1.6, 1.4},
+          "--set CGRIDMB(1): hi must be greater than lo");
+  // the file's form sets the rule: SIGNED takes a negative amplitude
+  RetargetOptions o;
+  o.sets.push_back({"AMPGRIDMB", 2, -0.1, 0.2});
+  auto lines = read_lines("s.hpotarget");
+  REQUIRE_NOTHROW(retarget_hpotarget_lines(lines, o));
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "retarget: a RHOFORM header naming no density form is an "
+                 "error at its line",
+                 "[retarget][rhoform]") {
+  ScopedTempDir tmp;
+  write_hpotarget("n.hpotarget", make_ream_blip5_pot("NONNEG"), 5.0);
+  auto lines = read_lines("n.hpotarget");
+  std::size_t at = 0;
+  for (std::size_t i = 0; i < lines.size(); ++i)
+    if (lines[i].rfind("# RHOFORM NONNEG:", 0) == 0) {
+      lines[i] = "# RHOFORM POSITIVE: AMPGRIDMB bounds are non-negative";
+      at = i + 1;
+    }
+  REQUIRE(at > 0);
+  RetargetOptions o5;
+  REQUIRE_THROWS_WITH(retarget_hpotarget_lines(lines, o5),
+                      Catch::Contains("line " + std::to_string(at) + ":") &&
+                          Catch::Contains("names no density form"));
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget: --pct and --set numbers use the "
+                 "hpotarget number grammar",
+                 "[retarget][strict]") {
+  ScopedTempDir tmp;
+  write_hpotarget("a.hpotarget", make_blip_pot(), 5.0);
+  auto retarget = [](const char *key, const std::string &tok) {
+    Context c;
+    c.add("RETARGET", std::string("a.hpotarget"));
+    c.add("OUTFILE", std::string("o.hpotarget"));
+    c.add(key, tok);
+    return tadah::mlip::engines::run_refit_retarget(c);
+  };
+  // std::stod read a prefix (5x), hexadecimal (0x10), inf, nan and a
+  // subnormal (1e-320); the hpotarget grammar refuses them all
+  for (const std::string bad : {"5x", "0x10", "inf", "nan", "-inf", "1e-320",
+                                "1e400", ""}) {
+    INFO("'" << bad << "'");
+    if (!bad.empty())  // a Context holds no empty token
+      CHECK_THROWS_WITH(retarget("PCT", bad),
+                        Catch::Contains("--pct token '" + bad + "'"));
+    CHECK_THROWS_WITH(retarget("PCT", "SGRID2B=" + bad),
+                      Catch::Contains("--pct token 'SGRID2B=" + bad + "'"));
+    CHECK_THROWS_WITH(retarget("SET", "CGRID2B(1)=" + bad + ",3.1"),
+                      Catch::Contains("--set token 'CGRID2B(1)=" + bad +
+                                      ",3.1'"));
+    CHECK_THROWS_WITH(retarget("SET", "CGRID2B(1)=2.9," + bad),
+                      Catch::Contains("--set token 'CGRID2B(1)=2.9," + bad +
+                                      "'"));
+  }
+  REQUIRE_FALSE(fs::exists("o.hpotarget"));
+  // the grammar's own forms
+  for (const std::string ok : {"10", "+7.5", "5.", ".5", "2.5e1"}) {
+    INFO("'" << ok << "'");
+    CHECK(retarget("PCT", ok) == EXIT_SUCCESS);
+    CHECK(retarget("PCT", "SGRID2B=" + ok) == EXIT_SUCCESS);
+  }
+  CHECK(retarget("SET", "CGRID2B(1)=2.9,3.1") == EXIT_SUCCESS);
+  // zero and negative percentages stay refused
+  CHECK_THROWS_WITH(retarget("PCT", "0"), Catch::Contains("--pct token '0'"));
+  CHECK_THROWS_WITH(retarget("PCT", "SGRID2B=-5"),
+                    Catch::Contains("--pct token 'SGRID2B=-5'"));
 }
