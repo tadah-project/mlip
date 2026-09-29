@@ -13,7 +13,11 @@
 // declares RHOFORM NONNEG/MONOTONE); those are repaired by inverting the
 // unclamped UPPER bound using the emission percentage of the line's group:
 // its `# KEY  (+-X%` comment (which a per-key --pct rewrites), else the file
-// header. Exactness is at the printed precision (8 significant digits).
+// header. An RCUT scalar line has no such comment from the writer: a
+// per-key --pct RCUT2B=N adds one above the line ("# RCUT2B  (+-N%, 1
+// params)") and removes it when the line's percentage is the global one
+// again, so every percentage is a fixed point. Exactness is at the printed
+// precision (8 significant digits).
 //
 // Density form: the file never sees the potential, so the writer records a
 // positive RHOFORM in a parsed header line (rhoform_bounds_line). With it,
@@ -61,10 +65,13 @@ struct RetargetReport {
 
 /** \brief Rewrite the OPTIM bounds in `lines` in place (the unit-testable
  *  core). Non-OPTIM lines are untouched; group `(+-X%, N params...)` header
- *  comments and the file-header percentage are updated to the new values.
- *  Throws on malformed --set overrides (unknown KEY(i), or AMPGRIDMB lo < 0
- *  in a file that declares a positive RHOFORM), and on a RHOFORM header
- *  line whose form is not a density form. */
+ *  comments and the file-header percentage are updated to the new values
+ *  (an RCUT line's comment added or removed, see above). Throws on a
+ *  per-key percentage for a key without an OPTIM line, on malformed --set
+ *  overrides (unknown KEY(i), a bound that is not finite, hi <= lo, or a lo
+ *  the file's density form refuses: models::optim_low_bound_rule, e.g.
+ *  AMPGRIDMB lo < 0 under a positive RHOFORM), and on a RHOFORM header line
+ *  whose form is not a density form (the error names the line). */
 RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
                                         const RetargetOptions &opts);
 

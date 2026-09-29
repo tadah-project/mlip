@@ -285,27 +285,28 @@ int run_refit_retarget(Context &c) {
   opts.pct = has(c, "OPTIM_PCT") ? c.get<double>("OPTIM_PCT") : 5.0;
 
   // --pct tokens: a bare number sets the global percentage, KEY=N one group.
+  // Numbers in the hpotarget grammar (core::parse_decimal_normal, the
+  // grammar tadah hpo reads the written bounds with).
   if (has(c, "PCT")) {
     for (std::size_t i = 0; i < c.size("PCT"); ++i) {
       const std::string tok = c.get<std::string>("PCT", i);
       const auto eq = tok.find('=');
-      try {
-        if (eq == std::string::npos) {
-          opts.pct = core::to_double(tok);
-          if (opts.pct <= 0.0) throw std::invalid_argument("non-positive");
-        } else {
-          std::string key = tok.substr(0, eq);
-          std::transform(key.begin(), key.end(), key.begin(),
-                         [](unsigned char ch) { return std::toupper(ch); });
-          const double p = core::to_double(tok.substr(eq + 1));
-          if (p <= 0.0) throw std::invalid_argument("non-positive");
-          opts.pct_per_key[key] = p;
-        }
-      } catch (const std::invalid_argument &) {
+      const std::string num =
+          eq == std::string::npos ? tok : tok.substr(eq + 1);
+      double p = 0.0;
+      if (!core::parse_decimal_normal(num, p) || !(p > 0.0))
         throw std::runtime_error(
             "tadah refit --retarget: cannot parse --pct token '" + tok +
-            "' — expected a positive number or KEY=<positive number> "
-            "(e.g. --pct 10 FIXWEIGHT=2).");
+            "' — expected a positive number or KEY=<positive number> in the "
+            "number grammar of the hpotarget file ([+-]digits[.digits]"
+            "[e[+-]digits]; e.g. --pct 10 FIXWEIGHT=2).");
+      if (eq == std::string::npos) {
+        opts.pct = p;
+      } else {
+        std::string key = tok.substr(0, eq);
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char ch) { return std::toupper(ch); });
+        opts.pct_per_key[key] = p;
       }
     }
   }
@@ -339,14 +340,14 @@ int run_refit_retarget(Context &c) {
       std::transform(s.key.begin(), s.key.end(), s.key.begin(),
                      [](unsigned char ch) { return std::toupper(ch); });
       s.index = std::stoul(m[2].str());
-      try {
-        s.lo = core::to_double(m[3].str());
-        s.hi = core::to_double(m[4].str());
-      } catch (const std::exception &) {
-        throw std::runtime_error(
-            "tadah refit --retarget: non-numeric bounds in --set token '" +
-            tok + "'.");
-      }
+      for (const auto &[text, value] :
+           {std::pair<std::string, double *>{m[3].str(), &s.lo},
+            {m[4].str(), &s.hi}})
+        if (!core::parse_decimal_normal(text, *value))
+          throw std::runtime_error(
+              "tadah refit --retarget: --set token '" + tok + "': '" + text +
+              "' is not a number in the number grammar of the hpotarget "
+              "file ([+-]digits[.digits][e[+-]digits]).");
       opts.sets.push_back(s);
     }
   }

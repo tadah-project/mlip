@@ -104,6 +104,21 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     ol.centre = 0.5 * (ol.lo + ol.hi);
     ols.push_back(ol);
   }
+  // --pct KEY=N applies to the OPTIM lines on KEY (active or commented):
+  // a key without one is a mistake the rewrite would otherwise hide.
+  {
+    std::set<std::string> keys;
+    for (const auto &ol : ols) keys.insert(ol.key);
+    for (const auto &[key, p] : opts.pct_per_key) {
+      if (keys.count(key)) continue;
+      std::string avail;
+      for (const auto &k : keys) avail += (avail.empty() ? "" : ", ") + k;
+      throw std::runtime_error(
+          "--pct " + key + "=" + pct_str(p) + ": the file has no OPTIM " + key +
+          " line (active or commented); its OPTIM keys: " +
+          (avail.empty() ? std::string("none") : avail) + ".");
+    }
+  }
   if (ols.empty()) {
     rep.warnings.push_back("no OPTIM lines found — nothing to rewrite.");
     return rep;
@@ -125,13 +140,14 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   // Under NONNEG/MONOTONE the AMPGRIDMB boxes are non-negative: a lo-clamped
   // line is repaired from its upper bound and every rewrite keeps lo >= 0.
   std::optional<tadah::models::RhoForm> form;
-  for (const auto &l : lines) {
+  for (std::size_t i = 0; i < lines.size(); ++i) {
     std::smatch m;
-    if (!std::regex_match(l, m, kRhoFormRe)) continue;
+    if (!std::regex_match(lines[i], m, kRhoFormRe)) continue;
     try {
       form = tadah::models::parse_rhoform(m[1].str());
     } catch (const std::exception &e) {
-      throw std::runtime_error("retarget: the RHOFORM header line '" + l +
+      throw std::runtime_error("retarget: line " + std::to_string(i + 1) +
+                               ": the RHOFORM header line '" + lines[i] +
                                "' names no density form: " + e.what());
     }
     rep.rhoform = tadah::models::rhoform_name(*form);
@@ -426,16 +442,24 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     bool found = false;
     for (auto &ol : ols) {
       if (ol.key == s.key && ol.index == s.index) {
-        if (s.hi <= s.lo)
-          throw std::runtime_error("--set " + s.key + "(" +
-                                   std::to_string(s.index) +
-                                   "): hi must be greater than lo.");
-        if (nonneg_key(s.key) && s.lo < 0.0)
+        const std::string what =
+            "--set " + s.key + "(" + std::to_string(s.index) + "): ";
+        if (!std::isfinite(s.lo))
+          throw std::runtime_error(what + "lo must be a finite number.");
+        if (!std::isfinite(s.hi))
+          throw std::runtime_error(what + "hi must be a finite number.");
+        if (!(s.hi > s.lo))
+          throw std::runtime_error(what + "hi must be greater than lo.");
+        // The density form's rule on the low bound (the file names no
+        // potential, so no basis: models::optim_low_bound_rule).
+        if (const auto rule =
+                tadah::models::optim_low_bound_rule(s.key, form, std::nullopt);
+            rule && !rule->admits(s.lo))
           throw std::runtime_error(
-              "--set " + s.key + "(" + std::to_string(s.index) +
-              "): lo must be >= 0: the file declares RHOFORM " + rep.rhoform +
-              ", whose density amplitudes are non-negative (`tadah hpo` "
-              "refuses an AMPGRIDMB box with lo < 0 under that form).");
+              what + "lo must be " + (rule->strict ? "> 0" : ">= 0") +
+              ": the file declares RHOFORM " + rep.rhoform + ", which "
+              "requires " + rule->requirement + " (`tadah hpo` refuses such "
+              "a box under that form).");
         ol.lo = s.lo;
         ol.hi = s.hi;
         found = true;
@@ -509,6 +533,42 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       const double pct = it != opts.pct_per_key.end() ? it->second : opts.pct;
       l = m[1].str() + m[2].str() + m[3].str() + pct_str(pct) + m[5].str();
     }
+  }
+
+  // ---- the percentage of an RCUT scalar line ----
+  // The writer gives an RCUT line no group comment: its percentage is the
+  // file header's. A per-key one (--pct RCUT2B=50) is recorded in a group
+  // comment above the line, "# RCUT2B  (+-50%, 1 params)", which the next
+  // retarget reads (group_pct) to recover the centre; the comment goes
+  // when the line's percentage is the global one again, so the file is
+  // then the writer's.
+  for (const char *rkey : {"RCUT2B", "RCUTMB"}) {
+    if (!groups.count(rkey)) continue;
+    const auto it = opts.pct_per_key.find(rkey);
+    const bool own = it != opts.pct_per_key.end() && it->second != opts.pct;
+    std::vector<std::string> out;
+    out.reserve(lines.size() + 1);
+    bool placed = false;
+    for (const auto &l : lines) {
+      std::smatch m;
+      if (std::regex_match(l, m, kGroupHeaderRe) && m[2].str() == rkey) {
+        if (own && !placed) {
+          out.push_back(l);  // refreshed above
+          placed = true;
+        }
+        continue;
+      }
+      std::smatch o;
+      if (own && !placed && std::regex_match(l, o, kOptimRe) &&
+          o[3].str() == rkey) {
+        out.push_back("# " + std::string(rkey) + "  (+-" +
+                      pct_str(it->second) + "%, " +
+                      std::to_string(groups.at(rkey).size()) + " params)");
+        placed = true;
+      }
+      out.push_back(l);
+    }
+    lines.swap(out);
   }
 
   return rep;
