@@ -1,4 +1,5 @@
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/engines/properties_pairwise_engine.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
@@ -47,6 +48,9 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
   tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
+  // RHOFORM belongs to the potential: a DM_REAM potential without it throws
+  // whatever the task says (the task never supplies it through the merge).
+  tadah::models::check_rhoform_precedence(potContext, taskContext, pot_file);
   potContext  = tadah::core::Context::merge(potContext, taskContext);
 
   // generate range

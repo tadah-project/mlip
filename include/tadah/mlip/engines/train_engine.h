@@ -15,6 +15,10 @@ class TrainEngine : public IEngine {
 public:
   int run(tadah::mlip::Task &task) override;
   void validate(const tadah::mlip::Task &task) override;
+  /** Writes @p context as a potential file (NUMERIC digits, runtime keys
+   *  removed, EMBF0 and RHOFORM normalised). A context with a DM_REAM block
+   *  but no RHOFORM throws models::DensityFormError before the file is
+   *  opened. */
   static void dumpPotFile(const std::string &outfile, const core::Context &context);
 };
 

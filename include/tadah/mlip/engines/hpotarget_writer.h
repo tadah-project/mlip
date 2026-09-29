@@ -13,13 +13,17 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 
 namespace tadah {
 namespace mlip {
 namespace engines {
 
 /** \brief The OPTIM key groups an hpotarget carries, with their bound rule.
- *  positive_only keys (the width channels) get the lo > 0 clamp. */
+ *  positive_only keys (the width channels) get the lo > 0 clamp. The
+ *  density-form rule (AMPGRIDMB lo >= 0 under RHOFORM NONNEG/MONOTONE,
+ *  models::optim_key_lower_bound) is applied on top of this static table,
+ *  which `tadah hpo` shares. */
 struct OptimGroupSpec {
   const char *key;
   bool positive_only;
@@ -61,14 +65,27 @@ struct OptimBound {
   double q = 0.0;  ///< the decimal grid the bounds live on
 };
 OptimBound optim_group_bound(double val, double pct, double floor,
-                             bool positive_only);
+                             bool positive_only,
+                             tadah::models::OptimLowerBound lower =
+                                 tadah::models::OptimLowerBound::Free);
 
 /** \brief One `OPTIM KEY (i) lo hi` line per parameter; bounds are
  *  v +- max(pct%·|v|, floor) with floor = max(1e-8, 1e-3·max|v| of the
- *  group) so near-zero parameters keep a searchable window. */
+ *  group) so near-zero parameters keep a searchable window.
+ *  @p lower NonNegative (AMPGRIDMB under RHOFORM NONNEG/MONOTONE) clamps
+ *  lo = max(0, v - d), so an amplitude of 0 gets [0, d]. */
 void emit_optim_group(std::ostream &os, const std::string &key,
                       const tadah::core::v_type &vals, double pct,
-                      bool positive_only, bool commented = false);
+                      bool positive_only, bool commented = false,
+                      tadah::models::OptimLowerBound lower =
+                          tadah::models::OptimLowerBound::Free);
+
+/** \brief The parsed hpotarget header line that records a positive density
+ *  form: "# RHOFORM <form>: AMPGRIDMB bounds are non-negative (lo = max(0,
+ *  v - d))". --retarget reads the form from it (the hpotarget carries no
+ *  potential) to keep those bounds non-negative. Only for NONNEG and
+ *  MONOTONE. */
+std::string rhoform_bounds_line(tadah::models::RhoForm form);
 
 /** \brief Scalar variant used for the RCUT2B/RCUTMB lines. */
 void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
@@ -89,7 +106,10 @@ void emit_optim_group_pair(std::ostream &os, const std::string &ckey,
 /** \brief Write a full hpotarget starter file from a refit pot Context.
  *  RCUT2B/RCUTMB are read from the pot; for KNOT channels the commented
  *  `# OPTIM RCUT*` scalar is replaced by an explanatory comment (the
- *  effective cutoff is the largest knot — vary CGRID* instead). */
+ *  effective cutoff is the largest knot — vary CGRID* instead). A pot with
+ *  a DM_REAM block must declare RHOFORM (DensityFormError otherwise); under
+ *  NONNEG/MONOTONE the header carries rhoform_bounds_line() and the
+ *  AMPGRIDMB bounds are non-negative. */
 void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
                      double pct);
 

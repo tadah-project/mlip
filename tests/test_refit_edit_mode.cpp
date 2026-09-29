@@ -64,6 +64,7 @@ Context make_knot_pot() {
   c.add("TYPEMB", "Ta"); c.add("TYPEMB", "Ta");
   for (double v : {4.8, 2.5}) c.add("CGRIDMB", v);
   for (double v : {0.01, -1.2}) c.add("AMPGRIDMB", v);
+  c.add("RHOFORM", "SIGNED");  // a negative amplitude: SIGNED only
   for (double v : {0.9, -2.9, 0.1}) c.add("CEMBFUNC", v);
   c.add("RCUTMB", 4.8);
   c.add("RCTYPEMB", "Cut_Dummy");
@@ -477,4 +478,118 @@ TEST_CASE_METHOD(PTFixture, "refit mode-key validation (config-file path)",
   REQUIRE_NOTHROW(validate_refit_mode_keys(
       ctx_with({}, {{"RETARGET", "b"}, {"PCT", "10"}})));
   REQUIRE_NOTHROW(validate_refit_mode_keys(ctx_with({}, {{"EAM", "x"}})));
+}
+
+// ---------------------------------------------------------------------------
+//  RHOFORM (FEAT-02): --edit keeps and logs the potential's density form
+// ---------------------------------------------------------------------------
+namespace {
+// Blip pair channel + DM_REAM Blip density (non-negative amplitudes, every
+// support inside RCUTMB 4.8) declared in `form`.
+Context make_blip_ream_pot(const std::string &form) {
+  Context c;
+  c.add("MODEL", "M_BLR");
+  c.add("MODEL", "BF_Linear");
+  c.add("ATOM", "Cu");
+  c.add("WATOM", 1.0);
+  c.add("BIAS", "false");
+  c.add("NORM", "false");
+  c.add("FORCE", "false");
+  c.add("STRESS", "false");
+  c.add("LAMBDA", 0);
+  c.add("OALGO", 2);
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Blip");
+  c.add("TYPE2B", 3); c.add("TYPE2B", 3);
+  c.add("TYPE2B", "Cu"); c.add("TYPE2B", "Cu");
+  for (double v : {2.4, 3.2, 4.0}) c.add("CGRID2B", v);
+  for (double v : {2.0, 2.0, 2.0}) c.add("SGRID2B", v);
+  c.add("RCUT2B", 5.0);
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_REAM");
+  for (int v : {0, 5, 5, 5, 3, 3, 0, 0}) c.add("TYPEMB", v);
+  c.add("TYPEMB", "Cu"); c.add("TYPEMB", "Cu");
+  for (double v : {1.2, 3.0, 3.4, 3.8, 4.3}) c.add("CGRIDMB", v);
+  for (double v : {2.0, 2.0, 2.0, 2.0, 4.0}) c.add("SGRIDMB", v);
+  for (double v : {0.5, 0.2, 0.05, 0.01, 0.02}) c.add("AMPGRIDMB", v);
+  c.add("RHOFORM", form);
+  for (double v : {0.9, 2.9, 0.1}) c.add("CEMBFUNC", v);
+  for (double v : {1.5, 2.0, 1.8}) c.add("SEMBFUNC", v);
+  c.add("RCUTMB", 4.8);
+  c.add("RCTYPEMB", "Cut_Dummy");
+  for (double v : {1.5, -9.0, 1.2, 2.2, -1.6, 5.3}) c.add("WEIGHTS", v);
+  c.add("FIXINDEX", "1-6");
+  for (double v : {1.5, -9.0, 1.2, 2.2, -1.6, 5.3}) c.add("FIXWEIGHT", v);
+  return c;
+}
+
+void strip_key_line(const std::string &file, const std::string &drop) {
+  std::ifstream in(file);
+  std::string line, body;
+  while (std::getline(in, line)) {
+    std::istringstream ls(line);
+    std::string key;
+    ls >> key;
+    if (key != drop) body += line + "\n";
+  }
+  in.close();
+  std::ofstream(file) << body;
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: a DM_REAM input without RHOFORM gets the "
+                 "migration text",
+                 "[refit][edit][rhoform]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  strip_key_line("in.tadah", "RHOFORM");  // as tadah <= 1.5.1 wrote it
+  Context c;
+  c.add("EDIT", std::string("in.tadah"));
+  c.add("FUNC", std::string("phi"));
+  c.add("ADD", 3.6);
+  Task task("refit", c);
+  REQUIRE_THROWS_AS(RefitEngine().run(task), tadah::models::DensityFormError);
+  REQUIRE_THROWS_WITH(RefitEngine().run(task),
+                      Catch::Contains("pot edit: DM_REAM: RHOFORM is required: "
+                                      "SIGNED") &&
+                          !Catch::Contains("internal error"));
+  REQUIRE_FALSE(fs::exists("pot_edited.tadah"));
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: the density form is kept, logged and "
+                 "honoured by --remove",
+                 "[refit][edit][integration][rhoform]") {
+  for (const char *form : {"NONNEG", "monotone"}) {
+    INFO(form);
+    ScopedTempDir tmp;
+    TrainEngine::dumpPotFile("in.tadah", make_blip_ream_pot(form));
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("rho"));
+    c.add("REMOVE", 3.0);
+    const std::string log = run_edit_capturing(c);
+    const std::string name = tadah::models::rhoform_name(
+        tadah::models::parse_rhoform(form));
+    CHECK(log.find("tadah refit --edit: RHOFORM " + name + ": rho is sum_k") !=
+          std::string::npos);
+    CHECK(log.find("the edited potential declares RHOFORM " + name) !=
+          std::string::npos);
+    CHECK(log.find("held at its bound 0") != std::string::npos);
+    const Context out =
+        tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
+    REQUIRE(out.stored_value("RHOFORM") == std::optional<std::string>(name));
+    REQUIRE(out.size("AMPGRIDMB") == 4);
+    for (std::size_t n = 0; n < out.size("AMPGRIDMB"); ++n)
+      REQUIRE(out.get<double>("AMPGRIDMB", n) >= 0.0);
+    // the regenerated hpotarget keeps the AMPGRIDMB boxes non-negative
+    std::ifstream hs("refit_edited.hpotarget");
+    const std::string body((std::istreambuf_iterator<char>(hs)),
+                           std::istreambuf_iterator<char>());
+    CHECK(body.find("# RHOFORM " + name +
+                    ": AMPGRIDMB bounds are non-negative") !=
+          std::string::npos);
+  }
 }

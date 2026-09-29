@@ -3,6 +3,7 @@
 #include <tadah/core/number_format.h>
 
 #include <tadah/models/descriptors/basis_kind.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,7 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -45,6 +47,10 @@ const std::regex kGroupHeaderRe(
 // Files without it (knot channels, pre-contract emissions) get no capping.
 const std::regex kBumpContractRe(
     R"(^#\s*RCUT(2B|MB)\s+bump-support contract:\s*w\s*=\s*([0-9]*\.?[0-9]+).*$)");
+// The positive density form the writer records (rhoform_bounds_line):
+// `# RHOFORM NONNEG: AMPGRIDMB bounds are non-negative (lo = max(0, v - d))`.
+const std::regex kRhoFormRe(
+    R"(^#\s*RHOFORM\s+(\S+)\s*:\s*AMPGRIDMB bounds are non-negative.*$)");
 
 std::string sci8(double v) {
   std::ostringstream os;
@@ -115,6 +121,27 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
            (key == "CGRIDMB" && bump_w.count("MB"));
   };
 
+  // ---- the density form (writer-recorded header line) ----
+  // Under NONNEG/MONOTONE the AMPGRIDMB boxes are non-negative: a lo-clamped
+  // line is repaired from its upper bound and every rewrite keeps lo >= 0.
+  std::optional<tadah::models::RhoForm> form;
+  for (const auto &l : lines) {
+    std::smatch m;
+    if (!std::regex_match(l, m, kRhoFormRe)) continue;
+    try {
+      form = tadah::models::parse_rhoform(m[1].str());
+    } catch (const std::exception &e) {
+      throw std::runtime_error("retarget: the RHOFORM header line '" + l +
+                               "' names no density form: " + e.what());
+    }
+    rep.rhoform = tadah::models::rhoform_name(*form);
+    break;
+  }
+  auto nonneg_key = [&form](const std::string &key) {
+    return tadah::models::optim_key_lower_bound(key, form) ==
+           tadah::models::OptimLowerBound::NonNegative;
+  };
+
   // ---- emission percentage from the file header (for clamp repair) ----
   double hdr_pct = -1.0;
   for (const auto &l : lines) {
@@ -128,6 +155,18 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     rep.warnings.push_back(
         "no 'Bounds are +-X%' header found — asymmetric (clamped) bounds "
         "cannot be repaired exactly; midpoints are used as centres.");
+
+  // ---- per-group percentages (the `# KEY  (+-X%` group comments) ----
+  // A per-key retarget (--pct 10 AMPGRIDMB=50) rewrites the group's own
+  // comment below, so a group's lines follow its comment's percentage, not
+  // the file header's. Groups without a comment (RCUT scalars) fall back to
+  // the header.
+  std::map<std::string, double> group_pct;
+  for (const auto &l : lines) {
+    std::smatch m;
+    if (std::regex_match(l, m, kGroupHeaderRe))
+      group_pct[m[2].str()] = tadah::core::to_double(m[4].str());
+  }
 
   // ---- group by key; repair clamped centres for positive-only groups ----
   std::map<std::string, std::vector<OptimLine *>> groups;
@@ -173,6 +212,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   for (auto &[key, group] : groups) {
     bool known = false;
     const bool positive_only = group_positive_only(key, known);
+    const bool nonneg = nonneg_key(key);
     const bool is_rcut = group.front()->is_rcut;
     if (is_rcut && forced_rcut.count(key))
       continue;  // centre declared via --rcut2b/--rcutmb: nothing to recover
@@ -198,28 +238,38 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       }
     }
 
-    // Midpoints are exact except for: positive-only groups (lo can be
-    // clamped), RCUT scalars, and bump-contract CGRID groups (hi can be
-    // capped by the bump-support rule) — those need the rule-consistency
-    // check + one-sided recovery below.
+    // Midpoints are exact except for: positive-only and non-negative groups
+    // (lo can be clamped), RCUT scalars, and bump-contract CGRID groups (hi
+    // can be capped by the bump-support rule) — those need the
+    // rule-consistency check + one-sided recovery below.
     const bool is_bump_cgrid = bump_cgrid_key(key);
-    if (!positive_only && !is_rcut && !is_bump_cgrid) continue;
-    if (hdr_pct <= 0.0) continue;  // cannot check/repair without the pct
+    if (!positive_only && !nonneg && !is_rcut && !is_bump_cgrid) continue;
+    const auto gp = group_pct.find(key);
+    const double pct = gp != group_pct.end() ? gp->second : hdr_pct;
+    if (pct <= 0.0) continue;  // cannot check/repair without the pct
+    const double p = pct / 100.0;
 
-    // group scale from the midpoints — the max element is (essentially)
-    // never lo-clamped, so it is unbiased
+    // group scale from the midpoints — below 100% the max element is
+    // (essentially) never lo-clamped, so it is unbiased. From 100% on a
+    // non-negative group clamps every box at lo = 0, the largest included:
+    // its midpoint is (1 + p) v / 2, while hi / (1 + p) = v exactly. The
+    // smaller of the two is v for a clamped box with d = p v and never above
+    // the midpoint, so the max stays exact.
     double gmax = 0.0;
-    for (auto *ol : group) gmax = std::max(gmax, std::fabs(ol->centre));
+    for (auto *ol : group) {
+      double s = std::fabs(ol->centre);
+      if (nonneg && ol->lo == 0.0) s = std::min(s, ol->hi / (1.0 + p));
+      gmax = std::max(gmax, s);
+    }
     const double floor = is_rcut ? 1e-6 : optim_group_floor(gmax);
 
     // A clamped line cannot be detected by bound asymmetry (every interval
     // is symmetric about its own midpoint): instead check whether the
     // OBSERVED half-width matches the emission rule at the midpoint. When
     // it does not, one bound was moved off the symmetric rule and the OTHER
-    // one is authoritative: positive-only groups / RCUT get the lo clamp
-    // (hi = v + max(p·|v|, floor) recovers v); bump-contract CGRID groups
-    // get the hi cap (lo = v - max(p·|v|, floor) recovers v).
-    const double p = hdr_pct / 100.0;
+    // one is authoritative: positive-only and non-negative groups / RCUT get
+    // the lo clamp (hi = v + max(p·|v|, floor) recovers v); bump-contract
+    // CGRID groups get the hi cap (lo = v - max(p·|v|, floor) recovers v).
     for (auto *ol : group) {
       const double d_obs = 0.5 * (ol->hi - ol->lo);
       const double d_raw = std::max(p * std::fabs(ol->centre), floor);
@@ -237,18 +287,22 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
         v = ol->hi / (1.0 + p);              // branch p·v >= floor
         if (p * std::fabs(v) < floor) v = ol->hi - floor;  // floor branch
       }
+      if (nonneg) v = std::max(0.0, v);  // a non-negative amplitude
       v = quantize_optim(v, optim_bound_quantum(v, std::max(p * std::fabs(v),
                                                             floor)));
+      ol->centre = v;
+      // lo = 0 in a non-negative group is the clamp the file's RHOFORM line
+      // declares (lo = max(0, v - d)): recovered without a warning
+      if (nonneg && ol->lo == 0.0) continue;
       rep.warnings.push_back(
           "OPTIM " + ol->key + " (" + std::to_string(ol->index) +
-          "): bounds inconsistent with the +-" + pct_str(hdr_pct) +
+          "): bounds inconsistent with the +-" + pct_str(pct) +
           (from_lo
                ? "% emission rule (hi capped by the bump-support contract "
                  "or hand-edited) — centre recovered from the lower bound: "
                : "% emission rule (lo-clamped or hand-edited) — centre "
                  "recovered from the upper bound: ") +
           sci8(v) + ".");
-      ol->centre = v;
     }
   }
 
@@ -278,6 +332,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
   for (auto &ol : ols) {
     bool known = false;
     const bool positive_only = group_positive_only(ol.key, known);
+    const bool nonneg = nonneg_key(ol.key);
     const auto it = opts.pct_per_key.find(ol.key);
     const double pct = it != opts.pct_per_key.end() ? it->second : opts.pct;
     double gmax = 0.0;
@@ -301,6 +356,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       lo = v - d;
       hi = v + d;
       if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
+      if (nonneg && lo < 0.0) lo = 0.0;  // the writer's lo = max(0, v - d)
       if (hi <= lo) hi = lo + std::max(floor, 1e-6);
     }
     ol.lo = lo;
@@ -374,6 +430,12 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           throw std::runtime_error("--set " + s.key + "(" +
                                    std::to_string(s.index) +
                                    "): hi must be greater than lo.");
+        if (nonneg_key(s.key) && s.lo < 0.0)
+          throw std::runtime_error(
+              "--set " + s.key + "(" + std::to_string(s.index) +
+              "): lo must be >= 0: the file declares RHOFORM " + rep.rhoform +
+              ", whose density amplitudes are non-negative (`tadah hpo` "
+              "refuses an AMPGRIDMB box with lo < 0 under that form).");
         ol.lo = s.lo;
         ol.hi = s.hi;
         found = true;

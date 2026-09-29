@@ -9,9 +9,17 @@
 //
 // Centre recovery: the emitter writes symmetric bounds v ± max(pct·|v|,
 // floor), so v is the midpoint — except where the positive-only lo-clamp
-// fired (width channels, RCUT scalars); those are repaired by inverting the
-// unclamped UPPER bound using the emission percentage parsed from the file
+// fired (width channels, RCUT scalars, and AMPGRIDMB when the file header
+// declares RHOFORM NONNEG/MONOTONE); those are repaired by inverting the
+// unclamped UPPER bound using the emission percentage of the line's group:
+// its `# KEY  (+-X%` comment (which a per-key --pct rewrites), else the file
 // header. Exactness is at the printed precision (8 significant digits).
+//
+// Density form: the file never sees the potential, so the writer records a
+// positive RHOFORM in a parsed header line (rhoform_bounds_line). With it,
+// AMPGRIDMB bounds are rewritten with lo = max(0, v - d), a line at that
+// declared clamp (lo = 0) is recovered without a warning, and a --set with
+// lo < 0 on AMPGRIDMB is refused.
 
 #include <cstddef>
 #include <map>
@@ -46,12 +54,17 @@ struct RetargetReport {
   std::size_t n_active = 0;
   std::size_t n_commented = 0;
   std::vector<std::string> warnings;
+  /** The density form of the file's RHOFORM header line (NONNEG or
+   *  MONOTONE; empty when the file has none). */
+  std::string rhoform;
 };
 
 /** \brief Rewrite the OPTIM bounds in `lines` in place (the unit-testable
  *  core). Non-OPTIM lines are untouched; group `(+-X%, N params...)` header
  *  comments and the file-header percentage are updated to the new values.
- *  Throws on malformed --set overrides (unknown KEY(i)). */
+ *  Throws on malformed --set overrides (unknown KEY(i), or AMPGRIDMB lo < 0
+ *  in a file that declares a positive RHOFORM), and on a RHOFORM header
+ *  line whose form is not a density form. */
 RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
                                         const RetargetOptions &opts);
 

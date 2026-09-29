@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -15,6 +16,7 @@
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 
 namespace tadah {
 namespace mlip {
@@ -195,6 +197,30 @@ CheckBoundsResult check_bounds_at_corners(
         "); per-corner audits will run with empty stats.");
   }
 
+  // RHOFORM NONNEG / MONOTONE (a DM_REAM seed): a corner value below the
+  // low bound the density form allows (models::optim_low_bound_rule:
+  // AMPGRIDMB >= 0, WATOM > 0, MONOTONE SGRIDMB > 0) is a density DM_REAM
+  // refuses, and tadah hpo refuses such a box at startup, so it is a FAIL
+  // finding whatever the dataset says.
+  std::optional<tadah::models::RhoForm> form;
+  if (tadah::models::context_has_ream(seed))
+    form = tadah::models::stored_rhoform(seed);
+  auto form_findings = [&](const std::vector<double>& c) {
+    std::vector<std::string> out;
+    for (std::size_t j = 0; j < bounds.size(); ++j) {
+      const auto rule = tadah::models::optim_low_bound_rule(bounds[j].key, form);
+      if (!rule || rule->admits(c[j])) continue;
+      std::ostringstream os;
+      os << bounds[j].key << "("
+         << (bounds[j].arg_pos < 0 ? 1 : bounds[j].arg_pos + 1) << ") = "
+         << c[j] << ": RHOFORM " << tadah::models::rhoform_name(*form)
+         << " requires " << rule->requirement
+         << " (tadah hpo refuses this OPTIM box)";
+      out.push_back(os.str());
+    }
+    return out;
+  };
+
   for (std::size_t ci = 0; ci < corners.size(); ++ci) {
     const auto& c = corners[ci];
     tadah::core::Context corner_ctx = seed;
@@ -218,7 +244,8 @@ CheckBoundsResult check_bounds_at_corners(
 
     // Audit this corner against the pre-computed dataset stats.
     AuditReport rep = run_preflight_soft(data, corner_ctx, AuditMode::Warn);
-    if (rep.any_fail()) {
+    const std::vector<std::string> form_fails = form_findings(c);
+    if (rep.any_fail() || !form_fails.empty()) {
       ++res.n_corners_failing;
       res.failing_corner_indices.push_back(ci);
       tadah::core::Logger::instance().log(
@@ -229,6 +256,10 @@ CheckBoundsResult check_bounds_at_corners(
       // the whole sweep at higher verbosity. Subsequent corners just
       // bump the counter — we trust the user not to need every detail.
       if (res.n_corners_failing == 1) {
+        for (const auto& f : form_fails)
+          tadah::core::Logger::instance().log(
+              tadah::core::LogLevel::WARNING,
+              "check_bounds: first-failing corner — " + f);
         for (const auto& m : rep.messages) {
           if (m.level != AuditMessage::Level::Fail) continue;
           std::string txt = "check_bounds: first-failing corner — " +

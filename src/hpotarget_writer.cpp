@@ -9,6 +9,7 @@
 
 #include <tadah/core/logger.h>
 #include <tadah/models/descriptors/dm/embf0.h>
+#include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
@@ -48,7 +49,8 @@ double quantize_optim_up(double x, double q) { return std::ceil(x / q) * q; }
 // centre and half-width snapped to the bound grid: the printed bounds
 // are then exact decimals, so --retarget round-trips byte-for-byte
 OptimBound optim_group_bound(double val, double pct, double floor,
-                             bool positive_only) {
+                             bool positive_only,
+                             models::OptimLowerBound lower) {
   OptimBound b;
   const double d_raw = std::max(pct / 100.0 * std::fabs(val), floor);
   b.q = optim_bound_quantum(val, d_raw);
@@ -59,8 +61,16 @@ OptimBound optim_group_bound(double val, double pct, double floor,
   b.hi = b.v + d;
   if (positive_only && b.lo <= 0.0)
     b.lo = std::max(1e-6, 0.5 * std::fabs(b.v));
+  // RHOFORM NONNEG / MONOTONE amplitudes: lo = max(0, v - d), exact on the
+  // bound grid, so a 0 amplitude keeps the searchable box [0, d]
+  if (lower == models::OptimLowerBound::NonNegative && b.lo < 0.0) b.lo = 0.0;
   if (b.hi <= b.lo) b.hi = b.lo + std::max(floor, 1e-6);
   return b;
+}
+
+std::string rhoform_bounds_line(models::RhoForm form) {
+  return std::string("# RHOFORM ") + models::rhoform_name(form) +
+         ": AMPGRIDMB bounds are non-negative (lo = max(0, v - d))";
 }
 
 namespace {
@@ -93,14 +103,16 @@ double group_floor_of(const tadah::core::v_type &vals) {
 // parameters don't collapse to a degenerate window.
 void emit_optim_group(std::ostream &os, const std::string &key,
                       const tadah::core::v_type &vals, double pct,
-                      bool positive_only, bool commented) {
+                      bool positive_only, bool commented,
+                      models::OptimLowerBound lower) {
   if (vals.empty()) return;
   const double floor = group_floor_of(vals);
   emit_group_header(os, key, vals.size(), pct, commented);
   for (std::size_t i = 0; i < vals.size(); ++i)
-    emit_group_line(os, key, i,
-                    optim_group_bound(vals[i], pct, floor, positive_only),
-                    commented);
+    emit_group_line(
+        os, key, i,
+        optim_group_bound(vals[i], pct, floor, positive_only, lower),
+        commented);
   os << "\n";
 }
 
@@ -167,6 +179,13 @@ void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
 void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
                      double pct) {
   namespace potedit = tadah::models::potedit;
+  // The density form of a DM_REAM pot (mandatory, checked before the file
+  // is opened): NONNEG and MONOTONE keep every AMPGRIDMB box non-negative,
+  // recorded in a parsed header line because --retarget sees only this
+  // file, never the pot.
+  std::optional<tadah::models::RhoForm> form;
+  if (tadah::models::context_has_ream(pot))
+    form = tadah::models::require_rhoform(pot, "tadah refit (hpotarget)");
   std::ofstream os(path);
   if (!os) {
     core::Logger::instance().log(core::LogLevel::WARNING,
@@ -188,6 +207,8 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
        << "# DFT totals) add ESHIFT_ATOM, ESHIFT_DBATOM or ESHIFT to <config>.\n"
        << "# (Not BIAS true: its intercept column precedes the weights that\n"
        << "# FIXINDEX/FIXWEIGHT and the OPTIM FIXWEIGHT lines below index.)\n";
+  if (form && tadah::models::rhoform_is_positive(*form))
+    os << rhoform_bounds_line(*form) << "\n";
   os << "#\n"
      << "# Search space: the active OPTIM lines below. Bounds are +-" << pct
      << "%\n"
@@ -291,7 +312,8 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
       emit_optim_group(os, "CGRIDMB", read_vec("CGRIDMB"), pct, false, true);
       emit_optim_group(os, "SGRIDMB", read_vec("SGRIDMB"), pct, true, true);
     }
-    emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true);
+    emit_optim_group(os, "AMPGRIDMB", read_vec("AMPGRIDMB"), pct, false, true,
+                     tadah::models::optim_key_lower_bound("AMPGRIDMB", form));
   }
 
   if (pot.contains("CEMBFUNC") && pot.size("CEMBFUNC") > 0) {
