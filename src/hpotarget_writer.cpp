@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <vector>
 
 #include <tadah/core/logger.h>
@@ -187,11 +188,9 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   if (tadah::models::context_has_ream(pot))
     form = tadah::models::require_rhoform(pot, "tadah refit (hpotarget)");
   std::ofstream os(path);
-  if (!os) {
-    core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: cannot write hpotarget file: " + path);
-    return;
-  }
+  if (!os)
+    throw std::runtime_error("tadah refit: cannot open the hpotarget file " +
+                             path + " for writing.");
   os << "# HPO starter target written by `tadah refit`. Run:\n"
      << "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>\n"
      << "# <config>: the refit potential with a DBFILE line appended naming a\n"
@@ -329,6 +328,10 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   emit_optim_group(os, "FIXWEIGHT", read_vec("FIXWEIGHT"), pct, false);
 
   os << "OUTPUT 1\nBOUTPUT 1\n";
+  os.close();
+  if (!os)
+    throw std::runtime_error("tadah refit: cannot write the hpotarget file " +
+                             path + ".");
 }
 
 } // namespace engines

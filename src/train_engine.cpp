@@ -179,14 +179,18 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // before the file is opened, so nothing is written); the key is
   // canonicalised, or stripped from a potential without a DM_REAM block.
   tadah::models::normalise_rhoform_key(modContext);
+  // A potential that cannot be written is an error: logging it and
+  // returning let `tadah train -o <unwritable>` exit 0 without a potential.
   std::ofstream outstream(outfile);
-  if (outstream.is_open()) {
-    modContext.write_potential(outstream, pd.digits);
-    outstream << std::endl;
-  } else {
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-        "Error: Unable to open file: ", outfile);
-  }
+  if (!outstream.is_open())
+    throw std::runtime_error("Cannot open the potential file " + outfile +
+                             " for writing.");
+  modContext.write_potential(outstream, pd.digits);
+  outstream << std::endl;
+  outstream.close();
+  if (!outstream)
+    throw std::runtime_error("Cannot write the potential file " + outfile +
+                             ".");
 }
 
 } // namespace engines
