@@ -238,7 +238,7 @@ TEST_CASE("RHOFORM: tadah predict refuses a key-less DM_REAM potential "
   PeriodicTable::initialize();
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("pot.tadah", make_ream_context("SIGNED"));
-  {  // the same potential as tadah <= 1.5.1 wrote it: no RHOFORM line
+  {  // the same potential as tadah wrote it before 1.6.0: no RHOFORM line
     std::istringstream in(slurp("pot.tadah"));
     std::ofstream out("old.tadah");
     for (std::string line; std::getline(in, line);)

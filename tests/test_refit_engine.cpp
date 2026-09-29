@@ -460,6 +460,10 @@ TEST_CASE_METHOD(PTFixture,
     CHECK(out.self_test_passed());
     CHECK(out.log.find("tadah refit: RHOFORM " + name + ": ") !=
           std::string::npos);
+    // SIGNED names the release that introduced the forms
+    if (f == tadah::models::RhoForm::Signed)
+      CHECK(out.log.find("with signed amplitudes (the density before tadah "
+                         "1.6.0)") != std::string::npos);
     CHECK(slurp("refit_opt.log").find("rhoform=" + name) !=
           std::string::npos);
     REQUIRE_FALSE(out.amps.empty());

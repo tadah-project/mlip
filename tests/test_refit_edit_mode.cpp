@@ -544,7 +544,7 @@ TEST_CASE_METHOD(PTFixture,
                  "[refit][edit][rhoform]") {
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
-  strip_key_line("in.tadah", "RHOFORM");  // as tadah <= 1.5.1 wrote it
+  strip_key_line("in.tadah", "RHOFORM");  // as tadah wrote it before 1.6.0
   Context c;
   c.add("EDIT", std::string("in.tadah"));
   c.add("FUNC", std::string("phi"));
