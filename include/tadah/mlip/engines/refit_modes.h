@@ -19,11 +19,17 @@ namespace engines {
 
 /** \brief Re-validate the mode key combinations that the CLI cannot see
  *  (config-file path): edit XOR retarget XOR normal(EAM); edit needs FUNC +
- *  exactly one of ADD/REMOVE; PCT/SET/IN_PLACE only with retarget; ETA/DEG
- *  only with ADD. Throws std::runtime_error on violation. */
+ *  exactly one of ADD/REMOVE; PCT, SET, RETARGET_RCUT2B, RETARGET_RCUTMB,
+ *  RETARGET_RHOFORM and IN_PLACE only with retarget; ETA/DEG only with
+ *  ADD; RHOFORM and EMBF0
+ *  are refused with retarget (they have no effect on an hpotarget; the
+ *  density form is --rhoform). Throws std::runtime_error on violation. */
 void validate_refit_mode_keys(const tadah::core::Context &c);
 
-/** \brief `tadah refit --edit`. Returns EXIT_SUCCESS. */
+/** \brief `tadah refit --edit`. A RHOFORM or EMBF0 in @p c (the
+ *  configuration) that differs from the potential's is a conflict, as in
+ *  tadah predict (models::check_rhoform_precedence /
+ *  check_embf0_precedence). Returns EXIT_SUCCESS. */
 int run_refit_edit(tadah::core::Context &c);
 
 /** \brief `tadah refit --retarget`. Returns EXIT_SUCCESS. */

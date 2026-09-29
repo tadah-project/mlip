@@ -20,15 +20,19 @@
 // precision (8 significant digits).
 //
 // Density form: the file never sees the potential, so the writer records a
-// positive RHOFORM in a parsed header line (rhoform_bounds_line). With it,
-// AMPGRIDMB bounds are rewritten with lo = max(0, v - d), a line at that
-// declared clamp (lo = 0) is recovered without a warning, and a --set with
-// lo < 0 on AMPGRIDMB is refused.
+// positive RHOFORM in a parsed header line (rhoform_bounds_line); --rhoform
+// adds that line to a file written without it. With it, AMPGRIDMB bounds
+// are rewritten with lo = max(0, v - d), a line at that declared clamp
+// (lo = 0) is recovered without a warning, and a --set with lo < 0 on
+// AMPGRIDMB is refused.
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include <tadah/models/descriptors/dm/rhoform.h>
 
 namespace tadah {
 namespace mlip {
@@ -51,6 +55,12 @@ struct RetargetOptions {
    *  against it. Ignored with a warning on knot channels (RCUT is derived
    *  from the largest knot there). */
   std::map<std::string, double> rcut_override;
+  /** --rhoform: the density form of the potential the file searches
+   *  around. Under NONNEG/MONOTONE a file without a RHOFORM header gets one
+   *  (rhoform_bounds_line, where the writer puts it) and its AMPGRIDMB boxes
+   *  are rewritten non-negative; SIGNED adds nothing. A header that names
+   *  another form (any header, under SIGNED) is an error naming its line. */
+  std::optional<tadah::models::RhoForm> rhoform;
 };
 
 struct RetargetReport {

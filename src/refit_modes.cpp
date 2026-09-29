@@ -104,10 +104,26 @@ void validate_refit_mode_keys(const Context &c) {
     if (!edit && has(c, k))
       throw std::runtime_error(std::string("tadah refit: the ") + k +
                                " key requires --edit <pot.tadah>.");
-  for (const char *k : {"PCT", "SET", "RETARGET_RCUT2B", "RETARGET_RCUTMB"})
+  for (const char *k : {"PCT", "SET", "RETARGET_RCUT2B", "RETARGET_RCUTMB",
+                        "RETARGET_RHOFORM"})
     if (!retarget && has(c, k))
       throw std::runtime_error(std::string("tadah refit: the ") + k +
                                " key requires --retarget <file.hpotarget>.");
+  // An hpotarget carries no potential, so a density-form or embedding key
+  // in the configuration of --retarget would have no effect (stored values
+  // only: EMBF0 has a blueprint default).
+  if (retarget && c.has_stored("RHOFORM"))
+    throw std::runtime_error(
+        "tadah refit --retarget: RHOFORM has no effect on --retarget (an "
+        "hpotarget carries no potential); remove it from the configuration, "
+        "and pass --rhoform <SIGNED|NONNEG|MONOTONE> to rewrite the AMPGRIDMB "
+        "boxes for the density form of the potential the file searches "
+        "around.");
+  if (retarget && c.has_stored("EMBF0"))
+    throw std::runtime_error(
+        "tadah refit --retarget: EMBF0 has no effect on --retarget (an "
+        "hpotarget carries no potential, and its bounds do not depend on the "
+        "embedding reference); remove it from the configuration.");
   if (!retarget && has(c, "IN_PLACE") && c.get<bool>("IN_PLACE"))
     throw std::runtime_error(
         "tadah refit: --in-place requires --retarget <file.hpotarget>.");
@@ -123,6 +139,15 @@ int run_refit_edit(Context &c) {
 
   core::CoreUserConfigParser parser;
   Context pot = parser.parse(in_pot);
+  // EMBF0 and RHOFORM are properties of the potential (its weights and
+  // amplitudes were fitted in them): a value in the configuration that
+  // differs from the potential's is a conflict, as in tadah predict. Only
+  // a key the configuration sets is checked here; the potential's own keys
+  // are checked by parse_pot_view below.
+  if (c.has_stored("EMBF0"))
+    models::check_embf0_precedence(pot, c, in_pot);
+  if (c.has_stored("RHOFORM"))
+    models::check_rhoform_precedence(pot, c, in_pot);
   // F2: a hand-tweaked knot pot may carry a stale RCUT — warn + use derived.
   potedit::normalize_knot_rcut(pot, "tadah refit --edit");
 
@@ -311,6 +336,10 @@ int run_refit_retarget(Context &c) {
     }
   }
 
+  // --rhoform: the density form of the potential the file searches around
+  if (const auto f = c.stored_value("RETARGET_RHOFORM"))
+    opts.rhoform = models::parse_rhoform(*f);
+
   // --rcut2b / --rcutmb: declared fixed cutoffs for the bump channels
   for (const auto &[key, sfx] : {std::pair<const char *, const char *>{
                                      "RETARGET_RCUT2B", "2B"},
@@ -373,9 +402,11 @@ int run_refit_retarget(Context &c) {
   const RetargetReport rep = retarget_hpotarget_file(in, out, in_place, opts);
   for (const auto &w : rep.warnings) log_warn("tadah refit --retarget: " + w);
   if (!rep.rhoform.empty())
-    log_info("tadah refit --retarget: " + in + " declares RHOFORM " +
-             rep.rhoform + ": its AMPGRIDMB bounds stay non-negative (lo = "
-             "max(0, v - d)), and the rewritten file keeps the declaration.");
+    log_info("tadah refit --retarget: " +
+             (opts.rhoform ? "--rhoform " + rep.rhoform
+                           : in + " declares RHOFORM " + rep.rhoform) +
+             ": the AMPGRIDMB bounds are non-negative (lo = max(0, v - d)), "
+             "and the rewritten file declares the form.");
   std::ostringstream msg;
   msg << "tadah refit --retarget: rewrote " << rep.n_rewritten
       << " OPTIM line(s) (" << rep.n_active << " active, " << rep.n_commented

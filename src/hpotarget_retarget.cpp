@@ -81,6 +81,59 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
                                         const RetargetOptions &opts) {
   RetargetReport rep;
 
+  // ---- the density form (writer-recorded header line, or --rhoform) ----
+  // Under NONNEG/MONOTONE the AMPGRIDMB boxes are non-negative: a lo-clamped
+  // line is repaired from its upper bound and every rewrite keeps lo >= 0.
+  std::optional<tadah::models::RhoForm> form;
+  std::size_t form_line = 0;  // 1-based; 0 = no header line
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    std::smatch m;
+    if (!std::regex_match(lines[i], m, kRhoFormRe)) continue;
+    try {
+      form = tadah::models::parse_rhoform(m[1].str());
+    } catch (const std::exception &e) {
+      throw std::runtime_error("retarget: line " + std::to_string(i + 1) +
+                               ": the RHOFORM header line '" + lines[i] +
+                               "' names no density form: " + e.what());
+    }
+    form_line = i + 1;
+    break;
+  }
+  // --rhoform: the form of the potential the file searches around. A header
+  // records a positive form only, so a header that names another form, or
+  // any header under --rhoform SIGNED, is a conflict.
+  if (opts.rhoform) {
+    const char *want = tadah::models::rhoform_name(*opts.rhoform);
+    if (form && *form != *opts.rhoform)
+      throw std::runtime_error(
+          std::string("retarget: --rhoform ") + want +
+          " conflicts with the file: line " + std::to_string(form_line) +
+          " declares RHOFORM " + tadah::models::rhoform_name(*form) +
+          " (the form its AMPGRIDMB bounds were written for). An hpotarget "
+          "searches around one potential, whose density form does not "
+          "change; write the target from that potential (tadah refit "
+          "--edit) or retarget without --rhoform.");
+    if (!form && tadah::models::rhoform_is_positive(*opts.rhoform)) {
+      // The writer's place: after the intro and EMBF0 comments, before
+      // the '#' that opens the "Search space: ... Bounds are +-X%" block.
+      std::size_t at = lines.size();
+      for (std::size_t i = 0; i < lines.size(); ++i)
+        if (std::regex_search(lines[i], kHeaderPctRe)) {
+          at = (i > 0 && lines[i - 1] == "#") ? i - 1 : i;
+          break;
+        }
+      if (at == lines.size()) {  // no such block: end of the leading comments
+        at = 0;
+        while (at < lines.size() && !lines[at].empty() && lines[at][0] == '#')
+          ++at;
+      }
+      lines.insert(lines.begin() + static_cast<std::ptrdiff_t>(at),
+                   rhoform_bounds_line(*opts.rhoform));
+      form = opts.rhoform;
+    }
+  }
+  if (form) rep.rhoform = tadah::models::rhoform_name(*form);
+
   // ---- collect every OPTIM line (active and commented) ----
   std::vector<OptimLine> ols;
   for (std::size_t i = 0; i < lines.size(); ++i) {
@@ -136,23 +189,6 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
            (key == "CGRIDMB" && bump_w.count("MB"));
   };
 
-  // ---- the density form (writer-recorded header line) ----
-  // Under NONNEG/MONOTONE the AMPGRIDMB boxes are non-negative: a lo-clamped
-  // line is repaired from its upper bound and every rewrite keeps lo >= 0.
-  std::optional<tadah::models::RhoForm> form;
-  for (std::size_t i = 0; i < lines.size(); ++i) {
-    std::smatch m;
-    if (!std::regex_match(lines[i], m, kRhoFormRe)) continue;
-    try {
-      form = tadah::models::parse_rhoform(m[1].str());
-    } catch (const std::exception &e) {
-      throw std::runtime_error("retarget: line " + std::to_string(i + 1) +
-                               ": the RHOFORM header line '" + lines[i] +
-                               "' names no density form: " + e.what());
-    }
-    rep.rhoform = tadah::models::rhoform_name(*form);
-    break;
-  }
   auto nonneg_key = [&form](const std::string &key) {
     return tadah::models::optim_key_lower_bound(key, form) ==
            tadah::models::OptimLowerBound::NonNegative;
