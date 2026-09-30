@@ -1,0 +1,93 @@
+ +-------------------------------------------------+
+ |                                                 |
+ | Hand-made CASTEP output for the Tadah cell      |
+ | convention tests: one SPE run on a triclinic,   |
+ | non-symmetric lattice. Real Lattice row i = a_i;|
+ | Reciprocal Lattice row i = b_i, a_i.b_j = 2pi   |
+ | delta_ij. Atoms given in fractional coordinates.|
+ +-------------------------------------------------+
+
+ ************************************ Title ************************************
+ 
+
+ ***************************** General Parameters ******************************
+  
+ output verbosity                               : normal  (1)
+ type of calculation                            : single point energy
+ stress calculation                             : on
+  
+ output         length unit                     : A
+ output         energy unit                     : eV
+ output          force unit                     : eV/A
+ output       pressure unit                     : GPa
+
+ *******************************************************************************
+  
+
+                           -------------------------------
+                                      Unit Cell
+                           -------------------------------
+        Real Lattice(A)                      Reciprocal Lattice(1/A)
+         3.1000000     0.2000000    -0.1000000       2.076014865  -0.566785011   0.391037721
+         0.9000000     3.4000000     0.1500000      -0.133275028   1.898070734  -0.335384412
+        -0.6000000     0.7000000     4.2000000       0.054188748  -0.081283122   1.517284938
+
+                       Lattice parameters(A)       Cell Angles
+                    a =      3.108054          alpha =   80.608867
+                    b =      3.520298          beta  =   99.214101
+                    c =      4.300000          gamma =   71.592294
+
+                       Current cell volume =            42.901500       A**3
+
+                           -------------------------------
+                                     Cell Contents
+                           -------------------------------
+                         Total number of ions in cell =    3
+                      Total number of species in cell =    2
+                        Max number of any one species =    2
+
+            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+            x  Element    Atom        Fractional coordinates of atoms  x
+            x            Number           u          v          w      x
+            x----------------------------------------------------------x
+            x  Si            1         0.100000   0.200000   0.300000   x 
+            x  Si            2         0.600000   0.450000   0.800000   x 
+            x  O             1         0.350000   0.900000   0.150000   x 
+            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+                         No user defined ionic velocities
+
+ 
+Final energy, E             =  -312.333333223     eV
+Final free energy (E-TS)    =  -312.345678901     eV
+(energies not corrected for finite basis set)
+ 
+
+ ******************************** Symmetrised Forces ********************************
+ *                                                                                  *
+ *                           Cartesian components (eV/A)                            *
+ * -------------------------------------------------------------------------------- *
+ *                         x                    y                    z              *
+ *                                                                                  *
+ * Si             1      0.01234             -0.02345              0.03456         *
+ * Si             2     -0.04567              0.05678             -0.06789         *
+ * O              1      0.03333             -0.03333              0.03333         *
+ *                                                                                  *
+ ************************************************************************************
+
+ *********** Symmetrised Stress Tensor ***********
+ *                                               *
+ *          Cartesian components (GPa)           *
+ * --------------------------------------------- *
+ *             x             y             z     *
+ *                                               *
+ *  x     -1.500000      0.200000      0.100000  *
+ *  y      0.200000     -2.000000      0.300000  *
+ *  z      0.100000      0.300000     -2.500000  *
+ *                                               *
+ *  Pressure:    2.0000                          *
+ *                                               *
+ *************************************************
+
+Total time          =              1.00 s

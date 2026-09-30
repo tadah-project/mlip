@@ -1,0 +1,10 @@
+! Tadah fixture (castep-6): LATTICE_CART with only two vectors.
+%BLOCK LATTICE_CART
+   4.0   0.0   0.0
+   1.0   4.5   0.0
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_FRAC
+Si   0.0   0.0   0.0
+Si   0.5   0.5   0.5
+%ENDBLOCK POSITIONS_FRAC

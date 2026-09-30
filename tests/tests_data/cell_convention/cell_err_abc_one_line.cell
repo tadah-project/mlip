@@ -1,0 +1,9 @@
+! Tadah fixture (castep-6): LATTICE_ABC without the angles line.
+%BLOCK LATTICE_ABC
+   4.5   5.0   5.5
+%ENDBLOCK LATTICE_ABC
+
+%BLOCK POSITIONS_FRAC
+Si   0.0   0.0   0.0
+Si   0.5   0.5   0.5
+%ENDBLOCK POSITIONS_FRAC

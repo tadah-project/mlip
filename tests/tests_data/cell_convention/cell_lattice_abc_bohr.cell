@@ -1,0 +1,12 @@
+! Tadah cell-convention fixture (castep-5): LATTICE_ABC in bohr.
+! a = 9, b = 10, c = 11 bohr; alpha = 80, beta = 95, gamma = 105 degrees.
+%BLOCK LATTICE_ABC
+bohr
+   9.0   10.0   11.0
+  80.0   95.0  105.0
+%ENDBLOCK LATTICE_ABC
+
+%BLOCK POSITIONS_FRAC
+Si   0.10   0.20   0.30
+O    0.55   0.35   0.85
+%ENDBLOCK POSITIONS_FRAC

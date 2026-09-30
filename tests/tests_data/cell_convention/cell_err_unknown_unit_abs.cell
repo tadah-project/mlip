@@ -1,0 +1,12 @@
+! Tadah fixture (castep-5): unknown length unit in POSITIONS_ABS.
+%BLOCK LATTICE_CART
+   4.0   0.0   0.0
+   1.0   4.5   0.0
+   0.5  -0.8   5.0
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_ABS
+parsec
+Si   0.0   0.0   0.0
+Si   1.0   1.0   1.0
+%ENDBLOCK POSITIONS_ABS

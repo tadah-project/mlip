@@ -3,7 +3,10 @@
   a2 = ( 0.5, 2.0, 0.0)
   a3 = ( 0.0, 0.0, 3.0)
   Volume = 15.0 (det of the 3x3 with rows = a1, a2, a3)
+  b1 = ( 0.4, -0.1, 0.0), b2 = ( 0.0, 0.5, 0.0), b3 = ( 0.0, 0.0, 1/3)
+  (reciprocal vectors as VASP prints them, without 2 pi: a_i . b_j = delta_ij)
 
+ POTCAR:    PAW_PBE Ta_pv 07Sep2000
    VRHFIN =Ta:  5p6s5d
    number of dos      NEDOS =    301   number of ions     NIONS =      1
    ions per type =               1
@@ -18,7 +21,7 @@
   energy-cutoff  :      630.00
   volume of cell :       15.00
       direct lattice vectors                 reciprocal lattice vectors
-     2.500000000  0.000000000  0.000000000     0.400000000  0.000000000  0.000000000
+     2.500000000  0.000000000  0.000000000     0.400000000 -0.100000000  0.000000000
      0.500000000  2.000000000  0.000000000     0.000000000  0.500000000  0.000000000
      0.000000000  0.000000000  3.000000000     0.000000000  0.000000000  0.333333333
 

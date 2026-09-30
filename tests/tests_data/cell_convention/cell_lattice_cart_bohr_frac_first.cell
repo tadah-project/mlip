@@ -1,0 +1,16 @@
+! Tadah cell-convention fixture (castep-5, castep-6).
+! The fractional positions come before the lattice, and the lattice is
+! given in bohr. Row i of the lattice block is the lattice vector a_i.
+kpoint_mp_grid : 2 2 2
+
+%BLOCK POSITIONS_FRAC
+Si   0.250   0.500   0.125
+O    0.750   0.100   0.600
+%ENDBLOCK POSITIONS_FRAC
+
+%BLOCK LATTICE_CART
+bohr
+   6.0   0.4  -0.2
+   2.0   7.0   0.3
+  -1.0   1.5   8.0
+%ENDBLOCK LATTICE_CART

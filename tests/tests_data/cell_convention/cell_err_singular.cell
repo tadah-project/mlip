@@ -1,0 +1,11 @@
+! Tadah fixture (castep-6): singular lattice, a3 = a1 + a2.
+%BLOCK LATTICE_CART
+   3.0   0.0   0.0
+   0.0   3.0   0.0
+   3.0   3.0   0.0
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_FRAC
+Si   0.0   0.0   0.0
+Si   0.5   0.5   0.5
+%ENDBLOCK POSITIONS_FRAC
