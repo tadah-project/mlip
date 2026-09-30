@@ -23,14 +23,17 @@ using detail::cell_geometry;
 using detail::is_finite_bits;
 constexpr double kEps = detail::kUnitRoundoff;
 
-/* Largest number of image cells a search may span, prod_k (2 N_k + 1). A
+/* Largest number of image cells a search may span, prod_k (2 N_k + 1) with
+ * N_k = floor(cutoff / h_k) + 1 over the heights h_k of the reduced cell. A
  * cell needs more only when it is smaller than about cutoff/10 in every
  * direction (or about cutoff/28 in two): not a material, but a cell that
  * something degenerated, e.g. an unbounded relaxation step. Such a list
  * would hold thousands of entries per atom and stall every consumer
  * (M_Tadah_Base::fpredict is O(nn^2) through get_nn_iindex), so the
  * search fails fast instead; HPO turns the exception into a failed
- * candidate. Every cube with edge > cutoff/10 is accepted. */
+ * candidate. The limit is a policy on the cell, counted without rounding
+ * margins, so it does not depend on where the atoms are stored: a cube is
+ * accepted while its edge exceeds cutoff/10. */
 constexpr double kMaxImageCells = 10000.0;
 
 /* Positions more than 2^31 cells from the origin are refused: a double
@@ -41,6 +44,13 @@ constexpr double kMaxCells = 2147483648.0;  // 2^31
 /* Validity of the first-order rounding bounds: the relative error of the
  * reduced cell's geometry, 16 eps (Q + G_U + 1), must stay below 2^-20. */
 constexpr double kMaxConditioning = 536870912.0;  // 2^29
+
+/* Supported length of a cell vector, 2^-200 to 2^200 A (about 6e-61 to
+ * 1.6e60): the cell geometry squares products of up to four lengths, which
+ * stay normal doubles in this range. Outside it they underflow or overflow
+ * (a 1e-81 A cube lost most of its images). */
+constexpr double kMinLength = 0x1p-200;
+constexpr double kMaxLength = 0x1p200;
 
 std::string fmt(double x) {
   std::ostringstream o;
@@ -66,8 +76,20 @@ CellGeometry checked_cell(const Structure &st, double A[3][3]) {
             "NNFinder: cell entry (" + std::to_string(k) + ", " +
             std::to_string(c) + ") is not a finite number");
     }
+  for (int k = 0; k < 3; ++k) {
+    const double len = std::sqrt(A[k][0] * A[k][0] + A[k][1] * A[k][1] +
+                                 A[k][2] * A[k][2]);
+    if (!(len >= kMinLength && len <= kMaxLength))
+      throw std::invalid_argument(
+          "NNFinder: cell vector " + std::to_string(k) + " is " + fmt(len) +
+          " A long, outside the supported range of 2^-200 to 2^200 A "
+          "(about 6e-61 to 1.6e60 A)");
+  }
   const CellGeometry g = cell_geometry(A);
-  if (!(g.volume != 0.0) || !is_finite_bits(g.G) || !(g.G < kMaxConditioning))
+  // G = sum_k |a_k| |b*_k| >= 3 for every cell (a_k . b*_k = 1), so a
+  // smaller computed value means the geometry itself failed.
+  if (!(g.volume != 0.0) || !is_finite_bits(g.G) || !(g.G < kMaxConditioning) ||
+      !(g.G >= 3.0 * (1.0 - 0x1p-20)))
     throw std::invalid_argument(
         "NNFinder: the cell is singular or numerically singular (volume " +
         fmt(g.volume) + " A^3, rows (" + fmt(A[0][0]) + ", " + fmt(A[0][1]) +
@@ -100,9 +122,11 @@ ReducedBasis reduce_basis(const double A[3][3]) {
     for (int l = 0; l < 3; ++l) r.U[k][l] = (k == l) ? 1 : 0;
     rows_from_U(r, A, k);
   }
-  // Entries of U stay below 2^40 and multipliers below 2^30, so every
-  // product stays exact in double and in long long; a reduction that would
-  // need more stops where it is (still a valid basis).
+  // Entries of U stay within 2^40, so fl(U A) multiplies exact integers.
+  // Each step's integer arithmetic is checked for overflow; a step that
+  // would overflow or leave that range stops the reduction where it is
+  // (U is still unimodular, so the basis is still valid; only the search
+  // may be slower).
   constexpr long double kMaxMultiplier = 1073741824.0L;  // 2^30
   constexpr long long kMaxEntry = 1099511627776LL;       // 2^40
   long double bs[3][3], Bn[3], mu[3][3];
@@ -128,8 +152,11 @@ ReducedBasis reduce_basis(const double A[3][3]) {
       const long long qi = static_cast<long long>(q);
       long long nu[3];
       for (int l = 0; l < 3; ++l) {
-        nu[l] = r.U[k][l] - qi * r.U[j][l];
-        if (nu[l] > kMaxEntry || nu[l] < -kMaxEntry) return r;
+        long long p;
+        if (__builtin_mul_overflow(qi, r.U[j][l], &p) ||
+            __builtin_sub_overflow(r.U[k][l], p, &nu[l]) ||
+            nu[l] > kMaxEntry || nu[l] < -kMaxEntry)
+          return r;
       }
       for (int l = 0; l < 3; ++l) r.U[k][l] = nu[l];
       rows_from_U(r, A, k);
@@ -273,10 +300,12 @@ std::shared_ptr<NNTable> build_table(const Structure &st, double R) {
   double F[3];
   for (int k = 0; k < 3; ++k) F[k] = geo.kappa * (rho * g.recip[k] + 1.0);
 
-  // The image cap, from the image bound with one bin per cell.
+  // The image cap: a policy on the cell, from the image bound without
+  // rounding margins, N_k = floor(R / h_k) + 1, so the same periodic system
+  // is accepted or refused whatever the stored positions of its atoms.
   double N[3], total = 1.0;
   for (int k = 0; k < 3; ++k) {
-    N[k] = stencil_bound(Rg, 1.0, g.height[k], F[k], geo.kappa);
+    N[k] = std::floor(R / g.height[k]) + 1.0;
     total *= 2.0 * N[k] + 1.0;
   }
   if (!is_finite_bits(total) || total > kMaxImageCells) {
@@ -289,6 +318,20 @@ std::shared_ptr<NNTable> build_table(const Structure &st, double R) {
         ", " + fmt(g.height[2]) +
         " A). Such a cell is degenerate, e.g. the result of an unbounded "
         "relaxation step");
+  }
+  // The search itself covers the rounding margins. They are far below an
+  // image cell for any meaningful input; they reach one only for atoms far
+  // from the origin in a cell near the conditioning limit, where the
+  // fractional coordinates carry no information about the images.
+  for (int k = 0; k < 3; ++k) {
+    const double Nm = stencil_bound(Rg, 1.0, g.height[k], F[k], geo.kappa);
+    if (!(Nm <= N[k] + 1.0))
+      throw std::invalid_argument(
+          "NNFinder: the rounding bound of this cell and these positions "
+          "exceeds an image cell along cell direction " + std::to_string(k) +
+          " (an atom " + fmt(rho) + " A from the origin in a cell of height " +
+          fmt(g.height[k]) + " A and conditioning " + fmt(geo.kappa) +
+          "): move the atoms into the cell");
   }
 
   // Cell list: bins at least Rg (1 + 2^-20) wide, so a thick axis keeps a
