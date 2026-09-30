@@ -33,12 +33,12 @@ namespace cells {
  *  - atoms at (0,0,0) and (a0/2, a0/2, a0/2)
  *  - both atoms are of `species`
  *
- *  Compose with `Structure::replicate(nx, ny, nz)` for supercells
- *  (already exists in MLIP/include/tadah/mlip/structure_transformations.h).
+ *  Compose with `StructureTransformation::replicate(st, nx, ny, nz)`
+ *  (structure_transformations.h) for supercells.
  */
 Structure bcc(const std::string& species, double a0);
 
-/** Single atom of `species` placed at the origin of a cubic box of edge
+/** Single atom of `species` at the centre of a cubic box of edge
  *  `box_size` (default 20 Å, i.e. ≥3× any reasonable rcut → effectively
  *  isolated). Cell vectors = box_size * I; atom at (box_size/2, ...).
  *

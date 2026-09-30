@@ -18,9 +18,8 @@ public:
   /**
    * @brief Computes the volume of the Structure from its lattice vectors.
    *
-   * Interprets the columns of st.cell as vectors a1, a2, a3 and
-   * computes the scalar triple product: volume = a1 · (a2 × a3).
-   * Returns volume in Å^3.
+   * The rows of st.cell are the lattice vectors a0, a1, a2; the volume is
+   * |a0 · (a1 × a2)| (either handedness). Returns volume in Å^3.
    */
   static double getVolume(const Structure &st);
 

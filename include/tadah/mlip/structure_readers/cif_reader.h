@@ -8,12 +8,14 @@ namespace tadah {
 namespace mlip {
 
 /**
- * @brief Reads Structure data from a CIF file using older Gemmi APIs.
+ * @brief Reads a Structure from a CIF file with gemmi.
  *
- * - Gets cell parameters from block.find_value("_cell_length_a"), etc.
- * - Iterates block.items to find loops (where item.kind == gemmi::cif::Item::Loop).
- * - Searches loop.tags for _atom_site_fract_x or _atom_site_cartn_x.
- * - Uses loop.get_s(row, col) to retrieve the data cells, converting to float/double.
+ * gemmi::make_small_structure_from_block reads the cell parameters, the
+ * symmetry operations and the atom sites; every site of the unit cell
+ * (get_all_unit_cell_sites) becomes an atom at its Cartesian position.
+ * The cell is gemmi's orthogonalisation (a along x, b in the xy plane),
+ * whose columns are the lattice vectors; it is stored transposed, so row
+ * i of Structure::cell is lattice vector a_i.
  */
 class CifReader : public IStructureReader {
 public:
@@ -29,24 +31,6 @@ public:
 
 private:
   Structure m_structure;
-
-  /**
-   * @brief Creates a 3×3 matrix from (a,b,c, alpha,beta,gamma).
-   *        a along x, b in xy-plane, c forms a right-handed set.
-   */
-  void buildCellFromABC(double aVal, double bVal, double cVal,
-                        double alphaDeg, double betaDeg, double gammaDeg);
-
-  /**
-   * @brief Convert (fx,fy,fz) fractional → Cartesian coords using m_structure.cell.
-   */
-  void fracToCart(double fx, double fy, double fz,
-                  double &cx, double &cy, double &cz) const;
-
-  /**
-   * @brief Convert degrees to radians.
-   */
-  static double deg2rad(double deg);
 };
 
 } // namespace mlip

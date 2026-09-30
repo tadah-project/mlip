@@ -58,7 +58,11 @@ struct Structure {
   /** Total energy of this structure */
   double energy;
 
-  /** Lattice vectors. */
+  /** Lattice vectors, in Angstrom: row i is lattice vector a_i, so an
+   *  atom at fractional coordinates f is at r = f0 a0 + f1 a1 + f2 a2
+   *  (cell.transpose() * f). The basis may be left- or right-handed;
+   *  get_volume() is |a0 . (a1 x a2)|. The dataset format writes the rows
+   *  as the three cell lines. */
   tadah::core::Matrix3d cell;
 
   /** Virial stress tensor. */
@@ -144,12 +148,10 @@ struct Structure {
   double get_pressure(const double T, const double kB=8.617333262145e-5) const;
 
 /**
- * Return the position of the n-th neighbor of atom i,
- * computed via the neighbor's global index and periodic shifts.
- *
- * Assumes:
- *   nn->idx[i][n]  -> global index of neighbor
- *   nn->shift[i][n] -> integer triple (n1, n2, n3) OR real shift
+ * Return the position of the n-th neighbour of atom i: the position of
+ * atom nn->idx[i][n] plus its periodic image displacement nn->disp[i][n]
+ * = s0 a0 + s1 a1 + s2 a2 for the integer shift s = nn->shift[i][n]
+ * (a_k = cell.row(k); NNFinder::populate_disp fills disp).
  *
  * Returns by value (tadah::core::Vec3d) so we don't reference a temporary.
  */
