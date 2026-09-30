@@ -63,25 +63,35 @@ public:
   static void scaleVolumeToDensity(Structure &st, double targetDensity);
 
   /**
-   * Rotates cell and atoms by a 3x3 matrix R:
-   *   cell' = R * cell,
-   *   pos'  = R * pos.
-   * Stress => S' = R * S * R^T.
+   * Rotates cell and atoms by a 3x3 matrix R. Every vector moves as
+   * v' = R v; the lattice vectors are the rows of st.cell, so
+   *   cell'  = cell * R^T   (a_i' = R a_i),
+   *   pos'   = R * pos,
+   *   force' = R * force,
+   *   S'     = R * S * R^T,
+   * and the atoms keep their fractional coordinates.
    */
   static void rotate(Structure &st, const tadah::core::Matrix3d &R);
 
   /**
-   * Shears cell and atoms by shearMatrix:
-   *   cell' = shearMatrix * cell,
-   *   pos'  = shearMatrix * pos,
-   *   S'    = shearMatrix * S * (shearMatrix^T).
+   * Shears cell and atoms by shearMatrix S (lattice vectors are the rows
+   * of st.cell):
+   *   cell' = cell * S^T   (a_i' = S a_i),
+   *   pos'  = S * pos,
+   *   S'    = S * stress * S^T,
+   * so the atoms keep their fractional coordinates.
    */
   static void shear(Structure &st, const tadah::core::Matrix3d &shearMatrix);
 
   /**
-   * Replicates the structure nx, ny, nz times along cell vectors.
-   * Creates a supercell with cell dimension scaled accordingly and 
-   * updates the atom list. Stress scaling is context-dependent.
+   * Replicates the structure nx, ny, nz times along the lattice vectors
+   * a0, a1, a2 (the rows of st.cell): the supercell's rows are nx a0,
+   * ny a1, nz a2, and copy (ix, iy, iz) of each atom sits at
+   * r + ix a0 + iy a1 + iz a2 (loop order ix, iy, iz, then atoms).
+   * The energy is multiplied by nx*ny*nz (it is extensive); the stress
+   * (per volume) is unchanged and every copy keeps its atom's force. The
+   * neighbour list is cleared. Throws std::invalid_argument if a factor
+   * is below 1.
    */
   static void replicate(Structure &st, int nx, int ny, int nz);
 
@@ -97,16 +107,17 @@ public:
   static void mirrorOrigin(Structure &st);
 
   /**
-   * Mirrors about plane normal to normalVec (through origin).
-   * Reflects positions via p' = p - 2*(p·n_hat) * n_hat.
-   * Then S' = M*S*M^T, M = (I - 2n_hat n_hat^T).
+   * Mirrors about the plane normal to normalVec (through the origin) with
+   * M = I - 2 n_hat n_hat^T: positions and forces v' = M v, the lattice
+   * vectors too (cell' = cell * M^T, so fractional coordinates stay; the
+   * reflected basis has the opposite handedness), and S' = M*S*M^T.
    */
   static void mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec);
 
   /**
    * Mirrors about a plane with Miller indices (h,k,l) through origin.
-   * The plane normal is computed from the reciprocal lattice.
-   * Similar reflection for stress => S' = M*S*M^T (det(M)<0).
+   * The plane normal is computed from the reciprocal lattice; the
+   * reflection is applied as in mirrorPlane.
    */
   static void mirrorHkl(Structure &st, int h, int k, int l);
 
@@ -116,17 +127,6 @@ public:
    * (typical usage might not require that).
    */
   static void center(Structure &st, bool useCenterOfMass = false, bool shiftCell = false);
-
-  /**
-   * Realigns the cell’s principal directions to the Cartesian axes 
-   * (e.g., diagonalizing the metric). A typical approach:
-   *   - compute G = cell^T * cell
-   *   - eigen-decompose G
-   *   - build rotation R from eigenvectors
-   *   - rotate(st, R)
-   * Provided as a stub.
-   */
-  static void alignAxes(Structure &st);
 
   /**
    * Remaps each atom into the principal unit cell by fractional wrapping.
@@ -157,6 +157,9 @@ public:
   static void shakeAtoms(Structure &st, double maxDisplacement);
 
 private:
+  /** Applies the reflection M to positions, forces, the cell rows and the
+   *  stress (mirrorPlane, mirrorHkl). */
+  static void reflect(Structure &st, const tadah::core::Matrix3d &M);
   static void transformStress(Structure &st, const tadah::core::Matrix3d &M);
   static void checkNearSingular(const Structure &st);
 
