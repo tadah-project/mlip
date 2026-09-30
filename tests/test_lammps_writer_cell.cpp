@@ -7,7 +7,9 @@
 // (A x B) . C <= 0 ("must be right-handed", "co-planar"), so:
 //   - a right-handed cell is written row by row, in order;
 //   - a left-handed cell (valid in Tadah, e.g. read from CASTEP) is written
-//     as avec = a0, bvec = a1, cvec = -a2: the same lattice, right-handed;
+//     as avec = a0, bvec = a1, cvec = -a2 with "abc origin" a2: the same
+//     lattice and the same parallelepiped, right-handed, so the atoms stay
+//     inside the box and each lattice direction keeps its boundary flag;
 //   - a singular cell (zero or co-planar rows) is refused with
 //     std::runtime_error naming the structure, before any file is written.
 // The only other LAMMPS export test (test_dataset_precision.cpp) uses a
@@ -69,6 +71,7 @@ struct LammpsBox {
   std::map<std::string, Vec3d> edge;  // "avec", "bvec", "cvec"
   std::map<std::string, int> edge_count;
   int origin_lines = 0;
+  Vec3d origin;
   std::vector<Vec3d> atoms;
 };
 
@@ -94,6 +97,7 @@ LammpsBox parse_lammps_data(const std::string &file) {
       box.edge_count[tag]++;
     } else if (tag == "abc" && (ls >> tag2) && tag2 == "origin") {
       box.origin_lines++;
+      box.origin = Vec3d(x, y, z);
     }
   }
   return box;
@@ -113,6 +117,26 @@ LammpsBox write_and_parse(const Structure &st, const LammpsCellTempDir &tmp,
 
 double triple(const Vec3d &a, const Vec3d &b, const Vec3d &c) {
   return a * b.cross(c);
+}
+
+// Every atom lies in the written box: r - origin = u A + v B + w C with
+// u, v, w in [0, 1] (LAMMPS loses an atom outside a non-periodic side).
+void check_atoms_in_box(const LammpsBox &box) {
+  const Vec3d A = box.edge.at("avec"), B = box.edge.at("bvec"),
+              C = box.edge.at("cvec");
+  const double V = triple(A, B, C);
+  for (std::size_t n = 0; n < box.atoms.size(); ++n) {
+    const Vec3d d = box.atoms[n] - box.origin;
+    const double u = triple(d, B, C) / V, v = triple(A, d, C) / V,
+                 w = triple(A, B, d) / V;
+    INFO("atom " << n << " box fractions " << u << " " << v << " " << w);
+    CHECK(u >= -1e-12);
+    CHECK(u <= 1.0 + 1e-12);
+    CHECK(v >= -1e-12);
+    CHECK(v <= 1.0 + 1e-12);
+    CHECK(w >= -1e-12);
+    CHECK(w <= 1.0 + 1e-12);
+  }
 }
 
 void check_vec(const Vec3d &got, const Vec3d &want) {
@@ -163,11 +187,13 @@ TEST_CASE("LAMMPS data export writes a sheared cell's rows as avec, bvec, "
       CHECK(box.edge_count.at(tag) == 1);
     }
     CHECK(box.origin_lines == 1);
+    check_vec(box.origin, Vec3d(0.0, 0.0, 0.0));
     check_vec(box.edge.at("avec"), Vec3d(cell(0, 0), cell(0, 1), cell(0, 2)));
     check_vec(box.edge.at("bvec"), Vec3d(cell(1, 0), cell(1, 1), cell(1, 2)));
     check_vec(box.edge.at("cvec"), Vec3d(cell(2, 0), cell(2, 1), cell(2, 2)));
     REQUIRE(box.atoms.size() == 2);
     for (std::size_t n = 0; n < 2; ++n) check_vec(box.atoms[n], st(n).position);
+    check_atoms_in_box(box);
   }
   // Hand values of the sheared rows: a transposed cell would give
   // avec = (2.5, 0.5, 0) and bvec = (0, 2, 0).
@@ -179,12 +205,16 @@ TEST_CASE("LAMMPS data export writes a sheared cell's rows as avec, bvec, "
 }
 
 TEST_CASE("LAMMPS data export writes a left-handed cell as avec, bvec, "
-          "-cvec",
+          "-cvec from origin a2",
           "[lammps_writer][cell_handedness]") {
   // Left-handed rows are a valid Tadah cell but LAMMPS rejects them. The
-  // export writes a0, a1, -a2: the same lattice, now right-handed, with the
-  // same volume, and the atoms at the same Cartesian positions (LAMMPS
-  // wraps periodic coordinates into its box).
+  // export writes a0, a1, -a2 with "abc origin" a2: the same lattice and
+  // the same parallelepiped, now right-handed, with the same volume, the
+  // atoms at the same Cartesian positions and inside the box. With origin 0
+  // an atom at fractional f2 of the cell sat at -f2 along the written C,
+  // outside the box: LAMMPS wraps it only if that direction is periodic
+  // and loses it under a non-periodic boundary ("Did not assign all atoms
+  // correctly").
   PeriodicTable::initialize();
   LammpsCellTempDir tmp;
   const double s = 4.9343;
@@ -207,12 +237,14 @@ TEST_CASE("LAMMPS data export writes a left-handed cell as avec, bvec, "
     check_vec(box.edge.at("avec"), a0);
     check_vec(box.edge.at("bvec"), a1);
     check_vec(box.edge.at("cvec"), -a2);
+    check_vec(box.origin, a2);
     const double t = triple(box.edge.at("avec"), box.edge.at("bvec"),
                             box.edge.at("cvec"));
     CHECK(t > 0.0);
     CHECK(t == Approx(-triple(a0, a1, a2)));
     REQUIRE(box.atoms.size() == 2);
     for (std::size_t n = 0; n < 2; ++n) check_vec(box.atoms[n], st(n).position);
+    check_atoms_in_box(box);
   }
 }
 

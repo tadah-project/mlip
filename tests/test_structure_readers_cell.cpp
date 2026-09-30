@@ -9,9 +9,10 @@
 // POSCAR readers; none is computed with the reader under test. Finding ids
 // refer to AUDIT-cell-convention-2026-09-30.md.
 //
-// AFLOW (vaspdb-4) is not covered here: AflowReader has no offline entry
-// point (its JSON parser is private and its data provider always queries
-// aflow.org).
+// AFLOW (vaspdb-4) is covered through AflowReader::parseAflowJson on
+// hand-written entries whose fields are all JSON strings; the encoding of a
+// live aflowlib entry (strings or numbers and arrays) has not been checked
+// against the service.
 
 #include "catch2/catch.hpp"
 
@@ -529,9 +530,45 @@ TEST_CASE("POSCAR reader: an invalid scale line is rejected",
   }
 }
 
+// A POSCAR without the element-symbol line (the VASP 4 layout) names no
+// element; the reader filled the symbols with "X", which is no element, so
+// it failed with "Unknown symbol: X". It now says what is missing. A symbol
+// line and a count line of different lengths read past the symbols.
+TEST_CASE("POSCAR reader: a missing element line or a symbol/count mismatch "
+          "is refused",
+          "[structure_readers][cell_convention][poscar]") {
+  PeriodicTable::initialize();
+  PoscarTempDir tmp;
+  const size_t kSymbolLine = 5;
+  {
+    INFO("no element-symbol line");
+    std::vector<std::string> src;
+    {
+      std::istringstream in(slurp(kCellDir + "poscar_tri_direct_scale.vasp"));
+      std::string l;
+      while (std::getline(in, l)) src.push_back(l);
+    }
+    const fs::path path = tmp.dir / "POSCAR_no_symbols";
+    std::ofstream out(path);
+    for (size_t i = 0; i < src.size(); ++i)
+      if (i != kSymbolLine) out << src[i] << '\n';
+    out.close();
+    CHECK_THROWS_AS(read_poscar(path.string()), std::runtime_error);
+    CHECK_THROWS_WITH(read_poscar(path.string()),
+                      Catch::Contains("element", Catch::CaseSensitive::No));
+  }
+  {
+    INFO("two symbols, three counts");
+    const std::string path = write_variant(
+        tmp, "poscar_tri_direct_scale.vasp", kSymbolLine + 1, {"1 1 1"}, false);
+    CHECK_THROWS_AS(read_poscar(path), std::runtime_error);
+  }
+}
+
 // ------------------------------------------------------------------ AFLOW
 
-// Rock-salt NaCl as AFLOW serves it: "geometry" is a, b, c, alpha, beta,
+// Rock-salt NaCl written the way the reader parses an AFLOW entry (every
+// field a string): "geometry" is a, b, c, alpha, beta,
 // gamma of the primitive fcc cell (a = 5.64/sqrt(2), 60 degrees),
 // "positions_fractional" refer to that geometry, and "positions_cartesian"
 // are in AFLOW's own frame (a1 = (0, a_c/2, a_c/2), ...), which is not the
@@ -591,4 +628,38 @@ TEST_CASE("AFLOW reader: an entry without geometry or positions_fractional "
   AflowReader r1, r2;
   CHECK_THROWS_AS(r1.parseAflowJson(no_geometry), std::runtime_error);
   CHECK_THROWS_AS(r2.parseAflowJson(no_positions), std::runtime_error);
+}
+
+TEST_CASE("AFLOW reader: an entry whose counts, positions or angles do not "
+          "fit is refused",
+          "[structure_readers][cell_convention][aflow]") {
+  // The reader claimed to label the atoms "X" when species, composition and
+  // positions disagreed, but "X" is no element (it threw "Unknown symbol:
+  // X"); two species with one composition count read past the counts, and
+  // one species with two counts dropped the second site. A position with
+  // two numbers became (f0, f1, 0), and angles no cell has were clamped to a
+  // flat cell.
+  PeriodicTable::initialize();
+  const std::string geom =
+      R"("geometry":"3.98808224589,3.98808224589,3.98808224589,60,60,60",)";
+  const std::string pos = R"("positions_fractional":"0,0,0;0.5,0.5,0.5")";
+  const std::vector<std::string> bad = {
+      // sum of the composition differs from the number of positions
+      R"({"auid":"t1","species":"Cl,Na","composition":"1,2",)" + geom + pos + "}",
+      // two species, one composition count
+      R"({"auid":"t2","species":"Cl,Na","composition":"2",)" + geom + pos + "}",
+      // one species, two composition counts
+      R"({"auid":"t3","species":"Na","composition":"1,1",)" + geom + pos + "}",
+      // a position with two numbers
+      R"({"auid":"t4","species":"Cl,Na","composition":"1,1",)" + geom +
+          R"("positions_fractional":"0,0,0;0.5,0.5"})",
+      // angles no cell has (gamma > alpha + beta)
+      R"({"auid":"t5","species":"Cl,Na","composition":"1,1",)"
+      R"("geometry":"4,4,4,60,60,150",)" + pos + "}",
+  };
+  for (const auto &json : bad) {
+    INFO(json);
+    AflowReader reader;
+    CHECK_THROWS_AS(reader.parseAflowJson(json), std::runtime_error);
+  }
 }

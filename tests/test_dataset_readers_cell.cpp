@@ -571,3 +571,97 @@ TEST_CASE("DatasetReaderSelector: sheared OUTCAR and triclinic CASTEP fixtures",
       CHECK(dot == Approx(i == j ? 1.0 : 0.0).margin(1e-8));
     }
 }
+
+// CASTEP ignores everything after '!', '#' or ';' on a line, block headers
+// and unit lines included. The reader skipped only whole comment lines: a
+// unit line with a trailing comment was taken for data ("LATTICE_CART needs
+// exactly three lattice vectors, found 4"), and a block header such as
+// "%BLOCK POSITIONS_FRAC!sites" named no known block, so its atoms were
+// dropped without a word (the v1-dev reader matched it by substring).
+TEST_CASE("CASTEP .cell reader: trailing comments on block headers and unit "
+          "lines are ignored",
+          "[cell_convention][castep_cell]") {
+  PeriodicTable::initialize();
+  const std::string path = "./tmp_cell_convention_comments.cell";
+  const std::string text =
+      "%BLOCK LATTICE_CART   ! lattice\n"
+      "bohr ! units of the lattice\n"
+      "  6.0  0.4 -0.2\n"
+      "  2.0  7.0  0.3  ; a1\n"
+      " -1.0  1.5  8.0  # a2\n"
+      "%ENDBLOCK LATTICE_CART\n"
+      "%BLOCK POSITIONS_FRAC!sites\n"
+      "Si 0.10 0.20 0.30 ! first\n"
+      "O  0.55 0.35 0.85\n"
+      "%ENDBLOCK POSITIONS_FRAC\n";
+  std::remove(path.c_str());
+  {
+    std::ofstream out(path);
+    REQUIRE(out.good());
+    out << text;
+  }
+  Structure st;
+  REQUIRE_NOTHROW(st = read_cell_file(path));
+  std::remove(path.c_str());
+  const Rows a = {{{6.0 * kBohr, 0.4 * kBohr, -0.2 * kBohr},
+                   {2.0 * kBohr, 7.0 * kBohr, 0.3 * kBohr},
+                   {-1.0 * kBohr, 1.5 * kBohr, 8.0 * kBohr}}};
+  for (int i = 0; i < 3; ++i)
+    for (int k = 0; k < 3; ++k) {
+      INFO("cell(" << i << "," << k << ")");
+      CHECK(st.cell(i, k) == Approx(a[i][k]).epsilon(1e-12).margin(1e-12));
+    }
+  REQUIRE(st.atoms.size() == 2);
+  const double f[2][3] = {{0.10, 0.20, 0.30}, {0.55, 0.35, 0.85}};
+  for (int n = 0; n < 2; ++n)
+    for (int k = 0; k < 3; ++k) {
+      INFO("atom " << n << " component " << k);
+      const double want = f[n][0] * a[0][k] + f[n][1] * a[1][k] + f[n][2] * a[2][k];
+      CHECK(st.atoms[n].position[k] == Approx(want).epsilon(1e-12).margin(1e-12));
+    }
+
+  // A unit line with a trailing comment in LATTICE_ABC and POSITIONS_ABS.
+  const std::string text2 =
+      "%BLOCK LATTICE_ABC\n"
+      "ang ; the default, written out\n"
+      "4.0 5.0 6.0\n"
+      "90 90 90\n"
+      "%ENDBLOCK LATTICE_ABC\n"
+      "%BLOCK POSITIONS_ABS\n"
+      "nm # positions in nanometres\n"
+      "Si 0.1 0.2 0.3\n"
+      "%ENDBLOCK POSITIONS_ABS\n";
+  {
+    std::ofstream out(path);
+    REQUIRE(out.good());
+    out << text2;
+  }
+  REQUIRE_NOTHROW(st = read_cell_file(path));
+  std::remove(path.c_str());
+  CHECK(st.cell(0, 0) == Approx(4.0));
+  CHECK(st.cell(1, 1) == Approx(5.0));
+  CHECK(st.cell(2, 2) == Approx(6.0));
+  REQUIRE(st.atoms.size() == 1);
+  CHECK(st.atoms[0].position[0] == Approx(1.0));
+  CHECK(st.atoms[0].position[1] == Approx(2.0));
+  CHECK(st.atoms[0].position[2] == Approx(3.0));
+}
+
+// A .cell file without POSITIONS_FRAC or POSITIONS_ABS was read as a
+// structure with no atoms; CASTEP (and ASE) refuse it.
+TEST_CASE("CASTEP .cell reader: a file without a positions block is refused",
+          "[cell_convention][castep_cell]") {
+  PeriodicTable::initialize();
+  const std::string path = "./tmp_cell_convention_nopos.cell";
+  {
+    std::ofstream out(path);
+    REQUIRE(out.good());
+    out << "%BLOCK LATTICE_CART\n4 0 0\n0 4 0\n0 0 4\n%ENDBLOCK LATTICE_CART\n";
+  }
+  CastepCellReader r1;
+  CHECK_THROWS_AS(r1.read(path), std::runtime_error);
+  CastepCellReader r2;
+  CHECK_THROWS_WITH(r2.read(path),
+                    Catch::Contains("POSITIONS", Catch::CaseSensitive::No));
+  std::remove(path.c_str());
+}

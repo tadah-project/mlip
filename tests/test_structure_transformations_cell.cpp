@@ -369,3 +369,25 @@ TEST_CASE("StructureTransformation::replicate refuses a factor below 1",
     for (int k = 0; k < 3; ++k) CHECK(st.cell(i, k) == before.cell(i, k));
   CHECK(st.energy == before.energy);
 }
+
+TEST_CASE("StructureTransformation::mirrorOrigin inverts the forces with the "
+          "positions",
+          "[transform][cell_convention]") {
+  // Inversion through the origin, M = -I: r' = -r and F' = -F (it negated
+  // only the positions). The lattice needs no change (-a_i span the same
+  // lattice), so the cell and the fractional coordinates' lattice stay.
+  PeriodicTable::initialize();
+  Structure st = triclinic_structure();
+  const Structure before = st;
+  StructureTransformation::mirrorOrigin(st);
+  Matrix3d minus_I;
+  minus_I.load(-1.0, 0.0, 0.0,
+               0.0, -1.0, 0.0,
+               0.0, 0.0, -1.0);
+  for (std::size_t n = 0; n < 3; ++n)
+    for (int k = 0; k < 3; ++k)
+      CHECK(st(n).position[k] == Approx(-before(n).position[k]).margin(1e-12));
+  check_forces_mapped(st, before, minus_I);
+  for (int i = 0; i < 3; ++i)
+    for (int k = 0; k < 3; ++k) CHECK(st.cell(i, k) == before.cell(i, k));
+}
