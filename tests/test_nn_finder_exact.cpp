@@ -1114,7 +1114,14 @@ TEST_CASE("NNFinder exact: the image cap does not depend on where the atoms "
       Structure st = make_cell(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
       add_frac(st, 0.1 + offset, 0.2, 0.3);
       REQUIRE_NOTHROW(NNFinder().calc(st, R));
-      require_exact(st, R);
+      // The images ten edges away lie 5e-12 A beyond R, inside the oracle's
+      // boundary window: either answer is right for them.
+      const nn_oracle::Comparison c = nn_oracle::compare(st, R);
+      INFO(c.summary());
+      CHECK(c.exact());
+      const std::vector<std::string> bad = nn_oracle::check_invariants(st);
+      INFO(join(bad));
+      CHECK(bad.empty());
     }
     {
       const double a = 0.5;  // R / a = 10 exactly: 23^3 image cells
