@@ -2,6 +2,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_writers/vasp_poscar_writer.h>
 
+#include <cmath>
 #include <fstream>
 namespace tadah {
 namespace mlip {
@@ -13,13 +14,27 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
   if (i >= stdb.size()) {
     throw std::out_of_range("Index i is out of range.");
   }
-    
+
+  const Structure &st = stdb(i);
+
+  // The rows of the cell are the lattice vectors. VASP stops on a
+  // left-handed basis (negative triple product), so such a cell is written
+  // as (a0, a1, -a2), the same lattice right-handed; the Cartesian
+  // positions are unchanged. A singular cell is refused.
+  const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
+                    a2 = st.cell.row(2);
+  const double det = a0 * a1.cross(a2);
+  if (!(std::fabs(det) > 1e-12 * a0.norm() * a1.norm() * a2.norm())) {
+    throw std::runtime_error("VASP POSCAR export: structure '" + st.label +
+                             "' has a singular cell (coplanar or zero "
+                             "lattice vectors).");
+  }
+  const double csign = det < 0.0 ? -1.0 : 1.0;
+
   std::ofstream file(filename);
   if (!file.is_open()) {
     throw std::runtime_error("Could not open the file: " + filename);
   }
-
-  const Structure &st = stdb(i);
 
   // write scaling factor
   file << st.label << std::endl;
@@ -28,9 +43,10 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
   // write cell. Reals are written with NUMERIC significant digits (POSCAR
   // is read list-directed: Fortran accepts E-notation; 18 is exact).
   for (int i=0; i<3; ++i) {
-    put_sig(file, st.cell(i,0));
-    put_sig(file, st.cell(i,1));
-    put_sig(file, st.cell(i,2));
+    const double f = (i == 2) ? csign : 1.0;
+    put_sig(file, f * st.cell(i,0));
+    put_sig(file, f * st.cell(i,1));
+    put_sig(file, f * st.cell(i,2));
     file << std::endl;
   }
 

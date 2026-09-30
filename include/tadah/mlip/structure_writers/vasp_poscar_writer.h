@@ -12,6 +12,14 @@
 #include <stdexcept>
 namespace tadah {
 namespace mlip {
+/**
+ * @brief Writes a structure as a VASP POSCAR: the rows of Structure::cell
+ * as the lattice lines (scale 1.0) and Cartesian coordinates. VASP stops
+ * on a left-handed basis, so such a cell is written as (a0, a1, -a2), the
+ * same lattice right-handed, with the same Cartesian positions. A singular
+ * cell is refused (std::runtime_error naming the structure) before the
+ * file is opened.
+ */
 class VaspPoscarWriter : public StructureWriter {
 public:
   VaspPoscarWriter(StructureDB& db);
