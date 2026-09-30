@@ -17,6 +17,7 @@
 
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/structure.h>
+#include <tadah/mlip/structure_readers/aflow_reader.h>
 #include <tadah/mlip/structure_readers/cif_reader.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 #include <tadah/mlip/structure_readers/vasp_poscar_reader.h>
@@ -526,4 +527,68 @@ TEST_CASE("POSCAR reader: an invalid scale line is rejected",
         tmp, "poscar_tri_direct_scale.vasp", kScaleLine, {line}, false);
     CHECK_THROWS_AS(read_poscar(path), std::runtime_error);
   }
+}
+
+// ------------------------------------------------------------------ AFLOW
+
+// Rock-salt NaCl as AFLOW serves it: "geometry" is a, b, c, alpha, beta,
+// gamma of the primitive fcc cell (a = 5.64/sqrt(2), 60 degrees),
+// "positions_fractional" refer to that geometry, and "positions_cartesian"
+// are in AFLOW's own frame (a1 = (0, a_c/2, a_c/2), ...), which is not the
+// a-along-x frame the reader builds the cell in. Placing the Cartesian
+// positions in the rebuilt cell put Na at fractional (0.010, 0.528, 0.866)
+// with a 1.91 A Na-Cl distance (vaspdb-4). The rebuilt rows are
+// (a,0,0), (a/2, a sqrt(3)/2, 0), (a/2, a/(2 sqrt 3), a sqrt(2/3)).
+TEST_CASE("AFLOW reader: atoms are placed from positions_fractional in the "
+          "cell built from geometry",
+          "[structure_readers][cell_convention][aflow]") {
+  PeriodicTable::initialize();
+  const std::string json =
+      R"({"auid":"aflow:test","compound":"ClNa","species":"Cl,Na",)"
+      R"("composition":"1,1",)"
+      R"("geometry":"3.98808224589,3.98808224589,3.98808224589,60,60,60",)"
+      R"("positions_fractional":"0,0,0;0.5,0.5,0.5",)"
+      R"("positions_cartesian":"0,0,0;2.82,2.82,2.82"})";
+  AflowReader reader;
+  reader.parseAflowJson(json);
+  const Structure st = reader.getStructure();
+  REQUIRE(st.atoms.size() == 2);
+  CHECK(st.atoms[0].symbol == std::string("Cl"));
+  CHECK(st.atoms[1].symbol == std::string("Na"));
+
+  const double a = 3.98808224589;
+  const V3 want_rows[3] = {{a, 0.0, 0.0},
+                           {0.5 * a, 0.5 * std::sqrt(3.0) * a, 0.0},
+                           {0.5 * a, a / (2.0 * std::sqrt(3.0)),
+                            a * std::sqrt(2.0 / 3.0)}};
+  for (int i = 0; i < 3; ++i)
+    for (int k = 0; k < 3; ++k) {
+      INFO("cell(" << i << "," << k << ")");
+      CHECK(st.cell(i, k) == Approx(want_rows[i][k]).margin(1e-9));
+    }
+  const V3 f0 = frac_of(st, atom_pos(st, 0));
+  const V3 f1 = frac_of(st, atom_pos(st, 1));
+  for (int k = 0; k < 3; ++k) {
+    CHECK(f0[k] == Approx(0.0).margin(1e-12));
+    CHECK(f1[k] == Approx(0.5).margin(1e-12));
+  }
+  // Na-Cl nearest distance is half the conventional cube edge.
+  CHECK(min_image_distance(st) == Approx(5.64 / 2.0).margin(1e-6));
+}
+
+TEST_CASE("AFLOW reader: an entry without geometry or positions_fractional "
+          "is refused",
+          "[structure_readers][cell_convention][aflow]") {
+  // A missing "geometry" used to give a silent 1x1x1 A cube; a missing
+  // position list gave a structure with no atoms.
+  PeriodicTable::initialize();
+  const std::string no_geometry =
+      R"({"auid":"aflow:test","species":"Cl,Na","composition":"1,1",)"
+      R"("positions_fractional":"0,0,0;0.5,0.5,0.5"})";
+  const std::string no_positions =
+      R"({"auid":"aflow:test","species":"Cl,Na","composition":"1,1",)"
+      R"("geometry":"3.98808224589,3.98808224589,3.98808224589,60,60,60"})";
+  AflowReader r1, r2;
+  CHECK_THROWS_AS(r1.parseAflowJson(no_geometry), std::runtime_error);
+  CHECK_THROWS_AS(r2.parseAflowJson(no_positions), std::runtime_error);
 }
