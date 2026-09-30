@@ -41,7 +41,9 @@
  * parallel_for runs. It is not meant to be swapped concurrently with kernels.
  */
 #include <cstddef>
+#include <exception>
 #include <functional>
+#include <vector>
 
 namespace tadah {
 namespace mlip {
@@ -65,7 +67,12 @@ const ParallelBackend& detail_parallel_backend();
 /* Run body(i) for i in [0, n). Uses the installed pool backend if present, else
  * the historical `#pragma omp parallel for schedule(guided)` (serial without
  * OpenMP). body must be safe to run concurrently for distinct i (the MLIP
- * kernels satisfy this by writing disjoint slots -- see the determinism note). */
+ * kernels satisfy this by writing disjoint slots -- see the determinism note).
+ *
+ * Exceptions: every index runs; if any body threw, an exception is rethrown
+ * after the loop -- under OpenMP the one of the lowest index (an exception may
+ * not leave an OpenMP region: it would call std::terminate), and the one the
+ * backend reports otherwise (HPO's pool: the first to be thrown). */
 template <class Body>
 inline void parallel_for(std::size_t n, Body&& body) {
   if (has_parallel_backend()) {
@@ -73,9 +80,21 @@ inline void parallel_for(std::size_t n, Body&& body) {
     return;
   }
 #ifdef _OPENMP
+  // One slot per index, written only by that index's thread: no lock.
+  std::vector<std::exception_ptr> errors(n);
   #pragma omp parallel for schedule(guided)
-#endif
+  for (std::size_t i = 0; i < n; ++i) {
+    try {
+      body(i);
+    } catch (...) {
+      errors[i] = std::current_exception();
+    }
+  }
+  for (const auto& e : errors)
+    if (e) std::rethrow_exception(e);
+#else
   for (std::size_t i = 0; i < n; ++i) body(i);
+#endif
 }
 
 } // namespace mlip

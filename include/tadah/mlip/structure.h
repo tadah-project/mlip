@@ -214,6 +214,9 @@ struct Structure {
    *      ii = get_nn_iindex(i,j,jj)
    *
    *  phew...
+   *
+   *  Throws std::logic_error when atom j's list has no entry (i, −shift):
+   *  never for a table NNFinder built, which is symmetric.
    */
   size_t get_nn_iindex(const size_t i, const size_t j, const size_t jj) const;
 

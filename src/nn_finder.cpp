@@ -512,7 +512,7 @@ void NNFinder::calc(StructureDB &stdb, double cutoff) const
   // An exception may not leave the OpenMP loop; keep the lowest-numbered
   // failure and rethrow it after the loop, naming the structure.
   const std::size_t n = stdb.size();
-  detail::FirstStructureError first;
+  std::vector<std::exception_ptr> errors(n);
 #ifdef _OPENMP
   #pragma omp parallel for schedule(dynamic)
 #endif
@@ -520,15 +520,13 @@ void NNFinder::calc(StructureDB &stdb, double cutoff) const
     try {
       calc(stdb(i), cutoff);
     } catch (...) {
-#ifdef _OPENMP
-      #pragma omp critical(tadah_nnfinder_first_error)
-#endif
-      first.record(i, std::current_exception());
+      errors[i] = std::current_exception();
     }
   }
-  if (first.failed())
-    detail::rethrow_for_structure(first.error, first.index, n,
-                                  stdb(first.index).label, "NNFinder");
+  for (std::size_t i = 0; i < n; ++i)
+    if (errors[i])
+      detail::rethrow_for_structure(errors[i], i, n, stdb(i).label,
+                                    "NNFinder");
 }
 
 } // namespace mlip

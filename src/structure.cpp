@@ -307,13 +307,17 @@ void Structure::save(const std::string fn) const {
  */
 size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj) const {
   tadah::core::Vec3d shift_ijj = -nn->shift[i][jj];
-  size_t ii = 0;
   for (size_t x=0; x<nn->idx[j].size(); ++x)
   {
-    if (nn->idx[j][x]==i && nn->shift[j][x]==shift_ijj) break;
-    ii++;
+    if (nn->idx[j][x]==i && nn->shift[j][x]==shift_ijj) return x;
   }
-  return ii;
+  // NNFinder's tables are symmetric, so this is a table built or changed
+  // elsewhere; returning idx[j].size() would index past atom j's list.
+  throw std::logic_error(
+      "Structure::get_nn_iindex: neighbour " + std::to_string(jj) +
+      " of atom " + std::to_string(i) + " (atom " + std::to_string(j) +
+      ") has no reverse entry in atom " + std::to_string(j) +
+      "'s list; the neighbour list is not symmetric");
 }
 
 /**

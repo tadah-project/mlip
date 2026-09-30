@@ -4,33 +4,18 @@
 // Internal helper, not part of the public API: carry an exception out of
 // an OpenMP loop over the structures of a dataset. An exception may not
 // leave an OpenMP structured block (it would call std::terminate), so each
-// iteration catches its own, the lowest-numbered failure is kept, and it
-// is rethrown after the loop with the structure named.
+// iteration stores its own in a slot of its index (no lock), and after
+// the loop the lowest-numbered failure is rethrown with the structure
+// named.
 
 #include <cstddef>
 #include <exception>
-#include <limits>
 #include <stdexcept>
 #include <string>
 
 namespace tadah {
 namespace mlip {
 namespace detail {
-
-/** The lowest-numbered failure of a parallel loop. record() is not
- *  thread-safe; call it inside `#pragma omp critical`. */
-struct FirstStructureError {
-  std::size_t index = std::numeric_limits<std::size_t>::max();
-  std::exception_ptr error;
-
-  void record(std::size_t i, std::exception_ptr e) {
-    if (i < index) {
-      index = i;
-      error = e;
-    }
-  }
-  bool failed() const { return static_cast<bool>(error); }
-};
 
 /** Rethrow @p e (from structure @p i of @p n, 0-based @p i) with the
  *  message prefixed "<who>: structure <i+1> of <n> ('<label>'): " (a
