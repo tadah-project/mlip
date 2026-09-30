@@ -19,7 +19,9 @@
 #include <tadah/mlip/structure_db.h>
 
 #include <cmath>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 
 using namespace tadah::mlip;
 using tadah::core::Context;
@@ -99,9 +101,10 @@ TEST_CASE("compute_data_stats: single bcc Ta cell produces one per_pair with NN 
   REQUIRE(pp.r_min < 3.0);
 
   // At least one detected KDE peak should bracket the NN+2NN shells
-  // (analytical NN = 2.858 Å, 2NN = a = 3.30 Å). With only 92 pairs in
-  // a 2-atom primitive, Silverman's bandwidth merges the two shells
-  // into a single peak around their mean. We assert this leftmost
+  // (analytical NN = 2.858 Å, 2NN = a = 3.30 Å). With 116 pairs in the
+  // 2-atom cubic cell (58 neighbours per atom within 6 Å: 8 + 6 + 12 +
+  // 24 + 8), Silverman's bandwidth merges the two shells into a single
+  // peak around their mean. We assert this leftmost
   // peak lies in the [2.7, 3.5] window — anywhere else would mean
   // the radial GTO would miss the dominant 1NN/2NN region.
   REQUIRE_FALSE(pp.r_peaks.empty());
@@ -191,4 +194,69 @@ TEST_CASE("DataStats save / load round-trips through the text format") {
     REQUIRE(d2.per_pair[0].r_peaks[i].position == d.per_pair[0].r_peaks[i].position);
     REQUIRE(d2.per_pair[0].r_peaks[i].fwhm     == d.per_pair[0].r_peaks[i].fwhm);
   }
+}
+
+// The neighbour counts and pair distances describe what the model sees: a
+// pair enters a descriptor only when its distance is strictly below the
+// cutoff (DescriptorsCalc skips rij_sq >= rc^2). A simple cubic lattice with
+// a = 2.5 at the cutoff 5 = 2a has 26 neighbours strictly inside (6 at a,
+// 12 at a sqrt 2, 8 at a sqrt 3) and 6 more exactly at 2a. A neighbour list
+// may hold pairs a rounding margin beyond its cutoff, so the audit must
+// apply the strict test itself: 26 per atom, not 32.
+TEST_CASE("compute_data_stats counts neighbours strictly inside the cutoff",
+          "[data_stats][nn]") {
+  PeriodicTable::initialize();
+  auto ta = PeriodicTable::find_by_symbol("Ta");
+  const double a = 2.5;
+  Structure st;
+  st.label = "simple_cubic_Ta";
+  st.energy = -8.0;
+  st.cell.load(a, 0.0, 0.0,
+               0.0, a, 0.0,
+               0.0, 0.0, a);
+  st.add_atom(Atom(ta, 0.0, 0.0, 0.0));
+  StructureDB stdb;
+  stdb.add(st);
+
+  Context c = make_ctx_with_rcut(2.0 * a);
+  auto d = compute_data_stats(stdb, c, false);
+  REQUIRE(d.n_atoms == 1);
+
+  REQUIRE(d.nn_count_percentiles_per_element.count("Ta") == 1);
+  // One atom: every percentile and the mean are its count, the spread is 0.
+  const auto &counts = d.nn_count_percentiles_per_element.at("Ta");
+  for (std::size_t k = tadah::core::stats::IDX_P1;
+       k <= tadah::core::stats::IDX_MEAN; ++k) {
+    INFO("summary slot " << k);
+    CHECK(counts[k] == 26.0);
+  }
+  CHECK(counts[tadah::core::stats::IDX_STD] == 0.0);
+
+  REQUIRE(d.per_pair.size() == 1);
+  CHECK(d.per_pair[0].n_pairs == 26);
+  CHECK(d.per_pair[0].r_min == Approx(a).epsilon(1e-12));
+  CHECK(d.per_pair[0].r_max < 2.0 * a);
+  CHECK(d.per_pair[0].r_max == Approx(a * std::sqrt(3.0)).epsilon(1e-12));
+}
+
+// compute_data_stats builds the missing neighbour lists in an OpenMP loop.
+// An exception thrown inside an OpenMP region cannot leave it (the runtime
+// calls std::terminate), so a structure the neighbour search refuses (here
+// a non-finite position) must reach the caller as that exception, not end
+// the process or yield statistics built from a broken list.
+TEST_CASE("compute_data_stats carries a neighbour-list error out of its "
+          "parallel loop",
+          "[data_stats][nn][invalid]") {
+  PeriodicTable::initialize();
+  StructureDB stdb;
+  stdb.add(make_bcc_ta_cell(3.30));
+  Structure bad = make_bcc_ta_cell(3.30);
+  bad.label = "nan_position";
+  bad.atoms[1].position[1] = std::numeric_limits<double>::quiet_NaN();
+  stdb.add(bad);
+  stdb.add(make_bcc_ta_cell(3.40));
+  REQUIRE(stdb.size() == 3);
+
+  Context c = make_ctx_with_rcut(6.0);
+  CHECK_THROWS_AS(compute_data_stats(stdb, c, false), std::invalid_argument);
 }
