@@ -31,7 +31,8 @@ public:
   Structure getStructure() const override;
 
   /**
-   * @brief Reads geometry, positions_cartesian, stoichiometry, etc. from AFLOW JSON.
+   * @brief Reads geometry, positions_fractional, stoichiometry, etc. from
+   *        AFLOW JSON; throws when geometry or positions_fractional is missing.
    *
    * Public so that an AFLOW entry can be parsed without a network query
    * (as CifReader::parseCifContents does for CIF text).

@@ -33,13 +33,18 @@ void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
   parseAflowJson(jsonContent):
     Interprets the final AFLOW JSON, which includes 
     lattice parameters ("geometry"), composition, species list, 
-    and cartesian positions.
+    and fractional positions.
 
     - The "compound" is appended to the label. 
     - "volume_cell", "density", and "auid"
       are placed in the label for clarity.
-    - "geometry" is used to build a 3×3 cell matrix via makeCellMatrix().
-    - "positions_cartesian" plus stoichiometry & species become the final atoms.
+    - "geometry" is used to build a 3×3 cell matrix via makeCellMatrix()
+      (a along x, b in the xy plane; row i is lattice vector a_i).
+    - "positions_fractional" (relative to "geometry") plus stoichiometry &
+      species become the final atoms, at r = f0 a0 + f1 a1 + f2 a2.
+      "positions_cartesian" is not used: it is expressed in AFLOW's own
+      frame, which in general is not the orientation built here.
+    - An entry without "geometry" or "positions_fractional" is refused.
 
   If the species or positions do not match in count, 
   the atoms are labeled "X" as a fallback.
@@ -76,7 +81,11 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   double beta  = 90.0;
   double gamma = 90.0;
 
-  if (root.contains("geometry")) {
+  if (!root.contains("geometry")) {
+    throw std::runtime_error("AflowReader: entry '" + auid +
+                             "' has no \"geometry\" (a,b,c,alpha,beta,gamma).");
+  }
+  {
     std::string geometryStr = root["geometry"].get<std::string>();
     std::stringstream sgeom(geometryStr);
     std::vector<double> vals;
@@ -90,14 +99,18 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
         sgeom.ignore();
       }
     }
-    if (vals.size() == 6) {
-      a     = vals[0];
-      b     = vals[1];
-      c     = vals[2];
-      alpha = vals[3];
-      beta  = vals[4];
-      gamma = vals[5];
+    if (vals.size() != 6) {
+      throw std::runtime_error("AflowReader: entry '" + auid +
+                               "': \"geometry\" needs six numbers "
+                               "(a,b,c,alpha,beta,gamma), got '" +
+                               geometryStr + "'.");
     }
+    a     = vals[0];
+    b     = vals[1];
+    c     = vals[2];
+    alpha = vals[3];
+    beta  = vals[4];
+    gamma = vals[5];
   }
 
   // Create 3×3 lattice from (a, b, c, alpha, beta, gamma)
@@ -145,12 +158,17 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   }
 
   //------------------------------------------------------------------
-  // 5) Acquire positions from "positions_cartesian": 
-  //       "x1,y1,z1;x2,y2,z2;..."
+  // 5) Acquire fractional positions from "positions_fractional":
+  //       "f1,f2,f3;f1,f2,f3;..."  and convert each with the rows of the
+  //    cell: r = f0*a0 + f1*a1 + f2*a2.
   //------------------------------------------------------------------
+  if (!root.contains("positions_fractional")) {
+    throw std::runtime_error("AflowReader: entry '" + auid +
+                             "' has no \"positions_fractional\".");
+  }
   std::vector<std::array<double,3>> positions;
-  if (root.contains("positions_cartesian")) {
-    std::string posStr = root["positions_cartesian"].get<std::string>();
+  {
+    std::string posStr = root["positions_fractional"].get<std::string>();
     std::stringstream sPos(posStr);
     while (sPos.good()) {
       std::string triplet;
@@ -169,7 +187,12 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
           sTrip.ignore();
         }
       }
-      positions.push_back(coords);
+      std::array<double,3> r{0,0,0};
+      for (int k = 0; k < 3; ++k) {
+        r[k] = coords[0] * cellMat[0][k] + coords[1] * cellMat[1][k] +
+               coords[2] * cellMat[2][k];
+      }
+      positions.push_back(r);
     }
   }
 
