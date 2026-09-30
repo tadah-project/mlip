@@ -339,11 +339,12 @@ size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj)
 }
 
 /**
- * Returns the volume of the structure by calculating det(cell).
- * Reason: Volume is essential for many physical calculations (density, pressure, etc.).
+ * Returns the volume of the cell, |a0 . (a1 x a2)| with a_i = cell.row(i).
+ * The absolute value: a left-handed basis (allowed by CASTEP and VASP)
+ * describes the same lattice and has the same volume.
  */
 double Structure::get_volume() const {
-  return cell.row(0)*(cell.row(1).cross(cell.row(2)));
+  return std::fabs(cell.row(0)*(cell.row(1).cross(cell.row(2))));
 }
 
 /**

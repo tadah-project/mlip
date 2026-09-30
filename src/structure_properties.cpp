@@ -12,7 +12,8 @@ double StructureProperties::getVolume(const Structure &st)
   tadah::core::Vec3d a2 = st.cell.row(1);
   tadah::core::Vec3d a3 = st.cell.row(2);
 
-  double volume = a1 * (a2.cross(a3));  // scalar triple product
+  // |scalar triple product|: a left-handed basis has the same volume.
+  double volume = std::fabs(a1 * (a2.cross(a3)));
   return volume; // [Å^3]
 }
 
