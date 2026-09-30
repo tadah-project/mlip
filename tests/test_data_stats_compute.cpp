@@ -16,6 +16,7 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/structure.h>
+#include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/structure_db.h>
 
 #include <cmath>
@@ -259,4 +260,30 @@ TEST_CASE("compute_data_stats carries a neighbour-list error out of its "
 
   Context c = make_ctx_with_rcut(6.0);
   CHECK_THROWS_AS(compute_data_stats(stdb, c, false), std::invalid_argument);
+  // The error names the structure (1-based, as dataset_stats counts).
+  CHECK_THROWS_WITH(compute_data_stats(stdb, c, false),
+                    Catch::Matchers::Contains("structure 2 of 3 ('nan_position')"));
+}
+
+// A structure may arrive with a neighbour list built for a smaller cutoff
+// (e.g. by an earlier task). The audit counts neighbours out to RCUTMAX, so
+// it rebuilds such a list instead of counting from it: bcc a = 3.3 has 58
+// neighbours per atom within 6 A (8 + 6 + 12 + 24 + 8), 116 pairs in the
+// 2-atom cell, while a list at 3.0 A holds only the 8 first neighbours.
+TEST_CASE("compute_data_stats rebuilds a neighbour list built with a smaller "
+          "cutoff",
+          "[data_stats][nn]") {
+  PeriodicTable::initialize();
+  Structure st = make_bcc_ta_cell(3.30);
+  NNFinder().calc(st, 3.0);
+  REQUIRE(st.nn_size(0) == 8);
+  StructureDB stdb;
+  stdb.add(st);
+
+  Context c = make_ctx_with_rcut(6.0);
+  auto d = compute_data_stats(stdb, c, false);
+  REQUIRE(d.per_pair.size() == 1);
+  CHECK(d.per_pair[0].n_pairs == 116);
+  const auto &counts = d.nn_count_percentiles_per_element.at("Ta");
+  CHECK(counts[tadah::core::stats::IDX_MEAN] == 58.0);
 }

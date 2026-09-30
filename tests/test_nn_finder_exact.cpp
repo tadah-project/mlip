@@ -858,6 +858,12 @@ TEST_CASE("NNFinder exact: an invalid cutoff or position is refused",
     st.atoms[2].position[0] = -kInf;
     CHECK_THROWS_AS(NNFinder().calc(st, 4.5), std::invalid_argument);
   }
+  SECTION("an atom more than 2^31 cells from the origin") {
+    // 3e9 cells of 10 A along a0: a double keeps fewer than 22 bits of the
+    // position within its cell there.
+    st.atoms[1].position[0] = 3.0e10;
+    CHECK_THROWS_AS(NNFinder().calc(st, 4.5), std::invalid_argument);
+  }
 }
 
 TEST_CASE("NNFinder exact: a singular or non-finite cell is refused",
@@ -881,10 +887,18 @@ TEST_CASE("NNFinder exact: a singular or non-finite cell is refused",
     what = "rows (4 0 0) (0 4 0) (inf 0 4)";
     st = make_cell(4.0, 0.0, 0.0, 0.0, 4.0, 0.0, kInf, 0.0, 4.0);
   }
+  SECTION("a numerically singular cell") {
+    // Rows 4 A long whose second row leans 1e-9 A off the first: the
+    // rounding of the cell's geometry is not bounded any more.
+    what = "rows (4 0 0) (4 1e-9 0) (0 0 4)";
+    st = make_cell(4.0, 0.0, 0.0, 4.0, 1e-9, 0.0, 0.0, 0.0, 4.0);
+  }
   INFO(what);
   add_cart(st, 0.5, 0.7, 0.9);
   add_cart(st, 2.1, 0.3, 1.7);
   CHECK_THROWS_AS(NNFinder().calc(st, 3.0), std::invalid_argument);
+  // check_box refuses the same cells instead of judging them.
+  CHECK_THROWS_AS(NNFinder::check_box(st, 3.0), std::invalid_argument);
 }
 
 TEST_CASE("NNFinder exact: calc on a StructureDB names the failing structure",
@@ -966,5 +980,194 @@ TEST_CASE("NNFinder exact: calc on a StructureDB rethrows the lowest failure "
     CHECK(other.empty());
     CHECK(contains(msg, "structure 1 of 3"));
     CHECK(contains(msg, "'cube with a NaN'"));
+  }
+}
+
+// The guard band: a consumer computes a pair distance as
+// r_i - (r_j + s.A) with its own rounding, in both directions (i -> j and
+// j -> i), while NNFinder tests each pair once. A pair a consumer computes
+// strictly inside the cutoff must be listed even when the cutoff lies
+// within a few units in the last place of that distance, and every pair
+// whose exact (long double) distance is below the cutoff must be listed.
+// The cutoffs here are set to consumer-computed pair distances and their
+// neighbours 1-3 ulps away, on random triclinic cells with skewed stored
+// bases and atoms up to 50 cells from the origin.
+TEST_CASE("NNFinder exact: every pair a consumer computes inside a cutoff a "
+          "few ulps from a pair distance is listed",
+          "[nn][exact][guard]") {
+  PeriodicTable::initialize();
+  std::size_t cutoffs = 0, pairs_checked = 0;
+  for (std::uint32_t seed = 1; seed <= 40; ++seed) {
+    Rng rng(9000 + seed);
+    // A near-orthogonal cell with 2.5-5 A edges, then a skewed description
+    // of it (rows mixed with small integer multiples of each other).
+    double A[3][3];
+    for (int k = 0; k < 3; ++k)
+      for (int c = 0; c < 3; ++c)
+        A[k][c] = (k == c ? rng.uniform(2.5, 5.0) : 0.0) + rng.uniform(-0.8, 0.8);
+    const int m1 = rng.integer(-3, 3), m2 = rng.integer(-3, 3);
+    for (int c = 0; c < 3; ++c) {
+      A[1][c] += m1 * A[0][c];
+      A[2][c] += m2 * A[1][c];
+    }
+    Structure st = make_cell(A[0][0], A[0][1], A[0][2], A[1][0], A[1][1],
+                             A[1][2], A[2][0], A[2][1], A[2][2]);
+    const double spread = (seed % 2) ? 50.0 : 0.0;
+    for (int i = 0; i < 3; ++i)
+      add_frac(st, rng.uniform() + std::floor(rng.uniform(-spread, spread)),
+               rng.uniform(), rng.uniform() + std::floor(rng.uniform(-spread, spread)));
+    const auto L = nn_oracle::lattice(st);
+    const std::size_t n = st.natoms();
+    // Consumer-computed squared distance of (i, j, s), as DescriptorsCalc
+    // computes it from Structure::nn_pos (disp = s0 a0 + s1 a1 + s2 a2).
+    auto consumer_rsq = [&](std::size_t i, std::size_t j, long s0, long s1,
+                            long s2) {
+      double rsq = 0.0;
+      for (int c = 0; c < 3; ++c) {
+        const double D = static_cast<double>(s0) * st.cell(0, c) +
+                         static_cast<double>(s1) * st.cell(1, c) +
+                         static_cast<double>(s2) * st.cell(2, c);
+        const double pos = st.atoms[j].position[c] + D;
+        const double del = st.atoms[i].position[c] - pos;
+        rsq += del * del;
+      }
+      return rsq;
+    };
+    // Brute force over the images that can be within R_max.
+    const double R_max = 6.5;
+    struct Pair { std::size_t i, j; long s[3]; double rsq; long double d; };
+    std::vector<Pair> all;
+    for (std::size_t i = 0; i < n; ++i)
+      for (std::size_t j = 0; j < n; ++j) {
+        const auto fi = nn_oracle::frac(L, st, i), fj = nn_oracle::frac(L, st, j);
+        long c0[3], M[3];
+        for (int k = 0; k < 3; ++k) {
+          c0[k] = static_cast<long>(std::llround(fi[k] - fj[k]));
+          M[k] = static_cast<long>(std::ceil((R_max + 1e-6) / L.h[k])) + 2;
+        }
+        for (long s0 = c0[0] - M[0]; s0 <= c0[0] + M[0]; ++s0)
+          for (long s1 = c0[1] - M[1]; s1 <= c0[1] + M[1]; ++s1)
+            for (long s2 = c0[2] - M[2]; s2 <= c0[2] + M[2]; ++s2) {
+              if (i == j && s0 == 0 && s1 == 0 && s2 == 0) continue;
+              const long double d =
+                  nn_oracle::norm(nn_oracle::pair_vector(L, st, i, j, s0, s1, s2));
+              if (d > R_max) continue;
+              all.push_back({i, j, {s0, s1, s2}, consumer_rsq(i, j, s0, s1, s2), d});
+            }
+      }
+    // Cutoffs: consumer-computed distances between 2.5 and 6 A, and 1-3
+    // ulps either side.
+    std::vector<double> dist;
+    for (const auto &p : all) {
+      const double d = std::sqrt(p.rsq);
+      if (d > 2.5 && d < 6.0) dist.push_back(d);
+    }
+    std::sort(dist.begin(), dist.end());
+    dist.erase(std::unique(dist.begin(), dist.end()), dist.end());
+    const std::size_t stride = std::max<std::size_t>(1, dist.size() / 5);
+    for (std::size_t t = 0; t < dist.size(); t += stride) {
+      for (int k = -3; k <= 3; ++k) {
+        double R = dist[t];
+        for (int u = 0; u < std::abs(k); ++u)
+          R = std::nextafter(R, k > 0 ? 100.0 : 0.0);
+        NNFinder().calc(st, R);
+        ++cutoffs;
+        const nn_oracle::KeySet table = nn_oracle::table_set(st);
+        std::size_t missing = 0, missing_exact = 0;
+        for (const auto &p : all) {
+          const nn_oracle::Key key(p.i, p.j, p.s[0], p.s[1], p.s[2]);
+          const bool listed = table.count(key) > 0;
+          if (p.rsq < R * R) {
+            ++pairs_checked;
+            if (!listed) ++missing;
+          }
+          if (p.d < static_cast<long double>(R) && !listed) ++missing_exact;
+        }
+        INFO("seed " << seed << ", R = " << R << " (" << k
+                     << " ulp from a pair distance): " << missing
+                     << " consumer-inside pairs and " << missing_exact
+                     << " exactly-inside pairs are not listed");
+        REQUIRE(missing == 0);
+        REQUIRE(missing_exact == 0);
+      }
+    }
+  }
+  INFO(cutoffs << " cutoffs, " << pairs_checked << " consumer-inside pairs");
+  CHECK(cutoffs >= 40 * 4 * 7);
+  CHECK(pairs_checked > 0);
+}
+
+// The image cap is a limit on degenerate cells, not a rounding bound: the
+// same periodic system is accepted or refused whatever the stored positions
+// of its atoms. A cube just thicker than cutoff/10 builds with its atom in
+// the cell or a million cells away; a cube of exactly cutoff/10 is refused
+// either way.
+TEST_CASE("NNFinder exact: the image cap does not depend on where the atoms "
+          "are stored",
+          "[nn][shifts_cap]") {
+  PeriodicTable::initialize();
+  const double R = 5.0;
+  for (const double offset : {0.0, 1.0e3, 1.0e6}) {
+    INFO("atom offset " << offset << " cells along a0");
+    {
+      const double a = 0.5 * (1.0 + 1e-12);
+      Structure st = make_cell(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+      add_frac(st, 0.1 + offset, 0.2, 0.3);
+      REQUIRE_NOTHROW(NNFinder().calc(st, R));
+      require_exact(st, R);
+    }
+    {
+      const double a = 0.5;  // R / a = 10 exactly: 23^3 image cells
+      Structure st = make_cell(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+      add_frac(st, 0.1 + offset, 0.2, 0.3);
+      CHECK_THROWS_AS(NNFinder().calc(st, R), std::runtime_error);
+    }
+  }
+}
+
+// Lengths outside about 1e-60 to 1e60 A are refused rather than computed:
+// below it the squares in the cell geometry underflow (a 1e-81 A cube gave
+// a list missing most of its images), above it they overflow. Inside it,
+// scale does not matter.
+TEST_CASE("NNFinder exact: cell vectors outside the supported length range "
+          "are refused",
+          "[nn][invalid][cell][scale]") {
+  PeriodicTable::initialize();
+  auto cube = [](double a) {
+    Structure st = make_cell(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+    add_frac(st, 0.3, 0.4, 0.5);
+    add_frac(st, 0.8, 0.15, 0.65);
+    return st;
+  };
+  SECTION("1e-81 A cube") {
+    Structure st = cube(1e-81);
+    std::string msg;
+    try {
+      NNFinder().calc(st, 5e-81);
+    } catch (const std::invalid_argument &e) {
+      msg = e.what();
+    }
+    INFO("message: " << msg);
+    CHECK(contains(msg, "range"));
+    CHECK_THROWS_AS(NNFinder::check_box(st, 1e-79), std::invalid_argument);
+  }
+  SECTION("1e78 A cube") {
+    Structure st = cube(1e78);
+    std::string msg;
+    try {
+      NNFinder().calc(st, 5e78);
+    } catch (const std::invalid_argument &e) {
+      msg = e.what();
+    }
+    INFO("message: " << msg);
+    CHECK(contains(msg, "range"));
+  }
+  SECTION("1e-50 A and 1e50 A cubes are exact") {
+    for (const double a : {1e-50, 1e50}) {
+      INFO("edge " << a);
+      Structure st = cube(a);
+      REQUIRE_NOTHROW(NNFinder().calc(st, 2.5 * a));
+      require_exact(st, 2.5 * a);
+    }
   }
 }

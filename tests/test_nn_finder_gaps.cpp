@@ -1,15 +1,15 @@
 /**
  * Test: NNFinder coverage on gap cells (triclinic, sub-cutoff, isolated atom,
- *       large BCC supercell, the kMaxTotalShifts image-cell cap).
+ *       large BCC supercell, the image-cell cap).
  *
  * These complement test_nn_cutoff_equivalence.cpp (cubic CH4 only) and
  * test_nn_finder_exact.cpp (every cell shape against a brute-force oracle),
  * and lock in the cells PC_OBSERVABLE produces: 4×4×4 BCC supercells
  * (cohesive_energy bulk), 1-atom vacuum cells (cohesive_energy iso), and
  * the degenerate near-zero cells the NativeRelaxer can drift into on wild θ.
- * NNFinder refuses a cell that would need more than kMaxTotalShifts = 10⁴
- * image cells, prod_k (2 N_k + 1) with N_k = floor(rcut / h_k) + 1 over the
- * (reduced) cell heights h_k, with std::runtime_error.
+ * NNFinder refuses a cell that would need more than 10⁴ image cells,
+ * prod_k (2 N_k + 1) with N_k = floor(rcut / h_k) + 1 over the (reduced)
+ * cell heights h_k, with std::runtime_error.
  *
  * NNFinder runs one search for every cell, thick or thinner than the
  * cutoff, so the triclinic and sub-cutoff cases check results, not a code
@@ -173,14 +173,14 @@ TEST_CASE("NNFinder: 4×4×4 BCC supercell — first+second+third shell counts",
     }
 }
 
-TEST_CASE("NNFinder: degenerate near-zero cell triggers kMaxTotalShifts throw",
+TEST_CASE("NNFinder: a degenerate near-zero cell hits the image-cell cap",
           "[nn][gaps][shifts_cap]")
 {
     PeriodicTable::initialize();
 
     /* Tiny cubic cell: 0.3 Å edge at 5.0 Å cutoff → each direction needs
      * N = floor(5.0 / 0.3) + 1 = 17 images, (2·17 + 1)³ = 42875 image
-     * cells > kMaxTotalShifts = 10⁴. Building the list is refused with
+     * cells > 10⁴ (the image-cell cap). Building the list is refused with
      * std::runtime_error. */
     Structure st;
     const double a = 0.3;

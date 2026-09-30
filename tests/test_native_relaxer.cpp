@@ -423,6 +423,14 @@ TEST_CASE("NativeRelaxer Iso: energy and forces after cached steps equal a "
         [&](double x) { return x >= rcut && x < rcut + opts.nn_skin; }));
     INFO(n_skin << " of " << d.size() << " final entries lie in the skin");
     REQUIRE(n_skin > 0);
+    /* ... and it was kept from an earlier cell (a cache hit after the cell
+     * changed), not built at the final one: a list built at rcut + skin on
+     * the final structure holds other pairs near rcut + skin. */
+    {
+        Structure rebuilt = st;
+        NNFinder().calc(rebuilt, rcut + opts.nn_skin);
+        REQUIRE(nn_oracle::table_set(rebuilt) != nn_oracle::table_set(st));
+    }
 
     /* Energy and forces with the relaxer's final list ... */
     StDescriptors d_relax = host.dc.calc(st);

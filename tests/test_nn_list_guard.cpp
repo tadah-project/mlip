@@ -370,3 +370,45 @@ TEST_CASE("dPhi/dtheta walkers refuse a neighbour list shorter than the "
         force_row_start));
   }
 }
+
+// DescriptorsCalc::calc(StructureDB) runs its structures in a parallel loop
+// (parallel_for), so it checks every list before the loop: the refusal
+// names the first structure whose list is short, whatever the thread order.
+TEST_CASE("DescriptorsCalc on a StructureDB refuses a short list before its "
+          "loop and names the structure",
+          "[nn][nn_guard][descriptors][stdb]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Context ctx = model_context(5.0, 0.0);
+  Trainer tr(ctx, ws);
+
+  NNFinder nnf;
+  StructureDB db;
+  Structure s1 = bcc_2x2x2();
+  s1.label = "full list";
+  nnf.calc(s1, 5.0);
+  Structure s2 = bcc_2x2x2();
+  s2.label = "short list at 4";
+  nnf.calc(s2, 4.0);
+  Structure s3 = bcc_2x2x2();
+  s3.label = "another short list";
+  nnf.calc(s3, 3.0);
+  db.add(s1);
+  db.add(s2);
+  db.add(s3);
+  REQUIRE(db.size() == 3);
+
+  CHECK_REFUSES_SHORT_LIST(tr.dc.calc(db));
+  const Outcome o = run([&]() { (void)tr.dc.calc(db); });
+  INFO("what: " << o.what);
+  CHECK(o.what.find("'short list at 4'") != std::string::npos);
+
+  // With every list at the model cutoff the database is computed.
+  StructureDB full;
+  for (std::size_t i = 0; i < db.size(); ++i) {
+    Structure s = db(i);
+    nnf.calc(s, 5.0);
+    full.add(s);
+  }
+  CHECK_NOTHROW(tr.dc.calc(full));
+}
