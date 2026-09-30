@@ -210,10 +210,12 @@ void StructureTransformation::shift(Structure &st, const tadah::core::Vec3d &shi
 
 void StructureTransformation::mirrorOrigin(Structure &st)
 {
+  // Inversion M = -I: positions and forces change sign; S' = M S M^T = S;
+  // the cell is kept (-a_i span the same lattice).
   for (auto &atom : st.atoms) {
     atom.position = -atom.position;
+    atom.force    = -atom.force;
   }
-  // Reflection M = -I => S'=S. (No net effect if we do M*S*M^T.)
 }
 
 void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec)

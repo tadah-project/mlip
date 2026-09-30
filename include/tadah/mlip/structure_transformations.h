@@ -8,10 +8,13 @@ namespace mlip {
 /**
  * @class StructureTransformation
  * @brief Methods that modify a Structure: scaling, shearing, rotating, replicating, etc.
- *        The stored virial stress is updated for linear transforms as S' = M * S * M^T 
- *        if the transform has a physically consistent interpretation (det(M) > 0).
- *        For negative determinant transforms (e.g., reflection), the code still does 
- *        S' = M*S*M^T, but it might be physically questionable.
+ *        The lattice vectors are the rows of Structure::cell and move with the
+ *        atoms (a_i' = M a_i, cell' = cell * M^T). For an orthogonal M (a
+ *        rotation or a reflection) the transform is a rigid motion: forces
+ *        move as F' = M F and the stress as S' = M * S * M^T, exactly. A
+ *        shear or a scaling changes the structure itself; its stored energy,
+ *        forces and stress no longer belong to it (shear applies
+ *        S' = M * S * M^T, scale multiplies the stress by factor^2).
  *
  * New additions:
  *   - scaleVolumeToDensity: resizes the cell to achieve a target density.
@@ -101,8 +104,9 @@ public:
   static void shift(Structure &st, const tadah::core::Vec3d &shiftVec);
 
   /**
-   * Mirrors about origin => pos' = -pos.
-   * By default, leaves stress unchanged or uses M = -I => S' = S mathematically.
+   * Inversion through the origin: pos' = -pos and force' = -force. The
+   * stress (S' = M S M^T with M = -I) and the cell (-a_i span the same
+   * lattice) are unchanged.
    */
   static void mirrorOrigin(Structure &st);
 
