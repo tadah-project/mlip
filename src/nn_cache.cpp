@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -39,8 +38,10 @@ bool is_fresh(Structure& st, const State& s)
     if (!s.cached_nn) return false;
 
     /* The list holds every pair closer than R at the build geometry; the
-     * caller needs every pair closer than rc = R - skin now. rc is
-     * rounded up so it cannot fall an ulp below the caller's cutoff. */
+     * caller needs every pair closer than rc = R - skin now, where its own
+     * cutoff rcut gave R = fl(rcut + skin). That sum and the subtraction
+     * each round by at most eps R, so rc is taken 4 eps R above R - skin:
+     * never below the caller's rcut, even when skin > rcut. */
     const double R = s.cached_nn->cutoff;
     const double rc_exact = R - s.skin;
     if (!(rc_exact > 0.0))
@@ -49,8 +50,7 @@ bool is_fresh(Structure& st, const State& s)
             "cutoff " + std::to_string(R) + " A, which does not exceed the "
             "skin " + std::to_string(s.skin) + " A; build it with NNFinder at "
             "cutoff = rcut + skin");
-    const double rc = std::nextafter(rc_exact,
-                                     std::numeric_limits<double>::infinity());
+    const double rc = rc_exact + 4.0 * detail::kUnitRoundoff * R;
 
     /* Geometry of the current cell. A cell NNFinder would refuse is
      * stale: the rebuild then reports it. */
