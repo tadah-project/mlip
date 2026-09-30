@@ -18,8 +18,10 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
 
   // The rows of the cell are the lattice vectors. A LAMMPS general
   // triclinic box needs a right-handed, non-degenerate (avec, bvec, cvec):
-  // a left-handed cell is written as (a0, a1, -a2), a basis of the same
-  // lattice with the same volume, and a singular cell is refused.
+  // a left-handed cell is written as (a0, a1, -a2) from origin a2, the
+  // same parallelepiped (so every atom stays inside the box and each
+  // lattice direction keeps its boundary flag), and a singular cell is
+  // refused.
   const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
                     a2 = st.cell.row(2);
   const double det = a0 * a1.cross(a2);
@@ -70,7 +72,14 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
     file << "    " << abcvec[i];
     file << std::endl;
   }
-  file << "    0.0 0.0 0.0 abc origin" << std::endl;
+  if (csign < 0.0) {
+    put_sig(file, st.cell(2,0));
+    put_sig(file, st.cell(2,1));
+    put_sig(file, st.cell(2,2));
+    file << "    abc origin" << std::endl;
+  } else {
+    file << "    0.0 0.0 0.0 abc origin" << std::endl;
+  }
   // END LAMMPS HEADER
 
   // BEGIN LAMMPS BODY
