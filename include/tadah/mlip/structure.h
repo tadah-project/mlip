@@ -62,7 +62,9 @@ struct Structure {
    *  atom at fractional coordinates f is at r = f0 a0 + f1 a1 + f2 a2
    *  (cell.transpose() * f). The basis may be left- or right-handed;
    *  get_volume() is |a0 . (a1 x a2)|. The dataset format writes the rows
-   *  as the three cell lines. */
+   *  as the three cell lines. The cell may be thinner than any cutoff and
+   *  the atoms need not lie inside it (fractional coordinates outside
+   *  [0, 1) are fine): NNFinder finds every periodic image. */
   tadah::core::Matrix3d cell;
 
   /** Virial stress tensor. */
@@ -77,7 +79,11 @@ struct Structure {
    */
   double T=0;
 
-  mlip::NNTablePtr nn;   // may be nullptr until NNFinder fills it
+  /** Neighbour list: every periodic image of every atom within its
+   *  cutoff (NNTable::cutoff), as NNFinder builds it; nullptr until
+   *  NNFinder fills it. Atoms may lie outside the cell: shifts are
+   *  relative to the stored positions. */
+  mlip::NNTablePtr nn;
 
   /** Weighting parameter for energy used during training.
    *
