@@ -30,6 +30,14 @@ public:
    */
   Structure getStructure() const override;
 
+  /**
+   * @brief Reads geometry, positions_cartesian, stoichiometry, etc. from AFLOW JSON.
+   *
+   * Public so that an AFLOW entry can be parsed without a network query
+   * (as CifReader::parseCifContents does for CIF text).
+   */
+  void parseAflowJson(const std::string &jsonContent);
+
 private:
   Structure m_structure;
   std::unique_ptr<IMaterialsDataProvider> m_dataProvider;
@@ -38,11 +46,6 @@ private:
    * @brief Calls AFLOWDataProvider->QueryByID(auid), then parse the returned JSON.
    */
   void fetchAndParseAflowByAuid(const std::string &auid);
-
-  /**
-   * @brief Reads geometry, positions_cartesian, stoichiometry, etc. from AFLOW JSON.
-   */
-  void parseAflowJson(const std::string &jsonContent);
 
   /**
    * @brief Build a 3×3 cell from (a,b,c, α,β,γ) in degrees.
