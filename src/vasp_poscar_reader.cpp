@@ -186,9 +186,16 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   if (hasElementSymbols) {
     elemSymbols = split(lines[5]);
   } else {
-    // fallback: unknown symbol, use X
-    int nEl = (int)speciesCounts.size();
-    elemSymbols.resize(nEl, "X");
+    throw std::runtime_error(
+      "VaspPoscarReader: line 6 holds the atom counts, not the element "
+      "symbols (the VASP 4 layout); add the element-symbol line above the "
+      "counts.");
+  }
+  if (elemSymbols.size() != speciesCounts.size()) {
+    throw std::runtime_error(
+      "VaspPoscarReader: " + std::to_string(elemSymbols.size()) +
+      " element symbols on line 6 but " + std::to_string(speciesCounts.size()) +
+      " atom counts on line 7.");
   }
 
   // Expand element symbols for each atomic site

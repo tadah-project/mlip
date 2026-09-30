@@ -14,8 +14,9 @@ namespace mlip {
  *      cell volume), or three numbers > 0 scaling the x, y and z
  *      components of the lattice vectors; anything else is refused
  *   3-5) Lattice vectors a0, a1, a2, stored as rows of Structure::cell
- *   6) Element symbols (optional; without them the next line is line 6)
- *   7) Atom counts per element
+ *   6) Element symbols (required: a file without them, the VASP 4
+ *      layout, is refused)
+ *   7) Atom counts per element, one per symbol
  *   8) Optional "Selective dynamics" line (first character S or s)
  *   9) Coordinate mode: first character C, c, K or k for Cartesian,
  *      anything else for Direct (fractional)
