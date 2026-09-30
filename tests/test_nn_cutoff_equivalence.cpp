@@ -11,9 +11,10 @@
  * HPO's reported validation metrics will disagree with predict_engine.
  *
  * Two representative cells are tested:
- *  - 5.9 Å cubic  (check_box returns TRUE for 4.5 Å → binned nx=1,
- *                  but FALSE for 7.0 Å → naive)
- *  - 10.0 Å cubic (both use binned, but nx=2 for 4.5 Å and nx=1 for 7.0 Å)
+ *  - 5.9 Å cubic  (the cell height is above 4.5 Å and below 7.0 Å, so the
+ *                  7.0 Å list holds images beyond the nearest cells:
+ *                  check_box is TRUE at 4.5 Å and FALSE at 7.0 Å)
+ *  - 10.0 Å cubic (the cell height is above both cutoffs)
  */
 
 #include "tadah_test_skip.hpp"  // before catch2/catch.hpp (it needs Catch's
@@ -202,8 +203,7 @@ TEST_CASE("NNFinder: check_box returns correct values", "[nn][check_box]")
 TEST_CASE("NNFinder: 5.9 Å cell — 7.0 Å list is superset of 4.5 Å list",
           "[nn][equivalence][cell_5.9]")
 {
-    // check_box(4.5) = true  → calc_binned, nx=1
-    // check_box(7.0) = false → calc_naive
+    // Height 5.9 Å: above 4.5 Å (check_box true), below 7.0 Å (false).
     Structure st_small = build_ch4(5.9);
     Structure st_large = build_ch4(5.9);
 
@@ -233,8 +233,7 @@ TEST_CASE("NNFinder: 5.9 Å cell — 7.0 Å list is superset of 4.5 Å list",
 TEST_CASE("NNFinder: 10.0 Å cell — 7.0 Å list is superset of 4.5 Å list",
           "[nn][equivalence][cell_10.0]")
 {
-    // check_box(4.5) = true → calc_binned, nx=2
-    // check_box(7.0) = true → calc_binned, nx=1
+    // Height 10.0 Å: above both cutoffs (check_box true for both).
     Structure st_small = build_ch4(10.0);
     Structure st_large = build_ch4(10.0);
 
@@ -260,33 +259,33 @@ TEST_CASE("NNFinder: 10.0 Å cell — 7.0 Å list is superset of 4.5 Å list",
     REQUIRE(pos_err.empty());
 }
 
-TEST_CASE("NNFinder: symmetry — 4.5 Å list for 5.9 Å cell: binned=naive",
-          "[nn][binned_vs_naive][cell_5.9]")
+TEST_CASE("NNFinder: 5.9 Å cell — the 7.0 Å list filtered to 4.5 Å equals the 4.5 Å list",
+          "[nn][filter][cell_5.9]")
 {
-    // Both binned (4.5 Å) and naive (7.0 Å filtered to 4.5 Å) should
-    // find exactly the same pairs within 4.5 Å.  This test checks
-    // nn_pos gives the same positions.
-    Structure st_binned = build_ch4(5.9);
-    Structure st_naive  = build_ch4(5.9);
+    // The 4.5 Å list and the 7.0 Å list filtered to 4.5 Å (whose search
+    // reaches images beyond the nearest cells, the height being 5.9 Å)
+    // must hold exactly the same pairs within 4.5 Å.
+    Structure st_small = build_ch4(5.9);
+    Structure st_large = build_ch4(5.9);
 
     NNFinder nnf;
-    nnf.calc(st_binned, 4.5);  // uses calc_binned (check_box=true)
-    nnf.calc(st_naive,  7.0);  // uses calc_naive  (check_box=false)
+    nnf.calc(st_small, 4.5);
+    nnf.calc(st_large, 7.0);
 
-    // For every pair in binned (4.5 Å), check it's in naive (7.0 Å)
-    std::string err = check_superset(st_binned, st_naive, 4.5);
+    // Every pair of the 4.5 Å list is in the 7.0 Å list.
+    std::string err = check_superset(st_small, st_large, 4.5);
     INFO(err);
     REQUIRE(err.empty());
 
-    // Also the reverse: pairs in naive within 4.5 Å must be in binned
-    // (We construct a filtered view of naive by checking actual distances)
+    // The reverse: every pair of the 7.0 Å list closer than 4.5 Å is in
+    // the 4.5 Å list (a filtered view of the 7.0 Å list by distance).
     const double rcut_small_sq = 4.5 * 4.5;
-    const auto& large_nn = *st_naive.nn;
+    const auto& large_nn = *st_large.nn;
     std::ostringstream err2;
-    for (size_t i = 0; i < st_naive.natoms(); ++i) {
+    for (size_t i = 0; i < st_large.natoms(); ++i) {
         for (size_t m = 0; m < large_nn.idx[i].size(); ++m) {
-            Vec3d pos_nbr = st_naive.nn_pos(i, m);
-            const auto& pos_i = st_naive(i).position;
+            Vec3d pos_nbr = st_large.nn_pos(i, m);
+            const auto& pos_i = st_large(i).position;
             double del0 = pos_i[0]-pos_nbr[0];
             double del1 = pos_i[1]-pos_nbr[1];
             double del2 = pos_i[2]-pos_nbr[2];
@@ -295,11 +294,11 @@ TEST_CASE("NNFinder: symmetry — 4.5 Å list for 5.9 Å cell: binned=naive",
 
             size_t j    = large_nn.idx[i][m];
             Vec3d shift = large_nn.shift[i][m];
-            if (!has_nn_entry(st_binned, i, j, shift)) {
+            if (!has_nn_entry(st_small, i, j, shift)) {
                 err2 << "Atom " << i << " → nbr " << j
                      << " shift(" << shift[0] << "," << shift[1] << "," << shift[2]
                      << ") dist=" << std::sqrt(rij_sq)
-                     << " Å: in naive (7.0) list but MISSING from binned (4.5) list!\n";
+                     << " Å: in the 7.0 Å list but MISSING from the 4.5 Å list!\n";
             }
         }
     }
@@ -310,7 +309,7 @@ TEST_CASE("NNFinder: symmetry — 4.5 Å list for 5.9 Å cell: binned=naive",
 // ===========================================================================
 // Tests using actual CH4 phase I database (160-atom structures, 9.96 Å cell).
 // These test that the NN superset property holds for real, dense structures
-// where both 4.5 Å and 7.0 Å cutoffs use calc_binned (nx=2 vs nx=1).
+// whose cell height exceeds both the 4.5 Å and the 7.0 Å cutoff.
 // ===========================================================================
 
 // The CH4 phase I validation database used during the HPO run; the dataset

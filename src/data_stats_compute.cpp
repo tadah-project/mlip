@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <map>
 #include <numeric>
 #include <random>
@@ -14,6 +15,7 @@
 #include <tadah/core/stats/kde.h>
 #include <tadah/core/stats/percentiles.h>
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/detail/structure_errors.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/structure.h>
 
@@ -87,22 +89,36 @@ DataStats compute_data_stats(StructureDB& stdb,
     idx = std::move(all);
   }
 
-  // 1) Make sure neighbour lists are populated for the sampled subset.
-  //    We touch only the subset so a 256-of-6288 audit is bounded by
-  //    the sample, not the full DB.
+  // 1) Make sure neighbour lists covering the audit cutoff are populated
+  //    for the sampled subset (a list built at a smaller cutoff lacks
+  //    pairs). We touch only the subset so a 256-of-6288 audit is bounded
+  //    by the sample, not the full DB.
   std::vector<std::size_t> need_nn_idx;
   need_nn_idx.reserve(idx.size());
   for (std::size_t s : idx) {
-    if (!stdb(s).nn) need_nn_idx.push_back(s);
+    if (!stdb(s).nn || stdb(s).nn->cutoff < rcut_audit)
+      need_nn_idx.push_back(s);
   }
   if (!need_nn_idx.empty()) {
     NNFinder nnf;
+    // An exception may not leave the OpenMP loop: each iteration keeps its
+    // own, and the lowest-numbered structure's is rethrown after the loop.
+    std::vector<std::exception_ptr> errors(need_nn_idx.size());
 #ifdef _OPENMP
     #pragma omp parallel for
 #endif
     for (std::size_t k = 0; k < need_nn_idx.size(); ++k) {
-      nnf.calc(stdb(need_nn_idx[k]), ctx);
+      try {
+        nnf.calc(stdb(need_nn_idx[k]), rcut_audit);
+      } catch (...) {
+        errors[k] = std::current_exception();
+      }
     }
+    for (std::size_t k = 0; k < errors.size(); ++k)
+      if (errors[k])
+        detail::rethrow_for_structure(errors[k], need_nn_idx[k], stdb.size(),
+                                      stdb(need_nn_idx[k]).label,
+                                      "compute_data_stats");
   }
 
   // 2) Collect per-pair r_ij distances + per-element neighbour counts +
@@ -130,7 +146,9 @@ DataStats compute_data_stats(StructureDB& stdb,
       const std::string Si = ai.symbol;
       seen_elem[Si] = true;
 
-      // neighbour-count summary uses the audit cutoff (== RCUTMAX).
+      // neighbour-count summary uses the audit cutoff (== RCUTMAX),
+      // strictly inside it as the model counts a pair (the list may hold
+      // pairs a rounding margin beyond its cutoff, NNTable::guard).
       double n_count = 0.0;
       const size_t nnsize = st.nn_size(i);
       for (size_t jj = 0; jj < nnsize; ++jj) {
@@ -139,7 +157,7 @@ DataStats compute_data_stats(StructureDB& stdb,
         const double dy = ai.position[1] - nnp[1];
         const double dz = ai.position[2] - nnp[2];
         const double rij = std::sqrt(dx*dx + dy*dy + dz*dz);
-        if (rij <= 0.0 || rij > rcut_audit) continue;
+        if (rij <= 0.0 || rij >= rcut_audit) continue;
         n_count += 1.0;
         const std::size_t neigh_idx = st.nn->idx[i][jj];
         const std::string Sj = st(neigh_idx).symbol;

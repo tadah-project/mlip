@@ -87,14 +87,18 @@ public:
          * 0.001 mirrors Ecoh_fast.in (vmax 0.001). Without this bound,
          * F_eps from a wild model can drive scale_trial to ~0 within
          * the line-search halving sequence, producing a degenerate
-         * cell whose NNFinder::num_shifts iterates over O(10^9+) image
-         * triples and effectively hangs. */
+         * cell for which NNFinder would need more than its limit of
+         * 10^4 image cells and refuses the neighbour list. */
         double       max_strain_step = 0.001;
         /* Skin distance for neighbour-list caching. NN list is built at
-         * cutoff = rcut + skin so pairs that drift into the rcut sphere
-         * (by up to skin/2) are already present. The list is reused
-         * across iterations until any atom has moved > skin/2 since
-         * the last rebuild (LAMMPS Neighbor::check_distance criterion).
+         * cutoff = rcut + skin so pairs that come within rcut after the
+         * atoms or the cell moved are already present. The list is reused
+         * while it provably holds every pair closer than rcut
+         * (nn_cache::is_fresh: for a fixed cell, while no atom has moved
+         * more than skin/2 since the last rebuild, LAMMPS'
+         * Neighbor::check_distance criterion; for a changed cell the
+         * bound also takes the cell's change into account), with the
+         * image displacements of the current cell.
          * Default 2.0 Å matches LAMMPS `neighbor 2.0 bin`. Set to 0 to
          * disable caching (rebuild every eval, original behaviour). */
         double       nn_skin       = 2.0;

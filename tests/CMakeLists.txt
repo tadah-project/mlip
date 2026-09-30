@@ -16,3 +16,15 @@ endif()
 
 include(Catch)
 catch_discover_tests(test_mlip)
+
+# parallel_for rethrows the lowest failing index's exception; with one
+# thread (the suite's setting) that index is always the first to throw, so
+# a hidden case checks the rule with several threads in an entry of its own.
+if(TADAH_ENABLE_OPENMP)
+    add_test(NAME mlip_parallel_for_threads
+        COMMAND test_mlip "[parallel_for_threads]" --warn NoTests)
+    set_tests_properties(mlip_parallel_for_threads PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=4;OMP_THREAD_LIMIT=4"
+        LABELS "mlip"
+        TIMEOUT 120)
+endif()

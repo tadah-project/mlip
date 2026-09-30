@@ -24,15 +24,20 @@
 #include <tadah/mlip/cell_builder.h>
 #include <tadah/mlip/native_relaxer.h>
 #include <tadah/mlip/nn_finder.h>
+#include <tadah/mlip/st_descriptors.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_transformations.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 
+#include "nn_oracle.h"
+
+#include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -325,4 +330,178 @@ TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
     /* Scale factor should be physically reasonable (not blown up). */
     CHECK(res.scale_factor > 0.5);
     CHECK(res.scale_factor < 2.0);
+}
+
+namespace {
+
+using tadah::mlip::StDescriptors;
+
+/* n x n x n supercell of the 2-atom cubic bcc Ta cell, built with the
+ * test-local loop of nn_oracle (not StructureTransformation::replicate). */
+Structure bcc_ta_local(double a0, int n) {
+    Structure prim;
+    prim.label = "bcc Ta";
+    prim.cell.load(a0, 0.0, 0.0,
+                   0.0, a0, 0.0,
+                   0.0, 0.0, a0);
+    const Element ta = PeriodicTable::find_by_symbol("Ta");
+    prim.add_atom(Atom(ta, 0.0, 0.0, 0.0));
+    prim.add_atom(Atom(ta, 0.5 * a0, 0.5 * a0, 0.5 * a0));
+    return nn_oracle::supercell(prim, n, n, n);
+}
+
+/* The training set of make_ta_train_db, built with the local supercell. */
+StructureDB make_ta_train_db_local() {
+    StructureDB db;
+    const std::vector<double> a0s = {3.20, 3.30, 3.40};
+    db.dbidx = {0, a0s.size()};
+    for (std::size_t i = 0; i < a0s.size(); ++i) {
+        Structure st = bcc_ta_local(a0s[i], 2);
+        st.energy = -0.5 * static_cast<double>(i + 1);
+        db.structures.push_back(st);
+    }
+    return db;
+}
+
+/* Distance of every table entry of st, from the entry's shift and the
+ * CURRENT cell (the oracle's own arithmetic, not the table's disp). */
+std::vector<double> entry_distances(const Structure& st) {
+    std::vector<double> d;
+    const auto L = nn_oracle::lattice(st);
+    for (const auto& k : nn_oracle::table_set(st))
+        d.push_back(static_cast<double>(nn_oracle::norm(nn_oracle::pair_vector(
+            L, st, std::get<0>(k), std::get<1>(k), std::get<2>(k),
+            std::get<3>(k), std::get<4>(k)))));
+    return d;
+}
+
+}  // namespace
+
+TEST_CASE("NativeRelaxer Iso: energy and forces after cached steps equal a "
+          "fresh neighbour list at the final cell",
+          "[mlip][native_relaxer][nn]")
+{
+    /* In Iso mode every accepted step rescales the cell, and the relaxer
+     * reuses its neighbour list (built at rcut + skin) while the list still
+     * covers rcut. A reused list must describe the CURRENT cell: its images
+     * r_j + s.A move with the cell. The energy and forces the relaxer ends
+     * with must equal those from a list built afresh at the final cell. */
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db_local();
+    host.train(train_db);
+
+    /* 3x3x3 bcc (54 atoms, side 9.3 A >= rcut + skin), compressed. */
+    Structure st = bcc_ta_local(3.10, 3);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.pressure  = 0.0;
+    opts.ftol      = 1.0e-3;
+    opts.maxiter   = 500;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+    REQUIRE(opts.nn_skin == 2.0);
+
+    NativeRelaxer relaxer;
+    auto res = relaxer.relax(st, *host.model, host.dc, host.context, opts);
+    INFO("converged=" << res.converged << "  iter=" << res.n_iter
+         << "  scale=" << res.scale_factor << "  E=" << res.final_energy);
+
+    /* Preconditions: the cell changed, and the final list is the relaxer's
+     * skin list (it holds pairs between rcut and rcut + skin). */
+    REQUIRE(res.n_iter > 1);
+    REQUIRE(res.scale_factor != 1.0);
+    REQUIRE(st.nn);
+    const auto d = entry_distances(st);
+    const std::size_t n_skin = static_cast<std::size_t>(std::count_if(
+        d.begin(), d.end(),
+        [&](double x) { return x >= rcut && x < rcut + opts.nn_skin; }));
+    INFO(n_skin << " of " << d.size() << " final entries lie in the skin");
+    REQUIRE(n_skin > 0);
+    /* ... and it was kept from an earlier cell (a cache hit after the cell
+     * changed), not built at the final one: a list built at rcut + skin on
+     * the final structure holds other pairs near rcut + skin. */
+    {
+        Structure rebuilt = st;
+        NNFinder().calc(rebuilt, rcut + opts.nn_skin);
+        REQUIRE(nn_oracle::table_set(rebuilt) != nn_oracle::table_set(st));
+    }
+
+    /* Energy and forces with the relaxer's final list ... */
+    StDescriptors d_relax = host.dc.calc(st);
+    const double E_relax = host.model->epredict(d_relax);
+    std::vector<tadah::core::force_type> F_relax(st.natoms());
+    for (std::size_t a = 0; a < st.natoms(); ++a)
+        F_relax[a] = host.model->fpredict(a, d_relax, st);
+
+    /* ... and with a list built afresh at rcut on the final structure. */
+    Structure fresh = st;
+    fresh.nn.reset();
+    NNFinder().calc(fresh, rcut);
+    StDescriptors d_fresh = host.dc.calc(fresh);
+    const double E_fresh = host.model->epredict(d_fresh);
+    double f_diff = 0.0;
+    for (std::size_t a = 0; a < st.natoms(); ++a) {
+        const auto F = host.model->fpredict(a, d_fresh, fresh);
+        for (int k = 0; k < 3; ++k)
+            f_diff = std::max(f_diff, std::abs(F_relax[a][k] - F[k]));
+    }
+    INFO("E(relaxer list) = " << E_relax << ", E(fresh list) = " << E_fresh
+         << ", max |dF| = " << f_diff << " eV/A");
+    CHECK(std::abs(E_relax - E_fresh) <= 1e-10 * std::max(1.0, std::abs(E_fresh)));
+    CHECK(f_diff <= 1e-10);
+    /* The relaxer's reported energy is the one of its final list. */
+    CHECK(res.final_energy == Approx(E_fresh).epsilon(1e-10));
+}
+
+TEST_CASE("NativeRelaxer with nn_skin 0 does not cache",
+          "[mlip][native_relaxer][nn]")
+{
+    /* nn_skin = 0 means: build the list at rcut for every evaluation. A
+     * list reused across an expansion would still hold pairs that have
+     * moved beyond rcut (and may have lost none inside it), so the final
+     * list must be exactly the rcut list of the final cell. */
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db_local();
+    host.train(train_db);
+
+    Structure st = bcc_ta_local(3.10, 3);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.pressure  = 0.0;
+    opts.ftol      = 1.0e-3;
+    opts.maxiter   = 500;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+    opts.nn_skin   = 0.0;
+
+    NativeRelaxer relaxer;
+    auto res = relaxer.relax(st, *host.model, host.dc, host.context, opts);
+    INFO("converged=" << res.converged << "  iter=" << res.n_iter
+         << "  scale=" << res.scale_factor);
+    /* Precondition: the relax expanded the cell (bcc 3.10 -> about 3.3,
+     * so the 4.38 A shell of the start moves beyond rcut). */
+    REQUIRE(res.scale_factor > 1.03);
+    REQUIRE(st.nn);
+
+    const double w = nn_oracle::window(st, rcut);
+    const auto d = entry_distances(st);
+    const std::size_t n_beyond = static_cast<std::size_t>(std::count_if(
+        d.begin(), d.end(), [&](double x) { return x >= rcut + w; }));
+    INFO(n_beyond << " of " << d.size() << " final entries lie beyond rcut");
+    CHECK(n_beyond == 0);
+    const auto cmp = nn_oracle::compare(st, rcut);
+    INFO(cmp.summary());
+    CHECK(cmp.missing.empty());
 }

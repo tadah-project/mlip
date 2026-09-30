@@ -52,6 +52,7 @@
  */
 
 #include <tadah/core/core_types.h>
+#include <tadah/mlip/detail/nn_guard.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d2/d2_base.h>
@@ -104,13 +105,10 @@ assemble_dphi_train_energy_rows_d2(const StructureDB&                  stdb,
 
     const double rcut2b    = d2.get_rcut();
     const double rcut2b_sq = rcut2b * rcut2b;
+    detail::require_db_nn_cutoff(stdb, rcut2b, "assemble_dphi_train_energy_rows_d2");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_energy_rows_d2: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         /* Sum per-atom dAED/dtheta into the energy row of dPhi. With
          * BF_Linear, calc_phi_energy_row is just sum-over-atoms of
@@ -197,13 +195,10 @@ assemble_dphi_train_energy_rows_dm(const StructureDB&                 stdb,
 
     const double rcutmb    = dm.get_rcut();
     const double rcutmb_sq = rcutmb * rcutmb;
+    detail::require_db_nn_cutoff(stdb, rcutmb, "assemble_dphi_train_energy_rows_dm");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_energy_rows_dm: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t row_off = s * n_cols;
         for (std::size_t i = 0; i < st.natoms(); ++i) {
@@ -327,16 +322,13 @@ assemble_dphi_train_energy_rows_d2_kern(
 
     const double rcut2b    = d2.get_rcut();
     const double rcut2b_sq = rcut2b * rcut2b;
+    detail::require_db_nn_cutoff(stdb, rcut2b, "assemble_dphi_train_energy_rows_d2_kern");
 
     bool any_contrib_dD = false;
     bool any_contrib_K  = false;
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_energy_rows_d2_kern: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t row_off = s * n_cols;
         for (std::size_t i = 0; i < st.natoms(); ++i) {
@@ -459,13 +451,10 @@ assemble_dphi_train_force_rows_d2(
 
     const double rcut2b    = d2.get_rcut();
     const double rcut2b_sq = rcut2b * rcut2b;
+    detail::require_db_nn_cutoff(stdb, rcut2b, "assemble_dphi_train_force_rows_d2");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_force_rows_d2: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t row_start_s = force_row_start_per_struct[s];
 
@@ -578,13 +567,10 @@ assemble_dphi_train_force_rows_dm(
 
     const double rcutmb    = dm.get_rcut();
     const double rcutmb_sq = rcutmb * rcutmb;
+    detail::require_db_nn_cutoff(stdb, rcutmb, "assemble_dphi_train_force_rows_dm");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_force_rows_dm: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t natoms = st.natoms();
 
@@ -806,13 +792,10 @@ assemble_dphi_train_both_rows_d2(
 
     const double rcut2b    = d2.get_rcut();
     const double rcut2b_sq = rcut2b * rcut2b;
+    detail::require_db_nn_cutoff(stdb, rcut2b, "assemble_dphi_train_both_rows_d2");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_both_rows_d2: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t e_row_off = s * n_cols;
         const std::size_t row_start_s =
@@ -929,13 +912,10 @@ assemble_dphi_train_both_rows_dm(
 
     const double rcutmb    = dm.get_rcut();
     const double rcutmb_sq = rcutmb * rcutmb;
+    detail::require_db_nn_cutoff(stdb, rcutmb, "assemble_dphi_train_both_rows_dm");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_both_rows_dm: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t natoms = st.natoms();
 
@@ -1104,16 +1084,13 @@ build_dm_rho_cache(const StructureDB&             stdb,
 
     const double rcutmb    = dm.get_rcut();
     const double rcutmb_sq = rcutmb * rcutmb;
+    detail::require_db_nn_cutoff(stdb, rcutmb, "build_dm_rho_cache");
 
 #if defined(TADAH_ENABLE_OPENMP)
 #   pragma omp parallel for schedule(dynamic)
 #endif
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "build_dm_rho_cache: structure " + std::to_string(s) +
-                " has no NN cache; run NNFinder first.");
 
         const std::size_t natoms = st.natoms();
         auto& rhoi_per_atom = cache.rhoi_per_struct[s];
@@ -1196,13 +1173,10 @@ assemble_dphi_train_both_rows_dm_cached(
 
     const double rcutmb    = dm.get_rcut();
     const double rcutmb_sq = rcutmb * rcutmb;
+    detail::require_db_nn_cutoff(stdb, rcutmb, "assemble_dphi_train_both_rows_dm_cached");
 
     for (std::size_t s = 0; s < stdb.size(); ++s) {
         const Structure& st = stdb(s);
-        if (!st.nn)
-            throw std::runtime_error(
-                "assemble_dphi_train_both_rows_dm_cached: structure " +
-                std::to_string(s) + " has no NN cache; run NNFinder first.");
 
         const std::size_t natoms = st.natoms();
         const auto& rhoi_per_atom = cache.rhoi_per_struct[s];

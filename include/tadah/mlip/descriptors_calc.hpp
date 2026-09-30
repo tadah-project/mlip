@@ -1,8 +1,10 @@
 #ifndef DESCRIPTORS_CALC_HPP
 #define DESCRIPTORS_CALC_HPP
 
+#include <algorithm>
 #include <cstddef>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/detail/nn_guard.h>
 #include <tadah/mlip/parallel.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/models/descriptors/dimer_element_pairs.h>
@@ -127,7 +129,17 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   context.addInternal("DSIZE",dsize);
 }
 template <typename D2, typename DM, typename C2, typename CM>
+double DescriptorsCalc<D2,DM,C2,CM>::neighbour_cutoff() const {
+  double rc = 0.0;
+  if (context.get<bool>("INIT2B") && d2.size()) rc = std::max(rc, d2.get_rcut());
+  if (context.get<bool>("INITMB") && dm.size()) rc = std::max(rc, dm.get_rcut());
+  return rc;
+}
+
+template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &st_d) const {
+  if (dm.size())
+    detail::require_nn_cutoff(st, dm.get_rcut(), "DescriptorsCalc::calc_rho");
   double rcut_mb_sq = pow(context.get<double>("RCUTMBMAX"),2);
   tadah::core::rhos_type &rhos = st_d.rhos;
   size_t s = dm.rhoi_size()+dm.rhoip_size();
@@ -159,6 +171,8 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_rho(const Structure &st, StDescriptors &
 
 template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) const {
+
+  detail::require_nn_cutoff(st, neighbour_cutoff(), "DescriptorsCalc");
 
   bool init2b = context.get<bool>("INIT2B");
   bool initmb = context.get<bool>("INITMB");
@@ -398,6 +412,14 @@ StDescriptors DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st) const {
 template <typename D2, typename DM, typename C2, typename CM>
 StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) const {
   StDescriptorsDB st_desc_db(stdb, context);
+
+  // Refuse a missing or short neighbour list before the parallel loop, so
+  // the error names the first such structure whatever the thread order.
+  if (!context.get<bool>("DIMER",0)) {
+    const double rc = neighbour_cutoff();
+    for (size_t i = 0; i < stdb.size(); ++i)
+      detail::require_nn_cutoff(stdb(i), rc, "DescriptorsCalc");
+  }
 
   // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
   // Each i writes a disjoint st_desc_db(i) => order-independent.

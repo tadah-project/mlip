@@ -1,11 +1,13 @@
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include "catch2/catch.hpp"
 #include "tadah/core/element.h"
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/nn_table.h>
 #include <tadah/mlip/structure.h>
 
 using namespace tadah::core;
@@ -232,4 +234,67 @@ TEST_CASE("Structure::save keeps the caller's stream format and reports "
 
   CHECK_THROWS_AS(st.save("/nonexistent_dir_for_tadah_test/x.dat"),
                   std::runtime_error);
+}
+
+// get_nn_iindex(i, j, jj) returns the position ii of the reverse entry
+// (i, -s) in atom j's list for the entry jj = (j, s) of atom i. A table
+// without that reverse entry is broken (every NNFinder table is symmetric),
+// and returning idx[j].size() made callers read one past the end of j's
+// list. The lookup reports the broken table instead.
+TEST_CASE("get_nn_iindex throws when the reverse entry is missing",
+          "[structure][nn]") {
+  PeriodicTable::initialize();
+  Structure st;
+  st.cell.load(4.0, 0.0, 0.0,
+               0.0, 4.0, 0.0,
+               0.0, 0.0, 4.0);
+  st.add_atom(Atom(Element("Ta"), 0.0, 0.0, 0.0, 0, 0, 0));
+  st.add_atom(Atom(Element("Ta"), 2.0, 2.0, 2.0, 0, 0, 0));
+
+  // disp[i][k] = s0 a0 + s1 a1 + s2 a2 for the cube above.
+  auto entry = [](NNTable &t, size_t i, size_t j, double s0, double s1,
+                  double s2) {
+    t.idx[i].push_back(j);
+    t.shift[i].push_back(Vec3d(s0, s1, s2));
+    t.disp[i].push_back(Vec3d(4.0 * s0, 4.0 * s1, 4.0 * s2));
+  };
+  auto empty_table = []() {
+    auto t = std::make_shared<NNTable>();
+    t->idx.resize(2);
+    t->shift.resize(2);
+    t->disp.resize(2);
+    return t;
+  };
+
+  SECTION("a symmetric table: the reverse entry is found") {
+    auto t = empty_table();
+    entry(*t, 0, 1, 0.0, 0.0, 0.0);
+    entry(*t, 0, 1, -1.0, 0.0, 0.0);
+    entry(*t, 1, 0, 0.0, 0.0, 0.0);
+    entry(*t, 1, 0, 1.0, 0.0, 0.0);
+    st.nn = t;
+    CHECK(st.get_nn_iindex(0, 1, 0) == 0);
+    CHECK(st.get_nn_iindex(0, 1, 1) == 1);
+    CHECK(st.get_nn_iindex(1, 0, 0) == 0);
+    CHECK(st.get_nn_iindex(1, 0, 1) == 1);
+  }
+
+  SECTION("atom 1 has no entry for atom 0") {
+    auto t = empty_table();
+    entry(*t, 0, 1, 0.0, 0.0, 0.0);
+    st.nn = t;
+    CHECK_THROWS_AS(st.get_nn_iindex(0, 1, 0), std::logic_error);
+  }
+
+  SECTION("atom 1 lists atom 0 only at a different image") {
+    // The reverse of (0 -> 1, s = (1,0,0)) is (1 -> 0, s = (-1,0,0));
+    // atom 1 holds (0, (1,0,0)) instead, which is the reverse of a
+    // different entry.
+    auto t = empty_table();
+    entry(*t, 0, 1, 1.0, 0.0, 0.0);
+    entry(*t, 1, 0, 1.0, 0.0, 0.0);
+    st.nn = t;
+    CHECK_THROWS_AS(st.get_nn_iindex(0, 1, 0), std::logic_error);
+    CHECK_THROWS_AS(st.get_nn_iindex(1, 0, 0), std::logic_error);
+  }
 }

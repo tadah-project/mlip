@@ -107,6 +107,14 @@ class DescriptorsCalc: public DC_Base {
         /** Calculate density vector for the structure */
         void calc_rho(const Structure &st, StDescriptors &std) const;
 
+        /** \brief Cutoff (Å) up to which this calculator reads a
+         *  structure's neighbour list: the largest cutoff of its enabled
+         *  two-body and many-body descriptors. The list (NNFinder, Structure::nn)
+         *  must be built with at least this cutoff; calc() and calc_rho()
+         *  refuse a shorter one with std::logic_error, since it would
+         *  silently lack pairs. */
+        double neighbour_cutoff() const;
+
         /** \brief Compute the design-matrix column layout for the
          *  descriptors held by this calculator.
          *
