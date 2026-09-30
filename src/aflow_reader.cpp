@@ -46,8 +46,8 @@ void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
       frame, which in general is not the orientation built here.
     - An entry without "geometry" or "positions_fractional" is refused.
 
-  If the species or positions do not match in count, 
-  the atoms are labeled "X" as a fallback.
+  An entry whose species, composition counts and positions do not match
+  is refused.
 */
 void AflowReader::parseAflowJson(const std::string &jsonContent) {
   using json = nlohmann::json;
@@ -175,16 +175,32 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
       if (!std::getline(sPos, triplet, ';')) break;
       if (triplet.empty()) continue;
 
+      // Exactly three comma-separated numbers per site.
       std::array<double,3> coords{0,0,0};
-      std::stringstream sTrip(triplet);
+      std::vector<std::string> fields;
+      {
+        std::stringstream sTrip(triplet);
+        std::string field;
+        while (std::getline(sTrip, field, ',')) fields.push_back(field);
+      }
+      if (fields.size() != 3) {
+        throw std::runtime_error("AflowReader: entry '" + auid +
+                                 "': a positions_fractional site needs three "
+                                 "numbers, got '" + triplet + "'.");
+      }
       for (int i = 0; i < 3; ++i) {
-        if (sTrip.peek() == ',') sTrip.ignore();
-        double val = 0.0;
-        if (sTrip >> val) {
-          coords[i] = val;
-        } else {
-          sTrip.clear();
-          sTrip.ignore();
+        std::size_t used = 0;
+        try {
+          coords[i] = std::stod(fields[i], &used);
+        } catch (const std::exception &) {
+          used = 0;
+        }
+        if (used == 0 ||
+            fields[i].find_first_not_of(" \t", used) != std::string::npos) {
+          throw std::runtime_error("AflowReader: entry '" + auid +
+                                   "': '" + fields[i] +
+                                   "' in positions_fractional is not a "
+                                   "number.");
         }
       }
       std::array<double,3> r{0,0,0};
@@ -197,9 +213,8 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   }
 
   //------------------------------------------------------------------
-  // 6) Construct the final atoms for m_structure: 
-  //    if species+composition is consistent, each site gets 
-  //    the correct element symbol; otherwise, fallback "X".
+  // 6) Construct the final atoms for m_structure: one species per
+  //    composition count, and as many sites as the counts add up to.
   //------------------------------------------------------------------
   m_structure.atoms.clear();
   m_structure.atoms.reserve(positions.size());
@@ -207,22 +222,14 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   size_t totalCount = 0;
   for (auto c : stoichCount) totalCount += c;
 
-  bool consistent = (!speciesList.empty() 
-                     && !stoichCount.empty()
-                     && totalCount == positions.size());
-
-  if (!consistent) {
-    // If mismatch, label everything "X".
-    for (auto &coord : positions) {
-      Atom atom;
-      auto unknown = tadah::core::PeriodicTable().find_by_symbol("X");
-      static_cast<tadah::core::Element &>(atom) = unknown;
-      atom.position[0] = coord[0];
-      atom.position[1] = coord[1];
-      atom.position[2] = coord[2];
-      m_structure.atoms.push_back(atom);
-    }
-    return;
+  if (speciesList.empty() || speciesList.size() != stoichCount.size() ||
+      totalCount != positions.size()) {
+    throw std::runtime_error(
+      "AflowReader: entry '" + auid + "' is inconsistent: " +
+      std::to_string(speciesList.size()) + " species, " +
+      std::to_string(stoichCount.size()) + " composition counts adding up to " +
+      std::to_string(totalCount) + ", and " +
+      std::to_string(positions.size()) + " positions.");
   }
 
   // Distribute species among positions in order.
@@ -283,8 +290,16 @@ void AflowReader::makeCellMatrix(double a, double b, double c,
                     / std::sin(gamma),
                     2.0
                   );
-  cell[2][2] = c * std::sqrt(term > 0.0 ? term : 0.0);
-  // Remaining off-diagonal elements are zero-initialized by default.
+  // term <= 0: no cell has these lengths and angles (e.g. gamma > alpha +
+  // beta), or the cell is flat.
+  if (!(a > 0.0 && b > 0.0 && c > 0.0) || !(term > 0.0)) {
+    std::ostringstream msg;
+    msg << "AflowReader: geometry " << a << "," << b << "," << c << ","
+        << alphaDeg << "," << betaDeg << "," << gammaDeg
+        << " (a,b,c,alpha,beta,gamma) describes no cell.";
+    throw std::runtime_error(msg.str());
+  }
+  cell[2][2] = c * std::sqrt(term);
 }
 } // namespace mlip
 } // namespace tadah

@@ -49,7 +49,9 @@ private:
   void fetchAndParseAflowByAuid(const std::string &auid);
 
   /**
-   * @brief Build a 3×3 cell from (a,b,c, α,β,γ) in degrees.
+   * @brief Build a 3×3 cell from (a,b,c, α,β,γ) in degrees (a along x, b
+   *        in the xy plane; rows are the lattice vectors). Throws when no
+   *        cell has these lengths and angles.
    */
   void makeCellMatrix(double a, double b, double c,
                       double alpha, double beta, double gamma,
