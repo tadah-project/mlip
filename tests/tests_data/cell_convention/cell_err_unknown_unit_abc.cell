@@ -1,0 +1,11 @@
+! Tadah fixture (castep-5): unknown length unit in LATTICE_ABC.
+%BLOCK LATTICE_ABC
+league
+   4.5   5.0   5.5
+  80.0  95.0 105.0
+%ENDBLOCK LATTICE_ABC
+
+%BLOCK POSITIONS_FRAC
+Si   0.0   0.0   0.0
+Si   0.5   0.5   0.5
+%ENDBLOCK POSITIONS_FRAC

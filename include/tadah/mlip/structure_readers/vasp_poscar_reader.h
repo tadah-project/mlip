@@ -8,14 +8,20 @@ namespace mlip {
 /**
  * @brief Reads a VASP POSCAR/CONTCAR file.
  *
- * A typical format:
+ * The format, line by line:
  *   1) Comment line
- *   2) Scaling factor
- *   3-5) Lattice vectors
- *   6) tadah::core::Element symbols or counts
- *   7) Possibly "Selective dynamics" line
- *   8) "Direct" or "Cartesian"
- *   9+) Atomic coordinates
+ *   2) Scaling factor: one number s > 0 (scales the lattice), s < 0 (the
+ *      cell volume), or three numbers > 0 scaling the x, y and z
+ *      components of the lattice vectors; anything else is refused
+ *   3-5) Lattice vectors a0, a1, a2, stored as rows of Structure::cell
+ *   6) Element symbols (required: a file without them, the VASP 4
+ *      layout, is refused)
+ *   7) Atom counts per element, one per symbol
+ *   8) Optional "Selective dynamics" line (first character S or s)
+ *   9) Coordinate mode: first character C, c, K or k for Cartesian,
+ *      anything else for Direct (fractional)
+ *  10+) Atomic coordinates: fractional f give r = f0 a0 + f1 a1 + f2 a2;
+ *      Cartesian ones are scaled like the lattice
  */
 class VaspPoscarReader : public IStructureReader {
 public:

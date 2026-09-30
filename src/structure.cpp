@@ -82,28 +82,6 @@ void Structure::remove_atom(const size_t i) {
  *     // Retrieve the neighbor's position (the 2nd neighbor of atom 0)
  *     tadah::core::Vec3d neighborPos = st.nn_pos(0, 1);
  */
-// tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const {
-//   // (A) Global index of this neighbor
-//   const size_t neighborIndex = nn->idx[i][n];
-//
-//   // (B) Atom's original "unshifted" position
-//   const tadah::core::Vec3d &posNeighbor = atoms[neighborIndex].position;
-//
-//   // (C) Convert the stored shift -> real displacement shiftDisp
-//   //     If nn->shift[i][n] is an integer triple (n1, n2, n3),
-//   //     multiply by the cell. Otherwise, if it's already in real space, it may simply be added.
-//   tadah::core::Vec3d shift = nn->shift[i][n]; // Possibly an integer triple
-//   tadah::core::Vec3d shiftDisp;
-//   shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(0,1) + shift[2] * cell(0,2);
-//   shiftDisp[1] = shift[0] * cell(1,0) + shift[1] * cell(1,1) + shift[2] * cell(1,2);
-//   shiftDisp[2] = shift[0] * cell(2,0) + shift[1] * cell(2,1) + shift[2] * cell(2,2);
-//   // shiftDisp[0] = shift[0] * cell(0,0) + shift[1] * cell(1,0) + shift[2] * cell(2,0);
-//   // shiftDisp[1] = shift[0] * cell(0,1) + shift[1] * cell(1,1) + shift[2] * cell(2,1);
-//   // shiftDisp[2] = shift[0] * cell(0,2) + shift[1] * cell(1,2) + shift[2] * cell(2,2);
-//
-//   // (D) Final neighbor position = unshifted position + shiftDisp
-//   return posNeighbor + shiftDisp;
-// }
 tadah::core::Vec3d Structure::nn_pos(const size_t i, const size_t n) const
 {
   // Real-space displacement is precomputed at NN-build time
@@ -339,11 +317,12 @@ size_t Structure::get_nn_iindex(const size_t i, const size_t j, const size_t jj)
 }
 
 /**
- * Returns the volume of the structure by calculating det(cell).
- * Reason: Volume is essential for many physical calculations (density, pressure, etc.).
+ * Returns the volume of the cell, |a0 . (a1 x a2)| with a_i = cell.row(i).
+ * The absolute value: a left-handed basis (CASTEP accepts one, and a
+ * POSCAR can hold one) describes the same lattice and has the same volume.
  */
 double Structure::get_volume() const {
-  return cell.row(0)*(cell.row(1).cross(cell.row(2)));
+  return std::fabs(cell.row(0)*(cell.row(1).cross(cell.row(2))));
 }
 
 /**

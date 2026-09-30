@@ -51,204 +51,224 @@ Structure CastepCellReader::getStructure() const {
 }
 
 //--------------------------------------------------------------------
+// lengthUnit: the factor that converts a CASTEP length unit to Angstrom.
+// CASTEP accepts an optional unit line as the first line of LATTICE_CART,
+// LATTICE_ABC and POSITIONS_ABS (default: ang).
+//--------------------------------------------------------------------
+static double lengthUnit(const std::string &word, const std::string &block) {
+  std::string u = word;
+  std::transform(u.begin(), u.end(), u.begin(), ::tolower);
+  if (u == "ang") return 1.0;
+  if (u == "bohr" || u == "a0") return 0.529177210903;
+  if (u == "nm") return 10.0;
+  if (u == "cm") return 1e8;
+  if (u == "m") return 1e10;
+  if (u == "pm") return 1e-2;
+  throw std::runtime_error("CastepCellReader: unknown length unit '" + word +
+                           "' in " + block +
+                           " (known: ang, bohr, a0, nm, cm, m, pm).");
+}
+
+// CASTEP ignores everything after '!', '#' or ';' on a line (species
+// labels and numbers never contain them).
+static std::string strip_comment(const std::string &line) {
+  return line.substr(0, line.find_first_of("!#;"));
+}
+
+// True for a line with nothing but blanks.
+static bool blank(const std::string &line) {
+  return line.find_first_not_of(" \t\r") == std::string::npos;
+}
+
+//--------------------------------------------------------------------
 // parseCellContents
+//
+// The blocks may come in any order: their lines are collected first, and
+// fractional positions are converted only once the lattice is known.
 //--------------------------------------------------------------------
 void CastepCellReader::parseCellContents(const std::string &contents) {
   std::istringstream iss(contents);
   std::string line;
 
-  // State flags for each block
-  bool inLatticeCart   = false;
-  bool inLatticeABC    = false;
-  bool inPosFracBlock  = false;
-  bool inPosAbsBlock   = false;
+  enum class Block { None, LatticeCart, LatticeABC, PosFrac, PosAbs };
+  Block block = Block::None;
+  bool seenCart = false, seenABC = false, seenFrac = false, seenAbs = false;
+  std::vector<std::string> cartLines, abcLines, fracLines, absLines;
 
-  int  lcCount = 0; // track lines read for LATTICE_CART
-  std::vector<std::string> abcLines; // store lines for LATTICE_ABC
+  auto block_name = [](const std::string &lcase, const std::string &kw) {
+    // "%block <name>" / "%endblock <name>", any spacing
+    std::istringstream ls(lcase);
+    std::string k, name;
+    ls >> k >> name;
+    return k == kw ? name : std::string();
+  };
 
-  // Initialize cell to zero (in case we never find any block)
-  for (int i=0; i<3; ++i)
-    for (int j=0; j<3; ++j)
-      m_structure.cell(i,j) = 0.0;
-
-  // Read file line by line
   while (std::getline(iss, line)) {
-    // Make a lowercase copy for easier detection
+    line = strip_comment(line);
     std::string lcase = line;
     std::transform(lcase.begin(), lcase.end(), lcase.begin(), ::tolower);
 
-    // Detect block starts/ends
-    if (lcase.find("%block lattice_cart") != std::string::npos) {
-      inLatticeCart = true;
-      inLatticeABC  = false;
-      lcCount = 0;
+    const std::string opened = block_name(lcase, "%block");
+    if (!opened.empty()) {
+      if (opened == "lattice_cart") { block = Block::LatticeCart; seenCart = true; }
+      else if (opened == "lattice_abc") { block = Block::LatticeABC; seenABC = true; }
+      else if (opened == "positions_frac") { block = Block::PosFrac; seenFrac = true; }
+      else if (opened == "positions_abs") { block = Block::PosAbs; seenAbs = true; }
+      else block = Block::None;  // a block this reader does not use
       continue;
     }
-    if (lcase.find("%endblock lattice_cart") != std::string::npos) {
-      inLatticeCart = false;
+    if (!block_name(lcase, "%endblock").empty()) {
+      block = Block::None;
       continue;
     }
-    if (lcase.find("%block lattice_abc") != std::string::npos) {
-      inLatticeABC  = true;
-      inLatticeCart = false;
-      lcCount = 0;
-      abcLines.clear();
-      continue;
+    if (blank(line)) continue;
+    switch (block) {
+      case Block::LatticeCart: cartLines.push_back(line); break;
+      case Block::LatticeABC:  abcLines.push_back(line);  break;
+      case Block::PosFrac:     fracLines.push_back(line); break;
+      case Block::PosAbs:      absLines.push_back(line);  break;
+      case Block::None:        break;
     }
-    if (lcase.find("%endblock lattice_abc") != std::string::npos) {
-      inLatticeABC = false;
-      // parse lines from abcLines (if present)
-      if (abcLines.size() >= 2) {
-        parseLatticeABC(abcLines);
-      }
-      continue;
-    }
-    if (lcase.find("%block positions_frac") != std::string::npos) {
-      inPosFracBlock = true;
-      inPosAbsBlock  = false;
-      continue;
-    }
-    if (lcase.find("%endblock positions_frac") != std::string::npos) {
-      inPosFracBlock = false;
-      continue;
-    }
-    if (lcase.find("%block positions_abs") != std::string::npos) {
-      inPosAbsBlock  = true;
-      inPosFracBlock = false;
-      continue;
-    }
-    if (lcase.find("%endblock positions_abs") != std::string::npos) {
-      inPosAbsBlock = false;
-      continue;
-    }
+  }
 
-    // Now parse lines if in any recognized block
-    if (inLatticeCart) {
-      // read up to 3 lines for a,b,c
-      if (lcCount < 4) {
-        auto toks = split_line(line);
-        if (toks.size() == 1) {
-          // skip optional units line
-          continue;
-        }
-        if (toks.size() < 3) {
-          throw std::runtime_error("CastepCellReader: LATTICE_CART line missing coords.");
-        }
-        double x = tadah::core::to_double(toks[0]);
-        double y = tadah::core::to_double(toks[1]);
-        double z = tadah::core::to_double(toks[2]);
-
-        m_structure.cell(lcCount,0) = x;
-        m_structure.cell(lcCount,1) = y;
-        m_structure.cell(lcCount,2) = z;
-        lcCount++;
+  // An optional first line with a single word is the block's length unit.
+  auto take_unit = [](std::vector<std::string> &lines,
+                      const std::string &name) {
+    if (!lines.empty()) {
+      const auto toks = split_line(lines.front());
+      if (toks.size() == 1) {
+        const double f = lengthUnit(toks[0], name);
+        lines.erase(lines.begin());
+        return f;
       }
     }
-    else if (inLatticeABC) {
-      // store lines for later parsing
-      if (!line.empty()) {
-        abcLines.push_back(line);
-      }
+    return 1.0;
+  };
+
+  // ---- lattice ----
+  if (seenCart && seenABC) {
+    throw std::runtime_error(
+      "CastepCellReader: both LATTICE_CART and LATTICE_ABC are given.");
+  }
+  if (!seenCart && !seenABC) {
+    throw std::runtime_error(
+      "CastepCellReader: no lattice block (LATTICE_CART or LATTICE_ABC).");
+  }
+  if (seenCart) {
+    const double unit = take_unit(cartLines, "LATTICE_CART");
+    if (cartLines.size() != 3) {
+      throw std::runtime_error(
+        "CastepCellReader: LATTICE_CART needs exactly three lattice "
+        "vectors, found " + std::to_string(cartLines.size()) + ".");
     }
-    else if (inPosFracBlock) {
-      // e.g. "Si 0.0 0.0 0.0"
-      auto toks = split_line(line);
-      if (toks.size() < 4) {
-        // skip empty lines which should not be there...
-        continue;
+    for (int i = 0; i < 3; ++i) {
+      const auto toks = split_line(cartLines[i]);
+      if (toks.size() < 3) {
+        throw std::runtime_error(
+          "CastepCellReader: LATTICE_CART line missing coords: '" +
+          cartLines[i] + "'.");
       }
-
-      // parse species
-      tadah::core::Element e = parseSpecies(toks[0]);
-
-      // fractional coords
-      double fx = tadah::core::to_double(toks[1]);
-      double fy = tadah::core::to_double(toks[2]);
-      double fz = tadah::core::to_double(toks[3]);
-
-      double cx, cy, cz;
-      fracToAbs(fx, fy, fz, cx, cy, cz);
-
-      Atom a;  
-      // Copy base element data into 'a'
-      static_cast<tadah::core::Element&>(a) = e;
-      // Now set the position
-      a.position = {cx, cy, cz};
-
-      // Force is left default (0,0,0)
-      m_structure.atoms.push_back(a);
+      // Line i is lattice vector a_i, stored as row i.
+      for (int j = 0; j < 3; ++j)
+        m_structure.cell(i, j) = unit * tadah::core::to_double(toks[j]);
     }
-    else if (inPosAbsBlock) {
-      auto toks = split_line(line);
-      if (toks.size() < 4) {
-        // skip units line
-        continue;
-      }
+  } else {
+    const double unit = take_unit(abcLines, "LATTICE_ABC");
+    parseLatticeABC(abcLines, unit);
+  }
+  {
+    const tadah::core::Vec3d a0 = m_structure.cell.row(0);
+    const tadah::core::Vec3d a1 = m_structure.cell.row(1);
+    const tadah::core::Vec3d a2 = m_structure.cell.row(2);
+    const double det = a0 * a1.cross(a2);
+    const double scale = a0.norm() * a1.norm() * a2.norm();
+    if (!(std::fabs(det) > 1e-12 * scale)) {
+      throw std::runtime_error(
+        "CastepCellReader: the lattice vectors are coplanar (singular "
+        "cell).");
+    }
+  }
 
-      tadah::core::Element e = parseSpecies(toks[0]);
-
-      double x = tadah::core::to_double(toks[1]);
-      double y = tadah::core::to_double(toks[2]);
-      double z = tadah::core::to_double(toks[3]);
-
+  // ---- positions ----
+  if (seenFrac && seenAbs) {
+    throw std::runtime_error(
+      "CastepCellReader: both POSITIONS_FRAC and POSITIONS_ABS are given.");
+  }
+  if (!seenFrac && !seenAbs) {
+    throw std::runtime_error(
+      "CastepCellReader: no positions block (POSITIONS_FRAC or "
+      "POSITIONS_ABS).");
+  }
+  auto atom_line = [&](const std::string &ln, const std::string &name) {
+    const auto toks = split_line(ln);
+    if (toks.size() < 4) {
+      throw std::runtime_error("CastepCellReader: " + name +
+                               " line needs a species and three "
+                               "coordinates: '" + ln + "'.");
+    }
+    return toks;
+  };
+  for (const auto &ln : fracLines) {
+    const auto toks = atom_line(ln, "POSITIONS_FRAC");
+    double cx, cy, cz;
+    fracToAbs(tadah::core::to_double(toks[1]), tadah::core::to_double(toks[2]),
+              tadah::core::to_double(toks[3]), cx, cy, cz);
+    Atom a;
+    static_cast<tadah::core::Element&>(a) = parseSpecies(toks[0]);
+    a.position = {cx, cy, cz};
+    m_structure.atoms.push_back(a);
+  }
+  if (seenAbs) {
+    const double unit = take_unit(absLines, "POSITIONS_ABS");
+    for (const auto &ln : absLines) {
+      const auto toks = atom_line(ln, "POSITIONS_ABS");
       Atom a;
-      static_cast<tadah::core::Element&>(a) = e;
-      a.position = {x, y, z};
-
+      static_cast<tadah::core::Element&>(a) = parseSpecies(toks[0]);
+      a.position = {unit * tadah::core::to_double(toks[1]),
+                    unit * tadah::core::to_double(toks[2]),
+                    unit * tadah::core::to_double(toks[3])};
       m_structure.atoms.push_back(a);
     }
+  }
+  if (m_structure.atoms.empty()) {
+    throw std::runtime_error(
+      std::string("CastepCellReader: the ") +
+      (seenFrac ? "POSITIONS_FRAC" : "POSITIONS_ABS") +
+      " block has no atoms.");
   }
 }
 
 //--------------------------------------------------------------------
 // parseLatticeABC
 //--------------------------------------------------------------------
-void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines) {
-  // We expect at least two lines:
-  //   line 1: "a b c"
-  //   line 2: "alpha beta gamma"
-  // Additional lines might exist (units, comments).
-  // We'll search for the first line with >=3 tokens for (a,b,c),
-  // and the next with >=3 tokens for (alpha,beta,gamma).
-
-  double aVal=0.0, bVal=0.0, cVal=0.0;
-  double alphaDeg=90.0, betaDeg=90.0, gammaDeg=90.0;
-  bool haveABC = false;
-  bool haveAngles = false;
-
-  for (auto &ln : lines) {
-    auto toks = split_line(ln);
-    if (toks.size() >= 3 && !haveABC) {
-      aVal = tadah::core::to_double(toks[0]);
-      bVal = tadah::core::to_double(toks[1]);
-      cVal = tadah::core::to_double(toks[2]);
-      haveABC = true;
-      continue;
-    }
-    else if (toks.size() >= 3 && haveABC && !haveAngles) {
-      alphaDeg = tadah::core::to_double(toks[0]);
-      betaDeg  = tadah::core::to_double(toks[1]);
-      gammaDeg = tadah::core::to_double(toks[2]);
-      haveAngles = true;
-      break;
-    }
+void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines,
+                                       double unit) {
+  // Two lines (the unit line already removed): "a b c" and
+  // "alpha beta gamma" (degrees).
+  if (lines.size() != 2 || split_line(lines[0]).size() < 3 ||
+      split_line(lines[1]).size() < 3) {
+    throw std::runtime_error(
+      "CastepCellReader: LATTICE_ABC block incomplete (need a line a b c "
+      "and a line alpha beta gamma).");
   }
-  if (!haveABC || !haveAngles) {
-    throw std::runtime_error("CastepCellReader: LATTICE_ABC block incomplete (need a,b,c and alpha,beta,gamma).");
-  }
+  const auto l0 = split_line(lines[0]);
+  const auto l1 = split_line(lines[1]);
+  const double aVal = unit * tadah::core::to_double(l0[0]);
+  const double bVal = unit * tadah::core::to_double(l0[1]);
+  const double cVal = unit * tadah::core::to_double(l0[2]);
+  const double alphaDeg = tadah::core::to_double(l1[0]);
+  const double betaDeg  = tadah::core::to_double(l1[1]);
+  const double gammaDeg = tadah::core::to_double(l1[2]);
 
   double alpha = deg2rad(alphaDeg);
   double beta  = deg2rad(betaDeg);
   double gamma = deg2rad(gammaDeg);
 
-  // Standard orientation:
+  // CASTEP's orientation (rows are the lattice vectors):
   //   a = (aVal, 0, 0)
-  //   b.x = bVal * cos(gamma)
-  //   b.y = bVal * sin(gamma)
-  //   b.z = 0
-  //   c.x = cVal * cos(beta)
-  //   c.y = cVal * [cos(alpha) - cos(beta)*cos(gamma)] / sin(gamma)
-  //   c.z = sqrt(cVal^2 - cx^2 - cy^2)
+  //   b = (bVal cos(gamma), bVal sin(gamma), 0)
+  //   c = (cVal cos(beta), cVal [cos(alpha) - cos(beta) cos(gamma)] / sin(gamma),
+  //        sqrt(cVal^2 - cx^2 - cy^2))
 
   // a
   m_structure.cell(0,0) = aVal;

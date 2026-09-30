@@ -12,6 +12,20 @@
 #include <stdexcept>
 namespace tadah {
 namespace mlip {
+/**
+ * @brief Writes a structure as a LAMMPS data file (atom_style atomic).
+ *
+ * The box uses the general triclinic header (avec, bvec, cvec and abc
+ * origin, which only LAMMPS versions with general triclinic boxes read):
+ * avec, bvec and cvec are the rows of Structure::cell, and LAMMPS rotates
+ * the box and the atoms into its own restricted orientation when it reads
+ * the file. A left-handed cell is
+ * written as (a0, a1, -a2) with "abc origin" a2: a right-handed basis of
+ * the same lattice spanning the same parallelepiped, so every atom inside
+ * the cell stays inside the box and each lattice direction keeps its
+ * boundary flag. A singular cell is refused (std::runtime_error naming
+ * the structure) before the file is opened.
+ */
 class LammpsStructureWriter : public StructureWriter {
 public:
   LammpsStructureWriter(StructureDB& db);

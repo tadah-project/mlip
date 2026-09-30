@@ -308,15 +308,6 @@ TEST_CASE("StructureTransformation mirrorHkl()", "[transform]")
     }
 }
 
-TEST_CASE("StructureTransformation alignAxes()", "[transform]")
-{
-    // Stub: no effect
-    Structure st = makeSimpleStructure();
-    auto oldPos = st.atoms[1].position;
-    REQUIRE_NOTHROW(StructureTransformation::alignAxes(st));
-    REQUIRE(st.atoms[1].position[0] == Approx(oldPos[0]));
-}
-
 TEST_CASE("StructureTransformation remapToCell()", "[transform]")
 {
     Structure st = makeSimpleStructure();

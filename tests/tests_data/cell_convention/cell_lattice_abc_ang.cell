@@ -1,0 +1,11 @@
+! Tadah cell-convention fixture: LATTICE_ABC in the default unit (ang).
+! a = 4.5, b = 5.0, c = 5.5 A; alpha = 80, beta = 95, gamma = 105 degrees.
+%BLOCK LATTICE_ABC
+   4.5   5.0   5.5
+  80.0  95.0 105.0
+%ENDBLOCK LATTICE_ABC
+
+%BLOCK POSITIONS_FRAC
+Si   0.10   0.20   0.30
+O    0.55   0.35   0.85
+%ENDBLOCK POSITIONS_FRAC

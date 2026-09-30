@@ -37,6 +37,20 @@ double StructureTransformation::rand01()
   return dist(globalRng());
 }
 
+void StructureTransformation::reflect(Structure &st, const tadah::core::Matrix3d &M)
+{
+  // A reflection moves positions, forces and the lattice vectors (the rows
+  // of st.cell: cell' = cell * M^T), so the atoms keep their fractional
+  // coordinates. The reflected basis is left-handed if the original was
+  // right-handed; its volume is the same.
+  st.cell = matMul(st.cell, M.transpose());
+  for (auto &atom : st.atoms) {
+    atom.position = M * atom.position;
+    atom.force    = M * atom.force;
+  }
+  transformStress(st, M);
+}
+
 void StructureTransformation::transformStress(Structure &st, const tadah::core::Matrix3d &M)
 {
   tadah::core::Matrix3d tmp = matMul(M, st.stress);
@@ -118,9 +132,12 @@ void StructureTransformation::scaleVolumeToDensity(Structure &st, double targetD
 
 void StructureTransformation::rotate(Structure &st, const tadah::core::Matrix3d &R)
 {
-  st.cell = matMul(R, st.cell);
+  // Every vector moves as v' = R v: positions, forces and the lattice
+  // vectors, which are the rows of st.cell, so cell' = cell * R^T.
+  st.cell = matMul(st.cell, R.transpose());
   for (auto &atom : st.atoms) {
     atom.position = R * atom.position;
+    atom.force    = R * atom.force;
   }
   transformStress(st, R);
   checkNearSingular(st);
@@ -128,7 +145,9 @@ void StructureTransformation::rotate(Structure &st, const tadah::core::Matrix3d 
 
 void StructureTransformation::shear(Structure &st, const tadah::core::Matrix3d &shearMatrix)
 {
-  st.cell = matMul(shearMatrix, st.cell);
+  // r' = S r for the atoms and a_i' = S a_i for the lattice vectors (the
+  // rows of st.cell): cell' = cell * S^T, so fractional coordinates stay.
+  st.cell = matMul(st.cell, shearMatrix.transpose());
   for (auto &atom : st.atoms) {
     atom.position = shearMatrix * atom.position;
   }
@@ -138,31 +157,33 @@ void StructureTransformation::shear(Structure &st, const tadah::core::Matrix3d &
 
 void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
 {
-  if (nx < 1) nx = 1;
-  if (ny < 1) ny = 1;
-  if (nz < 1) nz = 1;
+  if (nx < 1 || ny < 1 || nz < 1) {
+    throw std::invalid_argument(
+      "StructureTransformation::replicate: every factor must be >= 1, got " +
+      std::to_string(nx) + " " + std::to_string(ny) + " " +
+      std::to_string(nz) + ".");
+  }
 
   size_t origNatoms = st.atoms.size();
   std::vector<Atom> originalAtoms = st.atoms;
-  tadah::core::Matrix3d oldCell = st.cell;
+  const tadah::core::Vec3d a0 = st.cell.row(0);
+  const tadah::core::Vec3d a1 = st.cell.row(1);
+  const tadah::core::Vec3d a2 = st.cell.row(2);
 
-  // Scale cell
-  st.cell(0,0) *= nx; 
-  st.cell(1,1) *= ny; 
-  st.cell(2,2) *= nz;
+  // Row i of the cell is lattice vector a_i: the supercell's rows are
+  // nx a0, ny a1, nz a2.
+  const int n[3] = {nx, ny, nz};
+  for (int i = 0; i < 3; ++i)
+    for (int j = 0; j < 3; ++j)
+      st.cell(i, j) *= n[i];
 
-  // Clear and reserve memory
   st.atoms.clear();
   st.atoms.reserve(origNatoms * nx * ny * nz);
 
   for (int ix=0; ix<nx; ix++) {
     for (int iy=0; iy<ny; iy++) {
       for (int iz=0; iz<nz; iz++) {
-        // shift vector in oldCell coords
-        tadah::core::Vec3d shiftVec = 
-           ix*tadah::core::Vec3d(oldCell(0,0), oldCell(1,0), oldCell(2,0)) +
-           iy*tadah::core::Vec3d(oldCell(0,1), oldCell(1,1), oldCell(2,1)) +
-           iz*tadah::core::Vec3d(oldCell(0,2), oldCell(1,2), oldCell(2,2));
+        const tadah::core::Vec3d shiftVec = ix*a0 + iy*a1 + iz*a2;
         for (const auto &atom : originalAtoms) {
           Atom newAtom = atom;
           newAtom.position += shiftVec;
@@ -171,8 +192,11 @@ void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
       }
     }
   }
-  // Stress scaling is context dependent. E.g. st.stress might remain the same per cell, 
-  // or scale by 1/(nx*ny*nz), etc. Not explicitly changed here.
+  // The energy is extensive; the stress (per volume) is unchanged and each
+  // copy keeps its atom's force. A neighbour list of the original cell
+  // does not describe the supercell.
+  st.energy *= double(nx) * double(ny) * double(nz);
+  st.clear_nn();
   checkNearSingular(st);
 }
 
@@ -186,10 +210,12 @@ void StructureTransformation::shift(Structure &st, const tadah::core::Vec3d &shi
 
 void StructureTransformation::mirrorOrigin(Structure &st)
 {
+  // Inversion M = -I: positions and forces change sign; S' = M S M^T = S;
+  // the cell is kept (-a_i span the same lattice).
   for (auto &atom : st.atoms) {
     atom.position = -atom.position;
+    atom.force    = -atom.force;
   }
-  // Reflection M = -I => S'=S. (No net effect if we do M*S*M^T.)
 }
 
 void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec)
@@ -201,11 +227,6 @@ void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3
   }
   n /= len;
 
-  for (auto &atom : st.atoms) {
-    double proj = atom.position * n;
-    atom.position -= 2.0 * proj * n;
-  }
-
   // M = I - 2 n n^T
   tadah::core::Matrix3d M = tadah::core::Matrix3d::Identity();
   for (int i=0; i<3; i++) {
@@ -213,7 +234,7 @@ void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3
       M(i,j) -= 2.0 * n[i]*n[j];
     }
   }
-  transformStress(st, M);
+  reflect(st, M);
 }
 
 void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
@@ -245,12 +266,6 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
   }
   tadah::core::Vec3d n = g / normG;
 
-  // reflection
-  for (auto &atom : st.atoms) {
-    double proj = atom.position*n;
-    atom.position -= 2.0 * proj * n;
-  }
-
   // reflection matrix
   tadah::core::Matrix3d M = tadah::core::Matrix3d::Identity();
   for (int i=0; i<3; i++) {
@@ -258,7 +273,7 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
       M(i,j) -= 2.0 * n[i]*n[j];
     }
   }
-  transformStress(st, M);
+  reflect(st, M);
 }
 
 void StructureTransformation::center(Structure &st, bool useCenterOfMass, bool shiftCell)
@@ -281,16 +296,6 @@ void StructureTransformation::center(Structure &st, bool useCenterOfMass, bool s
     // This snippet does nothing by default because st.cell is typically 
     // just directions from (0,0,0).
   }
-}
-
-void StructureTransformation::alignAxes(Structure &st)
-{
-  // Typical approach:
-  //  1) G = cell^T * cell
-  //  2) Eigen-decompose G => principal directions
-  //  3) build rotation R
-  //  4) rotate(st, R)
-  // Left unimplemented here.
 }
 
 void StructureTransformation::remapToCell(Structure &st)

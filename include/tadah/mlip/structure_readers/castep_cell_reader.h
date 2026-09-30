@@ -20,9 +20,16 @@ namespace mlip {
  *   b in xy plane,
  *   c forming a right-handed set with a and b.
  *
- * If positions are fractional, we multiply by the 3×3 cell matrix
- * to get absolute positions in Angstrom. If positions are absolute,
- * we store them directly.
+ * Each LATTICE_CART line is a lattice vector, stored as a row of
+ * Structure::cell. Fractional positions f become r = f0 a + f1 b + f2 c
+ * (cell^T f), converted after the whole file is read, so the blocks may
+ * come in any order. An optional first line naming a length unit (ang,
+ * bohr, a0, nm, cm, m, pm; default ang) is applied in LATTICE_CART,
+ * LATTICE_ABC and POSITIONS_ABS. Text after '!', '#' or ';' on any line
+ * is a comment. A file without a lattice block or a positions block, a
+ * LATTICE_CART without exactly three vectors, an incomplete LATTICE_ABC,
+ * a singular lattice, an unknown unit or a positions block without atoms
+ * is refused (std::runtime_error).
  *
  * This parser also extracts atomic species from the first token
  * in POSITIONS_* blocks.
@@ -55,10 +62,11 @@ private:
 
   /**
    * @brief Parses LATTICE_ABC lines into the 3×3 matrix in m_structure.cell.
-   * @param lines a vector of strings containing a b c on one line, alpha beta
-   * gamma on next line
+   * @param lines two lines: a b c, then alpha beta gamma (degrees); the
+   *        block's unit line is already removed
+   * @param unit factor converting the block's length unit to Angstrom
    */
-  void parseLatticeABC(const std::vector<std::string> &lines);
+  void parseLatticeABC(const std::vector<std::string> &lines, double unit);
 
   /**
    * @brief Converts atomic fractional coordinates (fx, fy, fz) to absolute in Å

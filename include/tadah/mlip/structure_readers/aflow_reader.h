@@ -30,6 +30,15 @@ public:
    */
   Structure getStructure() const override;
 
+  /**
+   * @brief Reads geometry, positions_fractional, stoichiometry, etc. from
+   *        AFLOW JSON; throws when geometry or positions_fractional is missing.
+   *
+   * Public so that an AFLOW entry can be parsed without a network query
+   * (as CifReader::parseCifContents does for CIF text).
+   */
+  void parseAflowJson(const std::string &jsonContent);
+
 private:
   Structure m_structure;
   std::unique_ptr<IMaterialsDataProvider> m_dataProvider;
@@ -40,12 +49,9 @@ private:
   void fetchAndParseAflowByAuid(const std::string &auid);
 
   /**
-   * @brief Reads geometry, positions_cartesian, stoichiometry, etc. from AFLOW JSON.
-   */
-  void parseAflowJson(const std::string &jsonContent);
-
-  /**
-   * @brief Build a 3×3 cell from (a,b,c, α,β,γ) in degrees.
+   * @brief Build a 3×3 cell from (a,b,c, α,β,γ) in degrees (a along x, b
+   *        in the xy plane; rows are the lattice vectors). Throws when no
+   *        cell has these lengths and angles.
    */
   void makeCellMatrix(double a, double b, double c,
                       double alpha, double beta, double gamma,

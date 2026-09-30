@@ -59,10 +59,13 @@ void CifReader::parseCifContents(const std::string &fileContents) {
     Atom a(e, p.x, p.y, p.z, 0, 0, 0);
     m_structure.atoms.push_back(a);
   }
+  // gemmi's orthogonalisation matrix maps fractional to Cartesian
+  // coordinates (r = orth * f), so its COLUMNS are the lattice vectors.
+  // Structure::cell stores lattice vector a_i as row i: transpose.
   auto mat = struc.cell.orth.mat;
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      m_structure.cell(i, j) = mat.a[i][j];
+      m_structure.cell(i, j) = mat.a[j][i];
     }
   }
 }
