@@ -1,470 +1,447 @@
 #include <tadah/mlip/nn_finder.h>
-#include <limits>
-#include <cmath>
+#include <tadah/mlip/detail/cell_geometry.h>
+#include <tadah/mlip/detail/structure_errors.h>
+
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <exception>
+#include <sstream>
 #include <stdexcept>
-#include <cstring>
-#include <chrono>
-#include <iostream>
+#include <string>
+#include <utility>
 #include <vector>
+
 namespace tadah {
 namespace mlip {
 
-double NNFinder::get_cutoff(const tadah::core::Context &context) const
-{
-  return context.get<double>("RCUTMAX");
+namespace {
+
+using detail::CellGeometry;
+using detail::cell_geometry;
+using detail::is_finite_bits;
+constexpr double kEps = detail::kUnitRoundoff;
+
+/* Largest number of image cells a search may span, prod_k (2 N_k + 1). A
+ * cell needs more only when it is smaller than about cutoff/10 in every
+ * direction (or about cutoff/28 in two): not a material, but a cell that
+ * something degenerated, e.g. an unbounded relaxation step. Such a list
+ * would hold thousands of entries per atom and stall every consumer
+ * (M_Tadah_Base::fpredict is O(nn^2) through get_nn_iindex), so the
+ * search fails fast instead; HPO turns the exception into a failed
+ * candidate. Every cube with edge > cutoff/10 is accepted. */
+constexpr double kMaxImageCells = 10000.0;
+
+/* Positions more than 2^31 cells from the origin are refused: a double
+ * then keeps fewer than 22 bits of the position within its cell, and the
+ * integer shifts would approach the range where they stop being exact. */
+constexpr double kMaxCells = 2147483648.0;  // 2^31
+
+/* Validity of the first-order rounding bounds: the relative error of the
+ * reduced cell's geometry, 16 eps (Q + G_U + 1), must stay below 2^-20. */
+constexpr double kMaxConditioning = 536870912.0;  // 2^29
+
+std::string fmt(double x) {
+  std::ostringstream o;
+  o.precision(10);
+  o << x;
+  return o.str();
 }
 
-// ---------------------------------------------------------------------------
-bool NNFinder::check_box(const Structure &st, double cutoff) 
-{
-  double cutoff_sq = cutoff * cutoff;
-  for (int i = 0; i < 3; i++) {
-    double vx = st.cell(i, 0);
-    double vy = st.cell(i, 1);
-    double vz = st.cell(i, 2);
-    double len2 = vx*vx + vy*vy + vz*vz;
-    if (len2 < cutoff_sq) {
-      return false;
+void check_cutoff(double cutoff) {
+  if (!is_finite_bits(cutoff) || !(cutoff > 0.0))
+    throw std::invalid_argument(
+        "NNFinder: the cutoff must be a finite number above 0, got " +
+        fmt(cutoff));
+}
+
+/* The rows of st.cell, refused if non-finite or (numerically) singular. */
+CellGeometry checked_cell(const Structure &st, double A[3][3]) {
+  for (int k = 0; k < 3; ++k)
+    for (int c = 0; c < 3; ++c) {
+      A[k][c] = st.cell(k, c);
+      if (!is_finite_bits(A[k][c]))
+        throw std::invalid_argument(
+            "NNFinder: cell entry (" + std::to_string(k) + ", " +
+            std::to_string(c) + ") is not a finite number");
     }
-  }
-  return true;
+  const CellGeometry g = cell_geometry(A);
+  if (!(g.volume != 0.0) || !is_finite_bits(g.G) || !(g.G < kMaxConditioning))
+    throw std::invalid_argument(
+        "NNFinder: the cell is singular or numerically singular (volume " +
+        fmt(g.volume) + " A^3, rows (" + fmt(A[0][0]) + ", " + fmt(A[0][1]) +
+        ", " + fmt(A[0][2]) + "), (" + fmt(A[1][0]) + ", " + fmt(A[1][1]) +
+        ", " + fmt(A[1][2]) + "), (" + fmt(A[2][0]) + ", " + fmt(A[2][1]) +
+        ", " + fmt(A[2][2]) + "))");
+  return g;
 }
-/* ======================================================================
-   Naïve O(N² × #images) neighbour search that keeps every periodic copy
-   lying inside the cut-off sphere.  Returned table is symmetric (i→j and
-   j→i present) and shift = (n1,n2,n3) is the integer lattice vector.
-   ======================================================================*/
-void NNFinder::calc_naive(const Structure &st, std::shared_ptr<NNTable> tbl, double cutoff) const
-{
-  double cutoff_sq = cutoff * cutoff;
 
-  tbl->shift.resize(st.natoms());
-  tbl->idx.resize(st.natoms());
-  for (size_t i = 0; i < st.natoms(); i++) {
-    tbl->shift[i].reserve(100);
-    tbl->idx[i].reserve(100);
+/* A reduced basis of the lattice: rows fl(U A) for an integer unimodular
+ * U (so the same lattice). LLL (delta = 0.99) with exact integer
+ * bookkeeping; the rows are recomputed from U after every step, so no
+ * rounding accumulates. Any unimodular U gives an exact search; the
+ * reduction only makes skewed descriptions of a benign lattice cheap. */
+struct ReducedBasis {
+  long long U[3][3];
+  double a[3][3];
+};
+
+void rows_from_U(ReducedBasis &r, const double A[3][3], int k) {
+  for (int c = 0; c < 3; ++c)
+    r.a[k][c] = static_cast<double>(r.U[k][0]) * A[0][c] +
+                static_cast<double>(r.U[k][1]) * A[1][c] +
+                static_cast<double>(r.U[k][2]) * A[2][c];
+}
+
+ReducedBasis reduce_basis(const double A[3][3]) {
+  ReducedBasis r{};
+  for (int k = 0; k < 3; ++k) {
+    for (int l = 0; l < 3; ++l) r.U[k][l] = (k == l) ? 1 : 0;
+    rows_from_U(r, A, k);
   }
-
-  // Compute shift bounds
-  int N[3];
-  num_shifts(st, N, cutoff);
-
-  // Precompute shifts (both real displacement and integer triple if needed)
-  std::vector<tadah::core::Vec3d> shifts;
-  std::vector<tadah::core::Vec3d> shiftIdx;
-  shifts.reserve((2*N[0]+1)*(2*N[1]+1)*(2*N[2]+1));
-  shiftIdx.reserve((2*N[0]+1)*(2*N[1]+1)*(2*N[2]+1));
-
-  for (int n1 = -N[0]; n1 <= N[0]; n1++) {
-    for (int n2 = -N[1]; n2 <= N[1]; n2++) {
-      for (int n3 = -N[2]; n3 <= N[2]; n3++) {
-        tadah::core::Vec3d disp;
-        disp[0] = n1*st.cell(0,0) + n2*st.cell(1,0) + n3*st.cell(2,0);
-        disp[1] = n1*st.cell(0,1) + n2*st.cell(1,1) + n3*st.cell(2,1);
-        disp[2] = n1*st.cell(0,2) + n2*st.cell(1,2) + n3*st.cell(2,2);
-        shifts.push_back(disp);
-        shiftIdx.push_back(tadah::core::Vec3d(n1, n2, n3));
+  // Entries of U stay below 2^40 and multipliers below 2^30, so every
+  // product stays exact in double and in long long; a reduction that would
+  // need more stops where it is (still a valid basis).
+  constexpr long double kMaxMultiplier = 1073741824.0L;  // 2^30
+  constexpr long long kMaxEntry = 1099511627776LL;       // 2^40
+  long double bs[3][3], Bn[3], mu[3][3];
+  auto gram_schmidt = [&]() {
+    for (int i = 0; i < 3; ++i) {
+      for (int c = 0; c < 3; ++c) bs[i][c] = r.a[i][c];
+      for (int j = 0; j < i; ++j) {
+        long double dot = 0;
+        for (int c = 0; c < 3; ++c) dot += (long double)r.a[i][c] * bs[j][c];
+        mu[i][j] = dot / Bn[j];
+        for (int c = 0; c < 3; ++c) bs[i][c] -= mu[i][j] * bs[j][c];
       }
+      Bn[i] = bs[i][0] * bs[i][0] + bs[i][1] * bs[i][1] + bs[i][2] * bs[i][2];
     }
-  }
-
-  // Extract positions in contiguous arrays (optional but faster for distance checks)
-  const size_t natoms = st.natoms();
-  std::vector<double> xPos(natoms), yPos(natoms), zPos(natoms);
-  for (size_t i = 0; i < natoms; i++) {
-    xPos[i] = st(i).position[0];
-    yPos[i] = st(i).position[1];
-    zPos[i] = st(i).position[2];
-  }
-
-  // Distance checks
-  for (size_t s = 0; s < shifts.size(); s++) {
-    const tadah::core::Vec3d &disp = shifts[s];
-    const tadah::core::Vec3d &dispIdxVal = shiftIdx[s];
-    bool selfShift = (dispIdxVal[0] == 0 && dispIdxVal[1] == 0 && dispIdxVal[2] == 0);
-    size_t startA2 = (selfShift ? 1ul : 0ul);
-
-    for (size_t a1 = 0; a1 < natoms; a1++) {
-      for (size_t a2 = a1 + startA2; a2 < natoms; a2++) {
-        double dx = xPos[a1] - (xPos[a2] + disp[0]);
-        double dy = yPos[a1] - (yPos[a2] + disp[1]);
-        double dz = zPos[a1] - (zPos[a2] + disp[2]);
-        double rij_sq = dx*dx + dy*dy + dz*dz;
-        if (rij_sq < cutoff_sq) {
-          // forward
-          tbl->idx[a1].push_back(a2);
-          tbl->shift[a1].push_back(dispIdxVal);
-
-          // reverse
-          tbl->idx[a2].push_back(a1);
-          tbl->shift[a2].push_back(-dispIdxVal);
-        }
+  };
+  gram_schmidt();
+  int k = 1;
+  for (int step = 0; k < 3 && step < 1000; ++step) {
+    for (int j = k - 1; j >= 0; --j) {
+      const long double q = std::round(mu[k][j]);
+      if (q == 0) continue;
+      if (!(std::fabs(q) < kMaxMultiplier)) return r;
+      const long long qi = static_cast<long long>(q);
+      long long nu[3];
+      for (int l = 0; l < 3; ++l) {
+        nu[l] = r.U[k][l] - qi * r.U[j][l];
+        if (nu[l] > kMaxEntry || nu[l] < -kMaxEntry) return r;
       }
+      for (int l = 0; l < 3; ++l) r.U[k][l] = nu[l];
+      rows_from_U(r, A, k);
+      gram_schmidt();
+    }
+    if (Bn[k] >= (0.99L - mu[k][k - 1] * mu[k][k - 1]) * Bn[k - 1]) {
+      ++k;
+    } else {
+      for (int l = 0; l < 3; ++l) {
+        std::swap(r.U[k][l], r.U[k - 1][l]);
+        std::swap(r.a[k][l], r.a[k - 1][l]);
+      }
+      gram_schmidt();
+      k = std::max(k - 1, 1);
     }
   }
-
-  deduplicate(st,tbl);
+  return r;
 }
 
-void NNFinder::num_shifts(const Structure &st, int N[3], double cutoff)  const
-{
-  // 1) Invert the cell
-  tadah::core::Matrix3d cellInv = st.cell.inverse();
+/* Everything the search needs about the lattice. */
+struct SearchGeometry {
+  CellGeometry orig;    // the cell as stored (distances, the guard band)
+  ReducedBasis red;     // reduced basis
+  CellGeometry g;       // geometry of fl(U A)
+  double kappa;         // relative error bound of g's heights and fractions
+};
 
-  tadah::core::Vec3d aStar{ cellInv(0,0), cellInv(0,1), cellInv(0,2) };
-  tadah::core::Vec3d bStar{ cellInv(1,0), cellInv(1,1), cellInv(1,2) };
-  tadah::core::Vec3d cStar{ cellInv(2,0), cellInv(2,1), cellInv(2,2) };
+SearchGeometry search_geometry(const Structure &st) {
+  SearchGeometry s;
+  double A[3][3];
+  s.orig = checked_cell(st, A);
+  s.red = reduce_basis(A);
+  s.g = cell_geometry(s.red.a);
+  // Rounding of fl(U A): row l is off by at most 3 eps L_l with
+  // L_l = sum_m |U_lm| |a_m|; this moves a fractional coordinate by at
+  // most 3 eps rho |b*_k| G_U and a height by a relative 6 eps G_U, with
+  // G_U = sum_l |b*_l| L_l.
+  double GU = 0.0;
+  for (int l = 0; l < 3; ++l) {
+    double L = 0.0;
+    for (int m = 0; m < 3; ++m)
+      L += std::fabs(static_cast<double>(s.red.U[l][m])) * s.orig.length[m];
+    GU += s.g.recip[l] * L;
+  }
+  const double cond = s.g.Q + GU + 1.0;
+  if (!(s.g.volume != 0.0) || !is_finite_bits(cond) ||
+      !(cond < kMaxConditioning))
+    throw std::invalid_argument(
+        "NNFinder: the cell is numerically singular (volume " +
+        fmt(s.orig.volume) + " A^3)");
+  s.kappa = 16.0 * kEps * cond;
+  return s;
+}
 
-  double l1 = aStar.norm();  // Magnitude of reciprocal vector a*
-  double l2 = bStar.norm();
-  double l3 = cStar.norm();
+/* Image bound of one axis for bins of n per cell: covers every pair
+ * whose true distance is below Rg. In exact arithmetic the bin offset of
+ * such a pair satisfies |Delta| < Rg n / h + 1. eta bounds the rounding
+ * of the fractions (F per coordinate, 2 eps for the wrap and the bin
+ * index) and of the height. */
+double stencil_bound(double Rg, double n, double h, double F, double kappa) {
+  const double Y = Rg * n / h;
+  const double eta = 2.0 * n * (F + 2.0 * kEps) + 2.0 * kappa * Y;
+  return std::floor(Y + eta) + 1.0;
+}
 
-  double f1 = (l1 > 1e-12) ? 1.0 / l1 : 1.0;  // ~ direct space length of v1
-  double f2 = (l2 > 1e-12) ? 1.0 / l2 : 1.0;
-  double f3 = (l3 > 1e-12) ? 1.0 / l3 : 1.0;
+long long floor_div(long long a, long long b) {
+  long long d = a / b;
+  if ((a % b != 0) && ((a < 0) != (b < 0))) --d;
+  return d;
+}
 
-  // Overestimate how many images we might need
-  int trialN1 = (int)std::ceil(1.0 + cutoff * 2.0 / f1);
-  int trialN2 = (int)std::ceil(1.0 + cutoff * 2.0 / f2);
-  int trialN3 = (int)std::ceil(1.0 + cutoff * 2.0 / f3);
+long long mul_add_checked(long long acc, long long x, long long y) {
+  long long p, s;
+  if (__builtin_mul_overflow(x, y, &p) || __builtin_add_overflow(acc, p, &s))
+    throw std::invalid_argument(
+        "NNFinder: the image shifts of this cell and these positions do not "
+        "fit in 64-bit integers");
+  return s;
+}
 
+struct Entry {
+  std::size_t j;
+  long long s[3];
+  bool operator<(const Entry &o) const {
+    if (j != o.j) return j < o.j;
+    if (s[0] != o.s[0]) return s[0] < o.s[0];
+    if (s[1] != o.s[1]) return s[1] < o.s[1];
+    return s[2] < o.s[2];
+  }
+};
 
-  // We'll track the min/max n1, n2, n3 for shifts < cutoff
-  int n1_min = 0, n1_max = 0;
-  int n2_min = 0, n2_max = 0;
-  int n3_min = 0, n3_max = 0;
-  bool firstValid = true;
+std::shared_ptr<NNTable> build_table(const Structure &st, double R) {
+  check_cutoff(R);
+  const std::size_t natoms = st.natoms();
+  auto tbl = std::make_shared<NNTable>();
+  tbl->idx.resize(natoms);
+  tbl->shift.resize(natoms);
+  tbl->disp.resize(natoms);
+  tbl->cutoff = R;
+  if (natoms == 0) return tbl;
 
-  tadah::core::Vec3d row0{ st.cell(0,0), st.cell(0,1), st.cell(0,2) };
-  tadah::core::Vec3d row1{ st.cell(1,0), st.cell(1,1), st.cell(1,2) };
-  tadah::core::Vec3d row2{ st.cell(2,0), st.cell(2,1), st.cell(2,2) };
+  const SearchGeometry geo = search_geometry(st);
+  const CellGeometry &g = geo.g;
+  const CellGeometry &g0 = geo.orig;
 
-  // Loop over trial shifts
-  double cutoff_sq = cutoff * cutoff;
-  for (int n1 = -trialN1; n1 <= trialN1; ++n1) {
-    for (int n2 = -trialN2; n2 <= trialN2; ++n2) {
-      for (int n3 = -trialN3; n3 <= trialN3; ++n3) {
+  // Positions: finite, and not absurdly far from the origin.
+  double rho = 0.0;
+  for (std::size_t i = 0; i < natoms; ++i) {
+    const auto &r = st.atoms[i].position;
+    for (int c = 0; c < 3; ++c)
+      if (!is_finite_bits(r[c]))
+        throw std::invalid_argument(
+            "NNFinder: atom " + std::to_string(i + 1) + " of " +
+            std::to_string(natoms) + " has a non-finite position");
+    for (int k = 0; k < 3; ++k) {
+      const double f = r[0] * g0.bstar[k][0] + r[1] * g0.bstar[k][1] +
+                       r[2] * g0.bstar[k][2];
+      if (!(std::fabs(f) < kMaxCells))
+        throw std::invalid_argument(
+            "NNFinder: atom " + std::to_string(i + 1) + " of " +
+            std::to_string(natoms) +
+            " lies more than 2^31 cells from the origin");
+    }
+    rho = std::max(rho, std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]));
+  }
 
-        tadah::core::Vec3d disp
-          = double(n1)*row0 + double(n2)*row1 + double(n3)*row2;
+  // Guard band: delta bounds the rounding of any computed distance, so a
+  // pair a consumer computes closer than R is truly closer than R + delta
+  // and computes here closer than R + 2 delta. Pairs are kept below
+  // Rinc = R + 2 delta, and the search covers true distances below
+  // Rg = R + 3 delta, which contains every pair the test can keep: the
+  // list is then exactly {pairs computed below Rinc}, however it is
+  // searched.
+  const double delta = detail::distance_rounding_bound(g0.G, R, rho);
+  const double Rinc = R + 2.0 * delta;
+  const double Rinc_sq = Rinc * Rinc;
+  const double Rg = R + 3.0 * delta;
+  tbl->guard = 2.0 * delta;
 
-        double distSq = disp[0] * disp[0]
-          + disp[1] * disp[1]
-          + disp[2] * disp[2];
-        // double distSq = disp.squaredNorm();
-        if (distSq < cutoff_sq) {
-          // update bounding box
-          if (firstValid) {
-            n1_min = n1_max = n1;
-            n2_min = n2_max = n2;
-            n3_min = n3_max = n3;
-            firstValid = false;
-          } else {
-            if (n1 < n1_min) n1_min = n1;
-            if (n1 > n1_max) n1_max = n1;
-            if (n2 < n2_min) n2_min = n2;
-            if (n2 > n2_max) n2_max = n2;
-            if (n3 < n3_min) n3_min = n3;
-            if (n3 > n3_max) n3_max = n3;
+  // Per-axis rounding bound of a fractional coordinate.
+  double F[3];
+  for (int k = 0; k < 3; ++k) F[k] = geo.kappa * (rho * g.recip[k] + 1.0);
+
+  // The image cap, from the image bound with one bin per cell.
+  double N[3], total = 1.0;
+  for (int k = 0; k < 3; ++k) {
+    N[k] = stencil_bound(Rg, 1.0, g.height[k], F[k], geo.kappa);
+    total *= 2.0 * N[k] + 1.0;
+  }
+  if (!is_finite_bits(total) || total > kMaxImageCells) {
+    throw std::runtime_error(
+        "NNFinder: the cell is too small for the cutoff " + fmt(R) +
+        " A: the search would need (" + fmt(N[0]) + ", " + fmt(N[1]) + ", " +
+        fmt(N[2]) + ") periodic images per direction, " + fmt(total) +
+        " image cells, more than the limit of " + fmt(kMaxImageCells) +
+        " (cell heights " + fmt(g.height[0]) + ", " + fmt(g.height[1]) +
+        ", " + fmt(g.height[2]) +
+        " A). Such a cell is degenerate, e.g. the result of an unbounded "
+        "relaxation step");
+  }
+
+  // Cell list: bins at least Rg (1 + 2^-20) wide, so a thick axis keeps a
+  // stencil of +-1 even when its height is an exact multiple of R; at most
+  // about 2 natoms + 1 bins in all, so a vacuum box stays cheap. Any bin
+  // counts are correct because the stencil is derived from them.
+  const double limit = 2.0 * static_cast<double>(natoms) + 1.0;
+  double nb[3];
+  for (int k = 0; k < 3; ++k) {
+    nb[k] = std::floor(g.height[k] / (Rg * (1.0 + 0x1p-20)));
+    nb[k] = std::min(std::max(nb[k], 1.0), limit);
+  }
+  while (nb[0] * nb[1] * nb[2] > limit) {
+    const int k = (nb[0] >= nb[1] && nb[0] >= nb[2]) ? 0
+                  : (nb[1] >= nb[2])                 ? 1
+                                                     : 2;
+    nb[k] = std::max(1.0, std::floor(nb[k] / 2.0));
+  }
+  long long n[3], S[3];
+  for (int k = 0; k < 3; ++k) {
+    n[k] = static_cast<long long>(nb[k]);
+    S[k] = static_cast<long long>(
+        stencil_bound(Rg, nb[k], g.height[k], F[k], geo.kappa));
+  }
+
+  // Wrapped fractional coordinates in the reduced basis: f = k + w with
+  // an integer k and w in [0, 1]; bin index floor(w n), clamped to n - 1
+  // (w == 1 only when the true w is within 2^-53 of 1).
+  std::vector<std::array<long long, 3>> kint(natoms);
+  std::vector<std::array<long long, 3>> bin(natoms);
+  for (std::size_t i = 0; i < natoms; ++i) {
+    const auto &r = st.atoms[i].position;
+    for (int k = 0; k < 3; ++k) {
+      const double f = r[0] * g.bstar[k][0] + r[1] * g.bstar[k][1] +
+                       r[2] * g.bstar[k][2];
+      const double fl = std::floor(f);
+      if (!(std::fabs(fl) < 0x1p62))
+        throw std::invalid_argument(
+            "NNFinder: atom " + std::to_string(i + 1) +
+            " lies too far from the origin for this cell");
+      kint[i][k] = static_cast<long long>(fl);
+      const double w = f - fl;
+      long long b = static_cast<long long>(std::floor(w * nb[k]));
+      bin[i][k] = std::min(std::max(b, 0LL), n[k] - 1);
+    }
+  }
+  const std::size_t nbins = static_cast<std::size_t>(n[0] * n[1] * n[2]);
+  auto bin_id = [&](long long b0, long long b1, long long b2) {
+    return static_cast<std::size_t>(b0 + n[0] * (b1 + n[1] * b2));
+  };
+  std::vector<std::size_t> start(nbins + 1, 0), members(natoms);
+  for (std::size_t i = 0; i < natoms; ++i)
+    ++start[bin_id(bin[i][0], bin[i][1], bin[i][2]) + 1];
+  for (std::size_t b = 0; b < nbins; ++b) start[b + 1] += start[b];
+  {
+    std::vector<std::size_t> fill(start.begin(), start.end() - 1);
+    for (std::size_t i = 0; i < natoms; ++i)
+      members[fill[bin_id(bin[i][0], bin[i][1], bin[i][2])]++] = i;
+  }
+
+  const auto &A = g0.a;
+  const auto &U = geo.red.U;
+  std::vector<std::vector<Entry>> out(natoms);
+  for (std::size_t p = 0; p < natoms; ++p) {
+    const auto &rp = st.atoms[p].position;
+    for (long long d0 = -S[0]; d0 <= S[0]; ++d0) {
+      const long long B0 = bin[p][0] + d0;
+      const long long m0 = floor_div(B0, n[0]);
+      const long long q0 = B0 - m0 * n[0];
+      for (long long d1 = -S[1]; d1 <= S[1]; ++d1) {
+        const long long B1 = bin[p][1] + d1;
+        const long long m1 = floor_div(B1, n[1]);
+        const long long q1 = B1 - m1 * n[1];
+        for (long long d2 = -S[2]; d2 <= S[2]; ++d2) {
+          const long long B2 = bin[p][2] + d2;
+          const long long m2 = floor_div(B2, n[2]);
+          const long long q2 = B2 - m2 * n[2];
+          const std::size_t b = bin_id(q0, q1, q2);
+          for (std::size_t t = start[b]; t < start[b + 1]; ++t) {
+            const std::size_t q = members[t];
+            if (q < p) continue;
+            // Image shift in the reduced basis, then in the stored one.
+            const long long sr[3] = {m0 + kint[p][0] - kint[q][0],
+                                     m1 + kint[p][1] - kint[q][1],
+                                     m2 + kint[p][2] - kint[q][2]};
+            if (q == p) {
+              // (p, p, s) and (p, p, -s) are one pair: take s > 0.
+              const bool positive =
+                  sr[0] > 0 || (sr[0] == 0 && (sr[1] > 0 ||
+                                               (sr[1] == 0 && sr[2] > 0)));
+              if (!positive) continue;
+            }
+            long long s[3];
+            for (int c = 0; c < 3; ++c) {
+              long long acc = 0;
+              for (int l = 0; l < 3; ++l) acc = mul_add_checked(acc, sr[l], U[l][c]);
+              s[c] = acc;
+            }
+            // Distance as consumers compute it: r_p - (r_q + disp) with
+            // disp = s0 a0 + s1 a1 + s2 a2 (populate_disp).
+            const double s0 = static_cast<double>(s[0]);
+            const double s1 = static_cast<double>(s[1]);
+            const double s2 = static_cast<double>(s[2]);
+            const auto &rq = st.atoms[q].position;
+            double rsq = 0.0;
+            for (int c = 0; c < 3; ++c) {
+              const double D = s0 * A[0][c] + s1 * A[1][c] + s2 * A[2][c];
+              const double del = rp[c] - (rq[c] + D);
+              rsq += del * del;
+            }
+            if (rsq < Rinc_sq) {
+              out[p].push_back({q, {s[0], s[1], s[2]}});
+              out[q].push_back({p, {-s[0], -s[1], -s[2]}});
+            }
           }
         }
       }
     }
   }
 
-  // convert bounding box → final N
-  N[0] = std::max(std::abs(n1_min), std::abs(n1_max));
-  N[1] = std::max(std::abs(n2_min), std::abs(n2_max));
-  N[2] = std::max(std::abs(n3_min), std::abs(n3_max));
-
-  N[0] = std::max(N[0], 1);
-  N[1] = std::max(N[1], 1);
-  N[2] = std::max(N[2], 1);
-
-  /* Defensive: a near-degenerate cell (e.g. produced by an unbounded
-   * relaxation step) can produce a per-atom neighbour count in the
-   * tens of thousands, which then drives the O(nn × get_nn_iindex)
-   * inner loops in M_Tadah_Base::fpredict to ~10^10 operations and
-   * stalls evaluate_E_F for tens of seconds. Cap the total image
-   * count instead of any single N[i] — a cubic 0.5 Å cell with all
-   * N[i]=12 already produces ~25^3 ≈ 15000 image cells per atom, and
-   * a 0.1 Å cell pushes it past 10^6. Throw past 10^4 so legitimate
-   * small cells (down to ~cutoff/15 per side) still work, but
-   * unbounded-relax outputs fail fast and propagate up to obs_loss's
-   * try-catch as a failscored θ. */
-  const long long total_shifts =
-      static_cast<long long>(2 * N[0] + 1) *
-      static_cast<long long>(2 * N[1] + 1) *
-      static_cast<long long>(2 * N[2] + 1);
-  constexpr long long kMaxTotalShifts = 10000;
-  if (total_shifts > kMaxTotalShifts) {
-    throw std::runtime_error(
-        "NNFinder::num_shifts: cell vectors are too short relative to "
-        "cutoff — would need ("
-        + std::to_string(N[0]) + ", "
-        + std::to_string(N[1]) + ", "
-        + std::to_string(N[2]) + ") periodic images per direction ("
-        + std::to_string(total_shifts) + " total image cells > cap "
-        + std::to_string(kMaxTotalShifts) +
-        "). Caller produced a degenerate cell (e.g. unbounded "
-        "relaxation step). Aborting NN search.");
+  for (std::size_t i = 0; i < natoms; ++i) {
+    auto &e = out[i];
+    std::sort(e.begin(), e.end());
+    tbl->idx[i].resize(e.size());
+    tbl->shift[i].resize(e.size());
+    for (std::size_t k = 0; k < e.size(); ++k) {
+      tbl->idx[i][k] = e[k].j;
+      tbl->shift[i][k] = tadah::core::Vec3d(static_cast<double>(e[k].s[0]),
+                                            static_cast<double>(e[k].s[1]),
+                                            static_cast<double>(e[k].s[2]));
+    }
+    std::vector<Entry>().swap(e);
   }
+  NNFinder().populate_disp(st, tbl);
+  return tbl;
 }
-static inline bool is_tilted(const core::Matrix3d& C, double eps = 1e-12)
+
+}  // namespace
+
+double NNFinder::get_cutoff(const tadah::core::Context &context) const
 {
-    return std::fabs(C(0,1)) > eps || std::fabs(C(0,2)) > eps ||
-           std::fabs(C(1,0)) > eps || std::fabs(C(1,2)) > eps ||
-           std::fabs(C(2,0)) > eps || std::fabs(C(2,1)) > eps;
+  return context.get<double>("RCUTMAX");
 }
-// ======================================================================
-// Binned neighbour search – works for arbitrary triclinic cells.
-// ======================================================================
-void NNFinder::calc_binned(const Structure&         st,
-                               std::shared_ptr<NNTable> tbl,
-                               double                   cutoff) const
+
+bool NNFinder::check_box(const Structure &st, double cutoff)
 {
-    const std::size_t N = st.natoms();
-    tbl->idx.resize(N);
-    tbl->shift.resize(N);
-
-    /* ------------------------------------------------------------ */
-    /* 1. decide bin counts in fractional space                     */
-    auto row_length = [&](int r){
-        double x=st.cell(r,0), y=st.cell(r,1), z=st.cell(r,2);
-        return std::sqrt(x*x+y*y+z*z); };
-
-    const double aL = row_length(0);
-    const double bL = row_length(1);
-    const double cL = row_length(2);
-    double Lmax = std::max({aL,bL,cL});
-
-    if ( is_tilted(st.cell) && (Lmax / cutoff) > 1.0 )
-      Lmax *= 0.5;                 // => bin-width doubled, nx,ny,nz halved
-
-    const double df = cutoff / Lmax;              // fractional bin width
-    const int nx = std::max(1, int(std::floor(1.0 / df)));
-    const int ny = nx;
-    const int nz = nx;                            // cubic bins in f-space
-
-    struct Bin { std::vector<std::size_t> atoms; };
-    std::vector<Bin> bins(std::size_t(nx*ny*nz));
-
-    auto wrap=[](int k,int n){ return ((k%n)+n)%n; };
-    auto bidx=[&](int ix,int iy,int iz){
-        return std::size_t(wrap(ix,nx)+nx*(wrap(iy,ny)+ny*wrap(iz,nz))); };
-
-    /* inverse cell & row vectors */
-    core::Matrix3d Cinv = st.cell.inverse();
-    core::Vec3d a(st.cell.row(0)), b(st.cell.row(1)), c(st.cell.row(2));
-
-    /* ------------------------------------------------------------ */
-    /* 2. put atoms into bins, store fractional coords              */
-    struct Frac{ double x,y,z; };
-    std::vector<Frac> fcoord(N);
-
-    for(std::size_t i=0;i<N;++i){
-        const auto& r = st(i).position;
-        double fx=Cinv(0,0)*r[0]+Cinv(0,1)*r[1]+Cinv(0,2)*r[2];
-        double fy=Cinv(1,0)*r[0]+Cinv(1,1)*r[1]+Cinv(1,2)*r[2];
-        double fz=Cinv(2,0)*r[0]+Cinv(2,1)*r[1]+Cinv(2,2)*r[2];
-        fx-=std::floor(fx); fy-=std::floor(fy); fz-=std::floor(fz);
-        fcoord[i]={fx,fy,fz};
-        bins[bidx(int(fx*nx),int(fy*ny),int(fz*nz))].atoms.push_back(i);
-    }
-
-    /* ------------------------------------------------------------ */
-    /* 3. exact lattice-vector span from naive helper               */
-    int Ns[3];  num_shifts(st,Ns,cutoff);
-
-    // For atom p in bin ibinP and neighbor q in bin ibinQ with lattice shift m,
-    // the required loop offset is dx = ibinQ + m*nBin - ibinP.
-    // Over all ibinP,ibinQ ∈ [0,nBin) and |m| ≤ Ns, |dx| ≤ nBin*(Ns+1)-1.
-    auto bspan=[&](int nBin,int Ns){ return std::max(1, nBin*(Ns+1) - 1); };
-    const int sx=bspan(nx,Ns[0]), sy=bspan(ny,Ns[1]), sz=bspan(nz,Ns[2]);
-
-    const double rc2 = cutoff*cutoff;
-    for(std::size_t i=0;i<N;++i){
-        tbl->idx[i].reserve(32); tbl->shift[i].reserve(32); }
-
-    // Floor division: shift = floor((bin_index + offset) / bin_count).
-    // This gives the lattice-image shift for a given bin offset.
-    // Using the raw offset (dx) directly is only correct for nx==1;
-    // for nx>1 adjacent bins in the home cell have lattice shift=0, not shift=dx.
-    auto floorDiv = [](int a, int b) -> int {
-        int d = a / b;
-        if (a % b != 0 && (a < 0) != (b < 0)) d--;
-        return d;
-    };
-
-    /* ------------------------------------------------------------ */
-    /* 4. neighbour search                                          */
-    for(int ix=0;ix<nx;++ix)
-      for(int iy=0;iy<ny;++iy)
-        for(int iz=0;iz<nz;++iz)
-        {
-            const auto& bin0 = bins[bidx(ix,iy,iz)].atoms;
-
-            for(int dx=-sx;dx<=sx;++dx)
-              for(int dy=-sy;dy<=sy;++dy)
-                for(int dz=-sz;dz<=sz;++dz)
-                {
-                    const auto& bin1 = bins[bidx(ix+dx,iy+dy,iz+dz)].atoms;
-                    for(std::size_t p:bin0)
-                      for(std::size_t q:bin1)
-                      {
-                          if(dx==0 && dy==0 && dz==0 && q<=p) continue;
-
-                          core::Vec3d shift(
-                              floorDiv(ix+dx, nx),
-                              floorDiv(iy+dy, ny),
-                              floorDiv(iz+dz, nz));
-                          core::Vec3d del =
-                               shift[0]*a + shift[1]*b + shift[2]*c +
-                               st(q).position - st(p).position;
-
-                          if(del*del < rc2){
-                              tbl->idx  [p].push_back(q);
-                              tbl->shift[p].push_back( shift);
-                              tbl->idx  [q].push_back(p);
-                              tbl->shift[q].push_back(-shift);
-                          }
-                      }
-                }
-        }
-
-    /* ------------------------------------------------------------
-       5. de-duplicate                                              */
-    struct Rec{ std::size_t j; core::Vec3d s; };
-    auto less=[](const Rec&a,const Rec&b){
-        if(a.j!=b.j) return a.j<b.j;
-        if(a.s[0]!=b.s[0]) return a.s[0]<b.s[0];
-        if(a.s[1]!=b.s[1]) return a.s[1]<b.s[1];
-        return a.s[2]<b.s[2]; };
-
-    for(std::size_t i=0;i<N;++i){
-        std::vector<Rec> rec;
-        rec.reserve(tbl->idx[i].size());
-        for(std::size_t k=0;k<tbl->idx[i].size();++k)
-            rec.push_back({tbl->idx[i][k], tbl->shift[i][k]});
-        std::sort(rec.begin(),rec.end(),less);
-        rec.erase(std::unique(rec.begin(),rec.end(),
-                    [](const Rec&a,const Rec&b){
-                        return a.j==b.j && a.s==b.s;}),rec.end());
-        tbl->idx[i].resize(rec.size());
-        tbl->shift[i].resize(rec.size());
-        for(std::size_t k=0;k<rec.size();++k){
-            tbl->idx[i][k]=rec[k].j; tbl->shift[i][k]=rec[k].s;}
-        tbl->idx[i].shrink_to_fit(); tbl->shift[i].shrink_to_fit();
-    }
+  check_cutoff(cutoff);
+  const SearchGeometry geo = search_geometry(st);
+  for (int k = 0; k < 3; ++k)
+    if (geo.g.height[k] < cutoff) return false;
+  return true;
 }
 
-
-void NNFinder::deduplicate(const Structure &st,  std::shared_ptr<NNTable> tbl ) const
-{
-  // We'll do one pass per atom.
-  // For each atom i, we:
-  // 1) gather neighbor info,
-  // 2) compute real-space neighbor positions (or displacements),
-  // 3) sort by position,
-  // 4) merge duplicates.
-
-  const size_t natoms = st.natoms();
-
-  // Pre-extract cell for speed (row-based)
-  double c00 = st.cell(0,0), c01 = st.cell(0,1), c02 = st.cell(0,2);
-  double c10 = st.cell(1,0), c11 = st.cell(1,1), c12 = st.cell(1,2);
-  double c20 = st.cell(2,0), c21 = st.cell(2,1), c22 = st.cell(2,2);
-
-  // We'll define a small struct to hold neighbor data
-  struct NbrInfo {
-    size_t nbrIdx;               // neighbor atom index
-    tadah::core::Vec3d shift;    // the integer shift stored
-    tadah::core::Vec3d pos;      // real-space position of the neighbor
-  };
-
-  // A small function to compare real-space positions (pos.x, pos.y, pos.z)
-  auto eps = 1e-6;
-  auto lessPos = [&](const NbrInfo &A, const NbrInfo &B) {
-    // compare x
-    if (std::fabs(A.pos[0] - B.pos[0]) > eps) 
-      return (A.pos[0] < B.pos[0]);
-    // compare y
-    if (std::fabs(A.pos[1] - B.pos[1]) > eps) 
-      return (A.pos[1] < B.pos[1]);
-    // compare z
-    return (A.pos[2] < B.pos[2] - eps);
-  };
-
-  // A function to see if two positions are "the same" within tolerance
-  auto samePos = [&](const tadah::core::Vec3d &p1, const tadah::core::Vec3d &p2){
-    return ( std::fabs(p1[0] - p2[0]) < eps
-        && std::fabs(p1[1] - p2[1]) < eps
-        && std::fabs(p1[2] - p2[2]) < eps );
-  };
-
-  // For each atom i, deduplicate
-  for (size_t i = 0; i < natoms; i++)
-  {
-    const size_t nnCount = tbl->idx[i].size();
-    if (nnCount <= 1) {
-      continue;  // no duplicates possible if 0 or 1 neighbor
-    }
-
-    // Gather neighbors in a vector
-    std::vector<NbrInfo> nvec;
-    nvec.reserve(nnCount);
-
-    // Build (nbrIdx, shift, realPos)
-    for (size_t n = 0; n < nnCount; n++) {
-      size_t idxB = tbl->idx[i][n];
-      auto &sh  = tbl->shift[i][n];  // e.g. integer triple (n1, n2, n3)
-
-      // compute the real displacement from shift
-      double dxS = sh[0]*c00 + sh[1]*c10 + sh[2]*c20;
-      double dyS = sh[0]*c01 + sh[1]*c11 + sh[2]*c21;
-      double dzS = sh[0]*c02 + sh[1]*c12 + sh[2]*c22;
-
-      // neighbor's real position
-      double xN = st(idxB).position[0] + dxS;
-      double yN = st(idxB).position[1] + dyS;
-      double zN = st(idxB).position[2] + dzS;
-
-      nvec.push_back( NbrInfo{ idxB, sh, tadah::core::Vec3d(xN, yN, zN) } );
-    }
-
-    // Sort by real-space pos
-    std::sort(nvec.begin(), nvec.end(), lessPos);
-
-    // Merge duplicates
-    std::vector<size_t> newIdx;
-    std::vector<tadah::core::Vec3d> newShift;
-    newIdx.reserve(nnCount);
-    newShift.reserve(nnCount);
-
-    for (size_t k = 0; k < nvec.size(); k++)
-    {
-      if (k > 0) {
-        // compare with prev
-        if (samePos(nvec[k].pos, nvec[k-1].pos)) {
-          // skip => it's a duplicate
-          continue;
-        }
-      }
-      // keep
-      newIdx.push_back(nvec[k].nbrIdx);
-      newShift.push_back(nvec[k].shift);
-    }
-
-    // Replace the old arrays
-    tbl->idx[i]   = std::move(newIdx);
-    tbl->shift[i] = std::move(newShift);
-    tbl->idx[i].shrink_to_fit();
-    tbl->shift[i].shrink_to_fit();
-  }
-}
-
-// ---------------------------------------------------------------------------
 void NNFinder::populate_disp(const Structure &st,
                               std::shared_ptr<NNTable> tbl) const
 {
@@ -491,84 +468,67 @@ void NNFinder::populate_disp(const Structure &st,
   }
 }
 
+NNFinder::NNTablePtr NNFinder::build(const Structure &st, double cutoff) const
+{
+  return build_table(st, cutoff);
+}
+
+NNFinder::NNTablePtr NNFinder::build(const Structure &st,
+                                     const core::Context &ctx) const
+{
+  return build(st, get_cutoff(ctx));
+}
+
+NNFinder::NNTablePtr NNFinder::build(Structure &st, double cutoff) const
+{
+  return build(static_cast<const Structure &>(st), cutoff);
+}
+
+NNFinder::NNTablePtr NNFinder::build(Structure &st,
+                                     const core::Context &context) const
+{
+  return build(static_cast<const Structure &>(st), get_cutoff(context));
+}
+
 void NNFinder::calc(Structure &st, double cutoff) const
 {
-  st.nn = build(st, cutoff);
+  st.nn = build(static_cast<const Structure &>(st), cutoff);
 }
+
 void NNFinder::calc(Structure &st, const core::Context &context) const
 {
-  double cutoff = get_cutoff(context);
-  st.nn = build(st, cutoff);
+  calc(st, get_cutoff(context));
 }
 
-// ---------------------------------------------------------------------------
-// Parallel loop over structure database
 void NNFinder::calc(StructureDB &stdb, const core::Context &context) const
 {
-#ifdef _OPENMP
-  #pragma omp parallel for
-#endif
-  for(size_t i = 0; i < stdb.size(); i++){
-    calc(stdb(i), context);
-  }
+  // Read the cutoff once: a missing RCUTMAX is the context's error, not
+  // any structure's.
+  calc(stdb, get_cutoff(context));
 }
+
 void NNFinder::calc(StructureDB &stdb, double cutoff) const
 {
+  // An exception may not leave the OpenMP loop; keep the lowest-numbered
+  // failure and rethrow it after the loop, naming the structure.
+  const std::size_t n = stdb.size();
+  detail::FirstStructureError first;
 #ifdef _OPENMP
-  #pragma omp parallel for
+  #pragma omp parallel for schedule(dynamic)
 #endif
-  for(size_t i = 0; i < stdb.size(); i++){
-    calc(stdb(i), cutoff);
-  }
-}
-
-NNTablePtr NNFinder::build(Structure &st, const core::Context &context) const 
-{
-  double cutoff = get_cutoff(context);
-  return build(st, cutoff);
-}
-NNFinder::NNTablePtr NNFinder::build(Structure& st, double cutoff) const
-{
-    auto tbl = std::make_shared<NNTable>();
-
-    tbl->idx.resize(st.natoms());
-    tbl->shift.resize(st.natoms());
-
-    if(!check_box(st, cutoff)) {
-      calc_naive(st,tbl, cutoff);
-    } else {
-      calc_binned(st,tbl, cutoff);
+  for (std::size_t i = 0; i < n; i++) {
+    try {
+      calc(stdb(i), cutoff);
+    } catch (...) {
+#ifdef _OPENMP
+      #pragma omp critical(tadah_nnfinder_first_error)
+#endif
+      first.record(i, std::current_exception());
     }
-
-    // Cache real-space displacement per (i, k) so Structure::nn_pos() can
-    // avoid the cell-row multiplication on every descriptor-loop visit.
-    populate_disp(st, tbl);
-
-    return tbl;
-}
-NNFinder::NNTablePtr
-NNFinder::build(const Structure& st, double cutoff) const
-{
-    auto tbl = std::make_shared<NNTable>();
-
-    tbl->idx.resize(st.natoms());
-    tbl->shift.resize(st.natoms());
-
-    if(!check_box(st, cutoff)) {
-        calc_naive(st, tbl, cutoff);
-    } else
-        calc_binned(st, tbl, cutoff);
-
-    populate_disp(st, tbl);
-
-    return tbl;
-}
-
-NNFinder::NNTablePtr
-NNFinder::build(const Structure& st,
-                const core::Context& ctx) const
-{
-    return build(st, get_cutoff(ctx));
+  }
+  if (first.failed())
+    detail::rethrow_for_structure(first.error, first.index, n,
+                                  stdb(first.index).label, "NNFinder");
 }
 
 } // namespace mlip
