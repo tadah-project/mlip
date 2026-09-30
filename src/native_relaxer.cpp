@@ -100,18 +100,22 @@ relax(Structure& st_inout,
     /* NN-cache state. One NNFinder, one cache, live across all evals
      * inside this relax(). `cached` calls (st_inout's initial build and
      * its post-LS force refresh) check freshness against the prior
-     * snapshot and reuse the cached NN list when atoms drift < skin/2;
+     * snapshot and reuse the cached NN list while it provably holds
+     * every pair within rcut (nn_cache::is_fresh);
      * `uncached` calls (FD strain probes, LS trial energies) always
      * rebuild fresh since their Structure objects are transient.
      * Building NN at cutoff = rcut + skin so pairs that drift into the
-     * rcut sphere are already present. */
+     * rcut sphere are already present. With nn_skin 0 nothing is cached
+     * (Options::nn_skin): every evaluation builds its own list. */
     nn_cache::State cache;
     cache.skin = opts.nn_skin;
+    const bool cache_enabled = opts.nn_skin > 0.0;
     const double rcut = ctx.get<double>("RCUTMAX");
     const double nn_cutoff = rcut + cache.skin;
     NNFinder nnf;
 
     auto ensure_nn = [&](Structure& s, bool use_cache) {
+        use_cache = use_cache && cache_enabled;
         if (use_cache && nn_cache::is_fresh(s, cache)) return;
         nnf.calc(s, nn_cutoff);
         if (use_cache) nn_cache::capture(s, cache);
@@ -279,8 +283,8 @@ relax(Structure& st_inout,
          *  - |Δscale| ≤ max_strain_step (Iso mode only)
          * For randomly-initialised potentials F_eps can be ~1e6+,
          * which would otherwise drive scale_trial to ~0 inside the
-         * line-search halving sequence and hang NNFinder on the
-         * resulting near-degenerate cell. */
+         * line-search halving sequence and make NNFinder refuse the
+         * resulting near-degenerate cell (its image-cell limit). */
         const double safe_fmax = std::max(fmax_a, 1.0e-12);
         double trial_step = std::min(step, opts.max_step / safe_fmax);
         if (opts.box_mode == Options::Iso) {

@@ -13,17 +13,18 @@ namespace nn_cache {
 
 /** \brief Skin-based neighbour-list cache state.
  *
- *  Mirrors LAMMPS's `neighbor SKIN bin` + `neigh_modify check yes`
- *  invalidation policy. The cache is caller-owned (typically a local
- *  in NativeRelaxer::relax()) so that NNFinder stays stateless and
- *  NNTable stays immutable.
+ *  Like LAMMPS's `neighbor SKIN bin` + `neigh_modify check yes`: a list
+ *  built with a skin is reused until it may miss a pair. The cache is
+ *  caller-owned (typically a local in NativeRelaxer::relax()) so that
+ *  NNFinder stays stateless and NNTable stays immutable.
  *
  *  The cache contains a snapshot of the positions and cell at the
  *  last NN build, plus the skin used and the resulting (immutable,
- *  thread-shared) NN list. `is_fresh` then computes the LAMMPS-style
- *  delta-distance check and either returns true (caller reuses
- *  `cached_nn`) or false (caller rebuilds via `NNFinder::calc(st,
- *  rcut + skin)` then calls `capture` to update the state).
+ *  thread-shared) NN list. `is_fresh` decides whether the list still
+ *  holds every pair closer than rcut = cutoff − skin and either returns
+ *  true (the caller uses `st.nn`) or false (caller rebuilds via
+ *  `NNFinder::calc(st, rcut + skin)` then calls `capture` to update the
+ *  state).
  */
 struct State {
     /** Atom positions (absolute, Cartesian) at the last rebuild.
@@ -34,8 +35,9 @@ struct State {
     tadah::core::Matrix3d cell_ref;
 
     /** Skin used. Caller must set this before the first build. The
-     *  NN list itself is built at cutoff = rcut + skin so pairs that
-     *  drift into the rcut sphere by up to skin/2 are already present. */
+     *  NN list itself is built at cutoff = rcut + skin (NNFinder), so
+     *  pairs that come within rcut as the atoms and the cell move are
+     *  already present. */
     double skin = 0.0;
 
     /** Cached NN list. Shared (immutable). Caller obtains it from
@@ -46,16 +48,31 @@ struct State {
 /** \brief Decide whether the cached NN list is still valid for the
  *         Structure's current positions and cell.
  *
- *  Returns true iff (a) the cache has been populated (xref non-empty,
- *  matching natoms), AND (b) the LAMMPS-style displacement check
- *  passes:
- *      max_i |position[i] - xref[i]|² ≤ ( max(0, skin/2 - 2·corner_shift) )²
- *  where `corner_shift` is the sum of the two largest box-corner
- *  displacements between the cached and current cell (8 corners of
- *  the [0,1]³ fractional box, mapped through cell and cell_ref).
+ *  The list was built by NNFinder at cutoff R = cached_nn->cutoff for the
+ *  cell A0 (rows) and positions r0; the caller needs every pair closer
+ *  than rc = R − skin at the current cell A and positions r. A pair's
+ *  vector v now and v0 at the build satisfy
+ *      |v0| <= |v| ||M||_2 + 2 e_max,   M = A^-1 A0,
+ *      e_max = max_i |r_i M − r0_i|
+ *  (row vectors, positions as stored, no wrapping), so the list is fresh
+ *  iff
+ *      (rc + delta) B + 2 e_max + tau <= R,
+ *      B = min(sqrt(||M||_1 ||M||_inf), 1 + ||M − I||_F) >= ||M||_2,
+ *  with delta and tau rounding bounds (about 1e-13 relative). This holds
+ *  for any cell, any number of images and unwrapped atoms. For an
+ *  unchanged cell (M = I) it is LAMMPS' test: no atom moved more than
+ *  skin/2. Uniform expansion keeps a list fresh (B < 1); a compression,
+ *  shear or thin cell costs what it moves the images.
  *
- *  On hit, assigns `st.nn = s.cached_nn` (the shared NNTablePtr) so
- *  the caller can proceed to descriptor evaluation without rebuilding.
+ *  Returns false when the cache is empty, the atom count changed, or the
+ *  current cell is singular (the rebuild then reports it). Throws
+ *  std::logic_error when rc <= 0 (a list not built at rcut + skin).
+ *
+ *  On a hit `st.nn` becomes the cached list with the image displacements
+ *  of the current cell: `s.cached_nn` itself while the cell is bitwise
+ *  unchanged, otherwise a copy with NNTable::disp recomputed (the cached
+ *  table is shared and immutable). It holds every pair closer than rc;
+ *  its NNTable::cutoff stays the build cutoff R.
  *  On miss, does NOT touch `st.nn`. */
 bool is_fresh(Structure& st, const State& s);
 
