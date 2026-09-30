@@ -21,7 +21,10 @@ namespace mlip {
  *    |r_j + s0 a0 + s1 a1 + s2 a2 − r_i| < R, where a_k = cell.row(k) and
  *    s is an integer triple (j == i when s ≠ 0). It may also list pairs up
  *    to R + NNTable::guard, the rounding bound of a distance (about
- *    1e-13 relative); consumers filter by their own cutoff.
+ *    1e-13 relative for atoms near the cell, growing with their distance
+ *    from the origin); consumers filter by their own cutoff. Two atoms at
+ *    the same position are listed as neighbours at distance 0 (consumers
+ *    divide by the distance: such a structure is not physical).
  *  - **Relative to the stored positions:** positions are never changed;
  *    an atom outside the cell gets the shift that places its image.
  *  - **Symmetric and ordered:** (i → j, s) is listed iff (j → i, −s) is;
@@ -35,10 +38,14 @@ namespace mlip {
  * tested once with the distance computed as consumers compute it.
  *
  * Refused with std::invalid_argument: a cutoff that is not finite and
- * positive, a non-finite cell entry or position, a singular (or
- * numerically singular) cell, an atom more than 2^31 cells from the
- * origin. Refused with std::runtime_error: a cell so small for the cutoff
- * that the search would span more than 10^4 image cells (see build()).
+ * positive, a non-finite cell entry or position, a cell vector shorter
+ * than 2^-200 Å or longer than 2^200 Å, a singular (or numerically
+ * singular) cell, an atom more than 2^31 cells from the origin, and
+ * positions whose rounding bound exceeds an image cell (an atom far out
+ * in a cell near the conditioning limit). Refused with
+ * std::runtime_error: a cell so small for the cutoff that the search
+ * would span more than 10^4 image cells (see build()). A structure
+ * without atoms gets an empty list; its cell is not examined.
  *
  * The context-based overloads take the cutoff from context("RCUTMAX").
  */
@@ -79,7 +86,9 @@ public:
      * heights h_k of the reduced lattice, may not exceed 10^4: a larger
      * search means a cell smaller than about cutoff/10 in every direction
      * (a degenerate cell, e.g. from a runaway relaxation) and throws
-     * std::runtime_error.
+     * std::runtime_error. The count has no rounding margin, so it does not
+     * depend on where the atoms are stored: a cube is accepted while its
+     * edge exceeds cutoff/10.
      */
     NNTablePtr build(const Structure& st, double cutoff) const;
 

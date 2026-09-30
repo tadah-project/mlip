@@ -62,8 +62,11 @@ public:
     double cutoff = 0.0;
 
     /** Width of the band above `cutoff` in which the list may also hold
-     *  pairs (Å, about 1e-13 relative): the rounding bound of a pair
-     *  distance. Consumers filter by their own cutoff. */
+     *  pairs (Å): twice the rounding bound of a pair distance,
+     *  32 eps (G + 2)(cutoff + 2 max_i |r_i|) with G = sum_k |a_k| |b*_k|
+     *  (3 for an orthogonal cell) -- about 1e-13 relative for atoms near
+     *  the cell, growing with their distance from the origin. Consumers
+     *  filter by their own cutoff. */
     double guard = 0.0;
 
     NNTable()  = default;
