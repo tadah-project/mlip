@@ -69,11 +69,15 @@ static double lengthUnit(const std::string &word, const std::string &block) {
                            " (known: ang, bohr, a0, nm, cm, m, pm).");
 }
 
-// True for a blank line or a CASTEP comment line (!, # or ;).
-static bool skippable(const std::string &line) {
-  const auto p = line.find_first_not_of(" \t\r");
-  return p == std::string::npos || line[p] == '!' || line[p] == '#' ||
-         line[p] == ';';
+// CASTEP ignores everything after '!', '#' or ';' on a line (species
+// labels and numbers never contain them).
+static std::string strip_comment(const std::string &line) {
+  return line.substr(0, line.find_first_of("!#;"));
+}
+
+// True for a line with nothing but blanks.
+static bool blank(const std::string &line) {
+  return line.find_first_not_of(" \t\r") == std::string::npos;
 }
 
 //--------------------------------------------------------------------
@@ -100,6 +104,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
   };
 
   while (std::getline(iss, line)) {
+    line = strip_comment(line);
     std::string lcase = line;
     std::transform(lcase.begin(), lcase.end(), lcase.begin(), ::tolower);
 
@@ -116,7 +121,7 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       block = Block::None;
       continue;
     }
-    if (skippable(line)) continue;
+    if (blank(line)) continue;
     switch (block) {
       case Block::LatticeCart: cartLines.push_back(line); break;
       case Block::LatticeABC:  abcLines.push_back(line);  break;
@@ -189,6 +194,11 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
     throw std::runtime_error(
       "CastepCellReader: both POSITIONS_FRAC and POSITIONS_ABS are given.");
   }
+  if (!seenFrac && !seenAbs) {
+    throw std::runtime_error(
+      "CastepCellReader: no positions block (POSITIONS_FRAC or "
+      "POSITIONS_ABS).");
+  }
   auto atom_line = [&](const std::string &ln, const std::string &name) {
     const auto toks = split_line(ln);
     if (toks.size() < 4) {
@@ -219,6 +229,12 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
                     unit * tadah::core::to_double(toks[3])};
       m_structure.atoms.push_back(a);
     }
+  }
+  if (m_structure.atoms.empty()) {
+    throw std::runtime_error(
+      std::string("CastepCellReader: the ") +
+      (seenFrac ? "POSITIONS_FRAC" : "POSITIONS_ABS") +
+      " block has no atoms.");
   }
 }
 

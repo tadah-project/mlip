@@ -25,9 +25,11 @@ namespace mlip {
  * (cell^T f), converted after the whole file is read, so the blocks may
  * come in any order. An optional first line naming a length unit (ang,
  * bohr, a0, nm, cm, m, pm; default ang) is applied in LATTICE_CART,
- * LATTICE_ABC and POSITIONS_ABS. A file without a lattice block, a
+ * LATTICE_ABC and POSITIONS_ABS. Text after '!', '#' or ';' on any line
+ * is a comment. A file without a lattice block or a positions block, a
  * LATTICE_CART without exactly three vectors, an incomplete LATTICE_ABC,
- * a singular lattice or an unknown unit is refused (std::runtime_error).
+ * a singular lattice, an unknown unit or a positions block without atoms
+ * is refused (std::runtime_error).
  *
  * This parser also extracts atomic species from the first token
  * in POSITIONS_* blocks.
