@@ -1,15 +1,19 @@
 /**
  * Test: NNFinder coverage on gap cells (triclinic, sub-cutoff, isolated atom,
- *       large BCC supercell, kMaxTotalShifts defensive cap).
+ *       large BCC supercell, the kMaxTotalShifts image-cell cap).
  *
  * These complement test_nn_cutoff_equivalence.cpp (cubic CH4 only) and
- * lock in correctness on the cells PC_OBSERVABLE produces: 4×4×4 BCC
- * supercells (cohesive_energy bulk), 1-atom vacuum cells (cohesive_energy
- * iso), and the degenerate-near-zero cells the NativeRelaxer can drift
- * into on wild θ (which trip the kMaxTotalShifts safeguard).
+ * test_nn_finder_exact.cpp (every cell shape against a brute-force oracle),
+ * and lock in the cells PC_OBSERVABLE produces: 4×4×4 BCC supercells
+ * (cohesive_energy bulk), 1-atom vacuum cells (cohesive_energy iso), and
+ * the degenerate near-zero cells the NativeRelaxer can drift into on wild θ.
+ * NNFinder refuses a cell that would need more than kMaxTotalShifts = 10⁴
+ * image cells, prod_k (2 N_k + 1) with N_k = floor(rcut / h_k) + 1 over the
+ * (reduced) cell heights h_k, with std::runtime_error.
  *
- * The triclinic + sub-cutoff cases ensure refactors to calc_binned /
- * calc_naive can't silently desync on non-orthogonal lattices.
+ * NNFinder runs one search for every cell, thick or thinner than the
+ * cutoff, so the triclinic and sub-cutoff cases check results, not a code
+ * path.
  */
 #include "catch2/catch.hpp"
 #include <tadah/mlip/atom.h>
@@ -42,7 +46,7 @@ static bool has_entry(const Structure& st, size_t i,
     return false;
 }
 
-TEST_CASE("NNFinder: triclinic cell — binned matches naive at same cutoff",
+TEST_CASE("NNFinder: triclinic cell — the 8.0 Å list contains the 4.5 Å list",
           "[nn][gaps][triclinic]")
 {
     PeriodicTable::initialize();
@@ -52,10 +56,10 @@ TEST_CASE("NNFinder: triclinic cell — binned matches naive at same cutoff",
      *   a = (6, 0, 0)
      *   b = (1, 6, 0)
      *   c = (0, 0, 6)
-     * All vectors > 4.5 Å cutoff, so check_box returns true → binned path.
-     * For comparison, call calc_naive directly via the larger 8.0 Å cutoff
-     * (forces naive fallback by setting cutoff > min cell dim... but here
-     * all cell vectors are ≥ 6 so check_box at 8.0 returns false). */
+     * Cell heights (5.92, 6, 6) are above the 4.5 Å cutoff and below the
+     * 8.0 Å one, so the 8.0 Å list also holds images beyond the nearest
+     * cells. Every (neighbour, shift) of the 4.5 Å list must be in the
+     * 8.0 Å list. */
     Structure st;
     st.cell(0,0) = 6.0; st.cell(0,1) = 0.0; st.cell(0,2) = 0.0;
     st.cell(1,0) = 1.0; st.cell(1,1) = 6.0; st.cell(1,2) = 0.0;
@@ -66,27 +70,27 @@ TEST_CASE("NNFinder: triclinic cell — binned matches naive at same cutoff",
 
     NNFinder nnf;
 
-    /* Path A: small cutoff → binned. */
-    Structure st_binned = st;
-    nnf.calc(st_binned, 4.5);
-    REQUIRE(st_binned.nn != nullptr);
+    /* List at the small cutoff (every height above it). */
+    Structure st_small = st;
+    nnf.calc(st_small, 4.5);
+    REQUIRE(st_small.nn != nullptr);
 
-    /* Path B: cutoff larger than min cell dim → naive. */
-    Structure st_naive = st;
-    nnf.calc(st_naive, 8.0);
-    REQUIRE(st_naive.nn != nullptr);
+    /* List at a cutoff above every cell height. */
+    Structure st_large = st;
+    nnf.calc(st_large, 8.0);
+    REQUIRE(st_large.nn != nullptr);
 
-    /* Naive (8.0) must be a superset of binned (4.5). */
+    /* The 8.0 Å list must be a superset of the 4.5 Å list. */
     for (size_t i = 0; i < st.natoms(); ++i) {
-        CAPTURE(i, st_binned.nn_size(i), st_naive.nn_size(i));
-        CHECK(st_naive.nn_size(i) >= st_binned.nn_size(i));
-        for (size_t k = 0; k < st_binned.nn->idx[i].size(); ++k) {
-            const Vec3d& s = st_binned.nn->shift[i][k];
-            const size_t j = st_binned.nn->idx[i][k];
+        CAPTURE(i, st_small.nn_size(i), st_large.nn_size(i));
+        CHECK(st_large.nn_size(i) >= st_small.nn_size(i));
+        for (size_t k = 0; k < st_small.nn->idx[i].size(); ++k) {
+            const Vec3d& s = st_small.nn->shift[i][k];
+            const size_t j = st_small.nn->idx[i][k];
             INFO("Atom " << i << " → nbr " << j
                  << " shift(" << s[0] << "," << s[1] << "," << s[2]
-                 << "): present in binned 4.5 Å, missing in naive 8.0 Å");
-            CHECK(has_entry(st_naive, i, j,
+                 << "): present in the 4.5 Å list, missing from the 8.0 Å list");
+            CHECK(has_entry(st_large, i, j,
                             static_cast<int>(std::lround(s[0])),
                             static_cast<int>(std::lround(s[1])),
                             static_cast<int>(std::lround(s[2]))));
@@ -94,13 +98,14 @@ TEST_CASE("NNFinder: triclinic cell — binned matches naive at same cutoff",
     }
 }
 
-TEST_CASE("NNFinder: cell_vec < rcut forces naive fallback",
+TEST_CASE("NNFinder: 4 Å cube at rcut 5 Å — the six face images",
           "[nn][gaps][sub_cutoff]")
 {
     PeriodicTable::initialize();
 
-    /* 4 Å cubic cell, 5.0 Å cutoff. check_box returns false (any
-     * vec < cutoff) → calc_naive path. Single atom at the centre. */
+    /* 4 Å cubic cell, 5.0 Å cutoff: the cell height is below the cutoff
+     * (check_box is false), so the atom's own periodic images are its
+     * neighbours. Single atom at the centre. */
     Structure st;
     const double a = 4.0;
     st.cell(0,0) = a; st.cell(0,1) = 0; st.cell(0,2) = 0;
@@ -174,8 +179,9 @@ TEST_CASE("NNFinder: degenerate near-zero cell triggers kMaxTotalShifts throw",
     PeriodicTable::initialize();
 
     /* Tiny cubic cell: 0.3 Å edge at 5.0 Å cutoff → each direction needs
-     * ~17 images, total ~35³ ≈ 4.3×10⁴ image cells > kMaxTotalShifts=10⁴.
-     * num_shifts is expected to throw. */
+     * N = floor(5.0 / 0.3) + 1 = 17 images, (2·17 + 1)³ = 42875 image
+     * cells > kMaxTotalShifts = 10⁴. Building the list is refused with
+     * std::runtime_error. */
     Structure st;
     const double a = 0.3;
     st.cell(0,0) = a; st.cell(0,1) = 0; st.cell(0,2) = 0;
@@ -184,6 +190,5 @@ TEST_CASE("NNFinder: degenerate near-zero cell triggers kMaxTotalShifts throw",
     st.add_atom(Atom(PeriodicTable::find_by_symbol("Ta"), 0, 0, 0, 0,0,0));
 
     NNFinder nnf;
-    int N[3];
-    CHECK_THROWS_AS(nnf.num_shifts(st, N, 5.0), std::runtime_error);
+    CHECK_THROWS_AS(nnf.calc(st, 5.0), std::runtime_error);
 }
