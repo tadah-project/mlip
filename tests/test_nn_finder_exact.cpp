@@ -1171,3 +1171,35 @@ TEST_CASE("NNFinder exact: cell vectors outside the supported length range "
     }
   }
 }
+
+// The search covers the rounding of the fractional coordinates, which grows
+// with the distance of the atoms from the origin and with the conditioning
+// of the cell. For an atom far out in a cell near the conditioning limit
+// that bound exceeds an image cell: the stored coordinates then say nothing
+// about which image is which, and the input is refused (instead of a
+// search over an unbounded number of cells).
+TEST_CASE("NNFinder exact: positions whose rounding bound exceeds an image "
+          "cell are refused",
+          "[nn][invalid][rounding]") {
+  PeriodicTable::initialize();
+  // Reduced heights 1, 1e-4, 1 A (a1 leans 1e-4 A off a0): conditioning
+  // about 2e4.
+  Structure st = make_cell(1.0, 0.0, 0.0, 1.0, 1e-4, 0.0, 0.0, 0.0, 1.0);
+  add_cart(st, 0.25, 0.3e-4, 0.5);
+  const double R = 5.5e-4;  // 6 images along the thin direction
+  SECTION("an atom inside the cell builds exactly") {
+    REQUIRE_NOTHROW(NNFinder().calc(st, R));
+    require_exact(st, R);
+  }
+  SECTION("an atom 3e7 A out is refused") {
+    add_cart(st, 3.0e7 + 0.5, 0.7e-4, 0.25);
+    std::string msg;
+    try {
+      NNFinder().calc(st, R);
+    } catch (const std::invalid_argument &e) {
+      msg = e.what();
+    }
+    INFO("message: " << msg);
+    CHECK(contains(msg, "rounding bound"));
+  }
+}
