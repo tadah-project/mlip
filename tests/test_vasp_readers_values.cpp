@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -204,6 +205,112 @@ std::vector<std::string> symbols_of(const Structure &st) {
   return v;
 }
 
+std::vector<std::string> split_lines(const std::string &text) {
+  std::vector<std::string> lines;
+  std::istringstream in(text);
+  for (std::string l; std::getline(in, l);) lines.push_back(l);
+  return lines;
+}
+
+std::string join_lines(const std::vector<std::string> &lines) {
+  std::string out;
+  for (const auto &l : lines) out += l + "\n";
+  return out;
+}
+
+/* Replaces `from` by `to` in line `n` (1-based) of `lines`; REQUIREs that
+ * the line holds `from`, so a changed fixture fails here, not later. */
+void edit_line(std::vector<std::string> &lines, size_t n,
+               const std::string &from, const std::string &to) {
+  INFO("line " << n << ": '" << lines.at(n - 1) << "'");
+  const auto p = lines.at(n - 1).find(from);
+  REQUIRE(p != std::string::npos);
+  lines[n - 1].replace(p, from.size(), to);
+}
+
+/* OUTCAR_1 with ionic step 2 (lines 2053-2961) turned into a step of
+ * VASP's machine-learned force field (ML_MODE = train), with the markers
+ * VASP 6.3+ prints for such a step (as dpdata reads them):
+ * 'ML FORCE on cell', 'TOTAL-FORCE (eV/Angst) (ML)', 'ML FREE ENERGIE',
+ * 'free  energy ML TOTEN' and 'ML energy  without entropy'. The numbers
+ * are left as they are. */
+std::vector<std::string> outcar1_with_ml_step2() {
+  std::vector<std::string> l = split_lines(slurp(kOutcarDir + "OUTCAR_1"));
+  REQUIRE(l.size() == 4657);
+  edit_line(l, 2776, "  FORCE on cell", "  ML FORCE on cell");
+  edit_line(l, 2871, "TOTAL-FORCE (eV/Angst)", "TOTAL-FORCE (eV/Angst) (ML)");
+  edit_line(l, 2935, "  FREE ENERGIE", "  ML FREE ENERGIE");
+  edit_line(l, 2937, "free  energy   TOTEN", "free  energy ML TOTEN");
+  edit_line(l, 2939, "  energy  without entropy", "  ML energy  without entropy");
+  return l;
+}
+
+/* `lines` without the MD marker (line 492, 'molecular dynamics for
+ * ions') and the EKIN_LAT lines: the layout of a relaxation, whose ionic
+ * steps end at their 'free  energy   TOTEN' line. */
+std::vector<std::string> as_relaxation(const std::vector<std::string> &lines) {
+  std::vector<std::string> out;
+  size_t md = 0, ekin = 0;
+  for (const auto &l : lines) {
+    if (l.find("molecular dynamics") != std::string::npos) { ++md; continue; }
+    if (l.find("EKIN_LAT=") != std::string::npos) { ++ekin; continue; }
+    out.push_back(l);
+  }
+  REQUIRE(md == 1);
+  REQUIRE(ekin == 3);
+  return out;
+}
+
+/* Parses an OUTCAR with std::cout and std::cerr captured; returns what was
+ * printed. */
+std::string parse_outcar_capturing(StructureDB &db, const std::string &path) {
+  PeriodicTable::initialize();
+  std::ostringstream out, err;
+  std::streambuf *old_out = std::cout.rdbuf(out.rdbuf());
+  std::streambuf *old_err = std::cerr.rdbuf(err.rdbuf());
+  try {
+    VaspOutcarReader reader(db, path);
+    reader.parse_data();
+  } catch (...) {
+    std::cout.rdbuf(old_out);
+    std::cerr.rdbuf(old_err);
+    throw;
+  }
+  std::cout.rdbuf(old_out);
+  std::cerr.rdbuf(old_err);
+  return out.str() + err.str();
+}
+
+size_t count_word(const std::string &text, const std::string &word) {
+  size_t n = 0;
+  for (auto p = text.find(word); p != std::string::npos;
+       p = text.find(word, p + word.size()))
+    ++n;
+  return n;
+}
+
+/* Two structures hold the same data: energy, temperature, cell, stress and
+ * atoms (exactly: both come from the same printed numbers). */
+void check_same_structure(const Structure &a, const Structure &b) {
+  CHECK(a.energy == b.energy);
+  CHECK(a.T == b.T);
+  for (int i = 0; i < 3; ++i)
+    for (int j = 0; j < 3; ++j) {
+      INFO("(" << i << "," << j << ")");
+      CHECK(a.cell(i, j) == b.cell(i, j));
+      CHECK(a.stress(i, j) == b.stress(i, j));
+    }
+  REQUIRE(a.natoms() == b.natoms());
+  for (size_t k = 0; k < a.natoms(); ++k) {
+    INFO("atom " << k);
+    CHECK(a.atoms[k].symbol == b.atoms[k].symbol);
+    for (int c = 0; c < 3; ++c) {
+      CHECK(a.atoms[k].position[c] == b.atoms[k].position[c]);
+      CHECK(a.atoms[k].force[c] == b.atoms[k].force[c]);
+    }
+  }
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------
@@ -321,6 +428,93 @@ TEST_CASE("VASP OUTCAR reader: a relaxation stores F and minus the in-kB "
   check_stress(db(1), cauchy_from_kb(outcar_kb(-5, -6, -7, -0.5, 0.25, -0.125)), 1e-12, 1e-15);
   REQUIRE(db(1).natoms() == 1);
   CHECK(db(1).atoms[0].position[0] == Approx(0.1).margin(1e-12));
+}
+
+/* Pins: an OUTCAR from an on-the-fly training run (ML_MODE = train)
+ * holds ionic steps computed by VASP's machine-learned force field, marked
+ * 'ML'. They are not first-principles data: the reader stores only the
+ * first-principles steps, exactly as it stores them from the file without
+ * ML steps, and prints one WARNING naming the file and the skipped step.
+ * - MD layout (OUTCAR_1, step 2 marked ML): steps 1 and 3.
+ * - Relaxation layout (the same file without its MD marker and EKIN_LAT
+ *   lines, so each step ends at its energy line): steps 1, 3 and 4.
+ * Before the fix: the MD layout stored step 2 with energy 0 and the ML
+ * forces and stress, silently (3 structures); the relaxation layout added
+ * step 2's 54 ML atoms to step 3 (a 108-atom structure 2 with step 3's
+ * energy), silently. */
+TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
+          "skipped with one WARNING",
+          "[vasp][outcar][ml_ff]") {
+  ScratchDir tmp("outcar_ml");
+  SECTION("MD layout") {
+    const StructureDB ref = read_outcar("OUTCAR_1");
+    REQUIRE(ref.size() == 3);
+    const std::string path =
+        tmp.write("OUTCAR_ml_md", join_lines(outcar1_with_ml_step2()));
+    StructureDB db;
+    const std::string printed = parse_outcar_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    CHECK(count_word(printed, "WARNING") == 1);
+    CHECK_THAT(printed, Contains(path));
+    CHECK_THAT(printed, Contains("ionic step 2"));
+    REQUIRE(db.size() == 2);
+    {
+      INFO("stored 1 = step 1");
+      check_same_structure(db(0), ref(0));
+    }
+    {
+      INFO("stored 2 = step 3");
+      check_same_structure(db(1), ref(2));
+    }
+    CHECK(db(1).energy == Approx(kOutcarF[2]).margin(kEnergyMargin));
+  }
+  SECTION("relaxation layout") {
+    const std::string ref_path = tmp.write(
+        "OUTCAR_relax_ref",
+        join_lines(as_relaxation(split_lines(slurp(kOutcarDir + "OUTCAR_1")))));
+    StructureDB ref;
+    const std::string ref_printed = parse_outcar_capturing(ref, ref_path);
+    INFO("reference printed: '" << ref_printed << "'");
+    CHECK(count_word(ref_printed, "WARNING") == 0);
+    REQUIRE(ref.size() == 4);  // the 4th step ends at its energy line
+    CHECK(ref(1).energy == Approx(kOutcarF[1]).margin(kEnergyMargin));
+
+    const std::string path = tmp.write(
+        "OUTCAR_ml_relax", join_lines(as_relaxation(outcar1_with_ml_step2())));
+    StructureDB db;
+    const std::string printed = parse_outcar_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    CHECK(count_word(printed, "WARNING") == 1);
+    CHECK_THAT(printed, Contains(path));
+    CHECK_THAT(printed, Contains("ionic step 2"));
+    REQUIRE(db.size() == 3);
+    const size_t steps[3] = {0, 2, 3};
+    for (size_t k = 0; k < 3; ++k) {
+      INFO("stored " << k + 1 << " = step " << steps[k] + 1);
+      check_same_structure(db(k), ref(steps[k]));
+    }
+  }
+}
+
+/* Pins: an MD step that reaches its EKIN_LAT line with no
+ * 'free  energy   TOTEN' line, and is not an ML step, is refused: the
+ * error names the file and the ionic step (OUTCAR_1 without line 2937,
+ * step 2's energy).
+ * Before the fix: the step was stored with energy 0, silently. */
+TEST_CASE("VASP OUTCAR reader: an MD step without its free energy is refused",
+          "[vasp][outcar][ml_ff]") {
+  ScratchDir tmp("outcar_no_energy");
+  std::vector<std::string> l = split_lines(slurp(kOutcarDir + "OUTCAR_1"));
+  REQUIRE(l.size() == 4657);
+  REQUIRE(l[2936].find("free  energy   TOTEN") != std::string::npos);
+  l.erase(l.begin() + 2936);
+  const std::string path = tmp.write("OUTCAR_no_energy", join_lines(l));
+  StructureDB db;
+  const auto what = runtime_error_of([&] { parse_outcar_capturing(db, path); });
+  REQUIRE(what.has_value());
+  CHECK_THAT(*what, Contains(path));
+  CHECK_THAT(*what, Contains("ionic step 2"));
+  CHECK_THAT(*what, Contains("free  energy   TOTEN"));
 }
 
 // --------------------------------------------------------------------
@@ -468,6 +662,44 @@ TEST_CASE("VASP vasprun.xml reader: padded element names are trimmed",
     INFO("atom " << i);
     CHECK(db(0).atoms[i].symbol == "W");
     CHECK(db(0).atoms[i].Z == 74);
+  }
+}
+
+/* Pins: a <calculation> without a readable calculation-level
+ * <i name="e_fr_energy"> is refused, and the error names the file and the
+ * calculation (1-based): vasprun_3.xml with that line removed, and with
+ * its value replaced by 'abc'. The per-SCF e_fr_energy lines inside
+ * <scstep> are not taken instead.
+ * Before the fix: the refusal named neither the file nor the calculation
+ * (and the unreadable value was reported on std::cerr only). */
+TEST_CASE("VASP vasprun.xml reader: a calculation without e_fr_energy is "
+          "refused, naming the file and the calculation",
+          "[vasp][vasprun][energy]") {
+  ScratchDir tmp("vasprun_no_efr");
+  const std::string xml = slurp(kVasprunDir + "vasprun_3.xml");
+  const std::string line = "<i name=\"e_fr_energy\">   -620.05621075 </i>";
+  const auto p = xml.find(line);
+  REQUIRE(p != std::string::npos);
+  REQUIRE(xml.find(line, p + 1) == std::string::npos);
+  SECTION("missing") {
+    std::string bad = xml;
+    bad.erase(p, line.size());
+    const std::string path = tmp.write("vasprun_missing_efr.xml", bad);
+    const auto what = runtime_error_of([&] { read_vasprun(path); });
+    REQUIRE(what.has_value());
+    CHECK_THAT(*what, Contains(path));
+    CHECK_THAT(*what, Contains("calculation 1"));
+    CHECK_THAT(*what, Contains("e_fr_energy"));
+  }
+  SECTION("not a number") {
+    std::string bad = xml;
+    bad.replace(p, line.size(), "<i name=\"e_fr_energy\">   abc </i>");
+    const std::string path = tmp.write("vasprun_abc_efr.xml", bad);
+    const auto what = runtime_error_of([&] { read_vasprun(path); });
+    REQUIRE(what.has_value());
+    CHECK_THAT(*what, Contains(path));
+    CHECK_THAT(*what, Contains("calculation 1"));
+    CHECK_THAT(*what, Contains("abc"));
   }
 }
 

@@ -343,3 +343,77 @@ TEST_CASE("Structure::is_the_same: each atom is matched at most once "
       make(kCube5, {{"Cl", {2.5, 2.5, 2.5}}, {"Na", {0, 0, 0}}, {"Na", {0, 0, 0}}});
   check_same("F1 against [Cl, Na, Na]", f1, f1_reordered, true);
 }
+
+/* Pins: is_the_same finds a one-to-one matching whenever one exists, so its
+ * result does not depend on the order of the atoms, also with a threshold
+ * comparable to the distance between same-element atoms. In a 10 A cube
+ * with threshold 0.1 A, S1 = [H (0,0,0), H (0.15,0,0)] and
+ * S2 = [H (0.08,0,0), H (-0.05,0,0)] are the same (0 <-> -0.05 at 0.05 A,
+ * 0.15 <-> 0.08 at 0.07 A), with S2's atoms in either order and either way
+ * round. A structure whose two atoms can only pair with one atom of the
+ * other is still not the same.
+ * Before the fix: atoms were matched greedily, each to the first unused
+ * match: S1 against S2 paired 0 with 0.08 and then found no partner for
+ * 0.15, so two of the four CHECKs (S1 vs S2 and S2 vs S1) failed. */
+TEST_CASE("Structure::is_the_same: the matching does not depend on the atom "
+          "order (threshold comparable to the atom spacing)",
+          "[dataset_tools][is_the_same]") {
+  const Rows cube10 = {{{10.0, 0.0, 0.0}, {0.0, 10.0, 0.0}, {0.0, 0.0, 10.0}}};
+  const double thr = 0.1;
+  const Structure s1 = make(cube10, {{"H", {0, 0, 0}}, {"H", {0.15, 0, 0}}});
+  const Structure s2 = make(cube10, {{"H", {0.08, 0, 0}}, {"H", {-0.05, 0, 0}}});
+  const Structure s2_swapped = make(cube10, {{"H", {-0.05, 0, 0}}, {"H", {0.08, 0, 0}}});
+  CHECK(s1.is_the_same(s2, thr));
+  CHECK(s2.is_the_same(s1, thr));
+  CHECK(s1.is_the_same(s2_swapped, thr));
+  CHECK(s2_swapped.is_the_same(s1, thr));
+
+  // H at 0 and at 0.02 can both pair only with the H at 0.05.
+  const Structure t1 = make(cube10, {{"H", {0, 0, 0}}, {"H", {0.02, 0, 0}}, {"H", {5, 5, 5}}});
+  const Structure t2 = make(cube10, {{"H", {0.05, 0, 0}}, {"H", {0.3, 0, 0}}, {"H", {5, 5, 5}}});
+  CHECK_FALSE(t1.is_the_same(t2, thr));
+  CHECK_FALSE(t2.is_the_same(t1, thr));
+}
+
+/* Pins: is_the_same compares positions through the cell, so it refuses a
+ * structure whose cell is singular (zero, or with coplanar lattice
+ * vectors) with a std::invalid_argument naming that structure's label,
+ * whichever of the two it is.
+ * Before the fix: the inverse of the singular cell was NaN, no atom
+ * matched, and is_the_same returned false: 'data dedup' kept exact
+ * copies, silently. */
+TEST_CASE("Structure::is_the_same: a singular cell is refused, naming the "
+          "structure",
+          "[dataset_tools][is_the_same]") {
+  const std::vector<std::pair<std::string, V3>> atoms = {
+      {"Ta", {0, 0, 0}}, {"Ta", {1.5, 1.5, 1.5}}};
+  const Rows zero = {{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}};
+  const Rows coplanar = {{{3, 0, 0}, {0, 3, 0}, {3, 3, 0}}};
+  for (const auto &c : {std::make_pair(std::string("zero cell"), zero),
+                        std::make_pair(std::string("coplanar cell"), coplanar)}) {
+    INFO(c.first);
+    Structure bad = make(c.second, atoms);
+    bad.label = "singular-" + c.first;
+    Structure copy = bad;
+    copy.label = "copy";
+    Structure good = make(kCube5, atoms);
+    good.label = "good";
+    for (const auto *pair : {&copy, &good}) {
+      INFO("against " << pair->label);
+      try {
+        (void)bad.is_the_same(*pair, 1e-6);
+        FAIL("no exception (singular cell as this)");
+      } catch (const std::invalid_argument &e) {
+        CHECK_THAT(e.what(), Catch::Contains(bad.label));
+        CHECK_THAT(e.what(), Catch::Contains("singular"));
+      }
+      try {
+        (void)pair->is_the_same(bad, 1e-6);
+        FAIL("no exception (singular cell as the argument)");
+      } catch (const std::invalid_argument &e) {
+        CHECK_THAT(e.what(), Catch::Contains(bad.label));
+        CHECK_THAT(e.what(), Catch::Contains("singular"));
+      }
+    }
+  }
+}
