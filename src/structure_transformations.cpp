@@ -9,18 +9,6 @@ namespace mlip {
 
 namespace {
 
-/** Local utility function: multiply 3x3 matrices. */
-tadah::core::Matrix3d matMul(const tadah::core::Matrix3d &A, const tadah::core::Matrix3d &B)
-{
-  tadah::core::Matrix3d C;
-  for (int i=0; i<3; i++) {
-    for (int j=0; j<3; j++) {
-      C(i,j) = A(i,0)*B(0,j) + A(i,1)*B(1,j) + A(i,2)*B(2,j);
-    }
-  }
-  return C;
-}
-
 /** A simple global RNG. Replace with thread_local or a better approach if needed. */
 std::mt19937 &globalRng()
 {
@@ -43,7 +31,7 @@ void StructureTransformation::reflect(Structure &st, const tadah::core::Matrix3d
   // of st.cell: cell' = cell * M^T), so the atoms keep their fractional
   // coordinates. The reflected basis is left-handed if the original was
   // right-handed; its volume is the same.
-  st.cell = matMul(st.cell, M.transpose());
+  st.cell = st.cell * M.transpose();
   for (auto &atom : st.atoms) {
     atom.position = M * atom.position;
     atom.force    = M * atom.force;
@@ -53,9 +41,9 @@ void StructureTransformation::reflect(Structure &st, const tadah::core::Matrix3d
 
 void StructureTransformation::transformStress(Structure &st, const tadah::core::Matrix3d &M)
 {
-  tadah::core::Matrix3d tmp = matMul(M, st.stress);
+  tadah::core::Matrix3d tmp = M * st.stress;
   tadah::core::Matrix3d Mt  = M.transpose();
-  st.stress    = matMul(tmp, Mt);
+  st.stress    = tmp * Mt;
 }
 
 void StructureTransformation::checkNearSingular(const Structure &st)
@@ -135,7 +123,7 @@ void StructureTransformation::rotate(Structure &st, const tadah::core::Matrix3d 
 {
   // Every vector moves as v' = R v: positions, forces and the lattice
   // vectors, which are the rows of st.cell, so cell' = cell * R^T.
-  st.cell = matMul(st.cell, R.transpose());
+  st.cell = st.cell * R.transpose();
   for (auto &atom : st.atoms) {
     atom.position = R * atom.position;
     atom.force    = R * atom.force;
@@ -148,7 +136,7 @@ void StructureTransformation::shear(Structure &st, const tadah::core::Matrix3d &
 {
   // r' = S r for the atoms and a_i' = S a_i for the lattice vectors (the
   // rows of st.cell): cell' = cell * S^T, so fractional coordinates stay.
-  st.cell = matMul(st.cell, shearMatrix.transpose());
+  st.cell = st.cell * shearMatrix.transpose();
   for (auto &atom : st.atoms) {
     atom.position = shearMatrix * atom.position;
   }
