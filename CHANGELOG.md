@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.6.0] — 2026-09-25
 
 ### Added
+- **`KeyProvenance` on `Task`:** where each key of a task's context came from (a command-line option and the configuration-file value it replaced, the `-c`/`--task` file, or the blueprint default), filled by `TaskFactory`. `tadah hpo` journals where `FORCE` and `STRESS` came from.
 - Per-dataset energy and force RMSE derivatives (used by per-dataset HPO validation targets).
 - `mlip::parallel_for` facade for the train/predict kernels; defaults to the previous OpenMP loop, and lets `tadah hpo` route the work onto its shared worker pool.
 - `tadah refit --retarget --rhoform SIGNED|NONNEG|MONOTONE` (`RetargetOptions::rhoform`): under `NONNEG`/`MONOTONE` a file without a `RHOFORM` header gets `rhoform_bounds_line()` where `write_hpotarget` puts it and non-negative `AMPGRIDMB` boxes, so the result equals the writer's file for a potential in that form; a header that names another form is an error at its line. `validate_refit_mode_keys` refuses `RHOFORM` and `EMBF0` in a `--retarget` configuration (no effect on an hpotarget) and `RETARGET_RHOFORM` without `--retarget`; `run_refit_edit` applies `check_embf0_precedence` / `check_rhoform_precedence` to a key the configuration sets. Tests: `test_refit_retarget.cpp`, `test_refit_edit_mode.cpp`.
@@ -55,6 +56,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `FastCellFrac` (`fast_cell_frac.h`) and `FastEnergyEvaluator` (`fast_energy_evaluator.h`): `FastEnergyEvaluator` had no callers, and `FastCellFrac` took its image span from `num_shifts`, whose bound missed images.
 
 ### Fixed
+- **The force metrics read a prediction without forces out of bounds.** `Analytics::calc_f_mae`/`calc_f_rmse`/`calc_f_r_sq` and `analytics_grad::frmse` read `pred(i).atoms[a]` for every reference atom; a prediction made with `FORCE false` has no atoms (SIGSEGV in `tadah hpo` with `PC_FRMSE` and `FORCE false`). They now throw, naming the structure (1-based), its label and both atom counts (`require_predicted_forces()`).
 - **A task file without a `TASK` section is an error** (`TaskFactory::createTasksFromInput - the task file 'run.task' has no TASK section ...`). With only blank and comment lines `tadah --task` read the first element of an empty list and crashed (exit status 139, `SIGSEGV`), and `MLIPUserConfigParser` did the same when it merged the sections of such an input (it now returns none); with only `GLOBAL` keys it ran nothing and exited 0. A `--config` file without keys no longer reads past the empty list either. Test: `test_user_config_sections.cpp`.
 - `Scheduler::execute` returns the first non-zero engine status (and stops) instead of discarding it, so a failed task no longer exits with success.
 - The test `write_optim_block: scalar -> (1) ; vector -> (1-N)` never ran under CTest: the vendored Catch discovery script split its name at the `;` into two entries, which matched no test case and still passed. It now runs and passes.

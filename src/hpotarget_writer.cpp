@@ -230,8 +230,9 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
      << "FAILSCORE 1e16\n"
      << "# Energy RMSE on the validation data (<target> <weight>):\n"
      << "PC_ERMSE 0 1\n"
-     << "# Force RMSE — needs a dataset with forces and a force-trained\n"
-     << "# model; the refit potential is fitted to energies only.\n"
+     << "# Force RMSE — needs validation data with reference forces; the\n"
+     << "# validation predicts forces for it although the refit potential\n"
+     << "# is fitted to energies only.\n"
      << "# PC_FRMSE 0 1\n"
      << "# LAMMPS-computed observables can be scored with PC_LAMMPS lines\n"
      << "# (see the docs).\n\n";
