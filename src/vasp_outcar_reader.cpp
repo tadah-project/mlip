@@ -118,7 +118,10 @@ void VaspOutcarReader::parse_data() {
         s.stress(0,1) = s.stress(1,0) = row[3]; // xy
         s.stress(1,2) = s.stress(2,1) = row[4]; // yz
         s.stress(0,2) = s.stress(2,0) = row[5]; // zx
-        s.stress *= s_conv;
+        // VASP prints the pressure-signed tensor (positive under
+        // compression); Tadah stores the Cauchy stress, positive under
+        // tension: negate, and convert kB to eV/A^3.
+        s.stress *= -s_conv;
       }
     }
 
@@ -168,11 +171,16 @@ void VaspOutcarReader::parse_data() {
 
     }
 
-    else if (line.find("entropy=") != std::string::npos) {
+    // The free energy F (TOTEN) of the ionic step, the energy whose
+    // gradient the forces and the stress are. The ionic-step line has two
+    // spaces between the words ('free  energy   TOTEN'), the per-SCF lines
+    // one ('free energy    TOTEN'). A relaxation's structure is complete
+    // here; an MD step's at its EKIN_LAT line.
+    else if (line.find("free  energy   TOTEN  =") != std::string::npos) {
       std::istringstream iss(line);
       std::string tmp;
-      if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
-        std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
+      if (!(iss >> tmp >> tmp >> tmp >> tmp >> s.energy)) {
+        std::cerr << "Warning: Unexpected end of data when reading the free energy" << std::endl;
       }
       else if (!is_md) {
         complete_structure = true;
