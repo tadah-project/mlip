@@ -438,6 +438,7 @@ TEST_CASE("VASP OUTCAR reader: a relaxation stores F and minus the in-kB "
  * - MD layout (OUTCAR_1, step 2 marked ML): steps 1 and 3.
  * - Relaxation layout (the same file without its MD marker and EKIN_LAT
  *   lines, so each step ends at its energy line): steps 1, 3 and 4.
+ * Each label ends with 'Structure <n>', n the ionic step.
  * Before the fix: the MD layout stored step 2 with energy 0 and the ML
  * forces and stress, silently (3 structures); the relaxation layout added
  * step 2's 54 ML atoms to step 3 (a 108-atom structure 2 with step 3's
@@ -467,6 +468,9 @@ TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
       check_same_structure(db(1), ref(2));
     }
     CHECK(db(1).energy == Approx(kOutcarF[2]).margin(kEnergyMargin));
+    // The label numbers the ionic step, as the WARNING does.
+    CHECK_THAT(db(0).label, Catch::Matchers::EndsWith("Structure 1"));
+    CHECK_THAT(db(1).label, Catch::Matchers::EndsWith("Structure 3"));
   }
   SECTION("relaxation layout") {
     const std::string ref_path = tmp.write(
@@ -492,6 +496,8 @@ TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
     for (size_t k = 0; k < 3; ++k) {
       INFO("stored " << k + 1 << " = step " << steps[k] + 1);
       check_same_structure(db(k), ref(steps[k]));
+      CHECK_THAT(db(k).label, Catch::Matchers::EndsWith(
+                                  "Structure " + std::to_string(steps[k] + 1)));
     }
   }
 }
