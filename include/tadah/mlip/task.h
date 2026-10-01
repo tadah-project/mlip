@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 #include <tadah/core/context.h>
+#include <tadah/mlip/key_provenance.h>
+#include <optional>
 
 namespace tadah {
 namespace mlip {
@@ -57,6 +59,18 @@ public:
    */
   const tadah::core::Context &getContext() const;
   tadah::core::Context &getContext();
+
+  /**
+   * @brief Records where the keys of this task's context came from
+   *        (TaskFactory sets it; see KeyProvenance).
+   */
+  void setKeyProvenance(KeyProvenance provenance);
+
+  /**
+   * @brief Where the keys of this task's context came from, or nullptr
+   *        when it was not recorded (a Task built directly, or deserialised).
+   */
+  const KeyProvenance *getKeyProvenance() const;
 
   /**
    * @brief Sets the integer priority for this task, where a higher number denotes higher priority.
@@ -152,6 +166,7 @@ private:
   std::string taskID_;          ///< The unique ID for this task.
   std::string timestamp_;       ///< The creation timestamp (ISO8601 or similar).
   tadah::core::Context context_;///< The merged context data for this task.
+  std::optional<KeyProvenance> provenance_; ///< Where context_'s keys came from.
   // std::string dependencyRule_;  ///< Future expansion for visualizing dependencies.
 };
 

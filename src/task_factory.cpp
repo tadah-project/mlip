@@ -8,6 +8,7 @@
 #include <tadah/core/blueprint_validator.h>
 #include <stdexcept>
 #include <algorithm>
+#include <utility>
 #include <boost/algorithm/string.hpp>
 
 namespace tadah {
@@ -81,9 +82,11 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   bool hasTask = baseContext.contains("TASK");  // --task given in CLI
   std::vector<std::pair<std::string, core::Context>> configVec;
   std::string taskFile;   // the --task file, for its error
+  std::string baseContextConfigFile;  // the --config file, for KeyProvenance
   if (hasConfig || hasTask) {
     std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
     if (hasTask) taskFile = userFile;
+    else baseContextConfigFile = userFile;
     // parser returns a vec of <taskName, Context> so we can keep multiple tasks of the same type
     configVec = parser_->parse(userFile, /*mergeFlag=*/true);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
@@ -103,10 +106,22 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     }
   }
 
+  // Where each task's keys come from (KeyProvenance): the command-line
+  // options, the configuration or task file, and (below) the defaults.
+  struct Sources {
+    core::Context command_line;
+    core::Context file;
+    std::string file_path;
+    KeyOrigin::Kind file_kind;
+  };
+  std::vector<Sources> sources;
+
   // the taskInput.getTaskName() as a single task. A --task file's tasks are
   // its TASK sections (below).
   if (configVec.empty() && !hasTask) {
     tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
+    sources.push_back({baseContext, core::Context(), std::string(),
+                       KeyOrigin::Kind::ConfigFile});
   }
 
   if (hasTask) {
@@ -129,11 +144,16 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       const core::Context &taskCtx = cv.second;
       // TODO only add the tasks allowed by the subcommand
       tasksResult.emplace_back(Task(taskName, taskCtx));
+      sources.push_back({core::Context(), taskCtx, taskFile,
+                         KeyOrigin::Kind::TaskFile});
     }
   } else if (hasConfig && !configVec.empty()) {
     const core::Context &globalCtx = configVec.front().second;
     const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
+    sources.push_back({baseContext, globalCtx,
+                       baseContextConfigFile,
+                       KeyOrigin::Kind::ConfigFile});
 
   } 
 
@@ -144,10 +164,12 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   }
 
   // Add default keys to the context if not provided by the user
-  for (auto &task : tasksResult) {
+  for (std::size_t t = 0; t < tasksResult.size(); ++t) {
+    auto &task = tasksResult[t];
     const std::string &taskName = task.getTaskName();
     core::Context &taskContext = task.getContext();
     const auto bp = blueprintTasks.find(taskName);
+    std::vector<std::string> defaulted;  // the keys added here
 
     // dealt with options keys
     for (const auto &bpKey : bp->second.blueprintKeys) {
@@ -156,6 +178,10 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       }
       std::vector<std::string> tokens;
       boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
+      // contains() inserts the blueprint default itself: a key not stored
+      // before it ends up holding the default either way.
+      if (!taskContext.has_stored(tokens.back()))
+        defaulted.push_back(core::to_upper(tokens.back()));
       if (!taskContext.contains(tokens.back())) {
         for (size_t i = 0; i < bpKey.default_value.size(); ++i) {
           size_t const ni = (i < bpKey.value_N.size()) ? i : bpKey.value_N.size() - 1;
@@ -172,6 +198,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
         }
         std::vector<std::string> tokens;
         boost::split(tokens, bpKey.keyName, boost::is_any_of("."));
+        if (!taskContext.has_stored(tokens.back()))
+          defaulted.push_back(core::to_upper(tokens.back()));
         if (!taskContext.contains(tokens.back())) {
           for (size_t i = 0; i < bpKey.default_value.size(); ++i) {
             size_t const ni = (i < bpKey.value_N.size()) ? i : bpKey.value_N.size() - 1;
@@ -180,6 +208,11 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
         }
       }
     }
+
+    const Sources &src = sources.at(t);
+    task.setKeyProvenance(KeyProvenance(src.command_line, src.file,
+                                        src.file_path, src.file_kind,
+                                        std::move(defaulted)));
   }
 
   return tasksResult;

@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <stdexcept>
+#include <utility>
 #include <tadah/core/logger.h>
 
 namespace tadah {
@@ -41,6 +42,14 @@ std::string Task::getTimestamp() const {
 
 int Task::getPriority() const {
   return priority_;
+}
+
+void Task::setKeyProvenance(KeyProvenance provenance) {
+  provenance_ = std::move(provenance);
+}
+
+const KeyProvenance *Task::getKeyProvenance() const {
+  return provenance_ ? &*provenance_ : nullptr;
 }
 
 //-------------------------------------------------------------------------
