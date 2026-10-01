@@ -1,3 +1,4 @@
+#include <tadah/mlip/dataset_readers/castep_species.h>
 #include <tadah/mlip/structure_readers/castep_cell_reader.h>
 #include <tadah/core/number_format.h>
 
@@ -316,7 +317,8 @@ void CastepCellReader::fracToAbs(double fx, double fy, double fz,
 // parseSpecies
 //--------------------------------------------------------------------
 tadah::core::Element CastepCellReader::parseSpecies(const std::string &sym) {
-  return tadah::core::PeriodicTable().find_by_symbol(sym);
+  // A custom species 'Fe:up' / 'Si:1' is its element (castep_species.h).
+  return castep_species_element(sym);
 }
 } // namespace mlip
 } // namespace tadah

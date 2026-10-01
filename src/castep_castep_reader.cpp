@@ -2,6 +2,7 @@
 #include "tadah/core/utils.h"
 #include <string>
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/dataset_readers/castep_species.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/castep_castep_reader.h>
@@ -140,6 +141,20 @@ void CastepCastepReader::parse_data() {
   // Temporary container to hold ongoing parse results
   Structure s;              
   std::vector<Atom> atoms;
+  // The geometry an SCF result belongs to: the cell and positions printed
+  // before it, taken when the step's first result (free energy, forces or
+  // stress) is read. A geometry printed after the results -- the earlier
+  // configuration an (L)BFGS line search reverts to, before 'finished
+  // iteration' -- never pairs with them.
+  tadah::core::Matrix3d result_cell;
+  std::vector<Atom> result_atoms;
+  bool result_geometry_taken = false;
+  auto take_result_geometry = [&]() {
+    if (result_geometry_taken) return;
+    result_cell = s.cell;
+    result_atoms = atoms;
+    result_geometry_taken = true;
+  };
 
   std::string line;
   auto jumpNLines = [&](std::istringstream& stream, int n) {
@@ -164,20 +179,25 @@ void CastepCastepReader::parse_data() {
     // We have to compute absolute positions here from temporary fractional positions
     // In case of volume-only relaxation fractional positions are reported only once
     // Rows-as-lattice-vectors: r = cell^T * frac.
-    s.atoms.resize(atoms.size());
-    for (size_t i = 0; i < atoms.size(); ++i) {
-      s.atoms[i].position = s.cell.transpose() * atoms[i].position;
-      s.atoms[i].force = atoms[i].force;
-      s.atoms[i].symbol = atoms[i].symbol;
+    take_result_geometry();  // a block without forces, stress or energy
+    s.cell = result_cell;
+    s.atoms.resize(result_atoms.size());
+    for (size_t i = 0; i < result_atoms.size(); ++i) {
+      // The whole element: symbol and Z (Z 0 made every species one).
+      static_cast<tadah::core::Element &>(s.atoms[i]) = result_atoms[i];
+      s.atoms[i].position = s.cell.transpose() * result_atoms[i].position;
+      s.atoms[i].force = result_atoms[i].force;
     }
     s.label = simLabel.getLabel();
     stdb.add(s);
+    result_geometry_taken = false;
   };
 
   auto reset_flags = [&](CalcState new_state) {
     current_state = new_state;
     stress_tensor_found  = false;
     data_block_complete  = false;
+    result_geometry_taken = false;
     if (debug) std::cout << "Resetting flags for new calculation type" << std::endl;
   };
 
@@ -369,28 +389,16 @@ void CastepCastepReader::parse_data() {
           break;
         }
         // Create Atom, convert fractional to absolute using s.cell
-        Atom a(tadah::core::Element(species), px, py, pz, 0.0, 0.0, 0.0);
+        Atom a(castep_species_element(species), px, py, pz, 0.0, 0.0, 0.0);
         atoms.push_back(a); // keep it fractional for now
       }
       simLabel.positionsStopLine = line_counter;
     }
 
-    // The old cell is reverted and printed before final enthalpy from the current iteration
-    // We simply skip over this block of text
-    if (line.find("reverting to earlier contexturation") != std::string::npos) {
-      if (debug) std::cout << "reverting to earlier contexturation" << std::endl;
-      for (int i = 0; i < 30; ++i) {
-        if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Failed skipping over reversed configuration " << line_counter << ")." << std::endl;
-          break;
-        }
-        ++line_counter;
-      }
-    }
-
     // Detect forces block
     if (line.find("Cartesian components (eV/A)") != std::string::npos) {
       if (debug) std::cout << "Reading forces..." << std::endl;
+      take_result_geometry();
       // Usually there are three lines of header/blank text before actual force lines
       jumpNLines(stream, 3);
       // Read force for each atom
@@ -411,8 +419,8 @@ void CastepCastepReader::parse_data() {
                     << line_counter << ")." << std::endl;
           break;
         }
-        if (i < atoms.size()) {
-          atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
+        if (i < result_atoms.size()) {
+          result_atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
         }
       }
       simLabel.forcesStopLine = line_counter;
@@ -428,6 +436,7 @@ void CastepCastepReader::parse_data() {
     // Detect stress block
     if (line.find("Cartesian components (GPa)") != std::string::npos) {
       if (debug) std::cout << "Reading stress..." << std::endl;
+      take_result_geometry();
       jumpNLines(stream, 3);
       // A 3x3 matrix is expected
       simLabel.stressStartLine = line_counter + 1;
@@ -468,6 +477,7 @@ void CastepCastepReader::parse_data() {
          || current_state == CalcState::BandStructure
          || current_state == CalcState::FiniteBasisSetCorrection)) {
       if (debug) std::cout << "Final free energy (E-TS)" << std::endl;
+      take_result_geometry();
       std::istringstream iss(line);
       std::string ignore;
       if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> s.energy)) {

@@ -57,7 +57,8 @@ private:
    * @brief Dummy ideal gas pressure.
    * @return zero.
    */
-  double calc_P_ideal(Structure &, double ) override;
+  /** A .geom frame has no velocities: its stress is the virial stress. */
+  bool has_velocities() const override { return false; }
 
   std::string get_first_label(std::string &) override;
   std::string get_label(std::string &) override;
