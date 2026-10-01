@@ -683,7 +683,9 @@ TEST_CASE("VASP vasprun.xml reader: a calculation without e_fr_energy is "
           "[vasp][vasprun][energy]") {
   ScratchDir tmp("vasprun_no_efr");
   const std::string xml = slurp(kVasprunDir + "vasprun_3.xml");
-  const std::string line = "<i name=\"e_fr_energy\">   -620.05621075 </i>";
+  // The calculation-level line (indented 3 spaces; the last SCF step prints
+  // the same value indented 4).
+  const std::string line = "\n   <i name=\"e_fr_energy\">   -620.05621075 </i>";
   const auto p = xml.find(line);
   REQUIRE(p != std::string::npos);
   REQUIRE(xml.find(line, p + 1) == std::string::npos);
@@ -699,7 +701,7 @@ TEST_CASE("VASP vasprun.xml reader: a calculation without e_fr_energy is "
   }
   SECTION("not a number") {
     std::string bad = xml;
-    bad.replace(p, line.size(), "<i name=\"e_fr_energy\">   abc </i>");
+    bad.replace(p, line.size(), "\n   <i name=\"e_fr_energy\">   abc </i>");
     const std::string path = tmp.write("vasprun_abc_efr.xml", bad);
     const auto what = runtime_error_of([&] { read_vasprun(path); });
     REQUIRE(what.has_value());
