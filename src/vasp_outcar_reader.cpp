@@ -2,6 +2,7 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/vasp_outcar_reader.h>
+#include <tadah/mlip/dataset_readers/missing_stress.h>
 
 #include <algorithm>
 #include <fstream>
@@ -43,7 +44,6 @@ void VaspOutcarReader::parse_data() {
   std::vector<size_t> natom_types;
 
   size_t natoms;;
-  bool stress_tensor_bool = false;
   bool complete_structure = false;
   bool is_md = false;
 
@@ -52,6 +52,8 @@ void VaspOutcarReader::parse_data() {
   // a relaxation step at its free-energy line. The label numbers them.
   size_t ionic_step = 0;
   bool have_energy = false;  // this step's first-principles free energy
+  bool have_stress = false;  // this step's 'in kB' line
+  size_t stored = 0, without_stress = 0;
 
   // Steps of VASP's machine-learned force field (ML_MODE = train/run) are
   // not first-principles data. Their blocks are marked 'ML' ('ML FORCE on
@@ -68,6 +70,7 @@ void VaspOutcarReader::parse_data() {
     s = Structure();
     s.label = label;
     have_energy = false;
+    have_stress = false;
     ml_in_step = false;
   };
 
@@ -142,7 +145,7 @@ void VaspOutcarReader::parse_data() {
     }
 
     else if (line.find("in kB") != std::string::npos) {
-      stress_tensor_bool = true;
+      have_stress = true;
       std::vector<double> row(6); // xx yy zz xy yz zx
       std::istringstream iss(line);
       std::string tmp;
@@ -261,18 +264,33 @@ void VaspOutcarReader::parse_data() {
     }
 
     if (complete_structure) {
+      // A step without a stress tensor: zero stress and stress weight 0,
+      // so that a STRESS fit ignores it.
+      if (!have_stress) {
+        s.stress.set_zero();
+        s.sweight = 0.0;
+        ++without_stress;
+      }
       stdb.add(s);
+      ++stored;
       complete_structure = false;
       s = Structure();
       have_energy = false;
+      have_stress = false;
       ml_in_step = false;
     }
 
   }
 
-  if (!stress_tensor_bool) {
-    for (auto &s : stdb) s.stress.set_zero();
+  // An MD run cut off after a step's free energy, before its EKIN_LAT line.
+  if (is_md && have_energy) {
+    std::cerr << "WARNING: VASP OUTCAR " << filename_ << ": ionic step "
+              << ionic_step + 1
+              << ", the last, has no EKIN_LAT line (the file ends inside it) "
+                 "and was skipped; "
+              << stored << " structure(s) read." << std::endl;
   }
+  log_missing_stress("VASP OUTCAR " + filename_, without_stress, stored);
 
   if (!skipped_ml_steps.empty()) {
     const size_t shown = std::min<size_t>(skipped_ml_steps.size(), 10);

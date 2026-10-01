@@ -2,6 +2,7 @@
 #include <tadah/core/utils.h>
 #include <tadah/mlip/dataset_readers/castep_md_reader.h>
 #include <tadah/mlip/dataset_readers/castep_species.h>
+#include <tadah/mlip/dataset_readers/missing_stress.h>
 
 #include <algorithm>
 #include <cmath>
@@ -290,6 +291,10 @@ Structure CastepMDReader::parse_frame(const std::vector<FrameLine> &frame,
     }
     s.stress = stress;
     s.stress *= s_conv;
+  } else {
+    // No stress tensor: zero stress and stress weight 0, so that a STRESS
+    // fit ignores it.
+    s.sweight = 0.0;
   }
 
   s.cell = cell_bohr;
@@ -330,9 +335,13 @@ void CastepMDReader::parse_data() {
   const bool last_open = !current.empty();
   if (last_open) frames.push_back(std::move(current));
 
+  size_t stored = 0, without_stress = 0;
   for (size_t i = 0; i < frames.size(); ++i) {
     try {
-      stdb.add(parse_frame(frames[i], i));
+      const Structure st = parse_frame(frames[i], i);
+      stdb.add(st);
+      ++stored;
+      if (st.sweight == 0.0) ++without_stress;
     } catch (const FrameError &e) {
       // The file ends inside its last frame: lines are missing, or the last
       // line was cut. Any other problem is an error wherever it is.
@@ -352,6 +361,7 @@ void CastepMDReader::parse_data() {
                                e.what);
     }
   }
+  log_missing_stress("CASTEP " + filename_, without_stress, stored);
 }
 
 void CastepMDReader::print_summary() const {

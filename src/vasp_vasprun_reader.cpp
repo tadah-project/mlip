@@ -1,4 +1,5 @@
 #include <tadah/mlip/dataset_readers/vasp_vasprun_reader.h>
+#include <tadah/mlip/dataset_readers/missing_stress.h>
 
 #include <sstream>
 #include <stdexcept>
@@ -96,7 +97,7 @@ void VaspVasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
 }
 
 void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
-  size_t counter=0;
+  size_t counter=0, without_stress=0;
   for (auto calculation_node = root_node->first_node("calculation");
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
@@ -105,7 +106,11 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
 
     extract_stress_tensor(calculation_node);
     if (!stress_tensor_bool) {
+      // No stress tensor: zero stress and stress weight 0, so that a
+      // STRESS fit ignores it.
       _s.stress.set_zero();
+      _s.sweight = 0.0;
+      ++without_stress;
     }
     stress_tensor_bool = false;
 
@@ -121,6 +126,7 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
     stdb.add(_s);
     _s = Structure(); // reset
   }
+  log_missing_stress("VASP vasprun.xml " + filename_, without_stress, counter);
 }
 
 void VaspVasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
