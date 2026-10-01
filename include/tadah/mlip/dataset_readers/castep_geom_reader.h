@@ -20,7 +20,7 @@ namespace mlip {
  * Implements data extraction and processing from geometry optimisation runs.
  * Data are converted from atomic units to common units:
  * eV for energy, Ångström for distance, eV/Å for force, and eV/Å³
- * for pressure.
+ * for stress (the Cauchy stress, positive under tension).
  *
  * Example usage:
  * @code
@@ -53,10 +53,6 @@ public:
 
 private:
 
-  /**
-   * @brief Dummy ideal gas pressure.
-   * @return zero.
-   */
   /** A .geom frame has no velocities: its stress is the virial stress. */
   bool has_velocities() const override { return false; }
 

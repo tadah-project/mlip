@@ -288,9 +288,16 @@ struct Structure {
    * This method compares cell vectors, number of atoms,
    * species and atomic coordinates
    *
-   * Order of atoms does not matter.
+   * Order of atoms does not matter: the structures are the same when each
+   * atom can be paired with a distinct atom of `st` of the same element
+   * whose position differs by a lattice vector plus at most `thr` in each
+   * Cartesian component (one-to-one, found whenever it exists).
    *
    * It does NOT compare energies, stresses, forces and labels.
+   *
+   * @throws std::invalid_argument, naming the structure, when the cell of
+   *         either structure is singular (zero, non-finite or coplanar
+   *         lattice vectors).
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 

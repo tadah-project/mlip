@@ -20,14 +20,15 @@ namespace mlip {
  * Implements data extraction and processing for molecular dynamics
  * simulations by converting data from atomic units to common units:
  * eV for energy, Ångström for distance, eV/Å for force, eV/Å³
- * for pressure and ps for time.
+ * for stress and ps for time.
  * 
  * The stored stress is the Cauchy stress (positive under tension) without
  * its kinetic part: the '<-- S' tensor of a .md frame includes
  * -(1/V) sum m v (x) v, which is removed with the frame's velocities and
  * the periodic-table masses, scaled to the frame's kinetic energy (the third
- * '<-- E' value); a file whose kinetic energy is more than 1e-3 off those
- * masses (a custom SPECIES_MASS) is refused. Every frame is read, the first
+ * '<-- E' value). A frame with a '<-- S' tensor whose kinetic energy is
+ * more than 1e-3 off those masses (a custom SPECIES_MASS) is refused; a
+ * frame without one needs no masses and is read. Every frame is read, the first
  * one included. A malformed frame is an error naming the file, the frame
  * (1-based) and the line; a last frame that the file ends inside (a run
  * stopped while writing it) is skipped with one WARNING.
