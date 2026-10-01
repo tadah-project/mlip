@@ -418,3 +418,163 @@ TEST_CASE("Structure::is_the_same: a singular cell is refused, naming the "
     }
   }
 }
+
+/* Pins: is_the_same finds an atom's partner through any lattice
+ * translation, not only the one the rounded fractional coordinates of the
+ * cell as written give, so the result does not depend on how the lattice is
+ * described. The simple-cubic 3 A lattice written with the rows (3,0,0),
+ * (6,3,0), (0,0,3) and with (3,0,0), (0,3,0), (0,0,3): S1 = [H (0,0,0),
+ * H (1.5,1.5,1.5)] and S2 = [H (-0.54,0.495,0), H (1.5,1.5,1.5)] are the
+ * same at threshold 0.55 A in both descriptions, either way round (the
+ * displacement (-0.54, 0.495, 0) is within 0.55 with translation 0).
+ * Before the fix: in the tilted description the rounded fractional
+ * coordinate -0.51 gave the translation -a0 and a residual (2.46, 0.495, 0),
+ * so S1 and S2 were not the same there. */
+TEST_CASE("Structure::is_the_same: every lattice translation is tried, so the "
+          "cell description does not matter",
+          "[dataset_tools][is_the_same]") {
+  const Rows tilted = {{{3.0, 0.0, 0.0}, {6.0, 3.0, 0.0}, {0.0, 0.0, 3.0}}};
+  const Rows reduced = {{{3.0, 0.0, 0.0}, {0.0, 3.0, 0.0}, {0.0, 0.0, 3.0}}};
+  for (const Rows *cell : {&tilted, &reduced}) {
+    INFO((cell == &tilted ? "tilted rows" : "reduced rows"));
+    const Structure s1 = make(*cell, {{"H", {0, 0, 0}}, {"H", {1.5, 1.5, 1.5}}});
+    const Structure s2 = make(*cell, {{"H", {-0.54, 0.495, 0}}, {"H", {1.5, 1.5, 1.5}}});
+    CHECK(s1.is_the_same(s2, 0.55));
+    CHECK(s2.is_the_same(s1, 0.55));
+    CHECK_FALSE(s1.is_the_same(s2, 0.5));
+  }
+}
+
+/* Pins: is_the_same is symmetric when the two cells differ (by up to the
+ * threshold): a translation of either cell counts. a = [Ta (0,0,0), Ta
+ * (1.5,1.5,1.5)] in a 3 A cube, b = [Ta (6,0,0), Ta (1.5,1.5,1.5)] in a
+ * 3.0000009 A cube, threshold 1e-6: 6 = 2 x 3 exactly through a's cell,
+ * 1.8e-6 off through b's; the same either way round.
+ * Before the fix: only the cell of the structure called was used, so
+ * a.is_the_same(b) was true and b.is_the_same(a) false, and 'data dedup'
+ * depended on the order of the files. */
+TEST_CASE("Structure::is_the_same: the relation is symmetric when the cells "
+          "differ within the threshold",
+          "[dataset_tools][is_the_same]") {
+  const Rows cube3 = {{{3.0, 0.0, 0.0}, {0.0, 3.0, 0.0}, {0.0, 0.0, 3.0}}};
+  const double c = 3.0000009;
+  const Rows cube3b = {{{c, 0.0, 0.0}, {0.0, c, 0.0}, {0.0, 0.0, c}}};
+  const Structure a = make(cube3, {{"Ta", {0, 0, 0}}, {"Ta", {1.5, 1.5, 1.5}}});
+  const Structure b = make(cube3b, {{"Ta", {6.0, 0, 0}}, {"Ta", {1.5, 1.5, 1.5}}});
+  CHECK(a.is_the_same(b, 1e-6));
+  CHECK(b.is_the_same(a, 1e-6));
+}
+
+/* Pins: a threshold at which two images of one position could both match
+ * is refused, naming the structure and the threshold: the limit is
+ * lambda/(2 sqrt 3), lambda the shortest lattice vector of either cell
+ * (then at most one image lies within the threshold in every component).
+ * A 10 A cube allows 2.88 A and refuses 2.9 A (the limit is 2.887 A); the
+ * lattice with rows (4,0,0), (3.9,1,0), (0,0,4), whose shortest vector
+ * (-0.1,1,0) is 1.005 A long, refuses 0.56 A (limit 0.290 A) and allows
+ * 0.2 A.
+ * Before the fix: any threshold was used, and in the second cell Ta (0,0,0)
+ * against Ta (0.55,0.55,0) was 'not the same' at 0.56 A although the
+ * displacement is within 0.56 A. */
+TEST_CASE("Structure::is_the_same: a threshold too large for the lattice is "
+          "refused",
+          "[dataset_tools][is_the_same]") {
+  const Rows cube10 = {{{10.0, 0.0, 0.0}, {0.0, 10.0, 0.0}, {0.0, 0.0, 10.0}}};
+  Structure s = make(cube10, {{"Ta", {0, 0, 0}}, {"Ta", {5, 5, 5}}});
+  s.label = "cube-10";
+  CHECK(s.is_the_same(s, 2.88));
+  try {
+    (void)s.is_the_same(s, 2.9);
+    FAIL("no exception at threshold 2.9");
+  } catch (const std::invalid_argument &e) {
+    CHECK_THAT(e.what(), Catch::Contains("cube-10"));
+    CHECK_THAT(e.what(), Catch::Contains("2.9"));
+    CHECK_THAT(e.what(), Catch::Contains("threshold"));
+  }
+
+  const Rows skew = {{{4.0, 0.0, 0.0}, {3.9, 1.0, 0.0}, {0.0, 0.0, 4.0}}};
+  Structure t1 = make(skew, {{"Ta", {0, 0, 0}}});
+  Structure t2 = make(skew, {{"Ta", {0.55, 0.55, 0}}});
+  t1.label = "skew-1";
+  t2.label = "skew-2";
+  CHECK_THROWS_AS(t1.is_the_same(t2, 0.56), std::invalid_argument);
+  CHECK_THROWS_AS(t2.is_the_same(t1, 0.56), std::invalid_argument);
+  const Structure t3 = make(skew, {{"Ta", {0.15, 0.15, 0}}});
+  CHECK(t1.is_the_same(t3, 0.2));
+  CHECK_FALSE(t1.is_the_same(t2, 0.2));
+}
+
+// --------------------------------------------------------------------
+// StructureDB::add (the dataset reader of every tool)
+// --------------------------------------------------------------------
+
+/* A two-structure dataset whose second structure has `bad` in place of
+ * the text `good` of its block (one occurrence). */
+std::string dataset_with(const std::string &good, const std::string &bad) {
+  const std::string first =
+      "S1\n1 1 1\n-11.5\n3.3 0 0\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n"
+      "Ta 0 0 0 0 0 0\nTa 1.65 1.65 1.65 0 0 0\n\n";
+  std::string second =
+      "S2\n1 1 1\n-11.4\n3.31 0 0\n0 3.31 0\n0 0 3.31\n0.001 0 0\n0 0 0\n0 0 0\n"
+      "Ta 0 0 0 0.1 0 0\nTa 1.655 1.655 1.655 -0.1 0 0\n\n";
+  const auto p = second.find(good);
+  REQUIRE(p != std::string::npos);
+  REQUIRE(second.find(good, p + 1) == std::string::npos);
+  second.replace(p, good.size(), bad);
+  return first + second;
+}
+
+/* Pins: a dataset value that is not a finite number, or an atom line
+ * that is not 'Element px py pz fx fy fz', is refused with a
+ * std::runtime_error naming the file, the structure (1-based) and the bad
+ * text: a cell entry 'nan', 'inf', '1e309' or 'abc'; a stress entry 'nan';
+ * an energy 'nan'; an atom coordinate 'x'; an atom line with too few
+ * fields; an element symbol 'Tantalum' (longer than any symbol). The good
+ * file reads as 2 structures.
+ * Before the fix: a cell entry that is not a number put the stream into a
+ * failed state that never reaches end of file, so every tool reading the
+ * dataset spun forever ('tadah data print', 'data dedup', training); a bad
+ * atom field was read as garbage, and a symbol longer than two characters
+ * overflowed a 3-byte buffer. */
+TEST_CASE("StructureDB: a value that is not a finite number is refused, "
+          "naming the file and the structure",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_values");
+  {
+    const std::string path = tmp.write("good.tadah", dataset_with("-11.4", "-11.4"));
+    StructureDB db;
+    REQUIRE_NOTHROW(db.add(path));
+    CHECK(db.size() == 2);
+  }
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"3.31 0 0\n0 3.31", "nan 0 0\n0 3.31"},
+      {"3.31 0 0\n0 3.31", "inf 0 0\n0 3.31"},
+      {"3.31 0 0\n0 3.31", "1e309 0 0\n0 3.31"},
+      {"3.31 0 0\n0 3.31", "abc 0 0\n0 3.31"},
+      {"0.001 0 0", "nan 0 0"},
+      {"-11.4", "nan"},
+      {"Ta 0 0 0 0.1", "Ta x 0 0 0.1"},
+      {"Ta 0 0 0 0.1 0 0", "Ta 0 0 0 0.1"},
+      {"Ta 0 0 0 0.1", "Tantalum 0 0 0 0.1"},
+  };
+  int n = 0;
+  for (const auto &c : cases) {
+    INFO("'" << c.first << "' -> '" << c.second << "'");
+    const std::string path =
+        tmp.write("bad" + std::to_string(++n) + ".tadah", dataset_with(c.first, c.second));
+    StructureDB db;
+    try {
+      db.add(path);
+      FAIL("no exception");
+    } catch (const std::runtime_error &e) {
+      INFO("error: " << e.what());
+      CHECK_THAT(e.what(), Catch::Contains(path));
+      CHECK_THAT(e.what(), Catch::Contains("structure 2"));
+      const std::string token = c.second.substr(0, c.second.find_first_of(" \n"));
+      if (token != "Ta") {
+        CHECK_THAT(e.what(), Catch::Contains(token));
+      }
+    }
+  }
+}

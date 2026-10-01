@@ -228,15 +228,24 @@ void edit_line(std::vector<std::string> &lines, size_t n,
   lines[n - 1].replace(p, from.size(), to);
 }
 
-/* OUTCAR_1 with ionic step 2 (lines 2053-2961) turned into a step of
+/* OUTCAR_1 up to the end of ionic step 3 (line 3825, after its EKIN_LAT
+ * block), without the step 4 that the file is cut off inside. */
+std::vector<std::string> outcar1_three_steps() {
+  std::vector<std::string> l = split_lines(slurp(kOutcarDir + "OUTCAR_1"));
+  REQUIRE(l.size() == 4657);
+  REQUIRE(l[3819].find("EKIN_LAT=") != std::string::npos);
+  l.resize(3825);
+  return l;
+}
+
+/* The three-step OUTCAR_1 with ionic step 2 (lines 2053-2961) turned into a step of
  * VASP's machine-learned force field (ML_MODE = train), with the markers
  * VASP 6.3+ prints for such a step (as dpdata reads them):
  * 'ML FORCE on cell', 'TOTAL-FORCE (eV/Angst) (ML)', 'ML FREE ENERGIE',
  * 'free  energy ML TOTEN' and 'ML energy  without entropy'. The numbers
  * are left as they are. */
 std::vector<std::string> outcar1_with_ml_step2() {
-  std::vector<std::string> l = split_lines(slurp(kOutcarDir + "OUTCAR_1"));
-  REQUIRE(l.size() == 4657);
+  std::vector<std::string> l = outcar1_three_steps();
   edit_line(l, 2776, "  FORCE on cell", "  ML FORCE on cell");
   edit_line(l, 2871, "TOTAL-FORCE (eV/Angst)", "TOTAL-FORCE (eV/Angst) (ML)");
   edit_line(l, 2935, "  FREE ENERGIE", "  ML FREE ENERGIE");
@@ -435,9 +444,10 @@ TEST_CASE("VASP OUTCAR reader: a relaxation stores F and minus the in-kB "
  * 'ML'. They are not first-principles data: the reader stores only the
  * first-principles steps, exactly as it stores them from the file without
  * ML steps, and prints one WARNING naming the file and the skipped step.
- * - MD layout (OUTCAR_1, step 2 marked ML): steps 1 and 3.
+ * - MD layout (OUTCAR_1's first three steps, step 2 marked ML): steps 1
+ *   and 3.
  * - Relaxation layout (the same file without its MD marker and EKIN_LAT
- *   lines, so each step ends at its energy line): steps 1, 3 and 4.
+ *   lines, so each step ends at its energy line): steps 1 and 3.
  * Each label ends with 'Structure <n>', n the ionic step.
  * Before the fix: the MD layout stored step 2 with energy 0 and the ML
  * forces and stress, silently (3 structures); the relaxation layout added
@@ -448,7 +458,9 @@ TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
           "[vasp][outcar][ml_ff]") {
   ScratchDir tmp("outcar_ml");
   SECTION("MD layout") {
-    const StructureDB ref = read_outcar("OUTCAR_1");
+    StructureDB ref;
+    parse_outcar_capturing(
+        ref, tmp.write("OUTCAR_md_ref", join_lines(outcar1_three_steps())));
     REQUIRE(ref.size() == 3);
     const std::string path =
         tmp.write("OUTCAR_ml_md", join_lines(outcar1_with_ml_step2()));
@@ -474,13 +486,12 @@ TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
   }
   SECTION("relaxation layout") {
     const std::string ref_path = tmp.write(
-        "OUTCAR_relax_ref",
-        join_lines(as_relaxation(split_lines(slurp(kOutcarDir + "OUTCAR_1")))));
+        "OUTCAR_relax_ref", join_lines(as_relaxation(outcar1_three_steps())));
     StructureDB ref;
     const std::string ref_printed = parse_outcar_capturing(ref, ref_path);
     INFO("reference printed: '" << ref_printed << "'");
     CHECK(count_word(ref_printed, "WARNING") == 0);
-    REQUIRE(ref.size() == 4);  // the 4th step ends at its energy line
+    REQUIRE(ref.size() == 3);
     CHECK(ref(1).energy == Approx(kOutcarF[1]).margin(kEnergyMargin));
 
     const std::string path = tmp.write(
@@ -491,14 +502,63 @@ TEST_CASE("VASP OUTCAR reader: steps of the machine-learned force field are "
     CHECK(count_word(printed, "WARNING") == 1);
     CHECK_THAT(printed, Contains(path));
     CHECK_THAT(printed, Contains("ionic step 2"));
-    REQUIRE(db.size() == 3);
-    const size_t steps[3] = {0, 2, 3};
-    for (size_t k = 0; k < 3; ++k) {
+    REQUIRE(db.size() == 2);
+    const size_t steps[2] = {0, 2};
+    for (size_t k = 0; k < 2; ++k) {
       INFO("stored " << k + 1 << " = step " << steps[k] + 1);
       check_same_structure(db(k), ref(steps[k]));
       CHECK_THAT(db(k).label, Catch::Matchers::EndsWith(
                                   "Structure " + std::to_string(steps[k] + 1)));
     }
+  }
+}
+
+/* Pins: an MD file cut off inside its last ionic step -- after the step's
+ * free energy, before its EKIN_LAT line -- gives the complete steps and
+ * one WARNING naming the file and the skipped step: OUTCAR_1 (cut off after
+ * step 4's energy lines) gives steps 1-3 and 'ionic step 4'. A relaxation
+ * step ends at its energy line, so the same cut gives no warning there.
+ * Before the fix: step 4 was dropped silently. */
+TEST_CASE("VASP OUTCAR reader: a last MD step the file ends inside is skipped "
+          "with one WARNING",
+          "[vasp][outcar][truncated]") {
+  const std::string path = kOutcarDir + "OUTCAR_1";
+  StructureDB db;
+  const std::string printed = parse_outcar_capturing(db, path);
+  INFO("printed: '" << printed << "'");
+  CHECK(count_word(printed, "WARNING") == 1);
+  CHECK_THAT(printed, Contains(path));
+  CHECK_THAT(printed, Contains("ionic step 4"));
+  REQUIRE(db.size() == 3);
+  CHECK(db(2).energy == Approx(kOutcarF[2]).margin(kEnergyMargin));
+}
+
+/* Pins: an ionic step without an 'in kB' line is stored with zero stress
+ * and stress weight 0, so a STRESS fit ignores it; a step with one keeps
+ * weight 1: the first three steps of OUTCAR_1 give sweight 1, the same
+ * file without its 'in kB' lines sweight 0 (and the same energies).
+ * Before the fix: zero stress with sweight 1. */
+TEST_CASE("VASP OUTCAR reader: a step without a stress tensor has stress "
+          "weight 0",
+          "[vasp][outcar][stress]") {
+  ScratchDir tmp("outcar_no_stress");
+  const std::vector<std::string> l = outcar1_three_steps();
+  std::vector<std::string> no_kb;
+  for (const auto &line : l)
+    if (line.find("in kB") == std::string::npos) no_kb.push_back(line);
+  REQUIRE(no_kb.size() == l.size() - 3);
+  StructureDB with, without;
+  parse_outcar_capturing(with, tmp.write("OUTCAR_with", join_lines(l)));
+  parse_outcar_capturing(without, tmp.write("OUTCAR_without", join_lines(no_kb)));
+  REQUIRE(with.size() == 3);
+  REQUIRE(without.size() == 3);
+  for (size_t k = 0; k < 3; ++k) {
+    INFO("step " << k + 1);
+    CHECK(with(k).sweight == 1.0);
+    CHECK(without(k).sweight == 0.0);
+    CHECK(without(k).energy == with(k).energy);
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j) CHECK(without(k).stress(i, j) == 0.0);
   }
 }
 
@@ -576,7 +636,9 @@ TEST_CASE("VASP vasprun.xml reader: stores the calculation-level e_fr_energy",
  * sigma_xx = -33.62613502 * 6.241509074e-4 = -0.0209878 eV/A^3, ASE's
  * get_stress() to 2e-8 relative. vasprun_1 has no stress varray and its
  * stress stays zero (that part held before the fix; it fails if the reader
- * stopped zeroing the stress of a calculation without one).
+ * stopped zeroing the stress of a calculation without one), with stress
+ * weight 0 so that a STRESS fit ignores it (vasprun_2's calculations keep
+ * weight 1; before the review round's fix the weight was 1).
  * Tolerance: VASP prints the tensor slightly asymmetric (vasprun_3:
  * 0.82409354 against 0.82409317 kB, 2.3e-10 eV/A^3); the absolute margin
  * of 1e-9 eV/A^3 accepts storing the tensor as printed, its upper triangle
@@ -628,12 +690,21 @@ TEST_CASE("VASP vasprun.xml reader: stress is minus the stress varray in "
     INFO("vasprun_3 against ASE");
     check_stress(db(0), ase, 2e-8, 1e-9);
   }
-  SECTION("vasprun_1.xml has no stress varray: zero stress") {
+  SECTION("vasprun_1.xml has no stress varray: zero stress, weight 0") {
     const StructureDB db = read_vasprun(kVasprunDir + "vasprun_1.xml");
     REQUIRE(db.size() == 25);
     for (size_t k = 0; k < db.size(); ++k) {
       INFO("calculation " << k + 1);
       check_stress(db(k), M3{}, 0.0, 0.0);
+      CHECK(db(k).sweight == 0.0);
+    }
+  }
+  SECTION("vasprun_2.xml has a stress varray: weight 1") {
+    const StructureDB db = read_vasprun(kVasprunDir + "vasprun_2.xml");
+    REQUIRE(db.size() == 4);
+    for (size_t k = 0; k < db.size(); ++k) {
+      INFO("calculation " << k + 1);
+      CHECK(db(k).sweight == 1.0);
     }
   }
 }
