@@ -4,6 +4,8 @@
 
 
 #include <iostream>
+#include <stdexcept>
+#include <string>
 
 namespace tadah {
 namespace mlip {
@@ -59,7 +61,19 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     bool duplicate = false;
     for (size_t i : kept) {
       Structure &st_i = inStdbs[indices[i].first](indices[i].second);
-      if (st_i.is_the_same(st_j,threshold)) {
+      bool same;
+      try {
+        same = st_i.is_the_same(st_j,threshold);
+      } catch (const std::invalid_argument &e) {
+        // Name both structures by file and 1-based position.
+        throw std::runtime_error(
+            "tadah data dedup: comparing structure #" +
+            std::to_string(indices[i].second + 1) + " of " +
+            inFiles[indices[i].first] + " with structure #" +
+            std::to_string(indices[j].second + 1) + " of " +
+            inFiles[indices[j].first] + ": " + e.what());
+      }
+      if (same) {
         duplicates.push_back(std::make_pair(i,j));
         duplicate = true;
         break;

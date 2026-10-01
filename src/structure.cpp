@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string_view>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -403,6 +404,24 @@ bool Structure::operator==(const Structure& st) const {
   return true;
 }
 
+namespace {
+/* Refuses a cell whose lattice vectors are zero, non-finite or (nearly)
+ * coplanar: positions are compared through its inverse. The criterion is
+ * the one of the POSCAR exporter: |det| <= 1e-12 |a0| |a1| |a2|. */
+void require_regular_cell(const Structure &st) {
+  const tadah::core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
+                           a2 = st.cell.row(2);
+  const double det = a0 * a1.cross(a2);
+  if (!std::isfinite(det) ||
+      !(std::fabs(det) > 1e-12 * a0.norm() * a1.norm() * a2.norm()))
+    throw std::invalid_argument(
+        "Structure::is_the_same: structure '" + st.label + "' (" +
+        std::to_string(st.natoms()) +
+        " atoms) has a singular cell (zero, non-finite or coplanar lattice "
+        "vectors); its positions cannot be compared through the cell");
+}
+}  // namespace
+
 /**
  * Checks if two structures match in cell vectors, number of atoms, species, and coordinates,
  * ignoring order of atoms and not comparing energies, forces, or labels.
@@ -411,22 +430,29 @@ bool Structure::operator==(const Structure& st) const {
  * Each atom must match a distinct atom of `st` of the same element whose
  * position differs by a lattice translation plus at most `thr` in every
  * Cartesian component (the minimal image through this cell, rows = lattice
- * vectors: d = f * cell, f reduced to [-1/2, 1/2]). Atoms are matched in
- * order, each to the first unused match.
+ * vectors: d = f * cell, f reduced to [-1/2, 1/2]). The structures are the
+ * same when such a one-to-one matching of all atoms exists; it is searched
+ * for with augmenting paths (Kuhn's algorithm), so the result does not
+ * depend on the order of the atoms. Throws std::invalid_argument when
+ * either cell is singular.
  */
 bool Structure::is_the_same(const Structure& st, double thr) const {
+  require_regular_cell(*this);
+  require_regular_cell(st);
   bool result =
     cell.isApprox(st.cell, thr) &&
     (natoms() == st.natoms());
 
   if (!result) return false;
 
+  const size_t n = natoms();
+  const size_t none = static_cast<size_t>(-1);
   const tadah::core::Matrix3d inv = cell.inverse();
-  std::vector<bool> used(natoms(), false);
-  for (size_t i = 0; i < natoms(); ++i) {
-    bool matched = false;
-    for (size_t j = 0; j < natoms() && !matched; ++j) {
-      if (used[j]) continue;
+
+  // candidates[i]: the atoms of st that atom i may match.
+  std::vector<std::vector<size_t>> candidates(n);
+  for (size_t i = 0; i < n; ++i) {
+    for (size_t j = 0; j < n; ++j) {
       if (!(static_cast<const tadah::core::Element &>(atoms[i]) ==
             static_cast<const tadah::core::Element &>(st.atoms[j])))
         continue;
@@ -443,12 +469,45 @@ bool Structure::is_the_same(const Structure& st, double thr) const {
         for (size_t c = 0; c < 3; ++c) d += f[c] * cell(c, k);
         within = std::fabs(d) <= thr;
       }
-      if (within) {
-        used[j] = true;
-        matched = true;
+      if (within) candidates[i].push_back(j);
+    }
+    if (candidates[i].empty()) return false;
+  }
+
+  // Kuhn's algorithm, with a breadth-first search for each augmenting path
+  // (no recursion). If atom i has no augmenting path, no matching covers
+  // every atom.
+  std::vector<size_t> match_of_this(n, none), match_of_st(n, none);
+  std::vector<size_t> reached_from(n), queue;
+  std::vector<char> seen(n);
+  queue.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    std::fill(seen.begin(), seen.end(), 0);
+    queue.assign(1, i);
+    size_t free_j = none;
+    for (size_t q = 0; q < queue.size() && free_j == none; ++q) {
+      const size_t u = queue[q];
+      for (size_t j : candidates[u]) {
+        if (seen[j]) continue;
+        seen[j] = 1;
+        reached_from[j] = u;
+        if (match_of_st[j] == none) {
+          free_j = j;
+          break;
+        }
+        queue.push_back(match_of_st[j]);
       }
     }
-    if (!matched) return false;
+    if (free_j == none) return false;
+    // Flip the path back to i: each atom on it takes the atom of st it
+    // reached, and its previous match goes to the atom before it.
+    for (size_t j = free_j; j != none;) {
+      const size_t u = reached_from[j];
+      const size_t previous = match_of_this[u];
+      match_of_this[u] = j;
+      match_of_st[j] = u;
+      j = previous;
+    }
   }
   return true;
 }
