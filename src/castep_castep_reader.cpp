@@ -141,19 +141,29 @@ void CastepCastepReader::parse_data() {
   // Temporary container to hold ongoing parse results
   Structure s;              
   std::vector<Atom> atoms;
-  // The geometry an SCF result belongs to: the cell and positions printed
-  // before it, taken when the step's first result (free energy, forces or
-  // stress) is read. A geometry printed after the results -- the earlier
-  // configuration an (L)BFGS line search reverts to, before 'finished
-  // iteration' -- never pairs with them.
+  // The geometry an SCF result belongs to: the last cell and positions
+  // printed before it. They are taken at the SCF's first result (free
+  // energy, forces or stress) when a geometry has been printed since the
+  // previous result, so the last SCF of an (L)BFGS iteration -- a line or
+  // quadratic minimisation step, after the trial step -- pairs with its own
+  // geometry. A geometry printed after the last results -- the earlier
+  // configuration a line search reverts to, before 'finished iteration' --
+  // has no results and never pairs with them.
   tadah::core::Matrix3d result_cell;
   std::vector<Atom> result_atoms;
   bool result_geometry_taken = false;
-  auto take_result_geometry = [&]() {
-    if (result_geometry_taken) return;
+  bool geometry_printed = false;  // a cell or positions block since the last result
+  int result_positions_start = -1, result_positions_stop = -1;  // for the label
+  auto snapshot_geometry = [&]() {
     result_cell = s.cell;
     result_atoms = atoms;
+    result_positions_start = simLabel.positionsStartLine;
+    result_positions_stop = simLabel.positionsStopLine;
     result_geometry_taken = true;
+    geometry_printed = false;
+  };
+  auto take_result_geometry = [&]() {
+    if (!result_geometry_taken || geometry_printed) snapshot_geometry();
   };
 
   std::string line;
@@ -179,7 +189,7 @@ void CastepCastepReader::parse_data() {
     // We have to compute absolute positions here from temporary fractional positions
     // In case of volume-only relaxation fractional positions are reported only once
     // Rows-as-lattice-vectors: r = cell^T * frac.
-    take_result_geometry();  // a block without forces, stress or energy
+    if (!result_geometry_taken) snapshot_geometry();  // a block without forces, stress or energy
     s.cell = result_cell;
     s.atoms.resize(result_atoms.size());
     for (size_t i = 0; i < result_atoms.size(); ++i) {
@@ -188,6 +198,8 @@ void CastepCastepReader::parse_data() {
       s.atoms[i].position = s.cell.transpose() * result_atoms[i].position;
       s.atoms[i].force = result_atoms[i].force;
     }
+    simLabel.positionsStartLine = result_positions_start;
+    simLabel.positionsStopLine = result_positions_stop;
     s.label = simLabel.getLabel();
     stdb.add(s);
     result_geometry_taken = false;
@@ -310,6 +322,7 @@ void CastepCastepReader::parse_data() {
           break;
         }
       }
+      geometry_printed = true;
       continue;
     }
 
@@ -393,6 +406,7 @@ void CastepCastepReader::parse_data() {
         atoms.push_back(a); // keep it fractional for now
       }
       simLabel.positionsStopLine = line_counter;
+      geometry_printed = true;
     }
 
     // Detect forces block
@@ -488,8 +502,13 @@ void CastepCastepReader::parse_data() {
     }
 
     // Terminates the geometry optimization step
-    // Uses last free energy found previously
-    if (line.find("enthalpy=") != std::string::npos && current_state == CalcState::GeometryOptimization) {
+    // Uses last free energy found previously. Iteration 0 with the finite
+    // basis set correction is in the FBSC state; it is completed by its
+    // stress block, or here when none is printed (a fixed-cell run).
+    const bool fbsc_pending =
+        current_state == CalcState::FiniteBasisSetCorrection && result_geometry_taken;
+    if (line.find("enthalpy=") != std::string::npos &&
+        (current_state == CalcState::GeometryOptimization || fbsc_pending)) {
       if (debug) std::cout << "enthalpy=" << std::endl;
       // This indicates a converged or final iteration of geometry optimization
       std::istringstream iss(line);
