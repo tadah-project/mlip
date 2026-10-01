@@ -1,4 +1,8 @@
 #include <tadah/mlip/dataset_readers/vasp_vasprun_reader.h>
+
+#include <sstream>
+#include <stdexcept>
+#include <string>
 namespace tadah {
 namespace mlip {
 
@@ -15,6 +19,7 @@ VaspVasprunReader::~VaspVasprunReader() {
 }
 
 void VaspVasprunReader::read_data(const std::string& filename) {
+  filename_ = filename;
   std::ifstream infile(filename);
   if (!infile.good()) {
     std::cerr << "Error: File " << filename << " cannot be opened or read." << std::endl;
@@ -95,6 +100,7 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
   for (auto calculation_node = root_node->first_node("calculation");
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
+    calculation_ = counter + 1;
     extract_total_energy(calculation_node);
 
     extract_stress_tensor(calculation_node);
@@ -129,19 +135,26 @@ void VaspVasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
       // 5.4.4, a labelling bug; 'e_fr_energy' is right in every version.)
       auto attribute = energy_val_node->first_attribute("name");
       if (attribute && std::string(attribute->value()) == "e_fr_energy") {
-        try {
-          _s.energy = std::stod(energy_val_node->value());
-          found = true;
-        } catch (const std::invalid_argument&) {
-          std::cerr << "Error converting energy value." << std::endl;
-        }
+        const std::string value = energy_val_node->value();
+        std::istringstream iss(value);
+        double e;
+        std::string rest;
+        if (!(iss >> e) || (iss >> rest))
+          throw std::runtime_error(
+            "VASP vasprun.xml " + filename_ + ": calculation " +
+            std::to_string(calculation_) +
+            ": the calculation-level <i name=\"e_fr_energy\"> value '" +
+            value + "' is not a number");
+        _s.energy = e;
+        found = true;
       }
     }
   }
   if (!found)
     throw std::runtime_error(
-      "VaspVasprunReader: a <calculation> has no readable calculation-level "
-      "<i name=\"e_fr_energy\"> (the free energy).");
+      "VASP vasprun.xml " + filename_ + ": calculation " +
+      std::to_string(calculation_) +
+      " has no calculation-level <i name=\"e_fr_energy\"> (the free energy)");
 }
 
 void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) {

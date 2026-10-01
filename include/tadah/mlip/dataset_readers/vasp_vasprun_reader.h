@@ -125,7 +125,9 @@ protected:
   /**
      * @brief Extracts the free energy (e_fr_energy) from a calculation node.
      *
-     * Throws when the calculation has none.
+     * Throws std::runtime_error, naming the file and the calculation
+     * (1-based), when the calculation has none or its value is not a
+     * number.
      *
      * @param calculation_node Pointer to the calculation XML node.
      */
@@ -167,6 +169,8 @@ protected:
 private:
   Structure _s; ///< Internal structure representation.
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
+  std::string filename_; ///< The file read, for messages.
+  size_t calculation_ = 0; ///< The calculation being read, 1-based, for messages.
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 
