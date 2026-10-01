@@ -9,15 +9,15 @@
 // Structure::atoms -- or with another number of atoms than the reference
 // must be refused with a std::runtime_error whose message names the
 // structure ("structure <k>", k the 1-based index in the StructureDB), the
-// reference structure's label when it has one, and "forces". Today these
-// functions read past the end of the predicted atoms: undefined behaviour,
-// a SIGSEGV for an empty vector (tadah hpo with PC_FRMSE and FORCE false)
-// and a wrong number otherwise.
+// reference structure's label when it has one, and "forces". Before the
+// fix (require_predicted_forces) these functions read past the end of the
+// predicted atoms: undefined behaviour, a SIGSEGV for an empty vector (tadah
+// hpo with PC_FRMSE and FORCE false) and a wrong number otherwise.
 //
 // Synthetic data, one dataset of two 2-atom structures. Every case starts
 // with a complete prediction whose metric equals a hand-computed value (it
-// passes today, and keeps a fix from refusing good predictions); the
-// refusal sections that follow fail today.
+// passed before the fix too, and keeps the check from refusing good
+// predictions); the refusal sections that follow failed before the fix.
 
 #include "catch2/catch.hpp"
 
@@ -146,9 +146,9 @@ void check_names(const std::string &msg, std::size_t k,
 }
 
 /* The refusal sections every force metric shares. They run after the
- * metric's positive control. Order: the cases that read past the end
- * without a crash today first, then those that dereference an empty
- * vector (a SIGSEGV today, which ends the process). */
+ * metric's positive control. Order: first the cases that read past the
+ * end without a crash before the fix, then those that dereferenced an
+ * empty vector (a SIGSEGV before the fix, which ended the process). */
 template <class Metric>
 void refusal_sections(Metric metric) {
   const StructureDB truth = reference();
@@ -211,8 +211,9 @@ void check_partials(
 // Pins: calc_f_mae refuses a prediction whose structure has no forces or
 // another atom count, naming the 1-based structure index, the reference
 // label and "forces"; a complete prediction gives MAE 0.1.
-// Today: the refusal sections fail (no throw, or SIGSEGV on the empty
-// atoms of the last two sections).
+// Before the fix the refusal sections failed (no throw, or a SIGSEGV on
+// the empty atoms of the last two sections); removing the
+// require_predicted_forces call from calc_f_mae makes them fail again.
 TEST_CASE("Analytics::calc_f_mae refuses a prediction without matching "
           "forces",
           "[analytics][analytics_forces]") {
@@ -230,7 +231,9 @@ TEST_CASE("Analytics::calc_f_mae refuses a prediction without matching "
 
 // Pins: as calc_f_mae, for calc_f_rmse (what HPO's fill_validation calls
 // for PC_FRMSE); a complete prediction gives RMSE 0.2.
-// Today: the refusal sections fail (no throw, or SIGSEGV).
+// Before the fix the refusal sections failed (no throw, or a SIGSEGV);
+// removing the require_predicted_forces call from calc_f_rmse makes them
+// fail again.
 TEST_CASE("Analytics::calc_f_rmse refuses a prediction without matching "
           "forces",
           "[analytics][analytics_forces]") {
@@ -248,7 +251,9 @@ TEST_CASE("Analytics::calc_f_rmse refuses a prediction without matching "
 
 // Pins: as calc_f_mae, for calc_f_r_sq; a complete prediction gives
 // R^2 = 1 - 0.48/2.48 = 25/31.
-// Today: the refusal sections fail (no throw, or SIGSEGV).
+// Before the fix the refusal sections failed (no throw, or a SIGSEGV);
+// removing the require_predicted_forces call from calc_f_r_sq makes them
+// fail again.
 TEST_CASE("Analytics::calc_f_r_sq refuses a prediction without matching "
           "forces",
           "[analytics][analytics_forces]") {
@@ -267,7 +272,9 @@ TEST_CASE("Analytics::calc_f_r_sq refuses a prediction without matching "
 // Pins: as calc_f_mae, for analytics_grad::frmse_per_dataset (the
 // PC_FRMSE gradient of GRAD_STRATEGY ANALYTICAL/HYBRID); a complete
 // prediction gives the partials -d / (N * RMSE) = -d / 2.4 in dataset 0.
-// Today: the refusal sections fail (no throw, or SIGSEGV).
+// Before the fix the refusal sections failed (no throw, or a SIGSEGV);
+// removing the require_predicted_forces call from frmse_per_dataset makes
+// them fail again.
 TEST_CASE("analytics_grad::frmse_per_dataset refuses a prediction without "
           "matching forces",
           "[analytics][analytics_forces][pc_dataset]") {
@@ -297,7 +304,9 @@ TEST_CASE("analytics_grad::frmse_per_dataset refuses a prediction without "
 // Pins: the averaging wrapper analytics_grad::frmse refuses the same
 // predictions (it must not bypass the check of frmse_per_dataset); with
 // one dataset its partials equal those of frmse_per_dataset.
-// Today: the refusal sections fail (no throw, or SIGSEGV).
+// Before the fix the refusal sections failed (no throw, or a SIGSEGV);
+// removing the require_predicted_forces call from frmse_per_dataset, or a
+// frmse that bypasses frmse_per_dataset, makes them fail again.
 TEST_CASE("analytics_grad::frmse refuses a prediction without matching "
           "forces",
           "[analytics][analytics_forces][pc_dataset]") {
