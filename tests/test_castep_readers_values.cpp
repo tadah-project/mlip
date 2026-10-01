@@ -657,52 +657,8 @@ TEST_CASE("CASTEP .md/.geom readers: a truncated last frame is skipped with one 
 // the reverted iteration-0 cell (a = 2.9640232) and positions, with zero
 // forces (the revert's coordinate block reset them) and the trial SCF's
 // energy -2689.827841473 eV: one geometry with two energies 0.355 eV apart.
-// Pins: in an LBFGS geometry optimisation whose iterations go on with a
-// line (or quadratic) minimisation, the structure of each iteration is the
-// last SCF of that iteration on the geometry printed just before it -- the
-// line-minimisation geometry, not the iteration's trial geometry. geom.castep
-// (8 structures): energy, cell, H1 height and force, and stress xx of each
-// are those of the image ASE 3.25 (castep-castep reader) gives the same
-// energy. Cell 1e-12 (parsed decimals); energy 1e-14 relative; stress 1e-7
-// relative (the reader's GPa factor).
-// Before the fix (a review finding on the first version of the revert fix,
-// which took the geometry once per iteration): structures 2-6 paired the
-// line-minimisation energy, forces and stress with the trial cell, e.g.
-// structure 2 had a = 2.9541657 with the energy of a = 2.9499544.
-TEST_CASE("CASTEP .castep reader: line and quad minimisation SCFs pair with their own geometry",
-          "[castep_readers][castep][revert][line_minimisation]") {
-  PeriodicTable::initialize();
-  StructureDB db;
-  read_into<CastepCastepReader>(db, kGeomCastep);
-  REQUIRE(db.size() == 8);
-  struct Expected {
-    double e, a, c, h1z_frac, f1z, sxx_gpa;
-  };
-  const Expected expected[8] = {
-      {-2690.182441105, 2.9640232, 7.0990150, 0.318951, -0.00001, -90.011421},
-      {-2689.672649027, 2.9499544, 7.0653183, 0.318951, 0.00189, -94.737913},
-      {-2689.670652110, 2.9485358, 7.0716787, 0.318952, -0.00964, -94.992185},
-      {-2689.669050894, 2.9482042, 7.0729650, 0.318930, -0.01093, -95.041542},
-      {-2689.669242284, 2.9484328, 7.0718932, 0.318861, -0.00449, -94.979348},
-      {-2689.668548477, 2.9481184, 7.0732666, 0.318747, 0.00019, -95.000945},
-      {-2689.669041115, 2.9481118, 7.0733926, 0.318747, 0.00003, -94.999239},
-      {-2689.669012276, 2.9481080, 7.0734053, 0.318747, -0.00000, -94.999759}};
-  for (size_t k = 0; k < 8; ++k) {
-    INFO("structure " << k + 1);
-    const Structure &st = db(k);
-    const Expected &x = expected[k];
-    CHECK(st.energy == Approx(x.e).epsilon(1e-14));
-    CHECK(st.cell(0, 0) == Approx(x.a).epsilon(1e-12));
-    CHECK(st.cell(1, 1) == Approx(x.a).epsilon(1e-12));
-    CHECK(st.cell(2, 2) == Approx(x.c).epsilon(1e-12));
-    REQUIRE(st.natoms() == 10);
-    CHECK(st.atoms[0].symbol == "H");
-    CHECK(st.atoms[0].position[2] == Approx(x.h1z_frac * x.c).epsilon(1e-12));
-    CHECK(st.atoms[0].force[2] == Approx(x.f1z).margin(1e-12));
-    CHECK(st.stress(0, 0) == Approx(x.sxx_gpa / kGPa).epsilon(1e-7));
-  }
-}
-
+// After that fix, until the review: the label's positions range 'C: (636 :
+// 645)' still named the reverted block.
 TEST_CASE("CASTEP .castep reader: an LBFGS revert pairs each SCF with its own geometry",
           "[castep_readers][castep][revert]") {
   PeriodicTable::initialize();
@@ -736,6 +692,10 @@ TEST_CASE("CASTEP .castep reader: an LBFGS revert pairs each SCF with its own ge
     CHECK(st.atoms[0].symbol == "H");
     CHECK(st.atoms[0].position[2] == Approx(0.318951 * 7.0754048).epsilon(1e-12));
     CHECK(st.atoms[0].force[2] == Approx(0.00125).margin(1e-12));
+    // The label names the blocks stored: positions 534-543, not the
+    // reverted block 636-645; energy line 561.
+    CHECK_THAT(st.label, Catch::Contains("C: (534 : 543)"));
+    CHECK_THAT(st.label, Catch::Contains("E: 561"));
   }
   for (size_t s = 0; s < db.size(); ++s) {
     INFO("structure " << s + 1);
@@ -743,6 +703,56 @@ TEST_CASE("CASTEP .castep reader: an LBFGS revert pairs each SCF with its own ge
                                  std::abs(db(s).cell(2, 2) - 7.0990150) < 1e-6;
     const bool trial_energy = std::abs(db(s).energy - (-2689.827841473)) < 1e-6;
     CHECK_FALSE((iteration0_cell && trial_energy));
+  }
+}
+
+// Pins: in an LBFGS geometry optimisation whose iterations go on with a
+// line (or quadratic) minimisation, the structure of each iteration is the
+// last SCF of that iteration on the geometry printed just before it -- the
+// line-minimisation geometry, not the iteration's trial geometry. geom.castep
+// (8 structures): energy, cell, H1 height and force, and stress xx of each
+// are those of the image ASE 3.25 (castep-castep reader) gives the same
+// energy; the label names the positions block and the energy line of that
+// SCF (geom.castep lines). Cell 1e-12 (parsed decimals); energy 1e-14
+// relative; stress 1e-7 relative (the reader's GPa factor).
+// Before the fix (a review finding on the first version of the revert fix,
+// which took the geometry once per iteration): structures 2-6 paired the
+// line-minimisation energy, forces and stress with the trial cell, e.g.
+// structure 2 had a = 2.9541657 with the energy of a = 2.9499544.
+TEST_CASE("CASTEP .castep reader: line and quad minimisation SCFs pair with their own geometry",
+          "[castep_readers][castep][revert][line_minimisation]") {
+  PeriodicTable::initialize();
+  StructureDB db;
+  read_into<CastepCastepReader>(db, kGeomCastep);
+  REQUIRE(db.size() == 8);
+  struct Expected {
+    double e, a, c, h1z_frac, f1z, sxx_gpa;
+    const char *positions, *energy_line;  // the label's C: and E: entries
+  };
+  const Expected expected[8] = {
+      {-2690.182441105, 2.9640232, 7.0990150, 0.318951, -0.00001, -90.011421, "C: (295 : 304)", "E: 430"},
+      {-2689.672649027, 2.9499544, 7.0653183, 0.318951, 0.00189, -94.737913, "C: (637 : 646)", "E: 663"},
+      {-2689.670652110, 2.9485358, 7.0716787, 0.318952, -0.00964, -94.992185, "C: (863 : 872)", "E: 888"},
+      {-2689.669050894, 2.9482042, 7.0729650, 0.318930, -0.01093, -95.041542, "C: (1190 : 1199)", "E: 1215"},
+      {-2689.669242284, 2.9484328, 7.0718932, 0.318861, -0.00449, -94.979348, "C: (1416 : 1425)", "E: 1441"},
+      {-2689.668548477, 2.9481184, 7.0732666, 0.318747, 0.00019, -95.000945, "C: (1645 : 1654)", "E: 1670"},
+      {-2689.669041115, 2.9481118, 7.0733926, 0.318747, 0.00003, -94.999239, "C: (1769 : 1778)", "E: 1794"},
+      {-2689.669012276, 2.9481080, 7.0734053, 0.318747, -0.00000, -94.999759, "C: (1892 : 1901)", "E: 1917"}};
+  for (size_t k = 0; k < 8; ++k) {
+    INFO("structure " << k + 1);
+    const Structure &st = db(k);
+    const Expected &x = expected[k];
+    CHECK(st.energy == Approx(x.e).epsilon(1e-14));
+    CHECK(st.cell(0, 0) == Approx(x.a).epsilon(1e-12));
+    CHECK(st.cell(1, 1) == Approx(x.a).epsilon(1e-12));
+    CHECK(st.cell(2, 2) == Approx(x.c).epsilon(1e-12));
+    REQUIRE(st.natoms() == 10);
+    CHECK(st.atoms[0].symbol == "H");
+    CHECK(st.atoms[0].position[2] == Approx(x.h1z_frac * x.c).epsilon(1e-12));
+    CHECK(st.atoms[0].force[2] == Approx(x.f1z).margin(1e-12));
+    CHECK(st.stress(0, 0) == Approx(x.sxx_gpa / kGPa).epsilon(1e-7));
+    CHECK_THAT(st.label, Catch::Contains(x.positions));
+    CHECK_THAT(st.label, Catch::Contains(x.energy_line));
   }
 }
 
