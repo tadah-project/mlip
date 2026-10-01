@@ -177,6 +177,9 @@ struct Structure {
    * the first structure will be read.
    *
    * @returns 0 if success, 1 otherwise
+   * @throws std::runtime_error when a value is not a finite number or an
+   *         atom line is not 'Element px py pz fx fy fz'; the message names
+   *         the structure's label and the bad text.
    */
   int read(std::ifstream &ifs);
 
@@ -290,14 +293,18 @@ struct Structure {
    *
    * Order of atoms does not matter: the structures are the same when each
    * atom can be paired with a distinct atom of `st` of the same element
-   * whose position differs by a lattice vector plus at most `thr` in each
-   * Cartesian component (one-to-one, found whenever it exists).
+   * whose position differs by a lattice vector of either cell plus at most
+   * `thr` in each Cartesian component (one-to-one, found whenever it
+   * exists). The relation is symmetric.
    *
    * It does NOT compare energies, stresses, forces and labels.
    *
    * @throws std::invalid_argument when the cell of either structure is
-   *         singular (zero, non-finite or coplanar lattice vectors); the
-   *         message names that structure.
+   *         singular (zero, non-finite or coplanar lattice vectors), or
+   *         `thr` is negative, not finite, or not below lambda/(2 sqrt 3),
+   *         lambda the shortest lattice vector of either cell (above it two
+   *         images of one position could both match); the message names
+   *         the structure.
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 

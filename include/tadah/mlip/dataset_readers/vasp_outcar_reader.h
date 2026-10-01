@@ -14,11 +14,15 @@ namespace mlip {
  * This class implements the DatasetReader interface for handling
  * VASP OUTCAR files.
  *
- * Each first-principles ionic step gives a structure with the free energy
- * F (the 'free  energy   TOTEN' line, whose gradient the forces and the
- * stress are), the forces, and the Cauchy stress in eV/A^3: minus the
- * 'in kB' tensor, which VASP prints with the pressure sign. The label
- * ends with 'Structure <n>', n the ionic step.
+ * Each complete first-principles ionic step gives a structure with the
+ * free energy F (the 'free  energy   TOTEN' line, whose gradient the forces
+ * and the stress are), the forces, and the Cauchy stress in eV/A^3: minus
+ * the 'in kB' tensor, which VASP prints with the pressure sign. A step
+ * without an 'in kB' line is stored with zero stress and stress weight 0
+ * (sweight), so that a STRESS fit ignores it. The label ends with
+ * 'Structure <n>', n the ionic step. An MD file that ends inside its last
+ * step (after the step's energy, before its EKIN_LAT line) gives the
+ * complete steps and one WARNING naming the skipped step.
  *
  * The steps of VASP's machine-learned force field (ML_MODE = train/run),
  * whose blocks are marked ML ('ML FORCE on cell', 'TOTAL-FORCE (eV/Angst)

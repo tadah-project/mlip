@@ -31,7 +31,17 @@ namespace mlip {
  *   CASTEP prints it (positive under tension)
  * - ps for time
  * 
- * If there is no stress tensor, it is set to zero.
+ * Each structure takes the results of the last SCF on the last geometry
+ * printed before them: its energy (the 'Final free energy (E-TS)'; the
+ * 'Final energy =' of a fixed-occupancy run, which prints no free energy;
+ * the MD Data 'Potential Energy:' of an MD step, step 0 included when the
+ * finite basis correction is on), its forces and its stress. A structure
+ * without an energy of its own is refused (std::runtime_error naming the
+ * file). A structure without a stress tensor of its own is stored with zero
+ * stress and stress weight 0 (sweight), so that a STRESS fit ignores it;
+ * the stress block printed for a geometry optimisation's final
+ * configuration goes to the last iteration when that has the same geometry
+ * and no stress of its own.
  *
  * Example usage:
  * @code
