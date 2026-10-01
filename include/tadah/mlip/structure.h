@@ -295,9 +295,9 @@ struct Structure {
    *
    * It does NOT compare energies, stresses, forces and labels.
    *
-   * @throws std::invalid_argument, naming the structure, when the cell of
-   *         either structure is singular (zero, non-finite or coplanar
-   *         lattice vectors).
+   * @throws std::invalid_argument when the cell of either structure is
+   *         singular (zero, non-finite or coplanar lattice vectors); the
+   *         message names that structure.
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 
