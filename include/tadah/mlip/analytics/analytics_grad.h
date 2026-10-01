@@ -45,6 +45,7 @@
 
 #include <tadah/core/core_types.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/analytics/analytics.h>
 
 #include <cmath>
 #include <stdexcept>
@@ -286,6 +287,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         throw std::runtime_error("analytics_grad::frmse: size mismatch");
     if (truth.dbidx != pred.dbidx)
         throw std::runtime_error("analytics_grad::frmse: dataset layout mismatch");
+    require_predicted_forces(truth, pred, "analytics_grad::frmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
