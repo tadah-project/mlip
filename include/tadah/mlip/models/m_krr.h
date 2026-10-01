@@ -214,8 +214,8 @@ tadah::core::Context get_param_file() {
     c.remove("ALPHA");
     c.remove("BETA");
     c.remove("DBFILE");
-    c.remove("FORCE");
-    c.remove("STRESS");
+    // FORCE and STRESS stay, as in M_BLR: the potential records what its
+    // fit used (tadah predict's -F/-S and pair_style tadah do not read them).
 
     c.remove("MODEL");
     c.add("MODEL", label);

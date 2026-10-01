@@ -18,7 +18,7 @@
  *           the linearised Voigt-like 6-cell index for STRESS, matching
  *           Analytics' iteration order x in [0..3), y in [x..3))
  *   value = d(metric)/d(predicted cell), with units consistent with
- *           Analytics (eV/atom for energy metrics, raw eV/A and GPa for
+ *           Analytics (eV/atom for energy metrics, raw eV/A and eV/A^3 for
  *           force / stress unless the host scales the metric afterward;
  *           any post-scaling done by the host applies as a constant
  *           multiplier in the chain rule)
