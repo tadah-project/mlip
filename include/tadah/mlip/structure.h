@@ -134,9 +134,11 @@ struct Structure {
   /** @return temperature of this structure in K */
   double get_temperature() const;
 
-  /** @return virial pressure calculated from the stress tensor.
+  /** @return the virial pressure, -trace(stress)/3: positive under
+   *  compression, since the stored stress is the Cauchy stress (positive
+   *  under tension).
    *
-   *  Units: energy/distance^3
+   *  Units: those of the stress, eV/Angstrom^3.
    */
   double get_virial_pressure() const;
 

@@ -14,7 +14,7 @@ namespace mlip {
  *        move as F' = M F and the stress as S' = M * S * M^T, exactly. A
  *        shear or a scaling changes the structure itself; its stored energy,
  *        forces and stress no longer belong to it (shear applies
- *        S' = M * S * M^T, scale multiplies the stress by factor^2).
+ *        S' = M * S * M^T, scale leaves them as they are).
  *
  * New additions:
  *   - scaleVolumeToDensity: resizes the cell to achieve a target density.
@@ -26,8 +26,9 @@ class StructureTransformation
 {
 public:
   /**
-   * Scales cell vectors and atomic positions by a factor > 0.
-   * Virial stress => S' = factor^2 * S (common approach for isotropic scaling).
+   * Scales cell vectors and atomic positions by a factor > 0. The energy,
+   * forces and stress are left as they are: they belong to the structure
+   * before scaling.
    */
   static void scale(Structure &st, double factor);
 
@@ -40,9 +41,8 @@ public:
    *   pos     -> s * pos
    *   energy  -> energy        (invariant)
    *   force   -> force / s     (chain rule on E(r))
-   *   stress  -> stress        (Tadah stores the virial V*sigma_Cauchy with units
-   *                             of energy; under V -> s^3 V and sigma_Cauchy -> sigma/s^3
-   *                             the product is invariant)
+   *   stress  -> stress / s^3  (the stored Cauchy stress, eV/A^3: the virial
+   *                             V*sigma is invariant and V -> s^3 V)
    *
    * Throws std::invalid_argument if s <= 0, std::runtime_error if the resulting
    * cell is near-singular.

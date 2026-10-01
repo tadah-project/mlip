@@ -356,11 +356,12 @@ double Structure::get_temperature() const {
 }
 
 /**
- * Returns the virial pressure, units of (energy / distance^3).
- * Reason: The virial pressure is needed for dealing with stress or internal equations of state.
+ * Returns the virial pressure -trace(stress)/3 in the stress unit
+ * (eV/A^3): positive under compression, since the stored stress is the
+ * Cauchy stress, positive under tension.
  */
 double Structure::get_virial_pressure() const {
-  return stress.trace() / get_volume() / 3.0;
+  return -stress.trace() / 3.0;
 }
 
 /**
@@ -372,7 +373,7 @@ double Structure::get_virial_pressure() const {
  */
 double Structure::get_pressure(double T, double kB) const {
   double vpress = get_virial_pressure();
-  return vpress + natoms() * kB * T / get_volume();
+  return vpress + natoms() * kB * T / get_volume();  // + N k_B T / V
 }
 
 /**

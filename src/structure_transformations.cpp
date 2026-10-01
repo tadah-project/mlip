@@ -75,8 +75,8 @@ void StructureTransformation::scale(Structure &st, double factor)
   for (auto &atom : st.atoms) {
     atom.position = factor * atom.position;
   }
-  // Common approach => stress is factor^2 * stress
-  st.stress = (factor*factor) * st.stress;
+  // The energy, forces and stress belong to the structure before scaling;
+  // they are left as they are.
 
   checkNearSingular(st);
 }
@@ -92,8 +92,9 @@ void StructureTransformation::rescaleLength(Structure &st, double s)
     atom.position = s * atom.position;
     atom.force    = inv_s * atom.force;
   }
-  // Energy and stored virial stress are invariant under uniform length rescaling.
-  // (Tadah's stress is the virial V * sigma_Cauchy with units of energy.)
+  // E'(r') = E(r'/s): the energy and the virial V*sigma are invariant, and
+  // V grows by s^3, so the stored stress (eV/A^3) becomes sigma / s^3.
+  st.stress = (inv_s * inv_s * inv_s) * st.stress;
   checkNearSingular(st);
 }
 

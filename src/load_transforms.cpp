@@ -453,7 +453,7 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
       core::Logger::instance().log(
           core::LogLevel::INFO,
           "LSCALE: rescaling positions/cell by ", two_decimal(s),
-          ", forces by 1/s; energy and stress invariant.");
+          ", forces by 1/s, stress by 1/s^3; energy invariant.");
     }
   }
 
