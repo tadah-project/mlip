@@ -77,7 +77,7 @@ private:
    * @brief Shows instructions for exporting in the user’s shell so the 
    *        variable persists across multiple runs *in that same terminal session.*
    *
-   * Also hints how to place it in shell contexturation (e.g. ~/.bashrc) if desired.
+   * Also hints how to place it in shell configuration (e.g. ~/.bashrc) if desired.
    *
    * @param keyName  The env variable name.
    * @param keyValue The key value to be exported.

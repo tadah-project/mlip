@@ -27,7 +27,8 @@ namespace mlip {
  * - eV for energy
  * - Ångström for distance
  * - eV/Å for force
- * - eV/Å³ for pressure (converted from GPa)
+ * - eV/Å³ for the stress (converted from GPa), the Cauchy stress as
+ *   CASTEP prints it (positive under tension)
  * - ps for time
  * 
  * If there is no stress tensor, it is set to zero.

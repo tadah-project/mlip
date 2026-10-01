@@ -52,7 +52,7 @@ class M_KRR: public M_Tadah_Base,
 public:
 
   /** 
-     * @brief Initializes for training or prediction using a contexturation.
+     * @brief Initializes for training or prediction using a configuration.
      * 
    * **Example**:
    * \code{.cpp}
@@ -71,7 +71,7 @@ public:
   }
 
   /** 
-   * @brief Initializes for training or prediction using a kernel and contexturation.
+   * @brief Initializes for training or prediction using a kernel and configuration.
    * 
    * @param kernel Kernel function.
    * @param c Contexturation object.

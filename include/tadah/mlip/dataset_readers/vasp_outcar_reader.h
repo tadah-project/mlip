@@ -14,6 +14,11 @@ namespace mlip {
  * This class implements the DatasetReader interface for handling
  * VASP OUTCAR files.
  *
+ * Each ionic step gives a structure with the free energy F (the
+ * 'free  energy   TOTEN' line, whose gradient the forces and the stress
+ * are), the forces, and the Cauchy stress in eV/A^3: minus the 'in kB'
+ * tensor, which VASP prints with the pressure sign.
+ *
  * Example usage:
  * @code
  * StructureDB my_db;

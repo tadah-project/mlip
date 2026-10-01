@@ -67,7 +67,10 @@ struct Structure {
    *  [0, 1) are fine): NNFinder finds every periodic image. */
   tadah::core::Matrix3d cell;
 
-  /** Virial stress tensor. */
+  /** Stress tensor: the Cauchy stress in eV/Angstrom^3, positive under
+   *  tension (sigma = (1/V) dE/d(strain), what the model predicts; the
+   *  negative of VASP's 'in kB' tensor, and of the pressure LAMMPS
+   *  reports). The rows are those of the 3x3 tensor; it is symmetric. */
   tadah::core::stress_type stress;
 
   /** Container for atoms which belong to this structure */
