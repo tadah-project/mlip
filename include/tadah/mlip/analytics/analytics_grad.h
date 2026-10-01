@@ -18,7 +18,7 @@
  *           the linearised Voigt-like 6-cell index for STRESS, matching
  *           Analytics' iteration order x in [0..3), y in [x..3))
  *   value = d(metric)/d(predicted cell), with units consistent with
- *           Analytics (eV/atom for energy metrics, raw eV/A and GPa for
+ *           Analytics (eV/atom for energy metrics, raw eV/A and eV/A^3 for
  *           force / stress unless the host scales the metric afterward;
  *           any post-scaling done by the host applies as a constant
  *           multiplier in the chain rule)
@@ -45,6 +45,7 @@
 
 #include <tadah/core/core_types.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/analytics/analytics.h>
 
 #include <cmath>
 #include <stdexcept>
@@ -286,6 +287,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         throw std::runtime_error("analytics_grad::frmse: size mismatch");
     if (truth.dbidx != pred.dbidx)
         throw std::runtime_error("analytics_grad::frmse: dataset layout mismatch");
+    require_predicted_forces(truth, pred, "analytics_grad::frmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;

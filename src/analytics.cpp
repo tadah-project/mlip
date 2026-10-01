@@ -3,6 +3,25 @@
 namespace tadah {
 namespace mlip {
 
+void require_predicted_forces(const StructureDB &truth,
+                              const StructureDB &pred,
+                              const char *who)
+{
+    for (size_t i=0; i<truth.size(); ++i) {
+        const size_t n_ref = truth(i).natoms();
+        const size_t n_pred = pred(i).atoms.size();
+        if (n_pred == n_ref) continue;
+        std::string msg = std::string(who) + ": structure "
+            + std::to_string(i+1) + " of " + std::to_string(truth.size());
+        if (!truth(i).label.empty())
+            msg += " ('" + truth(i).label + "')";
+        msg += " has " + std::to_string(n_pred) + " predicted forces for its "
+            + std::to_string(n_ref) + " atoms; a force metric needs a "
+              "prediction made with forces for every atom";
+        throw std::runtime_error(msg);
+    }
+}
+
 Analytics::Analytics(const StructureDB &st, const StructureDB &stp):
     st(st),
     stp(stp)
@@ -32,14 +51,13 @@ tadah::core::t_type Analytics::calc_e_mae() const{
 }
 
 tadah::core::t_type Analytics::calc_f_mae() const{
+    require_predicted_forces(st, stp, "Analytics::calc_f_mae");
 
     tadah::core::t_type fmae_vec(st.dbidx.size()-1);
     double fmae=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        // assume stp(i).natoms()==st(i).natoms()
-
         for (size_t a=0; a<st(i).natoms(); ++a) {
             for (size_t k=0; k<3; ++k) {
                 fmae += std::abs(st(i).atoms[a].force(k) - stp(i).atoms[a].force(k));
@@ -121,14 +139,13 @@ tadah::core::t_type Analytics::calc_e_rmse() const{
 }
 
 tadah::core::t_type Analytics::calc_f_rmse() const{
+    require_predicted_forces(st, stp, "Analytics::calc_f_rmse");
 
     tadah::core::t_type frmse_vec(st.dbidx.size()-1);
     double frmse=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        // assume stp(i).natoms()==st(i).natoms()
-
         for (size_t a=0; a<st(i).natoms(); ++a) {
             for (size_t k=0; k<3; ++k) {
                 frmse += std::pow(st(i).atoms[a].force(k) - stp(i).atoms[a].force(k),2);
@@ -195,6 +212,7 @@ tadah::core::t_type Analytics::calc_e_r_sq() const {
 }
 
 tadah::core::t_type Analytics::calc_f_r_sq() const {
+    require_predicted_forces(st, stp, "Analytics::calc_f_r_sq");
     const auto nseg = st.dbidx.size() - 1;
     tadah::core::t_type f_r_sq_vec(nseg);
 
