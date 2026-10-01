@@ -378,7 +378,7 @@ TEST_CASE("Structure::is_the_same: the matching does not depend on the atom "
 /* Pins: is_the_same compares positions through the cell, so it refuses a
  * structure whose cell is singular (zero, or with coplanar lattice
  * vectors) with a std::invalid_argument naming that structure's label,
- * whichever of the two it is.
+ * whichever of the two it is (the structure called is checked first).
  * Before the fix: the inverse of the singular cell was NaN, no atom
  * matched, and is_the_same returned false: 'data dedup' kept exact
  * copies, silently. */
@@ -411,7 +411,8 @@ TEST_CASE("Structure::is_the_same: a singular cell is refused, naming the "
         (void)pair->is_the_same(bad, 1e-6);
         FAIL("no exception (singular cell as the argument)");
       } catch (const std::invalid_argument &e) {
-        CHECK_THAT(e.what(), Catch::Contains(bad.label));
+        // 'copy' is singular too, and is checked first.
+        CHECK_THAT(e.what(), Catch::Contains(pair == &copy ? copy.label : bad.label));
         CHECK_THAT(e.what(), Catch::Contains("singular"));
       }
     }
