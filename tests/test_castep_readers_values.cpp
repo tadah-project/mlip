@@ -756,6 +756,50 @@ TEST_CASE("CASTEP .castep reader: line and quad minimisation SCFs pair with thei
   }
 }
 
+// Pins: a fixed-cell geometry optimisation with the finite basis set
+// correction on keeps its iteration 0. Mn.castep (30 Mn, 'stress
+// calculation : on', but a fixed cell, so no stress block is printed) gives
+// 16 structures, iterations 0-15. Structure 1 is the last finite-basis SCF
+// on the initial geometry: E = -87430.87859822 eV (line 525), Mn 1 at
+// fractional (0.135, 0.1356, 0.13561) (positions block lines 274-303),
+// force (-0.11769, -0.0768, -0.10067) eV/A; structure 2 is the line
+// minimisation of iteration 1: E = -87431.2322915 eV, Mn 1 at (0.133488,
+// 0.133739, 0.133952), force (-0.04067, -0.04976, -0.0373). Values as ASE
+// 3.25 reads them. Fractional positions 1e-9 (through the cell inverse).
+// Before the fix: the finite-basis SCF was completed only by a stress block,
+// which this file does not print, so iteration 0 was dropped silently: 15
+// structures, the first one iteration 1.
+TEST_CASE("CASTEP .castep reader: a fixed-cell geometry optimisation keeps its iteration 0",
+          "[castep_readers][castep][fbsc]") {
+  PeriodicTable::initialize();
+  StructureDB db;
+  read_into<CastepCastepReader>(db, "./tests_data/valid_castep_castep/Mn.castep");
+  CHECK(db.size() == 16);
+  REQUIRE(db.size() >= 2);
+  struct Expected {
+    double e;
+    double frac[3], force[3];
+  };
+  const Expected expected[2] = {
+      {-87430.87859822, {0.135, 0.1356, 0.13561}, {-0.11769, -0.0768, -0.10067}},
+      {-87431.2322915, {0.133488, 0.133739, 0.133952}, {-0.04067, -0.04976, -0.0373}}};
+  for (size_t k = 0; k < 2; ++k) {
+    INFO("structure " << k + 1 << " label '" << db(k).label << "'");
+    const Structure &st = db(k);
+    CHECK(st.energy == Approx(expected[k].e).epsilon(1e-14));
+    REQUIRE(st.natoms() == 30);
+    const tadah::core::Matrix3d inv = st.cell.inverse();
+    for (int c = 0; c < 3; ++c) {
+      double f = 0;
+      for (int r = 0; r < 3; ++r) f += st.atoms[0].position[r] * inv(r, c);
+      CHECK(f == Approx(expected[k].frac[c]).margin(1e-9));
+      CHECK(st.atoms[0].force[c] == Approx(expected[k].force[c]).margin(1e-12));
+    }
+  }
+  CHECK_THAT(db(0).label, Catch::Contains("C: (274 : 303)"));
+  CHECK_THAT(db(0).label, Catch::Contains("E: 525"));
+}
+
 // Pins: atoms read from a .castep file carry their element, Z included:
 // geom.castep (8 H and 2 Ra per structure) gives Z 1 and 88, and
 // StructureDB::get_unique_elements() has both.
