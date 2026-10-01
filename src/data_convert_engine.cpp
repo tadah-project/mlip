@@ -28,10 +28,10 @@ int DataConvertEngine::run(tadah::mlip::Task &task) {
     std::vector<std::string> summaryStrVec;
     for (auto &ds: datasets) {
       StructureDB stdb_;
+      // get_reader throws for a file it cannot open or does not recognise.
       std::unique_ptr<DatasetReader> reader = DatasetReaderSelector::get_reader(ds,stdb_);
       reader->parse_data();
-      if (reader)
-        summaryStrVec.push_back(reader->get_summary());
+      summaryStrVec.push_back(reader->get_summary());
       stdb.add(stdb_);
     }
 

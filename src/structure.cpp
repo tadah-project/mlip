@@ -407,6 +407,12 @@ bool Structure::operator==(const Structure& st) const {
  * Checks if two structures match in cell vectors, number of atoms, species, and coordinates,
  * ignoring order of atoms and not comparing energies, forces, or labels.
  * Reason: More lenient check to see if structures represent the "same" geometry.
+ *
+ * Each atom must match a distinct atom of `st` of the same element whose
+ * position differs by a lattice translation plus at most `thr` in every
+ * Cartesian component (the minimal image through this cell, rows = lattice
+ * vectors: d = f * cell, f reduced to [-1/2, 1/2]). Atoms are matched in
+ * order, each to the first unused match.
  */
 bool Structure::is_the_same(const Structure& st, double thr) const {
   bool result =
@@ -415,15 +421,36 @@ bool Structure::is_the_same(const Structure& st, double thr) const {
 
   if (!result) return false;
 
-  size_t count = 0;
+  const tadah::core::Matrix3d inv = cell.inverse();
+  std::vector<bool> used(natoms(), false);
   for (size_t i = 0; i < natoms(); ++i) {
-    for (size_t j = i; j < natoms(); ++j) {
-      if (atoms[i].is_the_same(st.atoms[j], thr)) {
-        count++;
+    bool matched = false;
+    for (size_t j = 0; j < natoms() && !matched; ++j) {
+      if (used[j]) continue;
+      if (!(static_cast<const tadah::core::Element &>(atoms[i]) ==
+            static_cast<const tadah::core::Element &>(st.atoms[j])))
+        continue;
+      double f[3];
+      for (size_t c = 0; c < 3; ++c) {
+        f[c] = 0;
+        for (size_t k = 0; k < 3; ++k)
+          f[c] += (st.atoms[j].position[k] - atoms[i].position[k]) * inv(k, c);
+        f[c] -= std::round(f[c]);
+      }
+      bool within = true;
+      for (size_t k = 0; k < 3 && within; ++k) {
+        double d = 0;
+        for (size_t c = 0; c < 3; ++c) d += f[c] * cell(c, k);
+        within = std::fabs(d) <= thr;
+      }
+      if (within) {
+        used[j] = true;
+        matched = true;
       }
     }
+    if (!matched) return false;
   }
-  return (count == natoms());
+  return true;
 }
 
 /**
