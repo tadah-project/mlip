@@ -33,6 +33,15 @@ static Structure makeSimpleStructure()
     return st;
 }
 
+// Pins scale(): a geometric scaling of the cell and the positions that
+// leaves every stored label as it was. The scaled structure is a different
+// structure, and its stored energy, forces and stress no longer belong to it
+// (the class documentation says so); scale() does not pretend to transform
+// them, so the stress, like the energy and the forces, is unchanged
+// (scaleToVolume() goes through scale()). The stress is the Cauchy stress in
+// eV/A^3; multiplying it by factor^2 has no physical basis.
+// Before the fix: scale(st, 2) multiplied the stress by factor^2, giving
+// 4.0 and 6.0 instead of 1.0 and 1.5 (and 4x the off-diagonal -0.25).
 TEST_CASE("StructureTransformation scale()", "[transform]")
 {
     Structure st = makeSimpleStructure();
@@ -42,9 +51,12 @@ TEST_CASE("StructureTransformation scale()", "[transform]")
         REQUIRE_THROWS_AS(StructureTransformation::scale(st, -1.0), std::invalid_argument);
     }
 
-    SECTION("Valid scale factor modifies positions, cell, and stress") {
+    SECTION("Valid scale factor scales positions and cell; labels unchanged") {
         st.stress(0,0) = 1.0;
         st.stress(1,1) = 1.5;
+        st.stress(1,2) = st.stress(2,1) = -0.25;
+        st.energy = -7.5;
+        st.atoms[1].force = Vec3d(0.3, -0.2, 0.1);
 
         double oldVol = StructureProperties::getVolume(st);
         REQUIRE(oldVol == Approx(8.0));
@@ -58,12 +70,42 @@ TEST_CASE("StructureTransformation scale()", "[transform]")
         REQUIRE(st.atoms[0].position[0] == Approx(0.0));
         REQUIRE(st.atoms[1].position[0] == Approx(2.0));
 
-        // Stress ~ factor^2 => 4× for factor=2
-        REQUIRE(st.stress(0,0) == Approx(4.0)); 
-        REQUIRE(st.stress(1,1) == Approx(6.0)); 
+        // Stress, energy and forces are left as they were (exactly).
+        CHECK(st.stress(0,0) == 1.0);
+        CHECK(st.stress(1,1) == 1.5);
+        CHECK(st.stress(2,2) == 0.0);
+        CHECK(st.stress(1,2) == -0.25);
+        CHECK(st.stress(2,1) == -0.25);
+        CHECK(st.stress(0,1) == 0.0);
+        CHECK(st.energy == -7.5);
+        CHECK(st.atoms[1].force[0] == 0.3);
+        CHECK(st.atoms[1].force[1] == -0.2);
+        CHECK(st.atoms[1].force[2] == 0.1);
+    }
+
+    SECTION("scaleToVolume() leaves the stress unchanged") {
+        st.stress(0,0) = 1.0;
+        st.stress(1,1) = 1.5;
+        StructureTransformation::scaleToVolume(st, 27.0);
+        REQUIRE(StructureProperties::getVolume(st) == Approx(27.0).epsilon(1e-12));
+        CHECK(st.stress(0,0) == 1.0);
+        CHECK(st.stress(1,1) == 1.5);
     }
 }
 
+// Pins rescaleLength(s), the LSCALE transform: the same configuration seen at
+// lengths times s, E'(r') = E(r'/s). Positions and cell are multiplied by s,
+// the energy is unchanged, forces are divided by s (chain rule), and the
+// stored stress -- the Cauchy stress (1/V) dE/d(strain) in eV/A^3 -- is
+// divided by s^3: the strain derivative of E is unchanged and V' = s^3 V.
+// Equivalently the energy-unit virial V*sigma is invariant.
+// Reference values by hand: 1.05^3 = 1.157625, so 1.0, 1.5, -0.4, -0.25
+// become 0.863837598531476, 1.29575639779721, -0.345535039412590,
+// -0.215959399632869; the cube a = 3 A with sigma = 0.01 I at s = 2 gives
+// 0.01 / 8 = 0.00125 (V = 27 -> 216 A^3, V*sigma = 0.27 eV both times).
+// Before the fix: rescaleLength() left the stress unchanged (the stored
+// stress was taken for an energy-unit virial), so the cases below read 1.0,
+// 1.5, -0.4, -0.25 and 0.01 instead.
 TEST_CASE("StructureTransformation rescaleLength()", "[transform]")
 {
     Structure st = makeSimpleStructure();
@@ -101,13 +143,14 @@ TEST_CASE("StructureTransformation rescaleLength()", "[transform]")
         REQUIRE(st.energy == Approx(-7.0));
     }
 
-    SECTION("Length rescale transforms positions/cell/forces; stress and energy invariant") {
+    SECTION("Length rescale transforms positions/cell/forces/stress; energy invariant") {
         st.atoms[0].force = Vec3d(1.0, 2.0, 3.0);
         st.atoms[1].force = Vec3d(-0.5, 0.0, 0.5);
         st.stress.set_zero();
         st.stress(0,0) = 1.0;
         st.stress(1,1) = 1.5;
         st.stress(2,2) = -0.4;
+        st.stress(0,2) = st.stress(2,0) = -0.25;
         st.energy = -7.5;
 
         const double s = 1.05;
@@ -131,17 +174,46 @@ TEST_CASE("StructureTransformation rescaleLength()", "[transform]")
         REQUIRE(st.atoms[1].force[0] == Approx(-0.5 / s));
         REQUIRE(st.atoms[1].force[2] == Approx(0.5 / s));
 
-        // stress invariant (Tadah stores virial in energy units)
-        REQUIRE(st.stress(0,0) == Approx(1.0));
-        REQUIRE(st.stress(1,1) == Approx(1.5));
-        REQUIRE(st.stress(2,2) == Approx(-0.4));
+        // Cauchy stress (eV/A^3) divided by s^3 = 1.157625, every component
+        CHECK(st.stress(0,0) == Approx(0.863837598531476).epsilon(1e-13));
+        CHECK(st.stress(1,1) == Approx(1.29575639779721).epsilon(1e-13));
+        CHECK(st.stress(2,2) == Approx(-0.345535039412590).epsilon(1e-13));
+        CHECK(st.stress(0,2) == Approx(-0.215959399632869).epsilon(1e-13));
+        CHECK(st.stress(2,0) == Approx(-0.215959399632869).epsilon(1e-13));
+        CHECK(st.stress(0,1) == 0.0);
+        CHECK(st.stress(1,2) == 0.0);
 
         // energy invariant
         REQUIRE(st.energy == Approx(-7.5));
 
-        // volume scales by s^3
+        // volume scales by s^3, so the virial V*sigma is invariant
         const double newVol = StructureProperties::getVolume(st);
         REQUIRE(newVol == Approx(8.0 * s * s * s));
+        CHECK(newVol * st.stress(0,0) == Approx(8.0 * 1.0).epsilon(1e-13));
+        CHECK(newVol * st.stress(2,2) == Approx(8.0 * -0.4).epsilon(1e-13));
+    }
+
+    SECTION("Cube a = 3 A, sigma = 0.01 I, s = 2: sigma' = 0.00125") {
+        Structure cube;
+        cube.cell.set_zero();
+        cube.cell(0,0) = cube.cell(1,1) = cube.cell(2,2) = 3.0;
+        cube.stress.set_zero();
+        cube.stress(0,0) = cube.stress(1,1) = cube.stress(2,2) = 0.01;
+        cube.add_atom(Atom(PeriodicTable::find_by_symbol("Ta"), 0.0, 0.0, 0.0));
+        cube.add_atom(Atom(PeriodicTable::find_by_symbol("Ta"), 1.5, 1.5, 1.5));
+        cube.atoms[1].force = Vec3d(0.2, 0.0, -0.4);
+
+        StructureTransformation::rescaleLength(cube, 2.0);
+
+        REQUIRE(StructureProperties::getVolume(cube) == Approx(216.0).epsilon(1e-14));
+        for (int i = 0; i < 3; ++i) {
+            INFO("diagonal " << i);
+            CHECK(cube.stress(i,i) == Approx(0.00125).epsilon(1e-14));
+        }
+        CHECK(cube.stress(0,1) == 0.0);
+        CHECK(cube.atoms[1].force[0] == Approx(0.1).epsilon(1e-14));
+        CHECK(cube.atoms[1].force[2] == Approx(-0.2).epsilon(1e-14));
+        CHECK(cube.atoms[1].position[0] == Approx(3.0).epsilon(1e-14));
     }
 
     SECTION("Round trip s and 1/s recovers original") {

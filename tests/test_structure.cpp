@@ -49,6 +49,25 @@ TEST_CASE( "Testing Structure class volume", "[structure_volume]" ) {
 
 
 }
+// Pins the pressure helpers under the stored stress convention: Structure::
+// stress is the Cauchy stress in eV/A^3, positive under tension, so
+// get_virial_pressure() = -tr(sigma)/3 in eV/A^3 (positive under
+// compression; the stored stress is already per volume, so the volume does
+// not enter) and get_pressure(T) adds the ideal-gas term N kB T / V.
+// Reference values by hand (exact decimal arithmetic):
+//  - sigma = -0.312030 I (compression) gives P = +0.312030 eV/A^3, i.e.
+//    0.312030 * 1602.1766208 = +499.927170988224 kbar (the 499.93 kbar this
+//    case has always quoted), whatever the volume;
+//  - a = 3 A cube (V = 27 A^3), sigma = +0.01 I (tension) gives
+//    P = -0.01 eV/A^3 (-1.60 GPa); with 2 atoms at T = 300 K,
+//    N kB T / V = 2 * 8.617333262145e-5 * 300 / 27 = 0.00191496294714333,
+//    so get_pressure(300) = -0.00808503705285667 eV/A^3.
+// The tolerances (relative 1e-12, 1e-14 where no volume enters) cover the
+// rounding of a trace, a cube and one product.
+// Before the fix: get_virial_pressure() returned +tr(sigma)/(3V), the
+// pressure of an energy-unit "virial" V*sigma: -0.312030/823.9137 =
+// -3.787e-4 (eV/A^6, wrong sign) = -0.6068 "kbar", and +3.704e-4 instead of
+// -0.01 for the tensile cube.
 TEST_CASE( "Testing Structure virial pressure calculations", "[structure_virial_pressures]" ) {
 
   Structure st;
@@ -56,23 +75,79 @@ TEST_CASE( "Testing Structure virial pressure calculations", "[structure_virial_
       0.0,9.374769,0.0,
       0.0,0.0,9.374769);
 
-  REQUIRE(st.get_volume() == Approx(823.91));
+  REQUIRE(st.get_volume() == Approx(823.913702672641).epsilon(1e-12));
 
-  st.stress.load(257.0893807653,0.0,0.0,
-      0.0,257.0893807653,0.0,
-      0.0,0.0,257.0893807653);
-  REQUIRE(fac*st.get_virial_pressure() == Approx(499.93));
+  st.stress.load(-0.312030,0.0,0.0,
+      0.0,-0.312030,0.0,
+      0.0,0.0,-0.312030);
+  CHECK(st.get_virial_pressure() == Approx(0.312030).epsilon(1e-14));
+  CHECK(fac*st.get_virial_pressure() == Approx(499.927170988224).epsilon(1e-12));
+  CHECK(fac*st.get_virial_pressure() == Approx(499.93).margin(0.005));
 
+  // Only the trace enters: a symmetric shear leaves the pressure unchanged.
+  st.stress(0,1) = st.stress(1,0) = 0.05;
+  st.stress(1,2) = st.stress(2,1) = -0.02;
+  st.stress(0,2) = st.stress(2,0) = 0.01;
+  CHECK(st.get_virial_pressure() == Approx(0.312030).epsilon(1e-14));
+
+  // Tension: a positive Cauchy stress is a negative pressure.
+  Structure cube;
+  cube.cell.load(3.0,0.0,0.0,
+      0.0,3.0,0.0,
+      0.0,0.0,3.0);
+  cube.stress.load(0.01,0.0,0.0,
+      0.0,0.01,0.0,
+      0.0,0.0,0.01);
+  cube.add_atom(Atom(Element("Ta"),0.0,0.0,0.0,0,0,0));
+  cube.add_atom(Atom(Element("Ta"),1.5,1.5,1.5,0,0,0));
+  REQUIRE(cube.get_volume() == Approx(27.0).epsilon(1e-14));
+  CHECK(cube.get_virial_pressure() == Approx(-0.01).epsilon(1e-14));
+  CHECK(cube.get_pressure(0) == Approx(-0.01).epsilon(1e-14));
+  CHECK(cube.get_pressure(300) ==
+        Approx(-0.00808503705285667).epsilon(1e-12));
 }
+// Pins tests_data/structure_1.dat and the pressure of a real structure.
+// The fixture is Structure 13 of Tadah.MLIP/examples/CLI/ex_1/tdata.db
+// (LAMMPS MD with the Ta1_Ravelo_2013 EAM, 54 atoms), copied exactly: its
+// cell, energy, Cauchy stress in eV/A^3 and all three force components; only
+// the label and the weights line (1.1 0.12 0.765e-8, which exercises the
+// three-weight form) are the test's own. The structure is under tension:
+// tr(sigma)/3 = +0.0166683108833 eV/A^3, so
+//   get_virial_pressure() = -0.0166683108833333 eV/A^3 = -26.7055780055029 kbar,
+//   get_pressure(300)     = that + 54 kB 300 / 989.521820687578
+//                         = -0.0152575203789891 eV/A^3 = -24.4452424425958 kbar
+// (exact decimal arithmetic on the file's values; relative tolerance 1e-12).
+// Before the fix: get_virial_pressure() returned +tr(sigma)/(3V) =
+// +1.6845e-5 (+0.0270 "kbar"), and get_pressure(300) +2.2873 "kbar". (The
+// old fixture stored V*sigma, which made the old formula print +26.7056, the
+// pressure with the wrong sign, and its z-force column repeated fy.)
 TEST_CASE("Testing Structure read and write", "[structure_read_write]") {
     Structure st;
     st.read("tests_data/structure_1.dat");
 
-    REQUIRE(st.get_volume() == Approx(989.521812));
+    // The fixture is the source structure, not V*sigma, and fz is not fy.
+    REQUIRE(st.natoms() == 54);
+    CHECK(st.energy == -433.794159295855);
+    CHECK(st.stress(0, 0) == 0.017265228156);
+    CHECK(st.stress(1, 1) == 0.015028531649);
+    CHECK(st.stress(2, 2) == 0.017711172845);
+    CHECK(st.stress(0, 1) == 0.000675090722);
+    CHECK(st.stress(1, 2) == -0.000079905262);
+    CHECK(st.stress(2, 0) == 0.000748708098);
+    CHECK(st.atoms[0].force(1) == -0.132338283317);
+    CHECK(st.atoms[0].force(2) == -0.691587489453);
+    CHECK(st.atoms[53].force(2) == -0.626870790718);
 
-    REQUIRE(fac * st.get_virial_pressure() == Approx(26.705578));
-    REQUIRE(fac * st.get_pressure(300) == Approx(28.965914));
-    REQUIRE(fac * st.get_pressure(0) == Approx(26.705578));
+    REQUIRE(st.get_volume() == Approx(989.521820687578).epsilon(1e-12));
+
+    CHECK(st.get_virial_pressure() ==
+          Approx(-0.0166683108833333).epsilon(1e-12));
+    CHECK(fac * st.get_virial_pressure() ==
+          Approx(-26.7055780055029).epsilon(1e-12));
+    CHECK(fac * st.get_pressure(300) ==
+          Approx(-24.4452424425958).epsilon(1e-12));
+    CHECK(fac * st.get_pressure(0) ==
+          Approx(-26.7055780055029).epsilon(1e-12));
 
     // Create a temporary file
     std::FILE* tmpFile = std::tmpfile();
@@ -91,14 +166,18 @@ TEST_CASE("Testing Structure read and write", "[structure_read_write]") {
     Structure st_temp;
     st_temp.read(tempfile);
 
-    REQUIRE(st_temp.get_volume() == Approx(989.521812));
-    REQUIRE(fac * st_temp.get_virial_pressure() == Approx(26.705578));
-    REQUIRE(fac * st_temp.get_pressure(300) == Approx(28.965914));
-    REQUIRE(fac * st_temp.get_pressure(0) == Approx(26.705578));
+    std::fclose(tmpFile);
+
+    CHECK(st_temp.get_volume() == Approx(989.521820687578).epsilon(1e-12));
+    CHECK(fac * st_temp.get_virial_pressure() ==
+          Approx(-26.7055780055029).epsilon(1e-12));
+    CHECK(fac * st_temp.get_pressure(300) ==
+          Approx(-24.4452424425958).epsilon(1e-12));
+    CHECK(fac * st_temp.get_pressure(0) ==
+          Approx(-26.7055780055029).epsilon(1e-12));
+    CHECK(st_temp.atoms[0].force(2) == -0.691587489453);
 
     REQUIRE(st == st_temp);
-
-    // Temporary file will be closed automatically
 }
 TEST_CASE("Testing Structure compare", "[structure_compare]") {
     Structure st;
