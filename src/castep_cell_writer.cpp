@@ -52,6 +52,8 @@ void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
   }
   file << "%ENDBLOCK POSITIONS_ABS" << std::endl;
   file.close();
+  // A write can fail after the file opened (a full disk).
+  if (file.fail()) throw std::runtime_error("Could not write the file: " + outFile);
 }
 } // namespace mlip
 } // namespace tadah

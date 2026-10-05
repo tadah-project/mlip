@@ -1,6 +1,7 @@
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/data_balance_engine.h>
 #include <tadah/mlip/load_transforms.h>
+#include <tadah/mlip/output/writable_outputs.h>
 #include <tadah/mlip/structure_db.h>
 
 
@@ -76,13 +77,10 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     std::vector<size_t> indices;
     std::vector<std::string> indicesStrVec(taskContext.size("INDEX"));
     taskContext.get<>("INDEX", indicesStrVec);
-    indices = core::parse_indices(indicesStrVec);
-    for (const auto idx : indices) {
-      if (idx >= numStructures) {
-        throw std::runtime_error("Index out of range.");
-      }
-      indicesBool[idx-1] = true;
-    }
+    // 1-based, checked against 1 ... numStructures.
+    indices = core::parse_dataset_indices(indicesStrVec, numStructures,
+                                          "tadah data balance");
+    for (const auto idx : indices) indicesBool[idx - 1] = true;
   } else {
     std::fill(indicesBool.begin(), indicesBool.end(), true);
   }
@@ -162,6 +160,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
   bool merge = taskContext.get<bool>("MERGE");
   size_t numeric = StructureDB::dataset_digits(taskContext);
 
+  require_writable_outputs(outFiles, "tadah data balance");
   if (merge) {  // merge all stdbs into one
     StructureDB stdb;
     for (const auto& _stdb : inStdbs) stdb.add(_stdb);

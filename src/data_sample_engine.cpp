@@ -5,8 +5,6 @@
 
 
 #include <algorithm>
-#include <system_error>
-#include <charconv>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -18,72 +16,6 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-namespace {
-/* The whole token `s` as an unsigned number, or false. */
-bool whole_number(const std::string &s, size_t &value) {
-  const auto r = std::from_chars(s.data(), s.data() + s.size(), value);
-  return !s.empty() && r.ec == std::errc{} && r.ptr == s.data() + s.size();
-}
-
-/* The 1-based indices of the INDEX values (each a comma-separated list of
- * 'i', 'a-b' or 'a-b:step'; several values form one list), in order,
- * repeated indices removed. Every segment is checked, against 1 ... total
- * too, before its range is expanded; a segment that is not an index, a
- * descending range or a step of 0 is refused, naming it. */
-std::vector<size_t> sample_indices(const std::vector<std::string> &values, size_t total) {
-  auto check = [&](size_t i, const std::string &seg) {
-    if (i == 0 || i > total)
-      throw std::runtime_error(
-          "tadah data sample: index " + std::to_string(i) +
-          (seg == std::to_string(i) ? "" : " (in '" + seg + "')") +
-          " is outside 1-" + std::to_string(total) + " (the dataset has " +
-          std::to_string(total) + " structures)");
-  };
-  std::vector<size_t> out;
-  std::vector<char> seen(total + 1, 0);
-  for (const auto &value : values) {
-    size_t pos = 0;
-    while (true) {
-      const size_t comma = value.find(',', pos);
-      const std::string seg = core::trim(value.substr(
-          pos, comma == std::string::npos ? std::string::npos : comma - pos));
-      const auto bad = [&](const std::string &why) {
-        return std::runtime_error("tadah data sample: index '" + seg + "' " + why +
-                                  " (use i, a-b or a-b:step, 1-based)");
-      };
-      size_t a = 0, b = 0, step = 1;
-      const size_t dash = seg.find('-');
-      if (dash == std::string::npos) {
-        if (!whole_number(seg, a)) throw bad("is not an index");
-        b = a;
-      } else {
-        const size_t colon = seg.find(':', dash);
-        const std::string end = seg.substr(
-            dash + 1, colon == std::string::npos ? std::string::npos : colon - dash - 1);
-        if (!whole_number(core::trim(seg.substr(0, dash)), a) ||
-            !whole_number(core::trim(end), b) ||
-            (colon != std::string::npos &&
-             !whole_number(core::trim(seg.substr(colon + 1)), step)))
-          throw bad("is not an index range");
-        if (a > b) throw bad("is a descending range");
-        if (step == 0) throw bad("has a step of 0");
-      }
-      check(a, seg);
-      check(b, seg);
-      for (size_t i = a;; i += step) {
-        if (!seen[i]) {
-          seen[i] = 1;
-          out.push_back(i);
-        }
-        if (b - i < step) break;
-      }
-      if (comma == std::string::npos) break;
-      pos = comma + 1;
-    }
-  }
-  return out;
-}
-}  // namespace
 
 int DataSampleEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
@@ -174,7 +106,8 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
                                ": the dataset has only " + structures);
   }
   if (taskContext.contains("INDEX")) {
-    // Parsed against 1 ... total (sample_indices refuses what it cannot use).
+    // Parsed against 1 ... total (parse_dataset_indices refuses what it
+    // cannot use).
     if (!isIndexParsed) parseIndices(taskContext);
     if (indices.empty())
       throw std::runtime_error("tadah data sample: --index selects nothing");
@@ -195,7 +128,8 @@ void DataSampleEngine::parseIndices(const core::Context &taskContext) {
     std::vector<std::string> indicesStrVec;
     indicesStrVec.resize(taskContext.size("INDEX"));
     taskContext.get<>("INDEX", indicesStrVec);
-    indices = sample_indices(indicesStrVec, inStdb.size());
+    indices = core::parse_dataset_indices(indicesStrVec, inStdb.size(),
+                                          "tadah data sample");
   }
   isIndexParsed = true;
 

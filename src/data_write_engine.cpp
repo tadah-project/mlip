@@ -1,6 +1,7 @@
 #include <tadah/core/logger.h>
 #include <tadah/core/utils.h>
 #include <tadah/mlip/engines/data_write_engine.h>
+#include <tadah/mlip/output/writable_outputs.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
 #include <tadah/mlip/structure_writers/structure_writer_selector.h>
@@ -56,9 +57,12 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
     writer->set_precision(taskContext.get<size_t>("NUMERIC"));
   }
 
+  std::vector<std::string> outFiles;
+  for (size_t i=0; i<indices.size(); ++i)
+    outFiles.push_back(taskContext.get<std::string>("OUTFILE",i));
+  require_writable_outputs(outFiles, "tadah data write");
   for (size_t i=0; i<indices.size(); ++i) {
-    std::string outFile = taskContext.get<std::string>("OUTFILE",i);
-    writer->write_data(outFile, indices[i]);
+    writer->write_data(outFiles[i], indices[i]);
   }
 
   return EXIT_SUCCESS;

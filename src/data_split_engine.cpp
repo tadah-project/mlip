@@ -1,5 +1,6 @@
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/data_split_engine.h>
+#include <tadah/mlip/output/writable_outputs.h>
 #include <tadah/mlip/structure_db.h>
 
 
@@ -35,6 +36,7 @@ int DataSplitEngine::run(tadah::mlip::Task &task) {
     std::shuffle(indices.begin(), indices.end(), g);
   }
 
+  require_writable_outputs(outFiles, "tadah data split");
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Dumping data into ", outFiles.size(), " files.");
   size_t total = 0;

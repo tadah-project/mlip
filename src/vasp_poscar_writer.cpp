@@ -89,6 +89,8 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
   }
 
   file.close();
+  // A write can fail after the file opened (a full disk).
+  if (file.fail()) throw std::runtime_error("Could not write the file: " + filename);
 }
 } // namespace mlip
 } // namespace tadah
