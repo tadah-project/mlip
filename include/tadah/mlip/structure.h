@@ -176,10 +176,15 @@ struct Structure {
    * If a stream contains more than one structure,
    * the first structure will be read.
    *
+   * A line of only whitespace (a CRLF file's '\r' included) is empty: it
+   * ends the structure. Fields after the seventh of an atom line are
+   * ignored.
+   *
    * @returns 0 if success, 1 otherwise
    * @throws std::runtime_error when a value is not a finite number or an
-   *         atom line is not 'Element px py pz fx fy fz'; the message names
-   *         the structure's label and the bad text.
+   *         atom line has fewer than the seven fields 'Element px py pz fx
+   *         fy fz'; the message names the structure's label and the bad
+   *         text.
    */
   int read(std::ifstream &ifs);
 
@@ -303,8 +308,10 @@ struct Structure {
    *         singular (zero, non-finite or coplanar lattice vectors), or
    *         `thr` is negative, not finite, or not below lambda/(2 sqrt 3),
    *         lambda the shortest lattice vector of either cell (above it two
-   *         images of one position could both match); the message names
-   *         the structure.
+   *         images of one position could both match), or a cell is written
+   *         with so skewed a basis that finding lambda would take more than
+   *         10^6 trial translations (write it with a reduced basis); the
+   *         message names the structure.
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 
