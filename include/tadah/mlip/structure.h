@@ -318,6 +318,8 @@ struct Structure {
   // move iterator forward to the next structure
   // return number of atoms in the structure
   // return 0 if there is no more structures
+  // Blank lines (whitespace only, '\r' included) before a label are
+  // skipped, and a blank line ends the atoms, as in read().
   static int next_structure(std::ifstream &ifs);
 
   /* clearing == drop the shared pointer */

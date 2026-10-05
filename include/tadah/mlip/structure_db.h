@@ -73,6 +73,7 @@ struct StructureDB {
      *
      * In the case of N greater than the number of available 
      * structures, this method will load only the available ones.
+     * Blank lines between structures are not counted.
      *
      * Return the number of loaded structures.
      */
@@ -147,13 +148,16 @@ struct StructureDB {
   /** Find unique elements in provided Context file */
   static std::set<tadah::core::Element> find_unique_elements(const tadah::core::Context &c);
 
-  /** Find unique elements in provided file */
+  /** Find unique elements in provided file. Blank lines (whitespace only,
+   * '\r' included) are read as Structure::read reads them. */
   static std::set<tadah::core::Element> find_unique_elements(const std::string &fn);
 
   /** Count number of structures and atoms in all datasets from the Context file. */
   static std::pair<int,int> count(const tadah::core::Context &c);
 
-  /** Count number of structures and atoms in a single dataset. */
+  /** Count number of structures and atoms in a single dataset. Blank lines
+   * (whitespace only, '\r' included) are read as Structure::read reads
+   * them. */
   static std::pair<int,int> count(const std::string fn);
 
   void clear_nn();
