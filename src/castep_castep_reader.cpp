@@ -1,5 +1,7 @@
 #include "tadah/core/element.h"
 #include "tadah/core/utils.h"
+#include <cmath>
+#include <limits>
 #include <string>
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/dataset_readers/castep_species.h>
@@ -132,6 +134,7 @@ void CastepCastepReader::parse_data() {
   // Current parser state and relevant flags
   CalcState current_state = CalcState::Idle; 
   bool md_task = false;  // the run's 'type of calculation' is molecular dynamics
+  bool go_task = false;  // ... geometry optimization
   bool stress_tensor_found = false;
   bool data_block_complete = false; // Indicates a completed set of structure data
 
@@ -157,16 +160,45 @@ void CastepCastepReader::parse_data() {
   bool geometry_printed = false;  // a cell or positions block since the last result
   int result_positions_start = -1, result_positions_stop = -1;  // for the label
   // The results of one SCF: a structure gets only its own SCF's energy,
-  // forces and stress, and its label names only its own blocks.
-  bool have_energy = false;
+  // forces and stress, and its label names only its own blocks. The energy
+  // lines of an SCF, as printed (unset: NaN):
+  //  - smeared: 'Final energy, E' and 'Final free energy (E-TS)' (F);
+  //  - fixed occupancy: 'Final energy =' (no smearing: E is F);
+  //  - with a dispersion correction (DFT-D, SEDC): 'Dispersion corrected
+  //    final energy*' (E + correction) and, smeared, 'Dispersion corrected
+  //    final free energy*';
+  //  - MD: the MD Data 'Potential Energy:'.
+  const double unset = std::numeric_limits<double>::quiet_NaN();
+  double e_smeared = unset, e_free = unset, e_fixed = unset, e_disp = unset,
+         e_disp_free = unset, e_md = unset;
+  bool forces_found = false;
   auto clear_results = [&]() {
     s.energy = 0.0;
     s.stress.set_zero();
-    have_energy = false;
+    e_smeared = e_free = e_fixed = e_disp = e_disp_free = e_md = unset;
     stress_tensor_found = false;
+    forces_found = false;
     simLabel.forcesStartLine = simLabel.forcesStopLine = -1;
     simLabel.stressStartLine = simLabel.stressStopLine = -1;
     simLabel.energyLine = -1;
+  };
+  // The energy whose gradient the SCF's forces and stress are, or NaN.
+  auto scf_energy = [&]() -> double {
+    if (!std::isnan(e_md)) return e_md;
+    if (!std::isnan(e_disp_free)) return e_disp_free;
+    if (!std::isnan(e_free)) {
+      if (std::isnan(e_disp)) return e_free;
+      if (std::isnan(e_smeared))
+        throw std::runtime_error(
+            "CASTEP .castep " + simLabel.filename + ": line " +
+            std::to_string(simLabel.energyLine) +
+            ": a smeared SCF with a dispersion correction prints neither "
+            "'Dispersion corrected final free energy*' nor 'Final energy, E', "
+            "so its corrected free energy cannot be formed");
+      return e_free + (e_disp - e_smeared);  // F plus the correction
+    }
+    if (!std::isnan(e_disp)) return e_disp;
+    return e_fixed;
   };
   // A new geometry starts a new SCF: the results so far belong to the
   // previous one (a trial step whose line minimisation followed).
@@ -187,9 +219,10 @@ void CastepCastepReader::parse_data() {
   // the final configuration of a geometry optimisation (after
   // '<algorithm>: Final Configuration'), which belongs to it when the
   // geometry is the same and it has no stress of its own.
-  std::size_t stored = 0, stored_without_stress = 0;
+  std::size_t stored = 0, stored_without_stress = 0, stored_without_forces = 0;
   bool final_configuration = false;
-  bool last_has_stress = true;
+  bool last_has_stress = true, last_has_forces = true;
+  std::string banner;  // the last ' *** <title> ***' line of a forces or stress block
   tadah::core::Matrix3d last_cell;
   std::vector<Atom> last_atoms;
   auto same_geometry_as_last = [&]() {
@@ -217,7 +250,20 @@ void CastepCastepReader::parse_data() {
   // This updates derived data (like stress if absent) and adds to the structure DB.
   auto finalize_structure = [&]() {
     if (!result_geometry_taken) snapshot_geometry();  // a block without forces, stress or energy
-    if (!have_energy)
+    const double energy = scf_energy();
+    if (std::isnan(energy)) {
+      // A band structure continued from a previous run does no SCF: there
+      // is no structure to store.
+      if (current_state == CalcState::BandStructure) {
+        std::cerr << "WARNING: CASTEP .castep " << simLabel.filename
+                  << ": the band-structure step ending at line " << line_counter
+                  << " has no SCF energy (a continuation run); no structure "
+                     "is stored for it."
+                  << std::endl;
+        result_geometry_taken = false;
+        clear_results();
+        return;
+      }
       throw std::runtime_error(
           "CASTEP .castep " + simLabel.filename + ": structure " +
           std::to_string(stored + 1) + " (the " + simLabel.getStateLabel() +
@@ -225,6 +271,17 @@ void CastepCastepReader::parse_data() {
           ") has no energy of its own: no 'Final free energy (E-TS)', "
           "'Final energy =' or MD 'Potential Energy:' line follows its "
           "geometry");
+    }
+    s.energy = energy;
+    // A structure without forces of its own is stored with zero forces and
+    // force weight 0, so that a FORCE fit ignores them.
+    if (!forces_found) {
+      for (auto &a : result_atoms) a.force = tadah::core::Vec3d(0.0, 0.0, 0.0);
+      s.fweight = 0.0;
+      ++stored_without_forces;
+    } else {
+      s.fweight = 1.0;
+    }
     // A structure without a stress tensor of its own is stored with zero
     // stress and stress weight 0, so that a STRESS fit ignores it.
     if (!stress_tensor_found) {
@@ -252,6 +309,7 @@ void CastepCastepReader::parse_data() {
     stdb.add(s);
     ++stored;
     last_has_stress = stress_tensor_found;
+    last_has_forces = forces_found;
     last_cell = result_cell;
     last_atoms = result_atoms;
     final_configuration = false;
@@ -273,47 +331,36 @@ void CastepCastepReader::parse_data() {
   while (std::getline(stream, line)) {
     ++line_counter;
 
-    // Detect starting SP calculation (zeroth step)
-    if (line.find("single point energy") != std::string::npos) {
-      md_task = false;
-      reset_flags(CalcState::SinglePointEnergy);
-      simLabel.calcState = CalcState::SinglePointEnergy;
+    // A run starts with its 'type of calculation' line: the run type comes
+    // from that line only, and nothing of an earlier run carries over.
+    if (line.find("type of calculation") != std::string::npos &&
+        line.find(':') != std::string::npos) {
+      const std::string task = tadah::core::trim(line.substr(line.find(':') + 1));
+      final_configuration = false;
+      md_task = task == "molecular dynamics";
+      go_task = task == "geometry optimization";
+      CalcState state = CalcState::Idle;
+      std::string type = "CASTEP";
+      if (task == "single point energy") {
+        state = CalcState::SinglePointEnergy;
+        type = "CASTEP SPE";
+      } else if (task == "band structure") {
+        state = CalcState::BandStructure;
+        type = "CASTEP BS";
+      } else if (go_task) {
+        state = CalcState::GeometryOptimization;
+        type = "CASTEP GO";
+      } else if (md_task) {
+        state = CalcState::MolecularDynamics;
+        type = "CASTEP MD";
+      }
+      // Any other run type (phonons, spectroscopy, ...) stores nothing.
+      reset_flags(state);
+      simLabel.calcState = state;
       simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP SPE";
+      simLabel.simType = type;
       simLabel.stepNumber = 0;
-      if (debug) std::cout << "single point energy" << std::endl;
-    }
-
-    if (line.find("band structure") != std::string::npos) {
-      md_task = false;
-      reset_flags(CalcState::BandStructure);
-      simLabel.calcState = CalcState::BandStructure;
-      simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP BS";
-      simLabel.stepNumber = 0;
-      if (debug) std::cout << "band structure" << std::endl;
-    }
-
-    // Detect starting GO calculation (zeroth step)
-    if (line.find("geometry optimization") != std::string::npos) {
-      md_task = false;
-      reset_flags(CalcState::GeometryOptimization);
-      simLabel.calcState = CalcState::GeometryOptimization;
-      simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP GO";
-      simLabel.stepNumber = 0;
-      if (debug) std::cout << "geometry optimization" << std::endl;
-    }
-
-    // Detect MD calculation type (zeroth step)
-    if (line.find("molecular dynamics") != std::string::npos) {
-      md_task = true;
-      reset_flags(CalcState::MolecularDynamics);
-      simLabel.calcState = CalcState::MolecularDynamics;
-      simLabel.startLine = line_counter;
-      simLabel.simType = "CASTEP MD";
-      simLabel.stepNumber = 0;
-      if (debug) std::cout << "molecular dynamics" << std::endl;
+      if (debug) std::cout << "type of calculation: " << task << std::endl;
     }
 
     if (line.find("stress calculation") != std::string::npos) {
@@ -471,8 +518,20 @@ void CastepCastepReader::parse_data() {
       geometry_printed = true;
     }
 
+    // The title of the forces or stress block that follows.
+    if (line.rfind(" ***", 0) == 0 &&
+        (line.find("Forces") != std::string::npos ||
+         line.find("Stress Tensor") != std::string::npos)) {
+      banner = line;
+    }
+    // A 'Constrained' block (the projection a constrained optimisation
+    // uses, printed after the physical 'Forces', 'Symmetrised Forces',
+    // 'Unconstrained Forces' or '(Symmetrised) Stress Tensor') is not stored.
+    const bool constrained_block = banner.find("Constrained") != std::string::npos;
+
     // Detect forces block
-    if (line.find("Cartesian components (eV/A)") != std::string::npos) {
+    if (line.find("Cartesian components (eV/A)") != std::string::npos &&
+        !constrained_block) {
       if (debug) std::cout << "Reading forces..." << std::endl;
       take_result_geometry();
       // Usually there are three lines of header/blank text before actual force lines
@@ -498,19 +557,45 @@ void CastepCastepReader::parse_data() {
         if (i < result_atoms.size()) {
           result_atoms[i].force = tadah::core::Vec3d(fx, fy, fz);
         }
+        if (i + 1 == natoms) forces_found = true;
       }
       simLabel.forcesStopLine = line_counter;
 
-      if (simLabel.useStress == false && (current_state == CalcState::SinglePointEnergy || 
-            current_state == CalcState::FiniteBasisSetCorrection ||
+      // Iteration 0 of a geometry optimisation (the FBSC state) is completed
+      // at 'enthalpy=', after its stress, which a variable-cell run prints
+      // whatever 'stress calculation' says.
+      if (simLabel.useStress == false && (current_state == CalcState::SinglePointEnergy ||
+            (current_state == CalcState::FiniteBasisSetCorrection && !go_task) ||
             current_state == CalcState::BandStructure)) {
         data_block_complete = true;
         simLabel.stopLine = line_counter;
       }
+      // The final configuration's forces (a run whose iterations print none,
+      // e.g. with every ion fixed): they belong to the last iteration when
+      // the geometry is the same and it has no forces of its own.
+      if (current_state == CalcState::Idle && final_configuration && stored > 0) {
+        if (forces_found && !last_has_forces && same_geometry_as_last()) {
+          Structure &last = stdb(stdb.size() - 1);
+          for (size_t i = 0; i < last.atoms.size() && i < result_atoms.size(); ++i)
+            last.atoms[i].force = result_atoms[i].force;
+          last.fweight = 1.0;
+          const std::string none = "F: (-1 : -1)";
+          const auto p = last.label.find(none);
+          if (p != std::string::npos)
+            last.label.replace(p, none.size(),
+                               "F: (" + std::to_string(simLabel.forcesStartLine) +
+                                   " : " + std::to_string(simLabel.forcesStopLine) + ")");
+          last_has_forces = true;
+          --stored_without_forces;
+        }
+        result_geometry_taken = false;
+        clear_results();
+      }
     }
 
     // Detect stress block
-    if (line.find("Cartesian components (GPa)") != std::string::npos) {
+    if (line.find("Cartesian components (GPa)") != std::string::npos &&
+        !constrained_block) {
       if (debug) std::cout << "Reading stress..." << std::endl;
       take_result_geometry();
       jumpNLines(stream, 3);
@@ -535,10 +620,10 @@ void CastepCastepReader::parse_data() {
         s.stress(row, 1) = v2;
         s.stress(row, 2) = v3;
         simLabel.stressStopLine = line_counter;
+        if (row == 2) stress_tensor_found = true;
       }
-      stress_tensor_found = true;
-      if (current_state == CalcState::SinglePointEnergy || 
-          current_state == CalcState::FiniteBasisSetCorrection ||
+      if (current_state == CalcState::SinglePointEnergy ||
+          (current_state == CalcState::FiniteBasisSetCorrection && !go_task) ||
           current_state == CalcState::BandStructure) {
         data_block_complete = true;
         simLabel.stopLine = line_counter;
@@ -548,7 +633,7 @@ void CastepCastepReader::parse_data() {
       // only this one): it belongs to that iteration when the geometry is
       // the same and the iteration has no stress of its own.
       if (current_state == CalcState::Idle && final_configuration && stored > 0) {
-        if (!last_has_stress && same_geometry_as_last()) {
+        if (stress_tensor_found && !last_has_stress && same_geometry_as_last()) {
           Structure &last = stdb(stdb.size() - 1);
           last.stress = s.stress;
           last.stress *= p_conv;  // GPa to eV/A^3
@@ -568,8 +653,11 @@ void CastepCastepReader::parse_data() {
       }
     }
 
-    if (line.find(": Final Configuration") != std::string::npos &&
-        current_state == CalcState::Idle) {
+    // The final configuration of a geometry optimisation, and the end of an
+    // MD run, whose forces and stress belong to the last stored step.
+    if (current_state == CalcState::Idle &&
+        (line.find(": Final Configuration") != std::string::npos ||
+         (md_task && line.find("Finished MD") != std::string::npos))) {
       final_configuration = true;
     }
 
@@ -584,34 +672,49 @@ void CastepCastepReader::parse_data() {
       take_result_geometry();
       std::istringstream iss(line);
       std::string ignore;
-      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> s.energy)) {
+      double v;
+      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> v)) {
         std::cerr << "Warning: Could not parse final free energy (line: "
           << line_counter << ")." << std::endl;
       } else {
-        have_energy = true;
+        e_free = v;
       }
       simLabel.energyLine = line_counter;
     }
 
-    // A fixed-occupancy (insulator) run prints 'Final energy = <E> eV' and
-    // no free energy: with no smearing, E is F. (A smeared run prints
-    // 'Final energy, E = ...' and then the free energy, read above.)
-    if (line.rfind("Final energy", 0) == 0 &&
-        line.find_first_not_of(' ', 12) != std::string::npos &&
-        line[line.find_first_not_of(' ', 12)] == '=' &&
-        (current_state == CalcState::GeometryOptimization
-         || current_state == CalcState::SinglePointEnergy
-         || current_state == CalcState::BandStructure
-         || current_state == CalcState::FiniteBasisSetCorrection)) {
-      take_result_geometry();
-      std::istringstream iss(line.substr(line.find('=') + 1));
-      if (!(iss >> s.energy)) {
-        std::cerr << "Warning: Could not parse final energy (line: "
-          << line_counter << ")." << std::endl;
-      } else {
-        have_energy = true;
+    // The other energy lines of an SCF: 'Final energy, E = ...' (smeared),
+    // 'Final energy = ...' (fixed occupancy, which prints no free energy:
+    // with no smearing, E is F), and the dispersion-corrected 'Dispersion
+    // corrected final energy* = ...' and 'Dispersion corrected final free
+    // energy* (Ecor-TS) = ...' (DFT-D, SEDC).
+    if (current_state == CalcState::GeometryOptimization
+        || current_state == CalcState::SinglePointEnergy
+        || current_state == CalcState::BandStructure
+        || current_state == CalcState::FiniteBasisSetCorrection) {
+      double *target = nullptr;
+      if (line.rfind("Final energy, E", 0) == 0) {
+        target = &e_smeared;
+      } else if (line.rfind("Final energy", 0) == 0 &&
+                 line.find_first_not_of(' ', 12) != std::string::npos &&
+                 line[line.find_first_not_of(' ', 12)] == '=') {
+        target = &e_fixed;
+      } else if (line.rfind("Dispersion corrected final free energy*", 0) == 0) {
+        target = &e_disp_free;
+      } else if (line.rfind("Dispersion corrected final energy*", 0) == 0) {
+        target = &e_disp;
       }
-      simLabel.energyLine = line_counter;
+      if (target) {
+        take_result_geometry();
+        std::istringstream iss(line.substr(line.find('=') + 1));
+        double v;
+        if (line.find('=') == std::string::npos || !(iss >> v)) {
+          std::cerr << "Warning: Could not parse the energy (line: "
+            << line_counter << ")." << std::endl;
+        } else {
+          *target = v;
+          if (target != &e_smeared) simLabel.energyLine = line_counter;
+        }
+      }
     }
 
     // Terminates the geometry optimization step
@@ -641,11 +744,12 @@ void CastepCastepReader::parse_data() {
       take_result_geometry();
       std::istringstream iss(line);
       std::string ignore;
-      if (!(iss >> ignore >> ignore >> ignore >> s.energy)) {
+      double v;
+      if (!(iss >> ignore >> ignore >> ignore >> v)) {
         std::cerr << "Warning: Could not parse potential energy in MD (line: " 
                   << line_counter << ")." << std::endl;
       } else {
-        have_energy = true;
+        e_md = v;
       }
       simLabel.energyLine = line_counter;
     }
@@ -671,6 +775,7 @@ void CastepCastepReader::parse_data() {
     }
   } // end while getline
   log_missing_stress("CASTEP .castep " + simLabel.filename, stored_without_stress, stored);
+  log_missing_forces("CASTEP .castep " + simLabel.filename, stored_without_forces, stored);
 }
 
 void CastepCastepReader::print_summary() const {

@@ -145,13 +145,19 @@ void VaspOutcarReader::parse_data() {
     }
 
     else if (line.find("in kB") != std::string::npos) {
-      have_stress = true;
       std::vector<double> row(6); // xx yy zz xy yz zx
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> row[0] >> row[1] >> row[2] >> row[3] >> row[4] >> row[5])) {
-        std::cerr << "Warning: Unexpected end of data when reading stress tensor" << std::endl;
+        // An unreadable tensor (e.g. VASP's '*****' overflow) is no stress.
+        std::cerr << "Warning: VASP OUTCAR " << filename_
+                  << ": the stress line '" << line
+                  << "' cannot be read; the step is stored without stress"
+                  << std::endl;
+        s.stress.set_zero();
+        have_stress = false;
       } else {
+        have_stress = true;
         s.stress(0,0) = row[0], s.stress(1,1) = row[1], s.stress(2,2) = row[2];
         s.stress(0,1) = s.stress(1,0) = row[3]; // xy
         s.stress(1,2) = s.stress(2,1) = row[4]; // yz

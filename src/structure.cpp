@@ -155,9 +155,10 @@ std::vector<std::string> tokens_of(const std::string &line) {
 
 int Structure::read(std::ifstream &ifs) {
   std::string line;
-  // Ignore extra empty lines
+  // Ignore extra empty lines (a line of only whitespace, '\r' included, is
+  // empty)
   std::getline(ifs, line);
-  if(line.empty()) return 1;
+  if (tadah::core::is_blank_line(line)) return 1;
 
   // The first line read is used as a label
   label = line;
@@ -217,8 +218,7 @@ int Structure::read(std::ifstream &ifs) {
 
   // Read in each atom: 'Element px py pz fx fy fz'
   while(std::getline(ifs, line)) {
-    if(line.empty())  break;
-    if(line == "\r")  break; // Windows newline detection
+    if (tadah::core::is_blank_line(line)) break;  // '\r' (CRLF) included
 
     tok = tokens_of(line);
     if (tok.size() < 7)
