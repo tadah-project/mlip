@@ -12,7 +12,13 @@ namespace mlip {
 namespace engines {
 
 /**
- * @brief Provides dataset duplicate removal functionality.
+ * @brief Writes a subset of a dataset (`tadah data sample`).
+ *
+ * Exactly one selection: every N-th structure from the first (UNIFORM),
+ * N distinct structures drawn uniformly from the whole dataset and written
+ * in dataset order (RANDOM), or the structures at 1-based indices (INDEX,
+ * parsed strictly against the dataset size). validate() refuses anything
+ * else before run() writes the output.
  */
 class DataSampleEngine : public IEngine {
 public:
