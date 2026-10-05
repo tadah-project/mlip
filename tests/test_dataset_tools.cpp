@@ -626,3 +626,30 @@ TEST_CASE("StructureDB: whitespace-only lines and CRLF blank lines separate stru
     }
   }
 }
+
+/* Pins: writing a dataset or a structure to a file that cannot be opened
+ * throws std::runtime_error naming the file (a missing directory), for
+ * StructureDB::dump_to_file and Structure::dump_to_file.
+ * Before the fix: both printed 'Error: Could not open file for writing' and
+ * returned, so every data command reported success. */
+TEST_CASE("StructureDB/Structure::dump_to_file: an unwritable file is refused",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("dump_unwritable");
+  StructureDB db;
+  db.add(tmp.write("good.tadah", dataset_with("-11.4", "-11.4")));
+  REQUIRE(db.size() == 2);
+  const std::string path = (tmp.dir / "missing" / "out.tadah").string();
+  try {
+    db.dump_to_file(path, false);
+    FAIL("no exception from StructureDB::dump_to_file");
+  } catch (const std::runtime_error &e) {
+    CHECK_THAT(e.what(), Catch::Contains(path));
+  }
+  try {
+    db(0).dump_to_file(path);
+    FAIL("no exception from Structure::dump_to_file");
+  } catch (const std::runtime_error &e) {
+    CHECK_THAT(e.what(), Catch::Contains(path));
+  }
+}
