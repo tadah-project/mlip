@@ -204,6 +204,39 @@ void check_same_structure(const Structure &a, const Structure &b) {
   }
 }
 
+// The lines [banner, closing] of the boxed block whose banner is
+// lines[banner] (a ' ***... Title ...***' line): up to the next line, after
+// the banner, that starts with ' ****'.
+std::vector<std::string> block_at(const std::vector<std::string> &lines, size_t banner) {
+  REQUIRE(banner < lines.size());
+  for (size_t i = banner + 1; i < lines.size(); ++i)
+    if (lines[i].rfind(" ****", 0) == 0)
+      return std::vector<std::string>(lines.begin() + banner, lines.begin() + i + 1);
+  FAIL("no closing line after line " << banner + 1);
+  return {};
+}
+
+// `lines` without the block whose banner is lines[banner].
+std::vector<std::string> erase_block(std::vector<std::string> lines, size_t banner) {
+  const size_t n = block_at(lines, banner).size();
+  lines.erase(lines.begin() + banner, lines.begin() + banner + n);
+  return lines;
+}
+
+// The value after '=' in the energy line `line`.
+double energy_after_equals(const std::string &line) {
+  const auto p = line.find('=');
+  REQUIRE(p != std::string::npos);
+  return std::stod(line.substr(p + 1));
+}
+
+bool forces_are_zero(const Structure &st) {
+  for (const auto &a : st.atoms)
+    for (int c = 0; c < 3; ++c)
+      if (a.force[c] != 0.0) return false;
+  return true;
+}
+
 bool stress_is_zero(const Structure &st) {
   for (int i = 0; i < 3; ++i)
     for (int j = 0; j < 3; ++j)
@@ -1095,6 +1128,317 @@ TEST_CASE("CASTEP .castep reader: the final configuration's stress goes to the l
       CHECK(last.stress(i, j) == Approx(gpa[i][j] / kGPa).epsilon(1e-7));
     }
   CHECK_THAT(last.label, Catch::Contains("S: (4091 : 4093)"));
+}
+
+// Pins: in a geometry optimisation with cell constraints CASTEP prints, after
+// the 'Symmetrised Stress Tensor', a 'Constrained Stress Tensor' (the
+// projection the optimiser uses), and with ionic constraints 'Constrained
+// Symmetrised Forces' after the physical forces; the physical blocks are
+// stored, the constrained ones skipped. geom.castep with such a stress block
+// (diagonal -1, -2, -3 GPa) and such a forces block (every component 0.5)
+// after iteration 1's line-minimisation blocks: structure 2 keeps stress xx
+// -94.737913 GPa and H1 force z 0.00189 eV/A.
+// Before the fix: every 'Cartesian components' block overwrote the
+// previous one, so structure 2 stored the constrained blocks. (Real case:
+// FLiBe flibe_geom.castep, 'Cell constraints are: 1 1 1 0 0 0'.)
+TEST_CASE("CASTEP .castep reader: constrained stress and forces blocks are not stored",
+          "[castep_readers][castep][constraints]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines(kGeomCastep);
+  REQUIRE(lines.at(668).find("Symmetrised Forces") != std::string::npos);
+  REQUIRE(lines.at(687).find("Symmetrised Stress Tensor") != std::string::npos);
+  std::vector<std::string> stress = block_at(lines, 687);
+  REQUIRE(stress.size() == 13);
+  stress[0] = substitute({stress[0]}, "Symmetrised Stress Tensor", "Constrained Stress Tensor")[0];
+  const char *diag[3] = {"-1.000000", "-2.000000", "-3.000000"};
+  for (int r = 0; r < 3; ++r)
+    for (int c = 0; c < 3; ++c)
+      stress[6 + r] = replace_token(stress[6 + r], 2 + c, r == c ? diag[r] : "0.000000");
+  std::vector<std::string> forces = block_at(lines, 668);
+  forces[0] = " ************************** Constrained Symmetrised Forces **************************";
+  for (size_t k = 6; k + 2 < forces.size(); ++k)
+    for (int c = 0; c < 3; ++c) forces[k] = replace_token(forces[k], 3 + c, "0.50000");
+  // After the stress block (lines 688-700), then the forces after the
+  // physical forces block (lines 669-686).
+  REQUIRE(forces.size() == 18);
+  lines.insert(lines.begin() + 700, stress.begin(), stress.end());
+  lines.insert(lines.begin() + 686, forces.begin(), forces.end());
+  TempFile tmp("tmp_castep_rv_constrained.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 8);
+  CHECK(db(1).stress(0, 0) == Approx(-94.737913 / kGPa).epsilon(1e-7));
+  CHECK(db(1).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
+  CHECK(db(1).atoms[0].force[2] == Approx(0.00189).margin(1e-12));
+  CHECK(db(1).atoms[0].force[0] == Approx(0.0).margin(1e-12));
+}
+
+// Pins: with a semi-empirical dispersion correction (DFT-D, SEDC) the
+// forces, the stress and the optimiser's enthalpy include the correction, so
+// the stored energy does too:
+//  - fixed occupancy: 'Dispersion corrected final energy*' (the insulator
+//    form of geom.castep, each SCF followed by that line at E - 1.234 eV);
+//  - smearing: 'Dispersion corrected final free energy*' when printed (here
+//    F - 2.5 eV), otherwise F plus the correction, F + (E_disp - E) (here
+//    F - 1.234 eV when only the 'final energy*' line is printed).
+// Before the fix: the uncorrected SCF energy was stored. (Real case: FLiBe
+// 02c_geomopt_pbe_d3 flibe_geom.castep, D3.)
+TEST_CASE("CASTEP .castep reader: a dispersion-corrected run stores the corrected energy",
+          "[castep_readers][castep][sedc]") {
+  PeriodicTable::initialize();
+  StructureDB plain;
+  read_into<CastepCastepReader>(plain, kGeomCastep);
+  REQUIRE(plain.size() == 8);
+  const std::vector<std::string> base = read_lines(kGeomCastep);
+  SECTION("fixed occupancy") {
+    std::vector<std::string> lines =
+        substitute(base, "Final energy, E             =", "Final energy =");
+    lines = drop_lines(lines, "Final free energy (E-TS)");
+    lines = drop_lines(lines, "NB est. 0K energy");
+    std::vector<std::string> out;
+    for (const auto &l : lines) {
+      out.push_back(l);
+      if (l.rfind("Final energy =", 0) == 0) {
+        std::ostringstream oss;
+        oss << std::setprecision(15) << "Dispersion corrected final energy* =  "
+            << energy_after_equals(l) - 1.234 << "     eV";
+        out.push_back("(SEDC) Total Energy Correction : -0.123400E+01 eV");
+        out.push_back(oss.str());
+      }
+    }
+    TempFile tmp("tmp_castep_rv_sedc_ins.castep");
+    tmp.write_lines(out);
+    StructureDB db;
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 8);
+    const double e[8] = {-2690.147924655, -2689.637293811, -2689.635344489,
+                         -2689.633758579, -2689.633972892, -2689.633335038,
+                         -2689.633829093, -2689.633800316};
+    for (size_t k = 0; k < 8; ++k) {
+      INFO("structure " << k + 1);
+      CHECK(db(k).energy == Approx(e[k] - 1.234).epsilon(1e-13));
+    }
+  }
+  for (const bool free_form : {false, true}) {
+    SECTION(free_form ? "smearing, free-energy form" : "smearing, energy form only") {
+      std::vector<std::string> out;
+      double E = 0.0, F = 0.0;
+      for (const auto &l : base) {
+        out.push_back(l);
+        if (l.rfind("Final energy, E", 0) == 0) E = energy_after_equals(l);
+        if (l.rfind("Final free energy (E-TS)", 0) == 0) F = energy_after_equals(l);
+        if (l.rfind("NB est. 0K energy", 0) == 0) {
+          std::ostringstream e1, f1;
+          e1 << std::setprecision(15) << "Dispersion corrected final energy* =  "
+             << E - 1.234 << "     eV";
+          f1 << std::setprecision(15)
+             << "Dispersion corrected final free energy* (Ecor-TS)  =  " << F - 2.5
+             << "     eV";
+          out.push_back("(SEDC) Total Energy Correction : -0.123400E+01 eV");
+          out.push_back(e1.str());
+          if (free_form) out.push_back(f1.str());
+        }
+      }
+      TempFile tmp("tmp_castep_rv_sedc_smear.castep");
+      tmp.write_lines(out);
+      StructureDB db;
+      read_into<CastepCastepReader>(db, tmp.path);
+      REQUIRE(db.size() == 8);
+      for (size_t k = 0; k < 8; ++k) {
+        INFO("structure " << k + 1);
+        CHECK(db(k).energy ==
+              Approx(plain(k).energy - (free_form ? 2.5 : 1.234)).epsilon(1e-13));
+      }
+    }
+  }
+}
+
+// Pins: a run's state does not leak into the next run of the same file.
+//  - Run type comes from the run's 'type of calculation' line only: an SPE
+//    file with the parameter line 'spectroscopy calculation : band
+//    structure' still gives an SPE structure;
+//  - a band-structure step without an SCF (a continuation: no energy) is
+//    skipped with one WARNING, not stored and not refused: Gd0.castep
+//    without its energy lines gives none, and after an SPE run the SPE's
+//    structure is kept;
+//  - geom.castep without any stress block (so its final configuration has
+//    none) followed by a phonon run that prints a stress block for the same
+//    geometry: the GO's last structure keeps no stress (sweight 0).
+// Before the fix: the SPE was labelled BS; the BS step was refused, losing
+// the SPE structure too; the phonon run's stress went to the GO.
+TEST_CASE("CASTEP .castep reader: runs in one file do not share state",
+          "[castep_readers][castep][runs]") {
+  PeriodicTable::initialize();
+  const std::string kSpe = "./tests_data/cell_convention/castep_triclinic_spe.castep";
+  const std::string kGd0 = "./tests_data/valid_castep_castep/Gd0.castep";
+  {
+    INFO("spectroscopy parameter line in an SPE run");
+    std::vector<std::string> lines = read_lines(kSpe);
+    REQUIRE(lines.at(15).find("type of calculation") != std::string::npos);
+    lines.insert(lines.begin() + 16,
+                 " spectroscopy calculation                       : band structure");
+    TempFile tmp("tmp_castep_rv_spe_spectro.castep");
+    tmp.write_lines(lines);
+    StructureDB db;
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 1);
+    CHECK_THAT(db(0).label, Catch::Contains("SPE"));
+  }
+  std::vector<std::string> bs = read_lines(kGd0);
+  bs = drop_lines(bs, "Final energy, E", 1);
+  bs = drop_lines(bs, "Final free energy (E-TS)", 1);
+  bs = drop_lines(bs, "NB est. 0K energy", 1);
+  {
+    INFO("band structure without an SCF");
+    TempFile tmp("tmp_castep_rv_bs_noscf.castep");
+    tmp.write_lines(bs);
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    INFO("printed: '" << printed << "'");
+    CHECK(db.size() == 0);
+    CHECK(count_ci(printed, "warning") == 1);
+    CHECK_THAT(printed, Catch::Contains(tmp.basename()));
+  }
+  {
+    INFO("SPE followed by a band structure without an SCF");
+    std::vector<std::string> lines = read_lines(kSpe);
+    lines.insert(lines.end(), bs.begin(), bs.end());
+    TempFile tmp("tmp_castep_rv_spe_bs.castep");
+    tmp.write_lines(lines);
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    INFO("printed: '" << printed << "'");
+    REQUIRE(db.size() == 1);
+    CHECK(db(0).energy == Approx(-312.345678901).epsilon(1e-14));
+    CHECK(count_ci(printed, "warning") == 1);
+  }
+  {
+    INFO("GO without stress followed by a phonon run with stress");
+    std::vector<std::string> go = read_lines(kGeomCastep);
+    std::vector<std::string> stress_block;
+    for (size_t i = 0; i < go.size();) {
+      if (go[i].find("Stress Tensor") != std::string::npos) {
+        if (stress_block.empty()) stress_block = block_at(go, i);
+        go = erase_block(go, i);
+      } else {
+        ++i;
+      }
+    }
+    REQUIRE(stress_block.size() == 13);
+    go.push_back(" type of calculation                            : phonon calculation");
+    go.push_back(" stress calculation                             : on");
+    go.push_back("");
+    go.insert(go.end(), stress_block.begin(), stress_block.end());
+    TempFile tmp("tmp_castep_rv_go_phonon.castep");
+    tmp.write_lines(go);
+    StructureDB db;
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 8);
+    for (size_t k = 0; k < 8; ++k) {
+      INFO("structure " << k + 1);
+      CHECK(db(k).sweight == 0.0);
+      CHECK(stress_is_zero(db(k)));
+    }
+  }
+}
+
+// Pins: a structure without a forces block of its own is stored with zero
+// forces and force weight 0 (fweight), so that a FORCE fit ignores it; the
+// forces printed for a geometry optimisation's final configuration go to the
+// last iteration when that has the same geometry and none of its own; a
+// variable-cell optimisation with 'stress calculation : off' still prints
+// each iteration's stress, iteration 0 included, and it is stored.
+//  - geom.castep without iteration 1's line-minimisation forces block (lines
+//    669-686): structure 2 has fweight 0, the others 1;
+//  - Mn.castep without iteration 15's forces block (lines 3935-3972): the
+//    final configuration's forces block (4046-4083, the same numbers) gives
+//    structure 16 its forces back, with fweight 1;
+//  - geom.castep with 'stress calculation : off': structure 1 has its stress
+//    (S: (475 : 477)) and sweight 1.
+// Before the fix: zero forces with fweight 1; structure 16 kept zero forces;
+// iteration 0 was completed at its forces block, before its stress.
+TEST_CASE("CASTEP .castep reader: a structure without forces has force weight 0",
+          "[castep_readers][castep][forces]") {
+  PeriodicTable::initialize();
+  {
+    INFO("geom.castep without structure 2's forces");
+    std::vector<std::string> lines = read_lines(kGeomCastep);
+    REQUIRE(lines.at(668).find("Symmetrised Forces") != std::string::npos);
+    lines = erase_block(lines, 668);
+    TempFile tmp("tmp_castep_rv_no_forces2.castep");
+    tmp.write_lines(lines);
+    StructureDB db;
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 8);
+    for (size_t k = 0; k < 8; ++k) {
+      INFO("structure " << k + 1);
+      CHECK(db(k).fweight == (k == 1 ? 0.0 : 1.0));
+    }
+    CHECK(forces_are_zero(db(1)));
+    CHECK_THAT(db(1).label, Catch::Contains("F: (-1 : -1)"));
+  }
+  {
+    INFO("Mn.castep without iteration 15's forces");
+    const std::string kMn = "./tests_data/valid_castep_castep/Mn.castep";
+    StructureDB plain, db;
+    read_into<CastepCastepReader>(plain, kMn);
+    std::vector<std::string> lines = read_lines(kMn);
+    REQUIRE(lines.at(3934).find("Forces") != std::string::npos);
+    lines = erase_block(lines, 3934);
+    TempFile tmp("tmp_castep_rv_mn_noforces.castep");
+    tmp.write_lines(lines);
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 16);
+    CHECK(db(15).fweight == 1.0);
+    REQUIRE(db(15).natoms() == plain(15).natoms());
+    for (size_t a = 0; a < db(15).natoms(); ++a)
+      for (int c = 0; c < 3; ++c) CHECK(db(15).atoms[a].force[c] == plain(15).atoms[a].force[c]);
+  }
+  {
+    INFO("geom.castep with stress calculation off");
+    const std::vector<std::string> lines =
+        substitute(read_lines(kGeomCastep), "stress calculation                             : on",
+                   "stress calculation                             : off");
+    TempFile tmp("tmp_castep_rv_stress_off.castep");
+    tmp.write_lines(lines);
+    StructureDB db;
+    read_into<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == 8);
+    INFO("label '" << db(0).label << "'");
+    CHECK(db(0).sweight == 1.0);
+    CHECK_THAT(db(0).label, Catch::Contains("S: (475 : 477)"));
+    CHECK(db(0).stress(0, 0) == Approx(-90.011421 / kGPa).epsilon(1e-7));
+  }
+}
+
+// Pins: the stress block CASTEP prints after ' Finished MD' (a fixed-cell MD
+// computes the stress once, for its last step) goes to the last step when the
+// geometry is the same and it has no stress of its own: md_no_stress.castep
+// with ' Finished MD' and a stress block (diagonal -94.737913, -94.737913,
+// -95.561163 GPa) appended gives step 2 that stress with sweight 1; steps 0
+// and 1 keep sweight 0.
+// Before the fix: the block was dropped.
+TEST_CASE("CASTEP .castep reader: an MD run's final stress goes to the last step",
+          "[castep_readers][castep][md][stress]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines("./tests_data/valid_castep_castep/md_no_stress.castep");
+  const std::vector<std::string> go = read_lines(kGeomCastep);
+  REQUIRE(go.at(687).find("Symmetrised Stress Tensor") != std::string::npos);
+  const std::vector<std::string> stress = block_at(go, 687);
+  lines.push_back(" Finished MD");
+  lines.push_back("");
+  lines.insert(lines.end(), stress.begin(), stress.end());
+  TempFile tmp("tmp_castep_rv_md_final.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 3);
+  CHECK(db(0).sweight == 0.0);
+  CHECK(db(1).sweight == 0.0);
+  CHECK(db(2).sweight == 1.0);
+  CHECK(db(2).stress(0, 0) == Approx(-94.737913 / kGPa).epsilon(1e-7));
+  CHECK(db(2).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
 }
 
 // Pins: atoms read from a .castep file carry their element, Z included:

@@ -562,6 +562,26 @@ TEST_CASE("VASP OUTCAR reader: a step without a stress tensor has stress "
   }
 }
 
+/* Pins: an 'in kB' line that cannot be read does not count as a stress
+ * tensor: the first three steps of OUTCAR_1 with step 1's line turned into
+ * '  in kB  ****** ...' (VASP's overflow) give step 1 zero stress with stress
+ * weight 0; steps 2 and 3 keep theirs.
+ * Before the fix: step 1 was stored with zero stress and weight 1. */
+TEST_CASE("VASP OUTCAR reader: an unreadable stress line gives stress weight 0",
+          "[vasp][outcar][stress]") {
+  ScratchDir tmp("outcar_bad_kb");
+  std::vector<std::string> l = outcar1_three_steps();
+  edit_line(l, 1879, "1138.75304  1138.74392", "**********  **********");
+  StructureDB db;
+  parse_outcar_capturing(db, tmp.write("OUTCAR_bad_kb", join_lines(l)));
+  REQUIRE(db.size() == 3);
+  CHECK(db(0).sweight == 0.0);
+  for (int i = 0; i < 3; ++i)
+    for (int j = 0; j < 3; ++j) CHECK(db(0).stress(i, j) == 0.0);
+  CHECK(db(1).sweight == 1.0);
+  CHECK(db(2).sweight == 1.0);
+}
+
 /* Pins: an MD step that reaches its EKIN_LAT line with no
  * 'free  energy   TOTEN' line, and is not an ML step, is refused: the
  * error names the file and the ionic step (OUTCAR_1 without line 2937,

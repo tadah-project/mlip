@@ -578,3 +578,51 @@ TEST_CASE("StructureDB: a value that is not a finite number is refused, "
     }
   }
 }
+
+/* Pins: a line of only whitespace separates structures like an empty one,
+ * also in a file with Windows (CRLF) line endings: two structures separated
+ * by a line of spaces, by two CRLF blank lines, or by a tab line all read as
+ * the same 2 structures as the plain file.
+ * Before the fix: only an empty line (or a lone '\r' inside a structure)
+ * ended a structure; a whitespace line was read as the next structure's
+ * label and the file was refused. */
+TEST_CASE("StructureDB: whitespace-only lines and CRLF blank lines separate structures",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_blank");
+  const std::string plain = dataset_with("-11.4", "-11.4");
+  StructureDB want;
+  want.add(tmp.write("plain.tadah", plain));
+  REQUIRE(want.size() == 2);
+  auto crlf = [](const std::string &t) {
+    std::string out;
+    for (char c : t) {
+      if (c == '\n') out += '\r';
+      out += c;
+    }
+    return out;
+  };
+  const std::string sep = "Ta 1.65 1.65 1.65 0 0 0\n\n";
+  const auto p = plain.find(sep);
+  REQUIRE(p != std::string::npos);
+  const std::string head = plain.substr(0, p + sep.size() - 1);  // without the blank line
+  const std::string tail = plain.substr(p + sep.size());
+  const std::vector<std::pair<std::string, std::string>> variants = {
+      {"spaces", head + "   \n" + tail},
+      {"tab", head + "\t\n" + tail},
+      {"CRLF, two blank lines", crlf(head + "\n\n" + tail)},
+      {"CRLF, plain", crlf(plain)},
+  };
+  int n = 0;
+  for (const auto &v : variants) {
+    INFO(v.first);
+    StructureDB db;
+    REQUIRE_NOTHROW(db.add(tmp.write("v" + std::to_string(++n) + ".tadah", v.second)));
+    REQUIRE(db.size() == 2);
+    for (size_t k = 0; k < 2; ++k) {
+      CHECK(db(k).energy == want(k).energy);
+      CHECK(db(k).natoms() == want(k).natoms());
+      CHECK(db(k).cell(0, 0) == want(k).cell(0, 0));
+    }
+  }
+}
