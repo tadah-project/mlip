@@ -313,14 +313,14 @@ void StructureDB::dump_to_file(const std::string& filepath, bool append, size_t 
     }
 
     std::ofstream file(filepath, mode);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-        return;
-    }
+    if (!file.is_open())
+        throw std::runtime_error("Could not open file for writing: " + filepath);
     for (const auto &s : structures) {
         s.dump_to_file(file, prec);  
     }
     file.close();
+    if (file.fail())
+        throw std::runtime_error("Could not write the file: " + filepath);
 }
 
 namespace {

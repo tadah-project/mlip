@@ -174,6 +174,9 @@ struct StructureDB {
    *
    * Every number is written with `prec` SIGNIFICANT digits (%.{N}g); the
    * default 18 reads back bit-identically.
+   *
+   * @throws std::runtime_error naming the file when it cannot be opened or
+   *         written.
    */
   void dump_to_file(const std::string& filepath, bool append, size_t prec=18) const;
 

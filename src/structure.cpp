@@ -766,12 +766,12 @@ void Structure::dump_to_file(std::ostream &file, size_t prec) const {
  */
 void Structure::dump_to_file(const std::string &filepath, size_t prec) const {
   std::ofstream file(filepath, std::ios::app); // Open in append mode
-  if (!file.is_open()) {
-    std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-    return;
-  }
+  if (!file.is_open())
+    throw std::runtime_error("Could not open file for writing: " + filepath);
   dump_to_file(file, prec);
   file.close();
+  if (file.fail())
+    throw std::runtime_error("Could not write the file: " + filepath);
 }
 
 /**

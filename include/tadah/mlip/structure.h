@@ -336,7 +336,9 @@ struct Structure {
    */
   void dump_to_file(std::ostream &file, size_t prec=18) const;
 
-  /** Method to dump class content to a file (appends; see above) */
+  /** Method to dump class content to a file (appends; see above).
+   * @throws std::runtime_error naming the file when it cannot be opened or
+   *         written. */
   void dump_to_file(const std::string& filepath, size_t prec=18) const;
 
   /** List of chemical elements in this structure. */
