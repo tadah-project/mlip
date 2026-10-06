@@ -71,6 +71,18 @@ std::string normalised_hm(std::string hm) {
     else if (c == 'Z' || c == 'z')
       hm = hm.substr(0, hm.size() - 2) + ":2";
   }
+  // The axes of an R group written as a suffix ('R -3 m H', ICSD; 'R3R'),
+  // which gemmi reads as ':H' / ':R': spelled so, to be seen as named.
+  if (hm.size() > 1 && (hm[0] == 'R' || hm[0] == 'r') &&
+      hm.find(':') == std::string::npos) {
+    const char c = static_cast<char>(
+        std::toupper(static_cast<unsigned char>(hm.back())));
+    if (c == 'H' || c == 'R') {
+      hm.pop_back();
+      trim(hm);
+      hm += std::string(":") + c;
+    }
+  }
   return hm;
 }
 
@@ -97,15 +109,27 @@ std::pair<double, double> angles_at(const gemmi::UnitCell &c, char axis) {
   }
 }
 
-constexpr double kMonoclinicTol = 1e-3;  // degrees
+constexpr double kAngleTol = 1e-3;  // degrees
 
-// Whether the cell can hold monoclinic group @p sg (any other group: true).
+// Whether the angles of cell @p c fit the axes setting @p sg is in: a
+// monoclinic group's unique axis (the angles between it and the other two
+// axes are 90 degrees; the third is free), an R group's hexagonal axes
+// (alpha = beta = 90, gamma = 120) or rhombohedral axes (alpha = beta =
+// gamma). Any other group: true.
 bool fits_cell(const gemmi::UnitCell &c, const gemmi::SpaceGroup &sg) {
-  const char axis = monoclinic_axis(sg);
-  if (!axis) return true;
-  const auto [first, second] = angles_at(c, axis);
-  return std::fabs(first - 90.0) <= kMonoclinicTol &&
-         std::fabs(second - 90.0) <= kMonoclinicTol;
+  const auto near = [](double x, double y) {
+    return std::fabs(x - y) <= kAngleTol;
+  };
+  if (const char axis = monoclinic_axis(sg)) {
+    const auto [first, second] = angles_at(c, axis);
+    return near(first, 90.0) && near(second, 90.0);
+  }
+  if (sg.hm[0] == 'R' && sg.ext == 'H')
+    return near(c.alpha, 90.0) && near(c.beta, 90.0) && near(c.gamma, 120.0);
+  if (sg.hm[0] == 'R' && sg.ext == 'R')
+    return near(c.alpha, c.beta) && near(c.beta, c.gamma) &&
+           near(c.alpha, c.gamma);
+  return true;
 }
 
 // The ITA settings of the group of @p sg that cell @p c could be in, @p sg
@@ -139,27 +163,35 @@ const gemmi::SpaceGroup *with_rotations_of(gemmi::GroupOps ops) {
   return gemmi::find_spacegroup_by_ops(ops);
 }
 
-// A monoclinic group is described in the setting its unique axis names:
-// the cell angles between that axis and the other two are 90 degrees. In
-// a cell whose angles say otherwise the operators place the images of a
-// site where that crystal has none. @p axes is the tabulated group whose
-// rotations the cell is built with; @p what names the group for the
-// message.
-void require_monoclinic_cell(const gemmi::UnitCell &c,
-                             const gemmi::SpaceGroup *axes,
-                             const std::string &what,
-                             const std::string &advice,
-                             const std::string &source) {
+// A monoclinic group is described in the setting its unique axis names,
+// and an R group on the hexagonal or rhombohedral axes it names: in a cell
+// whose angles say otherwise the operators place the images of a site
+// where that crystal has none. @p axes is the tabulated group whose
+// rotations the cell is built with; @p what names the group, @p advice
+// says what to give instead.
+void require_cell_fits(const gemmi::UnitCell &c,
+                       const gemmi::SpaceGroup *axes, const std::string &what,
+                       const std::string &advice, const std::string &source) {
   if (!axes || fits_cell(c, *axes)) return;
-  const char axis = monoclinic_axis(*axes);
-  const char *needs = axis == 'a'   ? "beta = gamma"
-                      : axis == 'b' ? "alpha = gamma"
-                                    : "alpha = beta";
+  std::string needs;
+  if (const char axis = monoclinic_axis(*axes)) {
+    needs = std::string("is monoclinic with unique axis ") + axis +
+            ", which needs " +
+            (axis == 'a'   ? "beta = gamma"
+             : axis == 'b' ? "alpha = gamma"
+                           : "alpha = beta") +
+            " = 90 degrees (the angles between " + axis +
+            " and the other axes, within 1e-3)";
+  } else if (axes->ext == 'H') {
+    needs = "is on hexagonal axes, which need alpha = beta = 90 and gamma = "
+            "120 degrees (within 1e-3)";
+  } else {
+    needs = "is on rhombohedral axes, which need alpha = beta = gamma "
+            "(within 1e-3 degrees)";
+  }
   using tadah::core::format_roundtrip;
   throw std::runtime_error(
-      source + ": " + what + " is monoclinic with unique axis " + axis +
-      ", which needs " + needs + " = 90 degrees (the angles between " +
-      axis + " and the other axes, within 1e-3), but the cell has alpha " +
+      source + ": " + what + " " + needs + ", but the cell has alpha " +
       format_roundtrip(c.alpha) + ", beta " + format_roundtrip(c.beta) +
       ", gamma " + format_roundtrip(c.gamma) + "; " + advice + ".");
 }
@@ -203,22 +235,31 @@ void CifReader::parseCif(const std::string &fileContents,
                          const std::string &path) {
   using namespace gemmi::cif;
 
-  // Parses the raw CIF content into a gemmi Document
-  Document doc = read_string(fileContents);
-  if (doc.blocks.empty()) {
-    throw std::runtime_error(
-        "CifReader::parseCifContents: No data blocks found.");
+  // Errors name the file, or the text and then its data block
+  const std::string where = path.empty() ? "CIF text" : "CIF file " + path;
+  // One data block, one structure
+  Document doc;
+  Block *only = nullptr;
+  try {
+    doc = read_string(fileContents);
+    only = &doc.sole_block();
+  } catch (const std::exception &e) {
+    throw std::runtime_error(where + ": " + e.what());
   }
-
-  // Assumes there is only one data block in the CIF
-  Block &block = doc.sole_block();
-  // Warnings and errors name the file, or the data block when there is none
+  Block &block = *only;
   const std::string source =
-      path.empty() ? "CIF text (data_" + block.name + ")" : "CIF file " + path;
+      path.empty() ? "CIF text (data_" + block.name + ")" : where;
 
+  // gemmi parses the first number tag present, which must be an integer
+  // or unknown; the reader reads the number itself, where it is used, so
+  // gemmi gets the block without it.
   gemmi::SmallStructure struc;
   try {
-    struc = gemmi::make_small_structure_from_block(block);
+    Block without_number = block;
+    for (const char *tag :
+         {"_space_group_IT_number", "_symmetry_Int_Tables_number"})
+      if (without_number.find_value(tag)) without_number.set_pair(tag, "?");
+    struc = gemmi::make_small_structure_from_block(without_number);
   } catch (const std::exception &e) {
     throw std::runtime_error(source + ": gemmi cannot read the data block: " +
                              e.what());
@@ -242,6 +283,21 @@ void CifReader::parseCif(const std::string &fileContents,
       known_value("_space_group_name_Hall", "_symmetry_space_group_name_Hall");
   const std::string *number_value =
       known_value("_space_group_IT_number", "_symmetry_Int_Tables_number");
+  // The operator loop likewise: the first loop tag with a known value
+  struc.symops.clear();
+  for (const char *tag :
+       {"_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"})
+    if (const Column col = block.find_values(tag)) {
+      bool known = false;
+      for (const std::string &v : col) {
+        std::string text = is_null(v) ? std::string() : as_string(v);
+        trim(text);
+        known = known || !text.empty();
+      }
+      if (!known) continue;
+      for (const std::string &v : col) struc.symops.push_back(as_string(v));
+      break;
+    }
   struc.spacegroup_hm = hm_value ? as_string(*hm_value) : std::string();
   struc.spacegroup_hall = hall_value ? as_string(*hall_value) : std::string();
   // The number is read where it is used (no loop, no symbol).
@@ -394,7 +450,7 @@ void CifReader::parseCif(const std::string &fileContents,
         settings_of_the_cell(*struc.spacegroup, struc.cell) > 1;
   }
 
-  // However the group was given, a monoclinic one must fit the cell.
+  // However the group was given, a monoclinic or R one must fit the cell.
   {
     const gemmi::SpaceGroup *axes =
         struc.spacegroup ? struc.spacegroup
@@ -419,11 +475,15 @@ void CifReader::parseCif(const std::string &fileContents,
                  "read before the H-M symbol)";
         break;
       default:
-        advice = "give the full H-M symbol of the setting the cell is in "
-                 "(e.g. 'P 1 1 21/m' for unique axis c), or its "
-                 "symmetry-operator loop";
+        advice = axes && axes->hm[0] == 'R'
+                     ? "give the H-M symbol without its axes (e.g. 'R -3 m', "
+                       "which takes them from the cell), or the "
+                       "symmetry-operator loop"
+                     : "give the full H-M symbol of the setting the cell is "
+                       "in (e.g. 'P 1 1 21/m' for unique axis c), or its "
+                       "symmetry-operator loop";
     }
-    require_monoclinic_cell(struc.cell, axes, what, advice, source);
+    require_cell_fits(struc.cell, axes, what, advice, source);
   }
   if (number_has_choice)
     std::cerr << "WARNING: " << source
