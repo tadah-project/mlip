@@ -31,6 +31,7 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using tadah::core::PeriodicTable;
@@ -337,6 +338,7 @@ TEST_CASE("AFLOW reader: a malformed field in either form is refused, "
     }
   }
 }
+
 // Pins: a composition count that is not a whole number, or is negative, is
 // refused in either form with a std::runtime_error naming "composition" and
 // the entry's auid: "1.4,0.6" and [1.4,0.6] (they round to 1 and 1, the
@@ -379,17 +381,28 @@ TEST_CASE("AFLOW reader: a composition count that is not a whole number, "
  *  - a geometry item that is not exactly one number ("3.98808224589x") is
  *    refused, naming "geometry" and the auid;
  *  - an empty item ("Cl,,Na" in species, "1,,1" in composition) is refused,
- *    naming the field;
- *  - blanks around an item are allowed: "Cl, Na" gives the same structure as
- *    "Cl,Na";
- *  - an entry without "species" (or "composition") is refused, naming it:
- *    has no "species";
+ *    naming the field and the auid;
+ *  - blanks around an item are allowed: "Cl, Na" gives exactly the
+ *    structure of "Cl,Na" (label, cell and atoms);
+ *  - an entry without "geometry", "species", "composition" or
+ *    "positions_fractional" is refused with a std::runtime_error saying it
+ *    has no such field ('has no "species"') and naming the auid;
  *  - text that is not JSON is a std::runtime_error saying it cannot be read
  *    as JSON.
- * Before the fix: "3.98808224589x" was read as 3.98808224589, empty items
- * were dropped (so "Cl,,Na" was read as Cl, Na), "Cl, Na" failed with
- * "Unknown symbol:  Na", a missing species gave "Unknown symbol: N/A", and
- * text that is not JSON threw nlohmann's parse_error. */
+ * Each part runs whatever the outcome of the others.
+ * Before the fix (v1-dev): "3.98808224589x" was read as 3.98808224589 and
+ * the entry accepted; empty items were dropped ("Cl,,Na" read as Cl, Na and
+ * "1,,1" as 1, 1, both accepted); "Cl, Na" kept the blank and failed with
+ * 'Unknown symbol:  Na'; an entry without "species" read the absent field
+ * as the one symbol "N/A" and gave "AflowReader: entry
+ * 'aflow:0000000000000003' is inconsistent: 1 species, 2 composition
+ * counts adding up to 2, and 2 positions.", and one without "composition"
+ * gave '... is inconsistent: 2 species, 0 composition counts adding up to
+ * 0, and 2 positions.' (neither says the field is missing); an entry
+ * without "geometry" or "positions_fractional" was already refused with
+ * 'has no "geometry" (a,b,c,alpha,beta,gamma).' and 'has no
+ * "positions_fractional".' naming the auid; text that is not JSON threw
+ * nlohmann::json::parse_error 101, which is not a std::runtime_error. */
 TEST_CASE("AFLOW reader: the string form is read strictly",
           "[structure_readers][aflow]") {
   PeriodicTable::initialize();
@@ -409,29 +422,81 @@ TEST_CASE("AFLOW reader: the string form is read strictly",
                       Catch::Contains(b.needle) && Catch::Contains(nacl.auid));
   }
   {
-    AflowReader plain, spaced;
-    plain.parseAflowJson(entry_json(nacl, Form::String));
-    REQUIRE_NOTHROW(spaced.parseAflowJson(
-        entry_json(nacl, Form::String, {}, "species", q("Cl, Na"))));
-    REQUIRE(spaced.getStructure().natoms() == plain.getStructure().natoms());
-    for (size_t a = 0; a < plain.getStructure().natoms(); ++a)
-      CHECK(spaced.getStructure().atoms[a].symbol == plain.getStructure().atoms[a].symbol);
+    const Structure want = reference(nacl);
+    const std::string json =
+        entry_json(nacl, Form::String, {}, "species", q("Cl, Na"));
+    INFO(json);
+    AflowReader spaced;
+    CHECK_NOTHROW(spaced.parseAflowJson(json));
+    // check_same returns before the atoms when their numbers differ.
+    check_same(spaced.getStructure(), want);
   }
-  for (const std::string missing : {"species", "composition"}) {
+  for (const std::string missing :
+       {"geometry", "species", "composition", "positions_fractional"}) {
     Entry e = nacl;
     e.fields.erase(std::remove_if(e.fields.begin(), e.fields.end(),
                                   [&](const Field &f) { return f.key == missing; }),
                    e.fields.end());
     const std::string json = entry_json(e, Form::String);
     INFO(json);
+    AflowReader reader;
+    CHECK_THROWS_AS(reader.parseAflowJson(json), std::runtime_error);
     AflowReader r;
     CHECK_THROWS_WITH(r.parseAflowJson(json),
-                      Catch::Contains("has no \"" + missing + "\""));
+                      Catch::Contains("has no \"" + missing + "\"") &&
+                          Catch::Contains(nacl.auid));
   }
   {
     AflowReader r;
     CHECK_THROWS_AS(r.parseAflowJson("{not json"), std::runtime_error);
     AflowReader r2;
     CHECK_THROWS_WITH(r2.parseAflowJson("{not json"), Catch::Contains("cannot be read as JSON"));
+  }
+}
+
+/* Pins: JSON that is not an object, and an empty symbol in a typed species
+ * list, are refused with a std::runtime_error saying why:
+ *  - "[1]", "\"Ta1\"" and "42" give 'AflowReader: an aflowlib entry is a
+ *    JSON object, not a JSON array.' (string, number);
+ *  - species [""] in the NaCl entry, with the other fields strings and with
+ *    them typed, gives "AflowReader: entry 'aflow:0000000000000003':
+ *    \"species\" must hold element symbols (strings), got \"\" in [\"\"]."
+ *    (read before the counts are compared, so the message is about the
+ *    symbol, not the number of species).
+ * Before the fix: this already holds on this branch (it is how
+ * parseAflowJson refuses a top level that is not an object and a typed
+ * symbol that is not a non-empty string). On v1-dev the three texts threw
+ * nlohmann::json::type_error 306 ('cannot use value() with array', ...
+ * string, ... number) and species [""] type_error 302 ('type must be
+ * string, but is array'), neither a std::runtime_error. */
+TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
+          "symbol, are refused",
+          "[structure_readers][aflow][aflow_typed]") {
+  PeriodicTable::initialize();
+  const std::vector<std::pair<std::string, std::string>> not_object = {
+      {"[1]", "array"}, {q("Ta1"), "string"}, {"42", "number"}};
+  for (const auto &t : not_object) {
+    INFO(t.first);
+    AflowReader reader;
+    CHECK_THROWS_AS(reader.parseAflowJson(t.first), std::runtime_error);
+    AflowReader r;
+    CHECK_THROWS_WITH(r.parseAflowJson(t.first),
+                      Catch::Contains("AflowReader: an aflowlib entry is a "
+                                      "JSON object, not a JSON " +
+                                      t.second + "."));
+  }
+  const Entry nacl = entries()[2];
+  for (const Form base : {Form::String, Form::Typed}) {
+    const std::string json = entry_json(nacl, base, {}, "species", R"([""])");
+    INFO((base == Form::String ? "others strings: " : "others typed: ")
+         << json);
+    AflowReader reader;
+    CHECK_THROWS_AS(reader.parseAflowJson(json), std::runtime_error);
+    AflowReader r;
+    CHECK_THROWS_WITH(
+        r.parseAflowJson(json),
+        Catch::Contains("AflowReader: entry '" + nacl.auid + "': \"species\" "
+                        "must hold element symbols (strings), got \"\" in "
+                        "[\"\"]."));
   }
 }

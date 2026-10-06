@@ -16,15 +16,28 @@
 //     SmallStructure::check_spacegroup() is not empty), the structure
 //     follows the operator loop and a WARNING names the file and quotes the
 //     diagnostic; a consistent or absent record prints nothing;
+//   - a space-group number alone (no operator loop, no symbol) names the
+//     group, not the setting: the reader takes the number's H-M symbol in
+//     the setting that fits the cell angles (hexagonal or rhombohedral
+//     axes) and origin choice 2, as gemmi does for an H-M symbol, and, when
+//     the number has more than one tabulated setting, a WARNING names the
+//     setting used;
+//   - an operator loop that is incomplete is not completed or replaced by
+//     the number: gemmi falls back to the H-M symbol, or to P 1 when there
+//     is none, and the WARNING says which; a complete loop that is no
+//     tabulated setting expands the sites with its own operators;
 //   - a site with _atom_site_occupancy below 1 is refused, naming the site
 //     and its occupancy: Tadah has no representation for a disordered or
 //     partly vacant site, and two species sharing a site would become
-//     coincident atoms.
+//     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1.
 //
 // Fixtures: tests_data/cif/ (one file per row of the investigation table,
 // tmp/known-issues/report_leftovers.md section 6). The expected atoms are
 // hand-written from the Wyckoff positions (bcc Fe 2a, NaCl 4a + 4b, hcp Mg
-// 2c); none is computed with the reader under test.
+// 2c, Bi 2c of R -3 m:R and 6c of R -3 m:H, diamond Si 8a of F d -3 m
+// origin choice 2) or from the definition of the group (the 96 images of a
+// general position of I m -3 m); none is computed with the reader under
+// test.
 
 #include "catch2/catch.hpp"
 
@@ -73,6 +86,47 @@ const std::vector<Site> kNaCl = {
 // hcp Mg, P 6_3/m m c, Mg on 2c.
 const std::vector<Site> kMgHcp = {{"Mg", {1.0 / 3.0, 2.0 / 3.0, 0.25}},
                                   {"Mg", {2.0 / 3.0, 1.0 / 3.0, 0.75}}};
+// Bi, R -3 m on rhombohedral axes (R -3 m:R), Bi on 2c (x,x,x) and
+// (-x,-x,-x), x = 0.2339.
+const double kBiX = 0.2339;
+const std::vector<Site> kBiRh = {{"Bi", {kBiX, kBiX, kBiX}},
+                                 {"Bi", {-kBiX, -kBiX, -kBiX}}};
+// The same crystal on hexagonal axes (R -3 m:H), Bi on 6c (0,0,z) with
+// z = x: (0,0,+-z) and the same with the R-centring translations
+// (2/3,1/3,1/3) and (1/3,2/3,2/3).
+const std::vector<Site> kBiHex = {
+    {"Bi", {0.0, 0.0, kBiX}},
+    {"Bi", {0.0, 0.0, -kBiX}},
+    {"Bi", {2.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 + kBiX}},
+    {"Bi", {2.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 - kBiX}},
+    {"Bi", {1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0 + kBiX}},
+    {"Bi", {1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0 - kBiX}}};
+// Diamond Si, F d -3 m origin choice 2, Si on 8a: (1/8,1/8,1/8) and
+// (7/8,7/8,7/8), each with the F-centring translations.
+const std::vector<Site> kSiDiamond = {
+    {"Si", {0.125, 0.125, 0.125}}, {"Si", {0.125, 0.625, 0.625}},
+    {"Si", {0.625, 0.125, 0.625}}, {"Si", {0.625, 0.625, 0.125}},
+    {"Si", {0.875, 0.875, 0.875}}, {"Si", {0.875, 0.375, 0.375}},
+    {"Si", {0.375, 0.875, 0.375}}, {"Si", {0.375, 0.375, 0.875}}};
+
+// The 96 images of the general position p in I m -3 m: the point group
+// m -3 m is the 6 permutations of (x,y,z), each with the 8 choices of
+// signs (48 operations), and the I centring adds (1/2,1/2,1/2) to each.
+std::vector<Site> im3m_general_position(const std::string &symbol,
+                                        const V3 &p) {
+  const int perms[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+                           {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+  std::vector<Site> out;
+  for (const auto &perm : perms)
+    for (int signs = 0; signs < 8; ++signs)
+      for (const double t : {0.0, 0.5}) {
+        V3 f;
+        for (int k = 0; k < 3; ++k)
+          f[k] = (((signs >> k) & 1) ? -1.0 : 1.0) * p[perm[k]] + t;
+        out.push_back({symbol, f});
+      }
+  return out;
+}
 
 double dot(const V3 &u, const V3 &v) {
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
@@ -123,6 +177,13 @@ void check_sites(const Structure &st, const std::vector<Site> &sites) {
 
 bool contains(const std::string &text, const std::string &what) {
   return text.find(what) != std::string::npos;
+}
+size_t count_of(const std::string &text, const std::string &what) {
+  size_t n = 0;
+  for (size_t at = text.find(what); at != std::string::npos;
+       at = text.find(what, at + what.size()))
+    ++n;
+  return n;
 }
 std::string lower(std::string s) {
   for (auto &c : s)
@@ -180,6 +241,14 @@ const char *route_name(Route r) {
       return "StructureReaderSelector (-s x.cif)";
   }
   return "?";
+}
+
+// How the reader names the source in a WARNING or an error: the file, or,
+// through parseCifContents (no file), the data block.
+std::string source_of(const std::string &path, Route route,
+                      const std::string &block) {
+  return route == Route::Contents ? "CIF text (data_" + block + ")"
+                                  : "CIF file " + path;
 }
 
 // What one read returned and printed.
@@ -319,6 +388,102 @@ TEST_CASE("CIF reader: a space-group number alone gives the full cell",
   }
 }
 
+// The number-only fixtures with more than one tabulated setting, and the
+// setting (gemmi's SpaceGroup::xhm()) the cell must be built with.
+struct NumberOnlyCase {
+  const char *file;
+  const char *block;    // the data block, without "data_"
+  int number;           // _symmetry_Int_Tables_number
+  const char *setting;  // the setting that fits the cell
+  const std::vector<Site> *sites;
+};
+const NumberOnlyCase kNumberOnlyCases[] = {
+    {"bi_rh_number_only.cif", "Bi_rh_number_only", 166, "R -3 m:R", &kBiRh},
+    {"bi_hex_number_only.cif", "Bi_hex_number_only", 166, "R -3 m:H",
+     &kBiHex},
+    {"si_diamond_number_only.cif", "Si_diamond_number_only", 227,
+     "F d -3 m:2", &kSiDiamond}};
+
+/* Pins: a CIF whose only symmetry record is the space-group number is
+ * expanded in the setting of that number that fits the cell, through every
+ * route:
+ *   - bi_rh_number_only.cif: 166 on rhombohedral axes (a = 4.7236 A,
+ *     alpha = beta = gamma = 57.35 deg), Bi1 at (x,x,x), x = 0.2339: the
+ *     setting is R -3 m:R, and Bi on 2c gives 2 atoms, (x,x,x) and
+ *     (-x,-x,-x);
+ *   - bi_hex_number_only.cif: the same crystal on hexagonal axes
+ *     (alpha = 90, gamma = 120 deg), Bi1 at (0,0,z): R -3 m:H, Bi on 6c,
+ *     6 atoms;
+ *   - si_diamond_number_only.cif: 227, a = 5.431 A, Si1 at (1/8,1/8,1/8):
+ *     F d -3 m origin choice 2 (the reference setting, origin at the
+ *     inversion centre), Si on 8a, 8 atoms.
+ * The number names the space-group type, not the setting. The reader
+ * resolves it as gemmi resolves an H-M symbol given alone: the number's
+ * H-M symbol, with the cell angles choosing hexagonal or rhombohedral axes
+ * and origin choice 2 preferred (find_spacegroup_by_name(hm, alpha, gamma,
+ * "2")).
+ * Before the fix: the number was looked up with find_spacegroup_by_number,
+ * which returns gemmi's first table entry for it (the CCP4 setting,
+ * R -3 m:H or F d -3 m:1) whatever the cell. Bi on rhombohedral axes was
+ * expanded with the hexagonal-setting operators, 36 atoms (the count CHECK
+ * fails with "36 == 2"), and Si with origin choice 1, in which
+ * (1/8,1/8,1/8) is a 16-fold site, 16 atoms ("16 == 8"), on each of the
+ * three routes. Bi on hexagonal axes passes (6 atoms, a pin). */
+TEST_CASE("CIF reader: a space-group number alone is expanded in the "
+          "setting that fits the cell, origin choice 2",
+          "[structure_readers][cif][symmetry]") {
+  PeriodicTable::initialize();
+  for (const NumberOnlyCase &c : kNumberOnlyCases) {
+    for (const Route route : kRoutes) {
+      INFO(c.file << " (" << c.setting << ") via " << route_name(route));
+      check_sites(read_cif(kCifDir + c.file, route).st, *c.sites);
+    }
+  }
+}
+
+/* Pins: when the space-group number is the only symmetry record and the
+ * number has more than one tabulated setting, the reader prints one
+ * WARNING naming the source, the number and the setting the cell was built
+ * with. The text is
+ *   WARNING: <source>: the space group is given only by its number (<n>),
+ *   which has more than one setting; the unit cell is built with space
+ *   group <setting>, the one that fits the cell angles (origin choice 2
+ *   where the group has two).
+ * with <source> "CIF file <path>" (CifReader::read and
+ * StructureReaderSelector) or "CIF text (data_<block>)" (parseCifContents),
+ * and <setting> gemmi's SpaceGroup::xhm(): R -3 m:R for
+ * bi_rh_number_only.cif, R -3 m:H for bi_hex_number_only.cif, F d -3 m:2
+ * for si_diamond_number_only.cif. The test checks "WARNING: <source>: ",
+ * "only by its number (<n>)", "the unit cell is built with space group
+ * <setting>", and that "WARNING" appears once (the record is otherwise
+ * consistent). The number of a group with a single setting (229,
+ * fe_bcc_number_only.cif) leaves no choice and prints nothing (the
+ * no-warning test below).
+ * Before the fix: nothing was printed (gemmi's check_spacegroup() finds the
+ * number consistent with the setting it was looked up in), so every CHECK
+ * on the captured output fails, on each route. */
+TEST_CASE("CIF reader: a space-group number alone gives a WARNING naming "
+          "the setting used",
+          "[structure_readers][cif][symmetry][warning]") {
+  PeriodicTable::initialize();
+  for (const NumberOnlyCase &c : kNumberOnlyCases) {
+    const std::string path = kCifDir + c.file;
+    for (const Route route : kRoutes) {
+      INFO(c.file << " via " << route_name(route));
+      const Read r = read_cif(path, route);
+      INFO("printed:\n" << r.log);
+      CHECK(contains(r.log,
+                     "WARNING: " + source_of(path, route, c.block) + ": "));
+      CHECK(contains(r.log, "only by its number (" +
+                                std::to_string(c.number) + ")"));
+      CHECK(contains(r.log, std::string("the unit cell is built with space "
+                                        "group ") +
+                                c.setting));
+      CHECK(count_of(r.log, "WARNING") == 1);
+    }
+  }
+}
+
 /* Pins: a CIF with no symmetry record at all is P 1 by convention: the
  * sites as listed, 1 atom for fe_bcc_none.cif. Two _atom_site rows that
  * name one position modulo a lattice vector (fe_frac1_dup.cif: Fe1 at
@@ -397,7 +562,9 @@ TEST_CASE("CIF reader: an inconsistent symmetry record gives a WARNING "
 /* Pins: a consistent or absent symmetry record prints no warning: the bcc
  * Fe files with the H-M symbol alone (old and new tag), the Hall symbol
  * alone, the H-M symbol with the full loop, or the number alone (once the
- * number sets the space group, the two agree), the file without any
+ * number sets the space group, the two agree, and 229 has a single
+ * tabulated setting, I m -3 m, so the number leaves no choice to report;
+ * compare the number-only WARNING test below), the file without any
  * symmetry record, the two-rows-on-one-site file, NaCl, hcp Mg, and the
  * cell-convention fixtures (H-M symbol, number and full operator loop, all
  * agreeing).
@@ -426,6 +593,105 @@ TEST_CASE("CIF reader: a consistent or absent symmetry record gives no "
       const Read r = read_cif(path, route);
       INFO("printed:\n" << r.log);
       CHECK_FALSE(contains(lower(r.log), "warning"));
+    }
+  }
+}
+
+/* Pins: an incomplete operator loop is neither completed nor replaced by
+ * the number. The loop {x,y,z; x+1/2,y+1/2,z+1/2; y,z,x} (the threefold
+ * y,z,x without its square z,x,y) names no group, so
+ *   - with the H-M symbol 'I m -3 m' (fe_bcc_partial_loop_hm.cif) gemmi
+ *     falls back to the symbol, and Fe1 on the general position
+ *     (0.08,0.20,0.32) gives all 96 images of I m -3 m (the 48 signed
+ *     permutations of (x,y,z), and each plus (1/2,1/2,1/2)); the WARNING
+ *     says "the unit cell is built with space group I m -3 m";
+ *   - with only the number 229 (fe_bcc_partial_loop_number.cif) gemmi does
+ *     not look at the number, and the cell is P 1: 1 atom, the site as
+ *     listed; the WARNING says "the unit cell is built with no symmetry
+ *     (P 1, the sites as listed)".
+ * Both WARNINGs name the source and quote gemmi's "symops list is
+ * incomplete or incorrect". Through every route.
+ * Before the fix: passes as well (a pin). The number is resolved only when
+ * there is no operator loop, so the fix must leave both as they are. */
+TEST_CASE("CIF reader: an incomplete operator loop falls back to the H-M "
+          "symbol, or to P 1 when there is only the number, with a WARNING",
+          "[structure_readers][cif][symmetry][warning]") {
+  PeriodicTable::initialize();
+  const V3 general = {0.08, 0.20, 0.32};
+  struct Case {
+    const char *file;
+    const char *block;
+    const char *built_with;
+    std::vector<Site> sites;
+  };
+  const std::vector<Case> cases = {
+      {"fe_bcc_partial_loop_hm.cif", "Fe_bcc_partial_loop_hm",
+       "the unit cell is built with space group I m -3 m.",
+       im3m_general_position("Fe", general)},
+      {"fe_bcc_partial_loop_number.cif", "Fe_bcc_partial_loop_number",
+       "the unit cell is built with no symmetry (P 1, the sites as listed).",
+       {{"Fe", general}}}};
+  for (const Case &c : cases) {
+    const std::string path = kCifDir + c.file;
+    for (const Route route : kRoutes) {
+      INFO(c.file << " via " << route_name(route));
+      const Read r = read_cif(path, route);
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, c.sites);
+      CHECK(contains(r.log,
+                     "WARNING: " + source_of(path, route, c.block) + ": "));
+      CHECK(contains(r.log, "symops list is incomplete or incorrect"));
+      CHECK(contains(r.log, c.built_with));
+    }
+  }
+}
+
+/* Pins: the WARNING on an inconsistent record says what the cell was built
+ * with and names the source:
+ *   - fe_bcc_mismatch.cif (H-M 'P m -3 m' with only the I-centring
+ *     operators): "the unit cell is built with space group I 1." (the
+ *     loop's group); through parseCifContents (no file) the source is the
+ *     data block, "WARNING: CIF text (data_Fe_bcc_mismatch): ", through
+ *     CifReader::read and the selector "WARNING: CIF file <path>: ";
+ *   - p2_shifted_origin_loop.cif (a complete loop that is no tabulated
+ *     setting: P 2 with the twofold axis through (1/4,0,z),
+ *     {x,y,z; -x+1/2,-y,z}): gemmi's "space group from symops not found in
+ *     the table" and "the unit cell is built with the 2 operators of the
+ *     symmetry-operator loop (no tabulated space group)."; Fe1 at
+ *     (0.1,0.2,0.3) gives 2 atoms, the second at (0.4,0.8,0.3).
+ * Before the fix: passes as well (a pin of the WARNING text). */
+TEST_CASE("CIF reader: the WARNING names the symmetry the cell was built "
+          "with and the file or data block",
+          "[structure_readers][cif][symmetry][warning]") {
+  PeriodicTable::initialize();
+  for (const Route route : kRoutes) {
+    INFO(route_name(route));
+    {
+      const std::string path = kCifDir + "fe_bcc_mismatch.cif";
+      INFO("fe_bcc_mismatch.cif");
+      const Read r = read_cif(path, route);
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kFeBcc);
+      CHECK(contains(r.log, "WARNING: " +
+                                source_of(path, route, "Fe_bcc_mismatch") +
+                                ": "));
+      CHECK(contains(r.log,
+                     "the unit cell is built with space group I 1."));
+    }
+    {
+      const std::string path = kCifDir + "p2_shifted_origin_loop.cif";
+      INFO("p2_shifted_origin_loop.cif");
+      const Read r = read_cif(path, route);
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, {{"Fe", {0.1, 0.2, 0.3}}, {"Fe", {0.4, 0.8, 0.3}}});
+      CHECK(contains(r.log,
+                     "WARNING: " +
+                         source_of(path, route, "P2_shifted_origin_loop") +
+                         ": "));
+      CHECK(contains(r.log, "space group from symops not found in the table"));
+      CHECK(contains(r.log,
+                     "the unit cell is built with the 2 operators of the "
+                     "symmetry-operator loop (no tabulated space group)."));
     }
   }
 }
@@ -529,6 +795,69 @@ TEST_CASE("CIF reader: an occupancy that is not a number, or above 1, is refused
     } catch (const std::runtime_error &e) {
       INFO("message: " << e.what());
       CHECK(contains(e.what(), c[1]));
+    }
+  }
+}
+
+/* Pins: an occupancy within 1e-6 of 1, or unknown, is taken as 1: '.'
+ * (CIF's "inapplicable", which gemmi, like '?', reads as no value),
+ * 1.0000005 (1 + 5e-7) and 0.9999995 (1 - 5e-7) each give rock-salt NaCl's
+ * 8 atoms and print nothing.
+ * Before the fix: passes as well (a pin of the 1e-6 tolerance and of '.'). */
+TEST_CASE("CIF reader: an occupancy within 1e-6 of 1, or '.', is accepted",
+          "[structure_readers][cif][occupancy]") {
+  PeriodicTable::initialize();
+  for (const char *occ : {".", "1.0000005", "0.9999995"}) {
+    INFO("Na1 occupancy " << occ);
+    const std::string text = cif_with_occupancy(
+        "NaCl_occupancy_near_1", 5.64, "F m -3 m",
+        std::string("Na1 Na 0 0 0 ") + occ + "\nCl1 Cl 0.5 0.5 0.5 1\n");
+    Read r;
+    try {
+      r = parse_cif_text(text);
+    } catch (const std::exception &e) {
+      FAIL_CHECK("refused: " << e.what());
+      continue;
+    }
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kNaCl);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
+}
+
+/* Pins: an occupancy more than 1e-6 from 1 is refused, and the message
+ * quotes the occupancy as the CIF writes it, so that it shows why:
+ *   - 0.999998 (1 - 2e-6): "site Na1 has occupancy 0.999998; Tadah has no
+ *     representation for a partly occupied site ...";
+ *   - 1.000002 (1 + 2e-6): "site Na1 has occupancy 1.000002, above 1,
+ *     which is not a valid occupancy."
+ * Before the fix: both are refused, but the value is streamed with the
+ * default precision (6 significant digits), so the second message reads
+ * "site Na1 has occupancy 1, above 1, which is not a valid occupancy.",
+ * which contradicts itself: the CHECK for "site Na1 has occupancy
+ * 1.000002" fails; the rest passes. */
+TEST_CASE("CIF reader: an occupancy 2e-6 from 1 is refused, quoting the "
+          "value as written",
+          "[structure_readers][cif][occupancy]") {
+  PeriodicTable::initialize();
+  const std::vector<std::array<std::string, 3>> cases = {
+      {"0.999998", "site Na1 has occupancy 0.999998",
+       "no representation for a partly occupied site"},
+      {"1.000002", "site Na1 has occupancy 1.000002", "above 1"}};
+  for (const auto &c : cases) {
+    INFO("Na1 occupancy " << c[0]);
+    const std::string text = cif_with_occupancy(
+        "NaCl_occupancy_off_1", 5.64, "F m -3 m",
+        "Na1 Na 0 0 0 " + c[0] + "\nCl1 Cl 0.5 0.5 0.5 1\n");
+    try {
+      const Read r = parse_cif_text(text);
+      FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+    } catch (const std::runtime_error &e) {
+      const std::string what = e.what();
+      INFO("message: " << what);
+      CHECK(contains(what, "CIF text (data_NaCl_occupancy_off_1): "));
+      CHECK(contains(what, c[1]));
+      CHECK(contains(what, c[2]));
     }
   }
 }

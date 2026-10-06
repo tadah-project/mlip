@@ -85,8 +85,11 @@ TEST_CASE("AFLOW reader: the live Ta1_ICSD_76152 entry is read",
  * from the AFLUX answer the service gives today,
  * AFLOWDataProvider::entry_url_from_aflux() builds
  * http://aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152/aflowlib.json.
- * Before the fix: the provider requested <aurl>/?format=json, which the
- * service answers with 404 (and had no function to test it with). */
+ * Before the fix: the provider requested the entry's directory with
+ * "?format=json" (aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152?format=json,
+ * built inline in fetchAndParseAflowByAuid), which the service answers with
+ * 404; with no entry_url_from_aflux, has_entry_url is false and entry_url()
+ * gives "". */
 TEST_CASE("AFLOW provider: the entry URL is the entry's aflowlib.json",
           "[aflow][data_providers]") {
   CHECK(has_entry_url<AFLOWDataProvider>::value);

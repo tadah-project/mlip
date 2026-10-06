@@ -8,6 +8,8 @@
 //     either lo or hi at every dimension.
 //   * sample_corners' Latin-hypercube branch returns ⌈k log₂ k⌉
 //     samples for k > 12.
+//   * check_bounds_at_corners refuses a dataset with two atoms at one
+//     position, naming the structure (NNFinder's refusal).
 //   * The Phase 7 engine (`tadah analysis check_bounds`) is wired —
 //     tested elsewhere via the smoke path; this file focuses on the
 //     pure-function library.
@@ -311,4 +313,101 @@ TEST_CASE("check_bounds: a corner of a vector key changes only its own entry",
     CHECK(res.n_corners == 2);
     CHECK(res.n_corners_failing == 2);
   }
+}
+
+// ---------------------------------------------------------------------------
+//  check_bounds_at_corners: a dataset with two atoms at one position
+// ---------------------------------------------------------------------------
+
+#include <tadah/mlip/atom.h>
+#include <tadah/mlip/structure.h>
+
+#include <exception>
+#include <stdexcept>
+
+namespace {
+
+/* bcc Ta (a = 3.3 A) labelled `label`; with `coincident` a third Ta on top
+ * of atom 1, at (0, 0, 0). */
+tadah::mlip::Structure bcc_ta_cell(const std::string &label, bool coincident) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  tadah::mlip::Structure st;
+  st.label = label;
+  st.energy = -20.0;
+  st.cell.load(3.3, 0.0, 0.0, 0.0, 3.3, 0.0, 0.0, 0.0, 3.3);
+  st.add_atom(tadah::mlip::Atom(ta, 0.0, 0.0, 0.0));
+  st.add_atom(tadah::mlip::Atom(ta, 1.65, 1.65, 1.65));
+  if (coincident) st.add_atom(tadah::mlip::Atom(ta, 0.0, 0.0, 0.0));
+  return st;
+}
+
+/* The type and message of what @p f throws: {"", ""} when nothing is
+ * thrown. */
+template <class F>
+std::pair<std::string, std::string> thrown_by(F f) {
+  try {
+    f();
+  } catch (const std::invalid_argument &e) {
+    return {"invalid_argument", e.what()};
+  } catch (const std::exception &e) {
+    return {"other exception", e.what()};
+  }
+  return {"", ""};
+}
+
+}  // namespace
+
+/* Pins: check_bounds refuses a dataset in which two atoms are at the same
+ * position, as training, prediction and HPO do (NNFinder's refusal), instead
+ * of auditing the corners against statistics that count the pair at
+ * distance 0: of a bcc Ta cell and 'coincident-Ta' (the same cell with a
+ * third Ta on atom 1), check_bounds_at_corners throws std::invalid_argument
+ * naming "structure 2 of 2 ('coincident-Ta')", "atoms 1 and 3 (Ta, Ta)" and
+ * "same position". The same seed and box on the bcc cell alone are audited
+ * without an exception (so the refusal is the dataset's). Only `tadah
+ * analysis dataset_stats`, which audits the data, lists such a pair.
+ * Before the fix: compute_data_stats builds its lists with
+ * NNFinder::list_coincident(true), so it counts the pair at distance 0
+ * (per_pair r_min 0) and throws nothing; the two corners are audited
+ * against those statistics and a CheckBoundsResult is returned, so
+ * CHECK_THROWS_AS fails and the message is empty. (Before list_coincident
+ * the NNFinder refusal did not reach the caller either:
+ * check_bounds_at_corners catches every exception of compute_data_stats,
+ * logs "check_bounds: dataset stats failed (...); per-corner audits will
+ * run with empty stats." and audits the corners against empty statistics.) */
+TEST_CASE("check_bounds: a dataset with two atoms at the same position is "
+          "refused, naming the structure",
+          "[check_bounds][coincident]") {
+  tadah::core::PeriodicTable::initialize();
+  Context seed;
+  seed.add("ATOM", "Ta");
+  seed.add("INIT2B", "false");
+  seed.add("INITMB", "true");
+  seed.add("TYPEMB", "DM_Blip 0 4 4 Ta Ta");
+  seed.add("CGRIDMB", "3.0 3.5 4.0 4.5");
+  seed.add("SGRIDMB", "1.0 1.0 1.0 1.0");
+  seed.add("RCTYPEMB", "Cut_Cos");
+  seed.add("RCUTMB", 5.0);
+  seed.add("VERBOSE", 0);
+  const std::vector<Bound> b = {box("CGRIDMB", 2, 3.9, 4.1)};
+
+  {
+    tadah::mlip::StructureDB clean;
+    clean.add(bcc_ta_cell("bcc-Ta", false));
+    tadah::mlip::CheckBoundsResult res;
+    REQUIRE_NOTHROW(res = run_corners(clean, seed, b));
+    CHECK(res.n_corners == 2);
+  }
+
+  tadah::mlip::StructureDB stdb;
+  stdb.add(bcc_ta_cell("bcc-Ta", false));
+  stdb.add(bcc_ta_cell("coincident-Ta", true));
+  const auto t = thrown_by([&] { (void)run_corners(stdb, seed, b); });
+  INFO(t.first << ": " << t.second);
+  CHECK(t.first == "invalid_argument");
+  CHECK(t.second.find("structure 2 of 2 ('coincident-Ta')") !=
+        std::string::npos);
+  CHECK(t.second.find("atoms 1 and 3 (Ta, Ta)") != std::string::npos);
+  CHECK(t.second.find("same position") != std::string::npos);
 }
