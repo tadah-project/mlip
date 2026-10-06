@@ -64,25 +64,43 @@ RawResponse AFLOWDataProvider::httpGet(const std::string &url)
 }
 
 /*
-  convertAURLToURL(aurl):
-    Converts an AFLOW-style aurl, usually "server:PATH", 
-    into "server/PATH". This helps build a domain/path 
-    format recognized by HTTP requests. For example:
+  entry_url_from_aflux(aflux_json):
+    The AFLUX answer is a JSON array of entries; the "aurl" of the first,
+    "server:PATH", locates the entry's directory, and the entry file in it
+    is aflowlib.json. For example
 
       "aflowlib.duke.edu:AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152"
 
-    becomes:
+    becomes
 
-      "aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152".
+      "http://aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152/aflowlib.json".
+
+    The directory URL with "?format=json", requested before, is answered
+    with 404 "format=json not available for this entry" (checked on
+    2026-10-06).
 */
-std::string convertAURLToURL(const std::string &aurl) {
-  const std::size_t pos = aurl.find(':');
-  if (pos != std::string::npos) {
-    std::string server = aurl.substr(0, pos);
-    std::string path   = aurl.substr(pos + 1);
-    return server + "/" + path;
+std::string AFLOWDataProvider::entry_url_from_aflux(const std::string &aflux_json)
+{
+  const nlohmann::json root = nlohmann::json::parse(aflux_json, nullptr, false);
+  if (!root.is_array() || root.empty()) {
+    throw std::runtime_error(
+        "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON array.");
   }
-  return aurl;
+  const nlohmann::json &first = root[0];
+  if (!first.is_object() || !first.contains("aurl") ||
+      !first["aurl"].is_string()) {
+    throw std::runtime_error(
+        "AFLOWDataProvider: the first entry of the AFLUX answer has no "
+        "\"aurl\" string.");
+  }
+  const std::string aurl = first["aurl"].get<std::string>();
+  const std::size_t colon = aurl.find(':');
+  if (colon == std::string::npos || colon == 0 || colon + 1 == aurl.size()) {
+    throw std::runtime_error("AFLOWDataProvider: aurl '" + aurl +
+                             "' in the AFLUX answer is not server:PATH.");
+  }
+  return "http://" + aurl.substr(0, colon) + "/" + aurl.substr(colon + 1) +
+         "/aflowlib.json";
 }
 
 RawResponse AFLOWDataProvider::fetchAndParseAflowByAuid(const std::string &auid)
@@ -94,37 +112,21 @@ RawResponse AFLOWDataProvider::fetchAndParseAflowByAuid(const std::string &auid)
     return step1; // Return directly if the first step fails
   }
 
-  // Minimal parse to extract "aurl" from the result
-  // This is the only partial parse required to get the second URL.
-  // The final data is still returned unparsed from step2.
-  nlohmann::json root = nlohmann::json::parse(step1.response, nullptr, false);
-  if (!root.is_array() || root.empty()) {
+  // The only partial parse required: the entry file's URL. An answer
+  // without one gives 404 with the reason in the response; the entry
+  // itself is still returned unparsed from step 2.
+  std::string url;
+  try {
+    url = entry_url_from_aflux(step1.response);
+  } catch (const std::runtime_error &e) {
     RawResponse rr;
     rr.httpStatus = 404;
-    rr.response = "AFLOWDataProvider: 'aflux' JSON not an array or is empty.";
+    rr.response = e.what();
     return rr;
   }
 
-  // We assume the first object's "aurl" field is needed
-  auto firstObj = root[0];
-  if (!firstObj.contains("aurl")) {
-    RawResponse rr;
-    rr.httpStatus = 404;
-    rr.response = "AFLOWDataProvider: 'aurl' field not found in JSON.";
-    return rr;
-  }
-
-  std::string aurl = firstObj["aurl"].get<std::string>();
-  aurl = convertAURLToURL(aurl);
-  if (aurl.find('?') == std::string::npos) {
-    // Append "?format=json" if not present
-    aurl += "?format=json";
-  } else {
-    aurl += "&format=json";
-  }
-
-  // Step 2) GET final data from 'aurl'
-  return httpGet(aurl);
+  // Step 2) GET the entry file <aurl>/aflowlib.json
+  return httpGet(url);
 }
 } // namespace mlip
 } // namespace tadah

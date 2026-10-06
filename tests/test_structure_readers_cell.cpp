@@ -9,10 +9,11 @@
 // POSCAR readers; none is computed with the reader under test. Finding ids
 // refer to AUDIT-cell-convention-2026-09-30.md.
 //
-// AFLOW (vaspdb-4) is covered through AflowReader::parseAflowJson on
-// hand-written entries whose fields are all JSON strings; the encoding of a
-// live aflowlib entry (strings or numbers and arrays) has not been checked
-// against the service.
+// AFLOW (vaspdb-4) is covered here through AflowReader::parseAflowJson on
+// hand-written entries whose fields are all JSON strings. The typed form
+// (numbers and arrays) is covered in test_aflow_reader_typed.cpp, and the
+// entry the service serves (Ta1_ICSD_76152, saved in tests_data/aflow/ on
+// 2026-10-06, typed) in test_aflow_live_fixture.cpp.
 
 #include "catch2/catch.hpp"
 

@@ -31,8 +31,29 @@ public:
   Structure getStructure() const override;
 
   /**
-   * @brief Reads geometry, positions_fractional, stoichiometry, etc. from
-   *        AFLOW JSON; throws when geometry or positions_fractional is missing.
+   * @brief Reads geometry, species, composition and positions_fractional
+   *        (and auid, compound, volume_cell and density for the label)
+   *        from an aflowlib entry.
+   *
+   * Each field is read in either encoding, whatever the encoding of the
+   * others: the string form ("geometry": "a,b,c,alpha,beta,gamma",
+   * "species": "Cl,Na", "composition": "1,1", "positions_fractional":
+   * "0,0,0;0.5,0.5,0.5", "volume_cell": "44.85154") or the typed form of
+   * the entry file aflowlib.json (a six-number array, an array of symbols,
+   * an array of counts, an array of three-number arrays, a number). auid
+   * and compound are strings in both. A number in the label is written as
+   * JSON writes it, so both forms give the same label.
+   *
+   * @throws std::runtime_error naming the entry's auid and the field (only
+   *         the field when "auid" itself is not a string) for: an entry
+   *         without geometry, species, composition or positions_fractional;
+   *         a field in neither form; a geometry of other than six numbers; a
+   *         site of other than three numbers; a composition count that is
+   *         not a whole number 0 or more; and species, composition counts
+   *         and positions that do not match. Also for a geometry that
+   *         describes no cell (see makeCellMatrix) and for text that is not
+   *         a JSON object. The structure of the last successful read is
+   *         then kept.
    *
    * Public so that an AFLOW entry can be parsed without a network query
    * (as CifReader::parseCifContents does for CIF text).
@@ -44,7 +65,8 @@ private:
   std::unique_ptr<IMaterialsDataProvider> m_dataProvider;
 
   /**
-   * @brief Calls AFLOWDataProvider->QueryByID(auid), then parse the returned JSON.
+   * @brief Calls AFLOWDataProvider->QueryByID(auid), then parses the
+   *        returned entry (aflowlib.json) with parseAflowJson.
    */
   void fetchAndParseAflowByAuid(const std::string &auid);
 
