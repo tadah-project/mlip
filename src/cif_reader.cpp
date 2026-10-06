@@ -12,10 +12,11 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <utility>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -53,14 +54,29 @@ void trim(std::string &s) {
 
 // The H-M symbol in the spelling gemmi's table lookup reads. CIF writers
 // spell one symbol in several ways: subscripts written with '_' ('P 2_1/c',
-// spglib) or in parentheses ('P 4(2)/n m c'), a trailing ' (No. 14)', and
+// spglib) or in parentheses ('P 4(2)/n m c'), a trailing ' (No. 14)', the
+// notes '(origin choice 2)', '(origin at -1)' and '(hexagonal axes)', and
 // ICSD's origin-choice suffix ' S' or ' Z' (origin choice 1 or 2), which
 // gemmi reads as ':1' or ':2'.
 std::string normalised_hm(std::string hm) {
   static const std::regex number_note(R"(\s*\(\s*[Nn][Oo]\.?\s*\d+\s*\)$)");
   static const std::regex subscript(R"((\d)\((\d)\))");
+  // The notes of the CIF dictionary's examples: the origin choice, the
+  // origin at the centre of symmetry (origin choice 2), the axes
+  static const std::regex origin_choice(
+      R"(\s*\(\s*origin\s+choice\s+([12])\s*\)$)", std::regex::icase);
+  static const std::regex origin_at_centre(
+      R"(\s*\(\s*origin\s+at\s+-1\s*\)$)", std::regex::icase);
+  static const std::regex hexagonal_axes(
+      R"(\s*\(\s*hexagonal\s+axes\s*\)$)", std::regex::icase);
+  static const std::regex rhombohedral_axes(
+      R"(\s*\(\s*rhombohedral\s+axes\s*\)$)", std::regex::icase);
   trim(hm);
   hm = std::regex_replace(hm, number_note, "");
+  hm = std::regex_replace(hm, origin_choice, ":$1");
+  hm = std::regex_replace(hm, origin_at_centre, ":2");
+  hm = std::regex_replace(hm, hexagonal_axes, ":H");
+  hm = std::regex_replace(hm, rhombohedral_axes, ":R");
   hm = std::regex_replace(hm, subscript, "$1$2");
   hm.erase(std::remove(hm.begin(), hm.end(), '_'), hm.end());
   trim(hm);
@@ -172,16 +188,80 @@ bool fits_cell(const gemmi::UnitCell &c, const Axes &a) {
 // choice 2 only for the symbols of its main table; one of its other names
 // ('C c c e', the current symbol of C c c a) gives origin choice 1. Its
 // table lists origin choice 2 right after 1.
+// The short H-M symbol of a full one (ITA): the 'n/x' of a symmetry
+// direction is reduced to 'x', in every direction for an orthorhombic or
+// cubic group ('P 2/n 2/n 2/n' is 'P n n n', 'I 4/m -3 2/m' 'I m -3 m'),
+// in all but the first for a tetragonal, trigonal or hexagonal one
+// ('P 63/m 2/m 2/c' is 'P 63/m m c', 'R -3 2/m' 'R -3 m'). A monoclinic
+// full symbol ('P 1 21/c 1') is gemmi's own; it gives "".
+std::string short_hm(const std::string &full) {
+  std::istringstream in(full);
+  std::vector<std::string> t;
+  for (std::string w; in >> w;) t.push_back(w);
+  if (t.size() < 3) return "";
+  const auto starts = [](const std::string &w, char d) {
+    return w[0] == d || (w[0] == '-' && w.size() > 1 && w[1] == d);
+  };
+  const bool cubic = t.size() == 4 && (t[2] == "-3" || t[2] == "3");
+  const bool principal_axis =
+      starts(t[1], '4') || starts(t[1], '6') || starts(t[1], '3');
+  const bool orthorhombic =
+      t.size() == 4 && t[1] != "1" && t[2] != "1" && t[3] != "1";
+  if (!cubic && !principal_axis && !orthorhombic) return "";
+  std::string out = t[0];
+  for (std::size_t i = 1; i < t.size(); ++i) {
+    std::string w = t[i];
+    const std::size_t slash = w.find('/');
+    if (slash != std::string::npos && (cubic || !(principal_axis && i == 1)))
+      w = w.substr(slash + 1);
+    out += " " + w;
+  }
+  return out;
+}
+
 const gemmi::SpaceGroup *lookup_hm(const std::string &hm,
                                    const gemmi::UnitCell &c) {
-  const gemmi::SpaceGroup *sg =
-      gemmi::find_spacegroup_by_name(hm, c.alpha, c.gamma, "2");
+  const auto find = [&](const std::string &name) {
+    return gemmi::find_spacegroup_by_name(name, c.alpha, c.gamma, "2");
+  };
+  const std::size_t colon = hm.find(':');
+  const std::string symbol = hm.substr(0, colon);
+  const std::string setting =
+      colon == std::string::npos ? "" : hm.substr(colon);
+  const gemmi::SpaceGroup *sg = find(hm);
+  // A full symbol, by its short one
+  if (!sg) {
+    const std::string short_symbol = short_hm(symbol);
+    if (!short_symbol.empty()) sg = find(short_symbol + setting);
+  }
+  // An origin note on a group with one origin ('P 2/m 2/m 2/m (origin at
+  // -1)'): the origin is that group's
+  if (!sg && (setting == ":1" || setting == ":2")) {
+    const std::string short_symbol = short_hm(symbol);
+    const gemmi::SpaceGroup *one =
+        find(short_symbol.empty() ? symbol : short_symbol);
+    if (one && one->ext == 0) sg = one;
+  }
   const gemmi::SpaceGroup *const end =
       std::end(gemmi::spacegroup_tables::main);
   if (sg && hm.find(':') == std::string::npos && sg->ext == '1' &&
       sg + 1 != end && sg[1].number == sg->number && sg[1].ext == '2')
     ++sg;
   return sg;
+}
+
+// Whether @p ops is closed, translations included: the product of any two
+// operators (wrapped into the cell) is one of them. gemmi's is_complete()
+// looks at the rotations alone.
+bool closed(const gemmi::GroupOps &ops) {
+  const std::vector<gemmi::Op> all = ops.all_ops_sorted();
+  for (const gemmi::Op &a : all)
+    for (const gemmi::Op &b : all) {
+      gemmi::Op ab = a * b;
+      ab.wrap();
+      if (!std::binary_search(all.begin(), all.end(), ab)) return false;
+    }
+  return true;
 }
 
 // The ITA settings of the group of @p sg that cell @p c could be in, @p sg
@@ -324,6 +404,37 @@ void CifReader::parseCif(const std::string &fileContents,
     throw std::runtime_error(source + ": gemmi cannot read the data block: " +
                              e.what());
   }
+  // The cell: gemmi sets it only when all six tags are given, and keeps a
+  // 1 A cube otherwise. A length must be given; an angle left out (or
+  // '.') is 90 degrees, the CIF dictionary's default; an unknown one ('?')
+  // is refused.
+  {
+    double v[6];
+    const char *tags[6] = {"_cell_length_a",    "_cell_length_b",
+                           "_cell_length_c",    "_cell_angle_alpha",
+                           "_cell_angle_beta",  "_cell_angle_gamma"};
+    for (int k = 0; k < 6; ++k) {
+      const std::string *value = block.find_value(tags[k]);
+      const bool length = k < 3;
+      if (!value || is_null(*value)) {
+        if (!length && (!value || *value == "."))
+          v[k] = 90.0;
+        else
+          throw std::runtime_error(
+              source + ": " + tags[k] + " is " +
+              (value ? "unknown ('" + *value + "')" : std::string("missing")) +
+              "; a CIF gives the three cell lengths, and the angles that "
+              "are not 90 degrees.");
+        continue;
+      }
+      v[k] = as_number(*value);
+      if (!(v[k] > 0.0) || (!length && !(v[k] < 180.0)))
+        throw std::runtime_error(source + ": " + tags[k] + " is '" +
+                                 *value + "', which is no " +
+                                 (length ? "length" : "angle") + ".");
+    }
+    struc.cell.set(v[0], v[1], v[2], v[3], v[4], v[5]);
+  }
   // gemmi takes the first H-M and number tag present and the last Hall tag
   // present, even when its value is unknown ('?'), which then hides the
   // other tag of the pair: take the first known value of each pair, and
@@ -451,7 +562,7 @@ void CifReader::parseCif(const std::string &fileContents,
         struc.setup_cell_images();
         forms_group = true;
       } else if (ops.order() == static_cast<int>(struc.symops.size()) &&
-                 gemmi::is_complete(ops)) {
+                 gemmi::is_complete(ops) && closed(ops)) {
         // a group in no tabulated setting: its own operators
         struc.cell.set_cell_images_from_groupops(ops);
         src.own_ops = ops;
