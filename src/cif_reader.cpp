@@ -202,7 +202,10 @@ std::string short_hm(const std::string &full) {
   const auto starts = [](const std::string &w, char d) {
     return w[0] == d || (w[0] == '-' && w.size() > 1 && w[1] == d);
   };
-  const bool cubic = t.size() == 4 && (t[2] == "-3" || t[2] == "3");
+  // Cubic: the 3 in the second direction (m-3: 'P 21/a -3'; m-3m:
+  // 'I 4/m -3 2/m')
+  const bool cubic =
+      (t.size() == 3 || t.size() == 4) && (t[2] == "-3" || t[2] == "3");
   const bool principal_axis =
       starts(t[1], '4') || starts(t[1], '6') || starts(t[1], '3');
   const bool orthorhombic =
@@ -262,6 +265,19 @@ bool closed(const gemmi::GroupOps &ops) {
       if (!std::binary_search(all.begin(), all.end(), ab)) return false;
     }
   return true;
+}
+
+// Whether the operators listed in a loop are, wrapped into the cell, those
+// of @p ops: gemmi splits a loop into rotations and centring vectors and
+// drops a listed operator that shares a rotation with another but no pure
+// centring shift, so its set can be closed when the listed one is not.
+bool same_operators(const std::vector<std::string> &listed,
+                    const gemmi::GroupOps &ops) {
+  std::vector<gemmi::Op> mine = gemmi::triplets_to_ops(listed);
+  for (gemmi::Op &op : mine) op.wrap();
+  std::sort(mine.begin(), mine.end());
+  mine.erase(std::unique(mine.begin(), mine.end()), mine.end());
+  return mine == ops.all_ops_sorted();
 }
 
 // The ITA settings of the group of @p sg that cell @p c could be in, @p sg
@@ -582,6 +598,7 @@ void CifReader::parseCif(const std::string &fileContents,
     number_has_choice =
         settings_of_the_cell(*struc.spacegroup, struc.cell) > 1;
   };
+  bool loop_forms_no_group = false;
   if (!struc.symops.empty()) {
     bool forms_group = false;
     try {
@@ -592,7 +609,8 @@ void CifReader::parseCif(const std::string &fileContents,
         struc.setup_cell_images();
         forms_group = true;
       } else if (ops.order() == static_cast<int>(struc.symops.size()) &&
-                 gemmi::is_complete(ops) && closed(ops)) {
+                 gemmi::is_complete(ops) && closed(ops) &&
+                 same_operators(struc.symops, ops)) {
         // a group in no tabulated setting: its own operators
         struc.cell.set_cell_images_from_groupops(ops);
         src.own_ops = ops;
@@ -606,6 +624,7 @@ void CifReader::parseCif(const std::string &fileContents,
       src.record = "the symmetry-operator loop";
     } else {
       // The symbols, then the number, as without a loop
+      loop_forms_no_group = true;
       src.note = " (the operator loop forms no group)";
       if (!from_symbols() && number_given) from_number();
     }
@@ -727,6 +746,9 @@ void CifReader::parseCif(const std::string &fileContents,
   // A record that contradicts itself (or names nothing gemmi knows) is
   // reported; the structure is built with what gemmi found first.
   std::string diagnostic;
+  if (loop_forms_no_group)
+    diagnostic += "the operator loop forms no group (not closed under "
+                  "products, translations included)\n";
   // The number, for gemmi's check, when it was not used
   if (number_given && src.kind != SymmetrySource::Number) {
     try {
