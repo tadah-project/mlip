@@ -55,19 +55,20 @@ namespace mlip {
  * However it was given, a monoclinic group must fit the cell: the angles
  * between its unique axis and the other two axes (alpha and gamma for
  * unique axis b) are 90 degrees within 1e-3, or the CIF is refused, naming
- * the group, the record it came from and the angles. So must an R group:
- * on hexagonal axes (':H') alpha = beta = 90 and gamma = 120, on
- * rhombohedral axes (':R') alpha = beta = gamma, within 1e-3 degrees (a
- * symbol without its axes takes them from the cell). A group in no
- * tabulated setting (an origin moved, an unusual centring) is checked as
- * the tabulated group with its rotations and centring, else, for an R
- * (obverse or reverse) or H centring, as on hexagonal axes, else as the
- * tabulated primitive group with its rotations (a supercell's extra
- * translations, x+1/3 and so on, are no centring that fixes axes); one
- * whose rotations are those of no tabulated setting (a monoclinic group
- * on the axes of a primitive cell of a centred lattice, say) is not
- * checked. A refusal advises another setting only when one fits the cell,
- * and otherwise correcting the cell. A short symbol
+ * the group, the record it came from and the angles. So must a group with
+ * a 3-fold rotation about c (every trigonal and hexagonal group on
+ * hexagonal axes, R ':H' or P) alpha = beta = 90 and gamma = 120, and an
+ * R group on rhombohedral axes (':R') alpha = beta = gamma, within 1e-3
+ * degrees (an R symbol without its axes takes them from the cell). The
+ * axes come from the rotations alone: translations (a centring, a
+ * supercell's x+1/3) fix nothing. A group in no tabulated setting (an
+ * origin moved, an unusual centring) is checked as the tabulated group
+ * with its rotations and centring, else by a 3-fold rotation about c (R in
+ * the reverse setting), else as the tabulated primitive group with its
+ * rotations; one whose rotations are those of no tabulated setting (a
+ * monoclinic group on the axes of a primitive cell of a centred lattice,
+ * say) is not checked. A refusal advises another setting only when one
+ * fits the cell, and otherwise correcting the cell. A short symbol
  * is read in the setting gemmi gives it: unique axis b, except the
  * B-centred 'B 2', 'B m', 'B b', 'B n', 'B 2/m', 'B 2/b' and 'B 2/n'
  * (unique axis c, as in the PDB; 'B 21' is unique axis b); a number means
