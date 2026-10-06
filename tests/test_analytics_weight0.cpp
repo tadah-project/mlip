@@ -42,6 +42,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 using Catch::Matchers::Contains;
 using tadah::core::Vec3d;
@@ -228,53 +229,69 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structur
   CHECK(s.at({0, 1}) == Approx(-0.01 / (2 * 12 * srmse1)).epsilon(kRel));
 }
 
-/* Pins: a dataset in which every structure has force weight 0 (stress
- * weight 0) has no force (stress) metric: each force (stress) metric and
- * partial is refused with a std::runtime_error naming the dataset ("dataset
- * 2 of 2") and the weight. With C's fweight 0 the stress metrics and
- * partial are still measured, and the reverse.
- * Before the fix: they returned a number (C's data compared with the
- * prediction, although its weight said it had none). */
-TEST_CASE("Analytics: a dataset whose structures all have weight 0 has no metric",
+/* Pins (MK, 2026-10-06): a dataset in which every structure has force
+ * weight 0 (stress weight 0) is not measured by the force (stress) metrics:
+ * each returns nan for it and the other datasets' values unchanged, the
+ * partials emit none of its cells and do not throw.
+ * require_metric_structures() refuses only when no dataset has the data,
+ * naming the files and the weight (measured_datasets() and measured_mean(),
+ * which callers use to average the measured datasets, are pinned through
+ * tadah predict -A and tadah hpo). With C's fweight 0 the stress metrics of dataset 2 are measured,
+ * and the reverse.
+ * Before the fix: every metric and partial threw for such a dataset. */
+TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measured",
           "[analytics][weight0]") {
+  using tadah::mlip::MetricQuantity;
+  using tadah::mlip::require_metric_structures;
   const StructureDB pred = prediction();
   SECTION("force weight 0") {
     StructureDB truth = reference();
     truth(3).fweight = 0.0;  // C
     const Analytics a(truth, pred);
-    const auto names = Contains("dataset 2 of 2") && Contains("force weight 0");
-    CHECK_THROWS_WITH(a.calc_f_mae(), names);
-    CHECK_THROWS_WITH(a.calc_f_rmse(), names);
-    CHECK_THROWS_WITH(a.calc_f_r_sq(), names);
-    CHECK_THROWS_WITH(analytics_grad::frmse_per_dataset(
-                          truth, pred, 1.0,
-                          [](std::size_t, std::size_t, PredCellKind, std::size_t, double) {}),
-                      names);
-    const Analytics b(truth, pred);
-    CHECK(b.calc_s_mae()(1) == Approx(0.02 / 6).epsilon(kRel));
-    CHECK(b.calc_s_rmse()(1) == Approx(std::sqrt(0.0004 / 6)).epsilon(kRel));
-    CHECK_NOTHROW(b.calc_s_r_sq());
-    CHECK_NOTHROW(analytics_grad::srmse(
-        truth, pred, 1.0, [](std::size_t, PredCellKind, std::size_t, double) {}));
+    const auto mae = a.calc_f_mae();
+    const auto rmse = a.calc_f_rmse();
+    const auto rsq = a.calc_f_r_sq();
+    CHECK(mae(0) == Approx(0.3 / 12).epsilon(kRel));
+    CHECK(rmse(0) == Approx(std::sqrt(0.09 / 12)).epsilon(kRel));
+    CHECK(std::isnan(mae(1)));
+    CHECK(std::isnan(rmse(1)));
+    CHECK(std::isnan(rsq(1)));
+    std::size_t cells_2 = 0;
+    CHECK_NOTHROW(analytics_grad::frmse_per_dataset(
+        truth, pred, 1.0,
+        [&](std::size_t d, std::size_t, PredCellKind, std::size_t, double) { cells_2 += d == 1; }));
+    CHECK(cells_2 == 0);
+    CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Forces, "t", {"a", "b"}));
+    CHECK(a.calc_s_rmse()(1) == Approx(std::sqrt(0.0004 / 6)).epsilon(kRel));
+    for (std::size_t i = 0; i < truth.size(); ++i) truth(i).fweight = 0.0;
+    CHECK_THROWS_WITH(require_metric_structures(truth, MetricQuantity::Forces, "t",
+                                                {"a.tadah", "b.tadah"}),
+                      Contains("t: no dataset has a structure with forces") &&
+                          Contains("a.tadah") && Contains("b.tadah") &&
+                          Contains("force weight 0"));
   }
   SECTION("stress weight 0") {
     StructureDB truth = reference();
     truth(3).sweight = 0.0;  // C
     const Analytics a(truth, pred);
-    const auto names = Contains("dataset 2 of 2") && Contains("stress weight 0");
-    CHECK_THROWS_WITH(a.calc_s_mae(), names);
-    CHECK_THROWS_WITH(a.calc_s_rmse(), names);
-    CHECK_THROWS_WITH(a.calc_s_r_sq(), names);
-    CHECK_THROWS_WITH(analytics_grad::srmse(
-                          truth, pred, 1.0,
-                          [](std::size_t, PredCellKind, std::size_t, double) {}),
-                      names);
-    const Analytics b(truth, pred);
-    CHECK(b.calc_f_mae()(1) == Approx(0.4 / 6).epsilon(kRel));
-    CHECK(b.calc_f_rmse()(1) == Approx(std::sqrt(0.16 / 6)).epsilon(kRel));
-    CHECK_NOTHROW(b.calc_f_r_sq());
-    CHECK_NOTHROW(analytics_grad::frmse_per_dataset(
+    const auto mae = a.calc_s_mae();
+    const auto rmse = a.calc_s_rmse();
+    const auto rsq = a.calc_s_r_sq();
+    CHECK(mae(0) == Approx(0.01 / 12).epsilon(kRel));
+    CHECK(rmse(0) == Approx(std::sqrt(0.0001 / 12)).epsilon(kRel));
+    CHECK(std::isnan(mae(1)));
+    CHECK(std::isnan(rmse(1)));
+    CHECK(std::isnan(rsq(1)));
+    std::size_t cells_c = 0;
+    CHECK_NOTHROW(analytics_grad::srmse(
         truth, pred, 1.0,
-        [](std::size_t, std::size_t, PredCellKind, std::size_t, double) {}));
+        [&](std::size_t i, PredCellKind, std::size_t, double) { cells_c += i == 3; }));
+    CHECK(cells_c == 0);
+    CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Stress, "t"));
+    CHECK(a.calc_f_rmse()(1) == Approx(std::sqrt(0.16 / 6)).epsilon(kRel));
+    for (std::size_t i = 0; i < truth.size(); ++i) truth(i).sweight = 0.0;
+    CHECK_THROWS_WITH(require_metric_structures(truth, MetricQuantity::Stress, "t"),
+                      Contains("no dataset has a stress tensor") &&
+                          Contains("stress weight 0"));
   }
 }
