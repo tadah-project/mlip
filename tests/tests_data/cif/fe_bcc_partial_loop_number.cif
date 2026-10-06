@@ -1,7 +1,7 @@
 # Fixture for test_cif_reader_symmetry.cpp: as fe_bcc_partial_loop_hm.cif
 # with the space-group number 229 in place of the H-M symbol. The loop
-# names no group and gemmi does not look at the number, so the cell is P 1:
-# the site as listed, 1 atom, and the record is inconsistent (a WARNING).
+# names no group, so the cell is built with the number's group, I m -3 m,
+# and the record is inconsistent (a WARNING).
 data_Fe_bcc_partial_loop_number
 _cell_length_a 2.8665
 _cell_length_b 2.8665

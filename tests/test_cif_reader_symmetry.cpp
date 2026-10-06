@@ -42,8 +42,8 @@
 //     choice, or another choice of axes that fits the cell (not the R
 //     groups' other axes, the larger centred cells of P 1 or I 4/m m m, or
 //     gemmi's extra CCP4 origins of 22, 23, 94 and 197);
-//   - an incomplete operator loop is not replaced by the number: with no
-//     symbol the cell is P 1, with the WARNING;
+//   - an operator loop that forms no group falls back to the symbols, and
+//     then to the number, with the WARNING;
 //   - a monoclinic group, however it was given, must fit the cell: the
 //     angles between its unique axis and the other two axes (b: alpha,
 //     gamma; c: alpha, beta; a: beta, gamma) are 90 within 1e-3 degrees,
@@ -658,24 +658,25 @@ TEST_CASE("CIF reader: a consistent or absent symmetry record gives no "
   }
 }
 
-/* Pins: an incomplete operator loop is neither completed nor replaced by
- * the number. The loop {x,y,z; x+1/2,y+1/2,z+1/2; y,z,x} (the threefold
+/* Pins: an incomplete operator loop is not completed: the record falls
+ * back to the symbols, and then to the number, as without a loop (MK,
+ * 2026-10-07). The loop {x,y,z; x+1/2,y+1/2,z+1/2; y,z,x} (the threefold
  * y,z,x without its square z,x,y) names no group, so
- *   - with the H-M symbol 'I m -3 m' (fe_bcc_partial_loop_hm.cif) gemmi
- *     falls back to the symbol, and Fe1 on the general position
- *     (0.08,0.20,0.32) gives all 96 images of I m -3 m (the 48 signed
- *     permutations of (x,y,z), and each plus (1/2,1/2,1/2)); the WARNING
- *     says "the unit cell is built with space group I m -3 m";
- *   - with only the number 229 (fe_bcc_partial_loop_number.cif) gemmi does
- *     not look at the number, and the cell is P 1: 1 atom, the site as
- *     listed; the WARNING says "the unit cell is built with no symmetry
- *     (P 1, the sites as listed)".
+ *   - with the H-M symbol 'I m -3 m' (fe_bcc_partial_loop_hm.cif), Fe1 on
+ *     the general position (0.08,0.20,0.32) gives all 96 images of
+ *     I m -3 m (the 48 signed permutations of (x,y,z), and each plus
+ *     (1/2,1/2,1/2)); the WARNING says "the unit cell is built with space
+ *     group I m -3 m";
+ *   - with only the number 229 (fe_bcc_partial_loop_number.cif), the same
+ *     96 atoms and the same WARNING.
  * Both WARNINGs name the source and quote gemmi's "symops list is
  * incomplete or incorrect". Through every route.
- * Before the fix: passes as well (a pin). The number is resolved only when
- * there is no operator loop, so the fix must leave both as they are. */
+ * Before the fix: with only the number the cell was P 1, 1 atom, the site
+ * as listed, and the WARNING said "the unit cell is built with no symmetry
+ * (P 1, the sites as listed)": check_sites and the built-with CHECK fail
+ * on each route. */
 TEST_CASE("CIF reader: an incomplete operator loop falls back to the H-M "
-          "symbol, or to P 1 when there is only the number, with a WARNING",
+          "symbol or the number, with a WARNING",
           "[structure_readers][cif][symmetry][warning]") {
   PeriodicTable::initialize();
   const V3 general = {0.08, 0.20, 0.32};
@@ -690,8 +691,8 @@ TEST_CASE("CIF reader: an incomplete operator loop falls back to the H-M "
        "the unit cell is built with space group I m -3 m.",
        im3m_general_position("Fe", general)},
       {"fe_bcc_partial_loop_number.cif", "Fe_bcc_partial_loop_number",
-       "the unit cell is built with no symmetry (P 1, the sites as listed).",
-       {{"Fe", general}}}};
+       "the unit cell is built with space group I m -3 m.",
+       im3m_general_position("Fe", general)}};
   for (const Case &c : cases) {
     const std::string path = kCifDir + c.file;
     for (const Route route : kRoutes) {
