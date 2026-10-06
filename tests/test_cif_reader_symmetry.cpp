@@ -416,13 +416,15 @@ struct NumberOnlyCase {
   int number;           // _symmetry_Int_Tables_number
   const char *setting;  // the setting that fits the cell
   const std::vector<Site> *sites;
+  bool warns;  // whether the cell could be in another setting of the group
 };
 const NumberOnlyCase kNumberOnlyCases[] = {
-    {"bi_rh_number_only.cif", "Bi_rh_number_only", 166, "R -3 m:R", &kBiRh},
+    {"bi_rh_number_only.cif", "Bi_rh_number_only", 166, "R -3 m:R", &kBiRh,
+     false},
     {"bi_hex_number_only.cif", "Bi_hex_number_only", 166, "R -3 m:H",
-     &kBiHex},
+     &kBiHex, false},
     {"si_diamond_number_only.cif", "Si_diamond_number_only", 227,
-     "F d -3 m:2", &kSiDiamond}};
+     "F d -3 m:2", &kSiDiamond, true}};
 
 /* Pins: a CIF whose only symmetry record is the space-group number is
  * expanded in the setting of that number that fits the cell, through every
@@ -462,26 +464,32 @@ TEST_CASE("CIF reader: a space-group number alone is expanded in the "
 }
 
 /* Pins: when the space-group number is the only symmetry record and the
- * number has more than one tabulated setting, the reader prints one
- * WARNING naming the source, the number and the setting the cell was built
- * with. The text is
+ * cell could be in another tabulated setting of the group (another origin
+ * choice, another choice of axes), the reader prints one WARNING naming
+ * the source, the number and the setting the cell was built with. The
+ * text is
  *   WARNING: <source>: the space group is given only by its number (<n>),
  *   which has more than one setting; the unit cell is built with space
  *   group <setting>, the one that fits the cell angles (origin choice 2
  *   where the group has two).
  * with <source> "CIF file <path>" (CifReader::read and
  * StructureReaderSelector) or "CIF text (data_<block>)" (parseCifContents),
- * and <setting> gemmi's SpaceGroup::xhm(): R -3 m:R for
- * bi_rh_number_only.cif, R -3 m:H for bi_hex_number_only.cif, F d -3 m:2
- * for si_diamond_number_only.cif. The test checks "WARNING: <source>: ",
- * "only by its number (<n>)", "the unit cell is built with space group
- * <setting>", and that "WARNING" appears once (the record is otherwise
- * consistent). The number of a group with a single setting (229,
+ * and <setting> gemmi's SpaceGroup::xhm(): F d -3 m:2 for
+ * si_diamond_number_only.cif (origin choice 1 is the same cell). The test
+ * checks "WARNING: <source>: ", "only by its number (<n>)", "the unit cell
+ * is built with space group <setting>", and that "WARNING" appears once
+ * (the record is otherwise consistent). The hexagonal and rhombohedral
+ * axes of R -3 m (166) are two cells, which the cell angles tell apart:
+ * bi_rh_number_only.cif (R -3 m:R) and bi_hex_number_only.cif (R -3 m:H)
+ * print nothing. The number of a group with a single setting (229,
  * fe_bcc_number_only.cif) leaves no choice and prints nothing (the
  * no-warning test below).
  * Before the fix: nothing was printed (gemmi's check_spacegroup() finds the
  * number consistent with the setting it was looked up in), so every CHECK
- * on the captured output fails, on each route. */
+ * on the captured output fails, on each route.
+ * Review round 5: the Bi files printed the WARNING (every setting of 166
+ * counted, then every setting with the letter R), so count_of == 0 fails
+ * for them. */
 TEST_CASE("CIF reader: a space-group number alone gives a WARNING naming "
           "the setting used",
           "[structure_readers][cif][symmetry][warning]") {
@@ -492,6 +500,10 @@ TEST_CASE("CIF reader: a space-group number alone gives a WARNING naming "
       INFO(c.file << " via " << route_name(route));
       const Read r = read_cif(path, route);
       INFO("printed:\n" << r.log);
+      if (!c.warns) {
+        CHECK(count_of(r.log, "WARNING") == 0);
+        continue;
+      }
       CHECK(contains(r.log,
                      "WARNING: " + source_of(path, route, c.block) + ": "));
       CHECK(contains(r.log, "only by its number (" +
@@ -1273,19 +1285,22 @@ TEST_CASE("CIF reader: an H-M symbol that is a number is refused",
 
 // ============================================ the space-group number ====
 
-/* Pins: a space-group number alone is accepted only in 1..230; 231, 999,
- * -5 and 1003 (a CCP4 code, P 1 1 2 in gemmi's table, not an IT number)
- * are refused with a std::runtime_error that names the source and the
- * number as given.
+/* Pins: a space-group number alone is accepted only in 1..230; 0, 231,
+ * 999, -5 and 1003 (a CCP4 code, P 1 1 2 in gemmi's table, not an IT
+ * number) are refused with a std::runtime_error that names the source and
+ * the number as given. (An unknown number, '?', is no number: the null
+ * test below.)
  * Before the fix: a number that is no IT number was not refused: 231, 999
  * and -5 were ignored and the CIF read silently as P 1, the 1 atom as
  * listed ("accepted: 1 atoms"); 1003 was looked up as gemmi's CCP4 code
  * and expanded in P 1 1 2, 2 atoms ("accepted: 2 atoms"), with the number
- * WARNING and a WARNING that the number (1003) differs. */
+ * WARNING and a WARNING that the number (1003) differs.
+ * Review round 5: 0 was taken as no number (gemmi reads '0' and '?' alike)
+ * and the CIF read as P 1, 1 atom ("accepted: 1 atoms"). */
 TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
           "[structure_readers][cif][spacegroup]") {
   PeriodicTable::initialize();
-  for (const char *n : {"231", "999", "-5", "1003"}) {
+  for (const char *n : {"0", "231", "999", "-5", "1003"}) {
     INFO("number " << n << " alone");
     const std::string what =
         refusal(cif_cell("Fe_bad_number", 2.8665, 2.8665, 2.8665, 90, 90, 90,
@@ -1297,25 +1312,34 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
   }
 }
 
-/* Pins: the "more than one setting" WARNING of a number alone counts only
- * the settings with the centring letter of the number's reference setting
- * (gemmi's SpaceGroup::hm[0]), the only ones the reader can choose for a
- * number; gemmi's table also lists the group in unconventional centred
- * cells (A 1 to I 1, A -1 to I -1, F 4/m m m), which it never chooses.
- * The letter is hm[0], not centring_type(): R -3 m:R counts as R, so 166
- * keeps its WARNING. So P 1 (1) and P -1 (2), in a triclinic cell, and
- * I 4/m m m (139), in a tetragonal cell, print nothing: Fe1 at
- * (0.1,0.2,0.3) gives 1 atom in P 1 and 2, (x,y,z) and (-x,-y,-z), in
- * P -1; Fe1 at the origin gives 2 in I 4/m m m, (0,0,0) and (1/2,1/2,1/2).
- * The numbers that do leave a choice still warn: 166 and 227 (the
- * number-only WARNING test) and 14 (the monoclinic number test).
- * Before the fix: the WARNING counted every table entry of the number,
- * so each of the three printed "the space group is given only by its
- * number (1), which has more than one setting; the unit cell is built with
- * space group P 1, ..." (P -1, I 4/m m m): the CHECK_FALSE on the output
- * fails three times; the atoms are right. */
-TEST_CASE("CIF reader: a number alone warns only when its centring letter "
-          "leaves a choice of setting",
+/* Pins: the "more than one setting" WARNING of a number alone is printed
+ * when the cell could be in another tabulated setting of the group: those
+ * whose change of basis from the setting used has determinant +-1 (an
+ * origin shift, a permutation of the axes, another monoclinic cell
+ * choice). gemmi's table also lists groups in larger centred cells (A 1 to
+ * I 1, A -1 to I -1, F 4/m m m: determinant 2 or 4) and R groups on both
+ * hexagonal and rhombohedral axes (determinant 3), which are other cells,
+ * told apart by the cell itself.
+ *   - Nothing is printed for P 1 (1) and P -1 (2) in a triclinic cell and
+ *     I 4/m m m (139) in a tetragonal one: Fe1 at (0.1,0.2,0.3) gives 1
+ *     atom in P 1 and 2, (x,y,z) and (-x,-y,-z), in P -1; Fe1 at the
+ *     origin gives 2 in I 4/m m m, (0,0,0) and (1/2,1/2,1/2).
+ *   - The C-centred orthorhombic groups whose other axis settings are A-
+ *     or B-centred warn, naming the C setting, in a 3 x 4 x 5 A cell: C m m
+ *     2 (35) with Fe1 at (0,0,0.1): (0,0,0.1), (1/2,1/2,0.1); C c c 2 (37)
+ *     with Fe1 at (0,0,0.1): those and (0,0,0.6), (1/2,1/2,0.6); C m m m
+ *     (65) with Fe1 at the origin: (0,0,0), (1/2,1/2,0); C c c m (66) with
+ *     Fe1 at the origin: (0,0,0), (0,0,1/2), (1/2,1/2,0), (1/2,1/2,1/2).
+ * The numbers 227 and 14 warn too (the number-only WARNING test and the
+ * monoclinic number test); 166 does not (the number-only WARNING test).
+ * Before the fix: the WARNING counted every table entry of the number, so
+ * P 1, P -1 and I 4/m m m each printed it: the CHECK_FALSE on the output
+ * fails three times.
+ * Review round 5: the WARNING counted the settings with the letter of the
+ * setting used, so 35, 37, 65 and 66 (one C setting each) printed nothing
+ * and the CHECKs for their WARNING fail four times. */
+TEST_CASE("CIF reader: a number alone warns only when the cell could be in "
+          "another setting of its group",
           "[structure_readers][cif][spacegroup][warning]") {
   PeriodicTable::initialize();
   struct Case {
@@ -1323,23 +1347,48 @@ TEST_CASE("CIF reader: a number alone warns only when its centring letter "
     double a, b, c, alpha, beta, gamma;
     const char *site;
     std::vector<Site> sites;
+    const char *warns_with;  // the setting the WARNING names, or nullptr
   };
   const std::vector<Case> cases = {
       {"1", 4.2, 5.1, 6.3, 81.5, 96.2, 103.7, "Fe1 Fe 0.1 0.2 0.3\n",
-       {{"Fe", {0.1, 0.2, 0.3}}}},
+       {{"Fe", {0.1, 0.2, 0.3}}}, nullptr},
       {"2", 4.2, 5.1, 6.3, 81.5, 96.2, 103.7, "Fe1 Fe 0.1 0.2 0.3\n",
-       {{"Fe", {0.1, 0.2, 0.3}}, {"Fe", {-0.1, -0.2, -0.3}}}},
-      {"139", 2.9, 2.9, 4.1, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc}};
+       {{"Fe", {0.1, 0.2, 0.3}}, {"Fe", {-0.1, -0.2, -0.3}}}, nullptr},
+      {"139", 2.9, 2.9, 4.1, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc, nullptr},
+      {"35", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
+       {{"Fe", {0.0, 0.0, 0.1}}, {"Fe", {0.5, 0.5, 0.1}}}, "C m m 2"},
+      {"37", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
+       {{"Fe", {0.0, 0.0, 0.1}},
+        {"Fe", {0.0, 0.0, 0.6}},
+        {"Fe", {0.5, 0.5, 0.1}},
+        {"Fe", {0.5, 0.5, 0.6}}},
+       "C c c 2"},
+      {"65", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n",
+       {{"Fe", {0.0, 0.0, 0.0}}, {"Fe", {0.5, 0.5, 0.0}}}, "C m m m"},
+      {"66", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n",
+       {{"Fe", {0.0, 0.0, 0.0}},
+        {"Fe", {0.0, 0.0, 0.5}},
+        {"Fe", {0.5, 0.5, 0.0}},
+        {"Fe", {0.5, 0.5, 0.5}}},
+       "C c c m"}};
   for (const Case &c : cases) {
     INFO("number " << c.number << " alone");
     Read r;
-    if (!accepted(cif_cell("Number_one_letter", c.a, c.b, c.c, c.alpha,
+    if (!accepted(cif_cell("Number_settings", c.a, c.b, c.c, c.alpha,
                            c.beta, c.gamma, number_line(c.number), c.site),
                   r))
       continue;
     INFO("printed:\n" << r.log);
     check_sites(r.st, c.sites);
-    CHECK_FALSE(contains(lower(r.log), "warning"));
+    if (!c.warns_with) {
+      CHECK_FALSE(contains(lower(r.log), "warning"));
+      continue;
+    }
+    CHECK(count_of(r.log, "WARNING") == 1);
+    CHECK(contains(r.log, std::string("only by its number (") + c.number +
+                              ")"));
+    CHECK(contains(r.log, std::string("built with space group ") +
+                              c.warns_with + ","));
   }
 }
 
@@ -1462,4 +1511,249 @@ TEST_CASE("CIF reader: the monoclinic check allows 1e-3 degrees and prints "
   CHECK(contains(what, "CIF text (data_P21c_alpha_off): "));
   CHECK(contains(what, "P 1 21/c 1"));
   CHECK(mentions_value(what, 90.00101));
+}
+
+// ================================================ review round 5 ====
+
+namespace {
+
+// Fe1 at (0.1,0.2,0.3) under the operators of B 1 1 2/m (x,y,z; -x,-y,z;
+// -x,-y,-z; x,y,-z) and the B centring (1/2,0,1/2).
+const std::vector<Site> kFeB112m = {
+    {"Fe", {0.1, 0.2, 0.3}},   {"Fe", {-0.1, -0.2, 0.3}},
+    {"Fe", {-0.1, -0.2, -0.3}}, {"Fe", {0.1, 0.2, -0.3}},
+    {"Fe", {0.6, 0.2, 0.8}},   {"Fe", {0.4, -0.2, 0.8}},
+    {"Fe", {0.4, -0.2, 0.2}},  {"Fe", {0.6, 0.2, 0.2}}};
+
+// Three operators of P 1 21/c 1 (x,y,z; -x,y+1/2,-z+1/2; -x,-y,-z): no
+// group (their products are missing), so gemmi falls back to the symbols.
+const std::string kIncompleteP21cLoop =
+    "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-x,y+1/2,-z+1/2'\n"
+    "'-x,-y,-z'\n";
+
+// The operators of -P 2ybc (x+1/4,y,z): P 1 21/c 1 with the origin moved
+// by a/4, a complete group in no tabulated setting.
+const std::string kShiftedP21cLoop =
+    "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-x+1/2,y+1/2,-z+1/2'\n"
+    "'-x+1/2,-y,-z'\n'x,-y+1/2,z+1/2'\n";
+
+}  // namespace
+
+/* Pins: a monoclinic group in no tabulated setting (an origin moved from
+ * the tabulated one) must fit the cell as its tabulated setting does: the
+ * cell constraints come from the rotations alone. With gamma = 110, the
+ * Hall symbol '-P 2ybc (x+1/4,y,z)' and the operator loop of that group
+ * (x,y,z; -x+1/2,y+1/2,-z+1/2; -x+1/2,-y,-z; x,-y+1/2,z+1/2), each with
+ * Fe1 at (0.1,0.2,0.3), are refused with a std::runtime_error naming the
+ * source, unique axis b and the angle (110). With beta = 110 they are read
+ * (the Hall test above, p2_shifted_origin_loop.cif).
+ * Before the fix: the check looked only at a tabulated group, so both were
+ * accepted, 4 atoms each, with only the WARNING that the group is in no
+ * table ("accepted: 4 atoms", twice). */
+TEST_CASE("CIF reader: a monoclinic group in no tabulated setting must fit "
+          "the cell",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *block;
+    std::string symmetry;
+  };
+  for (const Case &c :
+       {Case{"P21c_hall_shifted_gamma", hall_line("-P 2ybc (x+1/4,y,z)")},
+        Case{"P21c_loop_shifted_gamma", kShiftedP21cLoop}}) {
+    INFO(c.block);
+    const std::string what = refusal(
+        cif_cell(c.block, 5, 6, 7, 90, 90, 110, c.symmetry, kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, "unique axis b"));
+    CHECK(mentions_value(what, 110.0));
+  }
+}
+
+/* Pins: when the operator loop forms no group, the symbols are read as
+ * they are without a loop (normalised, Hall first, a symbol that cannot
+ * be read refused), the loop given as kIncompleteP21cLoop in a cell with
+ * beta = 110 and Fe1 at (0.1,0.2,0.3):
+ *   - with the H-M symbol 'P2_1/c': the 4 atoms of P 1 21/c 1 (a pin:
+ *     without the normalised symbol the cell is P 1, 1 atom);
+ *   - with the H-M symbol '1003' (a number, which gemmi takes as the CCP4
+ *     code of P 1 1 2), 'P 21/c Q', or the Hall symbol '-Q 2ybc': refused,
+ *     quoting the symbol, "cannot read".
+ * Before the fix: gemmi's own fallback was used, so '1003' gave the 2
+ * atoms of P 1 1 2, and 'P 21/c Q' and '-Q 2ybc' the 1 atom of P 1, each
+ * with only the WARNING that the loop is incomplete ("accepted: 2 atoms",
+ * "accepted: 1 atoms" twice). */
+TEST_CASE("CIF reader: when the operator loop forms no group, the symbols "
+          "are read as without a loop",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  {
+    INFO("H-M 'P2_1/c' with the incomplete loop");
+    Read r;
+    if (accepted(cif_cell("P21c_partial_loop_spglib", 5, 6, 7, 90, 110, 90,
+                          hm_line("P2_1/c") + kIncompleteP21cLoop,
+                          kFeGeneral),
+                 r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kFeP21c);
+    }
+  }
+  struct Case {
+    const char *block, *symbol;
+    std::string symmetry;
+  };
+  const std::vector<Case> cases = {
+      {"Partial_loop_numeric_hm", "1003",
+       hm_line("1003") + kIncompleteP21cLoop},
+      {"Partial_loop_unknown_hm", "P 21/c Q",
+       hm_line("P 21/c Q") + kIncompleteP21cLoop},
+      {"Partial_loop_unknown_hall", "-Q 2ybc",
+       hall_line("-Q 2ybc") + kIncompleteP21cLoop}};
+  for (const Case &c : cases) {
+    INFO("symbol '" << c.symbol << "' with the incomplete loop");
+    const std::string what = refusal(
+        cif_cell(c.block, 5, 6, 7, 90, 110, 90, c.symmetry, kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, std::string("'") + c.symbol + "'"));
+    CHECK(contains(what, "cannot read"));
+  }
+}
+
+/* Pins: an H-M value that normalisation leaves empty is a symbol that
+ * cannot be read, not a missing one: '(No. 229)' alone and '_' with the
+ * number 229, in a bcc cell (a = 2.8665 A) with Fe1 at the origin, are
+ * refused, quoting the value, "cannot read". A blank or unknown value
+ * ('?') is no symbol: '?' with the number 229 gives the 2 atoms of bcc Fe
+ * and prints nothing, and an unknown number ('?') alone is no number: P 1,
+ * 1 atom, nothing printed (pins).
+ * Before the fix: '(No. 229)' was read as no symbol and the CIF as P 1, 1
+ * atom; '_' as no symbol, so the number gave 2 atoms ("accepted: 1
+ * atoms", "accepted: 2 atoms"). */
+TEST_CASE("CIF reader: an H-M value that normalises to nothing is refused",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *block, *symbol;
+    std::string symmetry;
+  };
+  const std::vector<Case> cases = {
+      {"Hm_number_note_only", "(No. 229)", hm_line("(No. 229)")},
+      {"Hm_underscore", "_", hm_line("_") + number_line("229")}};
+  for (const Case &c : cases) {
+    INFO("H-M '" << c.symbol << "'");
+    const std::string what =
+        refusal(cif_cell(c.block, 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                         c.symmetry, "Fe1 Fe 0 0 0\n"));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, std::string("'") + c.symbol + "'"));
+    CHECK(contains(what, "cannot read"));
+  }
+  {
+    INFO("H-M ? with the number 229");
+    Read r;
+    if (accepted(cif_cell("Hm_null", 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                          "_symmetry_space_group_name_H-M ?\n" +
+                              number_line("229"),
+                          "Fe1 Fe 0 0 0\n"),
+                 r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kFeBcc);
+      CHECK_FALSE(contains(lower(r.log), "warning"));
+    }
+  }
+  {
+    INFO("number ? alone");
+    Read r;
+    if (accepted(cif_cell("Number_null", 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                          number_line("?"), "Fe1 Fe 0 0 0\n"),
+                 r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}}});
+      CHECK_FALSE(contains(lower(r.log), "warning"));
+    }
+  }
+}
+
+/* Pins: a B-centred short monoclinic symbol means unique axis c (gemmi
+ * reads 'B 2/m' as B 1 1 2/m, the PDB convention; B is no cell choice of
+ * unique axis b): with gamma = 110, 'B 2/m' gives the 8 atoms of B 1 1 2/m
+ * from Fe1 at (0.1,0.2,0.3); with beta = 110 it is refused, naming B 1 1
+ * 2/m and unique axis c. (The other short symbols mean unique axis b: the
+ * monoclinic tests above.)
+ * Before the fix: passes as well (a pin of what the docs now say). */
+TEST_CASE("CIF reader: a B-centred short monoclinic symbol means unique "
+          "axis c",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  {
+    INFO("'B 2/m' with gamma = 110");
+    Read r;
+    if (accepted(cif_cell("B2m_gamma", 5, 6, 7, 90, 90, 110,
+                          hm_line("B 2/m"), kFeGeneral),
+                 r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kFeB112m);
+    }
+  }
+  INFO("'B 2/m' with beta = 110");
+  const std::string what = refusal(
+      cif_cell("B2m_beta", 5, 6, 7, 90, 110, 90, hm_line("B 2/m"),
+               kFeGeneral));
+  INFO("message: " << what);
+  if (what.empty()) return;
+  CHECK(contains(what, "B 1 1 2/m"));
+  CHECK(contains(what, "unique axis c"));
+  CHECK(mentions_value(what, 110.0));
+}
+
+/* Pins: a refusal advises only what can change the result. The operator
+ * loop is read before the symbols, and the Hall symbol before the H-M
+ * symbol, so a refusal that comes from the loop or the Hall symbol while
+ * the CIF also has an H-M symbol says so ("read before"), instead of
+ * advising to give the H-M symbol (which is there already):
+ *   - the loop of P 1 21/m 1 (x,y,z; -x,y+1/2,-z; -x,-y,-z; x,-y+1/2,z)
+ *     with the H-M symbol 'P 1 1 21/m', gamma = 110: refused (the loop's
+ *     group needs gamma = 90);
+ *   - the Hall symbol '-P 2yb' with 'P 1 1 21/m', gamma = 110: refused;
+ *   - the Hall symbol '-Q 4 2 3' (unreadable) with 'I m -3 m': refused.
+ * Each message names the record it comes from and contains "read before".
+ * Before the fix: the first two advised "give the full H-M symbol of the
+ * setting the cell is in (e.g. 'P 1 1 21/m' for unique axis c)" and the
+ * third "give a Hall symbol in standard form ..., the H-M symbol, or the
+ * symmetry-operator loop": the CHECK for "read before" fails three
+ * times. */
+TEST_CASE("CIF reader: a refusal from a record read first says so",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string p21m_loop =
+      "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-x,y+1/2,-z'\n"
+      "'-x,-y,-z'\n'x,-y+1/2,z'\n";
+  struct Case {
+    const char *block, *record;
+    std::string symmetry;
+    double gamma;
+  };
+  const std::vector<Case> cases = {
+      {"Loop_before_hm", "symmetry-operator loop",
+       hm_line("P 1 1 21/m") + p21m_loop, 110},
+      {"Hall_before_hm", "Hall symbol '-P 2yb'",
+       hall_line("-P 2yb") + hm_line("P 1 1 21/m"), 110},
+      {"Bad_hall_before_hm", "Hall symbol '-Q 4 2 3'",
+       hall_line("-Q 4 2 3") + hm_line("I m -3 m"), 90}};
+  for (const Case &c : cases) {
+    INFO(c.block);
+    const std::string what = refusal(
+        cif_cell(c.block, 5, 6, 7, 90, 90, c.gamma, c.symmetry, kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, c.record));
+    CHECK(contains(what, "read before"));
+  }
 }
