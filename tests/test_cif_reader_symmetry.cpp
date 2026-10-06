@@ -1354,8 +1354,9 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  * The numbers 227 and 14 warn too (the number-only WARNING test and the
  * monoclinic number test); 166 does not (the number-only WARNING test).
  * Before the fix: the WARNING counted every table entry of the number, so
- * P 1, P -1 and I 4/m m m each printed it: the CHECK_FALSE on the output
- * fails three times.
+ * every case expecting none printed it: with the cases of this test the
+ * CHECK_FALSE fails eight times (1, 2, 139, 22, 23, 94, 197 and 11 with
+ * beta = 110; the test began with the first three).
  * Review round 5: the WARNING counted the settings with the letter of the
  * setting used, so 35, 37, 65 and 66 (one C setting each) printed nothing
  * and the CHECKs for their WARNING fail four times. Review round 6: every
@@ -1766,8 +1767,8 @@ TEST_CASE("CIF reader: an H-M value that normalises to nothing is refused",
 /* Pins: a short monoclinic symbol is read in the setting gemmi gives it,
  * which is unique axis b except for the B-centred 'B 2', 'B m', 'B b',
  * 'B n', 'B 2/m', 'B 2/b' and 'B 2/n' (unique axis c, the PDB
- * convention; 'B 2/n' and 'B n' with beta = 110 are refused, naming
- * B 1 1 2/n and B 1 1 n and unique axis c): with gamma =
+ * convention; each but 'B 2/m' with beta = 110 is refused, naming
+ * B 1 1 <the rest> and unique axis c): with gamma =
  * 110, 'B 2/m' gives the 8 atoms of B 1 1 2/m from Fe1 at (0.1,0.2,0.3);
  * with beta = 110 it is refused, naming B 1 1 2/m and unique axis c.
  * 'B 21' is read as B 1 21 1, unique axis b: refused with gamma = 110,
@@ -1800,7 +1801,7 @@ TEST_CASE("CIF reader: a B-centred short monoclinic symbol means unique "
       CHECK(mentions_value(what, 110.0));
     }
   }
-  for (const char *hm : {"B 2/n", "B n"}) {
+  for (const char *hm : {"B 2/n", "B n", "B 2", "B m", "B b", "B 2/b"}) {
     INFO("'" << hm << "' with beta = 110");
     const std::string what = refusal(cif_cell(
         "Bn_beta", 5, 6, 7, 90, 110, 90, hm_line(hm), kFeGeneral));
@@ -1877,7 +1878,9 @@ TEST_CASE("CIF reader: a refusal from a record read first says so",
  * 68 alone all give the 8 atoms of origin choice 2, the origin's images
  * under -x+1/2,-y,z; -x,y,-z+1/2 and the C centring: every point with
  * coordinates 0 or 1/2. 'C c c e:1' gives origin choice 1, 4 atoms:
- * (0,0,0), (0,1/2,1/2), (1/2,0,1/2), (1/2,1/2,0).
+ * (0,0,0), (0,1/2,1/2), (1/2,0,1/2), (1/2,1/2,0). 'A e a a' and 'B b e b'
+ * (A b a a and B b c b, the same group on permuted axes) give the same 8
+ * atoms: the set is unchanged by permuting the axes.
  * Before the fix: gemmi's name lookup applies its origin preference only
  * to the main table, and finds 'C c c e' among the other names, origin
  * choice 1: 'Ccce' and 'C c c e' gave the 4 atoms of origin choice 1, a
@@ -1903,7 +1906,9 @@ TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
       {hm_line("C c c e") + number_line("68"), &origin2},
       {hm_line("C c c a") + number_line("68"), &origin2},
       {number_line("68"), &origin2},
-      {hm_line("C c c e:1"), &origin1}};
+      {hm_line("C c c e:1"), &origin1},
+      {hm_line("A e a a"), &origin2},
+      {hm_line("B b e b"), &origin2}};
   for (const Case &c : cases) {
     INFO(c.symmetry);
     Read r;
@@ -1925,7 +1930,7 @@ TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
  *   - _space_group_name_Hall '-I 4 2 3' with
  *     _symmetry_space_group_name_Hall ?;
  *   - _space_group_name_Hall '' with _symmetry_space_group_name_Hall
- *     '-I 4 2 3', and _space_group_name_H-M_alt ' ' with
+ *     '-I 4 2 3', and _space_group_name_H-M_alt ' ' (or '.') with
  *     _symmetry_space_group_name_H-M 'I m -3 m'
  * each give the 2 atoms of bcc Fe and print nothing.
  * Before the fix: gemmi takes the first H-M and number tag present, null
@@ -1949,6 +1954,8 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
         std::string("_space_group_name_Hall ''\n") +
             "_symmetry_space_group_name_Hall '-I 4 2 3'\n",
         std::string("_space_group_name_H-M_alt ' '\n") +
+            "_symmetry_space_group_name_H-M 'I m -3 m'\n",
+        std::string("_space_group_name_H-M_alt .\n") +
             "_symmetry_space_group_name_H-M 'I m -3 m'\n"}) {
     INFO(symmetry);
     Read r;
@@ -1975,6 +1982,9 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
  *   - _space_group_IT_number '' with _symmetry_Int_Tables_number 229, and
  *     _symmetry_Int_Tables_number '' with 'I m -3 m': 2 atoms, nothing
  *     printed;
+ *   - a quoted number, _symmetry_Int_Tables_number '229', alone or with
+ *     'I m -3 m': 2 atoms, nothing printed (a quoted value is read as
+ *     written, as every other symmetry value is);
  *   - _symmetry_Int_Tables_number 229.0 alone, with or without
  *     _space_group_IT_number ? before it: refused, naming the source and
  *     quoting '229.0'.
@@ -1984,8 +1994,11 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
  * the tag, even with the symbol. Review round 8: gemmi parsed the first
  * number tag present before the reader ran, so '229.0' and '' as the only
  * or first number were refused ("gemmi cannot read the data block: not an
- * integer: 229." or ": '"), even when the symbol gives the group: four
- * "refused" failures and a missing quote. */
+ * integer: 229." or ": '"), even when the symbol gives the group: three
+ * "refused" failures and a missing quote ('229.0' after '?' was read
+ * then, as the first tag gemmi parsed was '?'). Review round 9: a quoted
+ * number ('229') was parsed with its quotes, "not an integer": refused
+ * alone, and a WARNING with the symbol. */
 TEST_CASE("CIF reader: a space-group number that is not an integer is "
           "refused only when it is used, naming the source",
           "[structure_readers][cif][spacegroup]") {
@@ -2011,6 +2024,11 @@ TEST_CASE("CIF reader: a space-group number that is not an integer is "
                  false},
         Accepted{"Number_blank_hm",
                  "_symmetry_Int_Tables_number ''\n" + hm_line("I m -3 m"),
+                 false},
+        Accepted{"Number_quoted", "_symmetry_Int_Tables_number '229'\n",
+                 false},
+        Accepted{"Number_quoted_hm",
+                 "_symmetry_Int_Tables_number '229'\n" + hm_line("I m -3 m"),
                  false}}) {
     INFO(c.block);
     Read r;
@@ -2245,4 +2263,136 @@ TEST_CASE("CIF reader: a CIF gemmi cannot parse is refused naming the "
     INFO("message: " << what);
     CHECK(contains(what, "CIF text: "));
   }
+}
+
+// ================================================ review round 9 ====
+
+namespace {
+
+// R 3 on hexagonal axes in the reverse setting (centring (1/3,2/3,1/3),
+// (2/3,1/3,2/3)), which gemmi does not tabulate.
+const std::string kR3ReverseLoop =
+    "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-y,x-y,z'\n'-x+y,-x,z'\n"
+    "'x+1/3,y+2/3,z+1/3'\n'-y+1/3,x-y+2/3,z+1/3'\n'-x+y+1/3,-x+2/3,z+1/3'\n"
+    "'x+2/3,y+1/3,z+2/3'\n'-y+2/3,x-y+1/3,z+2/3'\n'-x+y+2/3,-x+1/3,z+2/3'\n";
+
+}  // namespace
+
+/* Pins: an R group must fit the axes of the cell however it is given, in a
+ * tabulated setting or not, and the refusal advises what can change it:
+ *   - in the rhombohedral Bi cell: the Hall symbol '-R 3 2"' (R -3 m:H),
+ *     the same with the origin moved, '-R 3 2" (x,y,z+1/4)' (in no table),
+ *     and the 9 operators of R 3 on hexagonal axes in the reverse setting
+ *     (in no table) are refused, each naming hexagonal axes and 57.35;
+ *   - in the hexagonal Bi cell, the 12 operators of R -3 m:R are refused,
+ *     naming rhombohedral axes and 120;
+ *   - in a cell that fits neither axes (a = b = 4.5332, c = 11.7967 A,
+ *     gamma = 119.5), the number 166 and the H-M symbol 'R -3 m' (axes
+ *     from the cell) are refused, naming 119.5 and saying to correct the
+ *     cell ("correct the cell"), not to give the symbol without its axes.
+ * Before the fix: the origin-moved Hall symbol (18 atoms) and the reverse
+ * loop (9 atoms) were accepted, with only the WARNING that the group is in
+ * no table: their rotations were looked up without their centring, as
+ * P -3 m 1 and P 3, which have no axes to check ("accepted", twice); the
+ * last two advised "give the H-M symbol without its axes (e.g. 'R -3 m',
+ * which takes them from the cell)" (the CHECK for "correct the cell"
+ * fails twice). The others pass (pins of the Hall and loop routes). */
+TEST_CASE("CIF reader: an R group must fit the axes of the cell however it "
+          "is given",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *block;
+    std::string text;
+    const char *axes;
+    double angle;
+    bool correct_cell;
+  };
+  const std::string off_cell_site = "Bi1 Bi 0 0 0.2339\n";
+  const std::vector<Case> cases = {
+      {"Bi_rh_hall_H", bi_rh("Bi_rh_hall_H", hall_line("-R 3 2\"")),
+       "hexagonal axes", 57.35, false},
+      {"Bi_rh_hall_H_shift",
+       bi_rh("Bi_rh_hall_H_shift", hall_line("-R 3 2\" (x,y,z+1/4)")),
+       "hexagonal axes", 57.35, false},
+      {"Bi_rh_reverse", bi_rh("Bi_rh_reverse", kR3ReverseLoop),
+       "hexagonal axes", 57.35, false},
+      {"Bi_hex_loop_R", bi_hex("Bi_hex_loop_R", kRm3mRLoop),
+       "rhombohedral axes", 120, false},
+      {"Bi_off_number",
+       cif_cell("Bi_off_number", 4.5332, 4.5332, 11.7967, 90, 90, 119.5,
+                number_line("166"), off_cell_site),
+       "hexagonal axes", 119.5, true},
+      {"Bi_off_hm",
+       cif_cell("Bi_off_hm", 4.5332, 4.5332, 11.7967, 90, 90, 119.5,
+                hm_line("R -3 m"), off_cell_site),
+       "hexagonal axes", 119.5, true}};
+  for (const Case &c : cases) {
+    INFO(c.block);
+    const std::string what = refusal(c.text);
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, c.axes));
+    CHECK(mentions_value(what, c.angle));
+    if (c.correct_cell) {
+      CHECK(contains(what, "correct the cell"));
+      CHECK_FALSE(contains(what, "without its axes"));
+    }
+  }
+}
+
+/* Pins: with an operator loop that forms a group, the H-M symbol is only
+ * compared with it, and a WARNING reports one that cannot be read or is a
+ * number: fe_bcc_full_loop.cif (the 96 operators of I m -3 m) with the
+ * H-M symbol replaced by 'F d -3 m Q', '(No. 229)', '1003' or '229' gives
+ * the 2 atoms of bcc Fe and one WARNING, which for the two numbers says
+ * "is a number".
+ * Before the fix: '229' printed nothing (gemmi's check took it as the
+ * CCP4 code of I m -3 m, the loop's group) and '1003' a WARNING that the
+ * group differs, P 1 1 2: the CHECKs for "is a number" fail twice and
+ * count_of == 1 once. */
+TEST_CASE("CIF reader: with a loop, an H-M symbol that is a number or "
+          "cannot be read gives a WARNING",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  const std::string text = slurp(kCifDir + "fe_bcc_full_loop.cif");
+  const std::string line = "_symmetry_space_group_name_H-M 'I m -3 m'";
+  REQUIRE(text.find(line) != std::string::npos);
+  for (const char *hm : {"F d -3 m Q", "(No. 229)", "1003", "229"}) {
+    INFO("H-M '" << hm << "' with the loop of I m -3 m");
+    std::string t = text;
+    t.replace(t.find(line), line.size(),
+              std::string("_symmetry_space_group_name_H-M '") + hm + "'");
+    Read r;
+    if (!accepted(t, r)) continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kFeBcc);
+    CHECK(count_of(r.log, "WARNING") == 1);
+    if (std::isdigit(static_cast<unsigned char>(hm[0])))
+      CHECK(contains(r.log, "is a number"));
+  }
+}
+
+/* Pins: an H-M symbol that names another setting than the Hall symbol's
+ * is reported as one that differs from the loop's is: diamond Si
+ * (a = 5.431 A, Si1 at (1/8,1/8,1/8)) with the Hall symbol '-F 4vw 2vw 3'
+ * (F d -3 m:2) and the H-M symbol 'F d -3 m S' (origin choice 1) gives the
+ * 8 atoms and one WARNING naming F d -3 m:1 and F d -3 m:2.
+ * Before the fix: passes as well (a pin of the Hall route). */
+TEST_CASE("CIF reader: an H-M symbol naming another setting than the Hall "
+          "symbol's gives a WARNING",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  Read r;
+  if (!accepted(cif_cell("Si_hall_S", 5.431, 5.431, 5.431, 90, 90, 90,
+                         hall_line("-F 4vw 2vw 3") + hm_line("F d -3 m S"),
+                         "Si1 Si 0.125 0.125 0.125\n"),
+                r))
+    return;
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, kSiDiamond);
+  CHECK(count_of(r.log, "WARNING") == 1);
+  CHECK(contains(r.log, "F d -3 m:1"));
+  CHECK(contains(r.log, "F d -3 m:2"));
 }
