@@ -503,3 +503,32 @@ TEST_CASE("CIF reader: an occupancy of 1, written or unknown, is accepted",
     CHECK_FALSE(contains(lower(r.log), "warning"));
   }
 }
+
+/* Pins: an occupancy that is not a number, or above 1, is refused, naming
+ * the site: 'abc' ("site Na1 has occupancy 'abc', which is not a number"),
+ * 1.5 ("site Na1 has occupancy 1.5"), and a quoted '0.5' is read as 0.5 and
+ * refused as a partly occupied site ("site Na1 has occupancy 0.5").
+ * Before the fix: the occupancy column was ignored (and gemmi reads a value
+ * that is not a number, or a quoted one, as 1), so all three were accepted
+ * as rock-salt NaCl (8 atoms). */
+TEST_CASE("CIF reader: an occupancy that is not a number, or above 1, is refused",
+          "[structure_readers][cif][occupancy]") {
+  PeriodicTable::initialize();
+  const std::vector<std::array<std::string, 2>> cases = {
+      {"abc", "site Na1 has occupancy 'abc'"},
+      {"1.5", "site Na1 has occupancy 1.5"},
+      {"'0.5'", "site Na1 has occupancy 0.5"}};
+  for (const auto &c : cases) {
+    INFO("Na1 occupancy " << c[0]);
+    const std::string text = cif_with_occupancy(
+        "NaCl_bad_occupancy", 5.64, "F m -3 m",
+        "Na1 Na 0 0 0 " + c[0] + "\nCl1 Cl 0.5 0.5 0.5 1\n");
+    try {
+      const Read r = parse_cif_text(text);
+      FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+    } catch (const std::runtime_error &e) {
+      INFO("message: " << e.what());
+      CHECK(contains(e.what(), c[1]));
+    }
+  }
+}

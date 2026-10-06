@@ -3,20 +3,15 @@
 // The string form is the one the reader was first written for: every field
 // a JSON string, lists comma-separated and sites separated by ';' (the
 // layout of the AFLOW REST API's text output). The typed form is the one
-// AFLOW's JSON output (aflowlib.json, an aurl with '?format=json', which is
-// what AFLOWDataProvider fetches) is documented to use:
+// AFLOW's JSON output uses (aflowlib.json, which AFLOWDataProvider fetches):
 //   geometry              [a, b, c, alpha, beta, gamma]  six numbers
 //   species               ["Cl", "Na"]                   array of strings
 //   composition           [1, 1]                         array of numbers
 //   positions_fractional  [[0,0,0], [0.5,0.5,0.5]]       array of 3-arrays
 //   volume_cell, density  numbers
 //   compound, auid        strings, the same in both forms
-// ASSUMPTION: these typed shapes are taken from the AFLOW REST API
-// (Taylor et al. 2014) and AFLUX (Rose et al. 2017) documentation and have
-// not been checked against a live entry, because this workspace makes no
-// network queries. Once a live entry is captured (with MK's approval:
-// http://aflowlib.duke.edu/AFLOWDATA/ICSD_WEB/BCC/Ta1_ICSD_76152/?format=json)
-// it should be added as a fixture and parsed here.
+// These typed shapes were checked against the live Ta1_ICSD_76152 entry,
+// saved on 2026-10-06 with MK's approval (test_aflow_live_fixture.cpp).
 //
 // The entries are written by hand: bcc Ta with a_c = 3.3058 A (the 1-atom
 // primitive cell, the shape of the ICSD_WEB/BCC/Ta1 entry, and the 2-atom
@@ -342,11 +337,6 @@ TEST_CASE("AFLOW reader: a malformed field in either form is refused, "
     }
   }
 }
-// OPTIONAL: append to MLIP/tests/test_aflow_reader_typed.cpp only if the fix
-// also refuses composition counts that are not whole or are negative (a
-// defect of the existing string parser that the typed form would otherwise
-// copy or contradict). It uses that file's entries() and entry_json().
-
 // Pins: a composition count that is not a whole number, or is negative, is
 // refused in either form with a std::runtime_error naming "composition" and
 // the entry's auid: "1.4,0.6" and [1.4,0.6] (they round to 1 and 1, the
@@ -381,5 +371,67 @@ TEST_CASE("AFLOW reader: a composition count that is not a whole number, "
         CHECK_THROWS_WITH(r.parseAflowJson(json), Catch::Contains(needle));
       }
     }
+  }
+}
+
+/* Pins: the string form is read strictly: in the NaCl entry (other fields
+ * strings),
+ *  - a geometry item that is not exactly one number ("3.98808224589x") is
+ *    refused, naming "geometry" and the auid;
+ *  - an empty item ("Cl,,Na" in species, "1,,1" in composition) is refused,
+ *    naming the field;
+ *  - blanks around an item are allowed: "Cl, Na" gives the same structure as
+ *    "Cl,Na";
+ *  - an entry without "species" (or "composition") is refused, naming it:
+ *    has no "species";
+ *  - text that is not JSON is a std::runtime_error saying it cannot be read
+ *    as JSON.
+ * Before the fix: "3.98808224589x" was read as 3.98808224589, empty items
+ * were dropped (so "Cl,,Na" was read as Cl, Na), "Cl, Na" failed with
+ * "Unknown symbol:  Na", a missing species gave "Unknown symbol: N/A", and
+ * text that is not JSON threw nlohmann's parse_error. */
+TEST_CASE("AFLOW reader: the string form is read strictly",
+          "[structure_readers][aflow]") {
+  PeriodicTable::initialize();
+  const Entry nacl = entries()[2];
+  struct Bad { std::string key, value, needle; };
+  const std::vector<Bad> bad = {
+      {"geometry", q("3.98808224589x,3.98808224589,3.98808224589,60,60,60"), "geometry"},
+      {"species", q("Cl,,Na"), "species"},
+      {"composition", q("1,,1"), "composition"}};
+  for (const Bad &b : bad) {
+    const std::string json = entry_json(nacl, Form::String, {}, b.key, b.value);
+    INFO(json);
+    AflowReader reader;
+    CHECK_THROWS_AS(reader.parseAflowJson(json), std::runtime_error);
+    AflowReader r;
+    CHECK_THROWS_WITH(r.parseAflowJson(json),
+                      Catch::Contains(b.needle) && Catch::Contains(nacl.auid));
+  }
+  {
+    AflowReader plain, spaced;
+    plain.parseAflowJson(entry_json(nacl, Form::String));
+    REQUIRE_NOTHROW(spaced.parseAflowJson(
+        entry_json(nacl, Form::String, {}, "species", q("Cl, Na"))));
+    REQUIRE(spaced.getStructure().natoms() == plain.getStructure().natoms());
+    for (size_t a = 0; a < plain.getStructure().natoms(); ++a)
+      CHECK(spaced.getStructure().atoms[a].symbol == plain.getStructure().atoms[a].symbol);
+  }
+  for (const std::string missing : {"species", "composition"}) {
+    Entry e = nacl;
+    e.fields.erase(std::remove_if(e.fields.begin(), e.fields.end(),
+                                  [&](const Field &f) { return f.key == missing; }),
+                   e.fields.end());
+    const std::string json = entry_json(e, Form::String);
+    INFO(json);
+    AflowReader r;
+    CHECK_THROWS_WITH(r.parseAflowJson(json),
+                      Catch::Contains("has no \"" + missing + "\""));
+  }
+  {
+    AflowReader r;
+    CHECK_THROWS_AS(r.parseAflowJson("{not json"), std::runtime_error);
+    AflowReader r2;
+    CHECK_THROWS_WITH(r2.parseAflowJson("{not json"), Catch::Contains("cannot be read as JSON"));
   }
 }
