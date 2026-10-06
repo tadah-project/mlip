@@ -243,7 +243,9 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structur
 /* Pins (MK, 2026-10-06): a dataset in which every structure has force
  * weight 0 (stress weight 0) is not measured by the force (stress) metrics:
  * each returns nan for it and the other datasets' values unchanged, the
- * partials emit none of its cells and do not throw.
+ * partials emit none of its cells and do not throw; the PC_SRMSE partials
+ * and the averaging frmse() wrapper differentiate the mean over the
+ * measured datasets.
  * require_metric_structures() refuses only when no dataset has the data,
  * naming the files and the weight (measured_datasets() and measured_mean(),
  * which callers use to average the measured datasets, are pinned through
@@ -272,6 +274,15 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
         truth, pred, 1.0,
         [&](std::size_t d, std::size_t, PredCellKind, std::size_t, double) { cells_2 += d == 1; }));
     CHECK(cells_2 == 0);
+    // The averaging wrapper differentiates the mean over the measured
+    // datasets (one here), not over all.
+    std::map<std::pair<std::size_t, std::size_t>, double> f;
+    analytics_grad::frmse(truth, pred, 1.0,
+                          [&](std::size_t i, PredCellKind, std::size_t comp, double v) {
+                            f[{i, comp}] = v;
+                          });
+    REQUIRE(f.count({0, 0}) == 1);
+    CHECK(f.at({0, 0}) == Approx(-0.3 / (12 * std::sqrt(0.09 / 12))).epsilon(kRel));
     CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Forces, "t", {"a", "b"}));
     CHECK(a.calc_s_rmse()(1) == Approx(std::sqrt(0.0004 / 6)).epsilon(kRel));
     for (std::size_t i = 0; i < truth.size(); ++i) truth(i).fweight = 0.0;
@@ -294,10 +305,17 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     CHECK(is_nan_bits(rmse(1)));
     CHECK(is_nan_bits(rsq(1)));
     std::size_t cells_c = 0;
+    std::map<std::pair<std::size_t, std::size_t>, double> s;
     CHECK_NOTHROW(analytics_grad::srmse(
         truth, pred, 1.0,
-        [&](std::size_t i, PredCellKind, std::size_t, double) { cells_c += i == 3; }));
+        [&](std::size_t i, PredCellKind, std::size_t comp, double v) {
+          cells_c += i == 3;
+          s[{i, comp}] = v;
+        }));
     CHECK(cells_c == 0);
+    // The mean over the measured datasets (one here), not over all.
+    REQUIRE(s.count({0, 1}) == 1);
+    CHECK(s.at({0, 1}) == Approx(-0.01 / (1 * 12 * std::sqrt(0.0001 / 12))).epsilon(kRel));
     CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Stress, "t"));
     CHECK(a.calc_f_rmse()(1) == Approx(std::sqrt(0.16 / 6)).epsilon(kRel));
     for (std::size_t i = 0; i < truth.size(); ++i) truth(i).sweight = 0.0;
