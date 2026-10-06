@@ -1929,10 +1929,12 @@ TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
  *     _symmetry_space_group_name_H-M 'I m -3 m'
  * each give the 2 atoms of bcc Fe and print nothing.
  * Before the fix: gemmi takes the first H-M and number tag present, null
- * or not, and the last Hall tag present, so each CIF was read as P 1, 1
- * atom, without a message (check_sites fails three times). Review round
- * 7: a blank value was taken as known, so the two blank cases were read as
- * P 1 (check_sites fails twice). */
+ * or blank or not, and the last Hall tag present, so the first three and
+ * the blank H-M case were read as P 1, 1 atom, without a message
+ * (check_sites fails four times); the blank new Hall tag passed (gemmi
+ * took the old tag, the last). Review round 7: a blank value was taken as
+ * known, so the two blank cases were read as P 1 (check_sites fails
+ * twice). */
 TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
           "pair",
           "[structure_readers][cif][spacegroup]") {
@@ -1963,17 +1965,27 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
 // ================================================ review round 7 ====
 
 /* Pins: the space-group number is read only when it is used, and a value
- * that is not an integer is refused naming the source:
- *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229.0 and
- *     the H-M symbol 'I m -3 m': the symbol gives the group, 2 atoms of bcc
- *     Fe (the number is not needed);
- *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229.0
- *     alone: refused, naming the source and quoting '229.0';
- *   - _symmetry_Int_Tables_number 229.0 alone (gemmi reads it itself):
- *     refused, naming the source.
- * Before the fix: the first two threw gemmi's std::invalid_argument "not
- * an integer: 229." naming neither the file nor the tag (the first CIF is
- * then not read at all), and the third the same from gemmi. */
+ * that is not an integer is refused naming the source and quoting it; one
+ * that is not used gives a WARNING; a blank one is no number. In a bcc
+ * cell (a = 2.8665 A) with Fe1 at the origin:
+ *   - _symmetry_Int_Tables_number 229.0 with the H-M symbol 'I m -3 m',
+ *     with or without _space_group_IT_number ? before it: the symbol gives
+ *     the group, 2 atoms of bcc Fe, and a WARNING quotes '229.0' ("is not
+ *     an integer");
+ *   - _space_group_IT_number '' with _symmetry_Int_Tables_number 229, and
+ *     _symmetry_Int_Tables_number '' with 'I m -3 m': 2 atoms, nothing
+ *     printed;
+ *   - _symmetry_Int_Tables_number 229.0 alone, with or without
+ *     _space_group_IT_number ? before it: refused, naming the source and
+ *     quoting '229.0'.
+ * Before the fix: the reader parsed the number of the second tag whenever
+ * the first was unknown, so '229.0' after '?' threw gemmi's
+ * std::invalid_argument "not an integer: 229." naming neither the file nor
+ * the tag, even with the symbol. Review round 8: gemmi parsed the first
+ * number tag present before the reader ran, so '229.0' and '' as the only
+ * or first number were refused ("gemmi cannot read the data block: not an
+ * integer: 229." or ": '"), even when the symbol gives the group: four
+ * "refused" failures and a missing quote. */
 TEST_CASE("CIF reader: a space-group number that is not an integer is "
           "refused only when it is used, naming the source",
           "[structure_readers][cif][spacegroup]") {
@@ -1982,72 +1994,255 @@ TEST_CASE("CIF reader: a space-group number that is not an integer is "
     return cif_cell(block, 2.8665, 2.8665, 2.8665, 90, 90, 90, symmetry,
                     "Fe1 Fe 0 0 0\n");
   };
-  {
-    INFO("'229.0' with an H-M symbol");
-    Read r;
-    try {
-      r = parse_cif_text(bcc("Number_decimal_hm",
-                             "_space_group_IT_number ?\n" +
-                                 number_line("229.0") +
-                                 hm_line("I m -3 m")));
-      check_sites(r.st, kFeBcc);
-    } catch (const std::exception &e) {
-      FAIL_CHECK("refused: " << e.what());
-    }
-  }
-  struct Case {
+  struct Accepted {
     const char *block;
     std::string symmetry;
-    bool quotes;
+    bool warns;
   };
-  for (const Case &c :
-       {Case{"Number_decimal_new_null",
-             "_space_group_IT_number ?\n" + number_line("229.0"), true},
-        Case{"Number_decimal_old", number_line("229.0"), false}}) {
+  for (const Accepted &c :
+       {Accepted{"Number_decimal_hm_new_null",
+                 "_space_group_IT_number ?\n" + number_line("229.0") +
+                     hm_line("I m -3 m"),
+                 true},
+        Accepted{"Number_decimal_hm",
+                 number_line("229.0") + hm_line("I m -3 m"), true},
+        Accepted{"Number_blank_new", "_space_group_IT_number ''\n" +
+                                         number_line("229"),
+                 false},
+        Accepted{"Number_blank_hm",
+                 "_symmetry_Int_Tables_number ''\n" + hm_line("I m -3 m"),
+                 false}}) {
     INFO(c.block);
+    Read r;
+    if (!accepted(bcc(c.block, c.symmetry), r)) continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kFeBcc);
+    if (c.warns) {
+      CHECK(count_of(r.log, "WARNING") == 1);
+      CHECK(contains(r.log, "'229.0'"));
+      CHECK(contains(r.log, "is not an integer"));
+    } else {
+      CHECK_FALSE(contains(lower(r.log), "warning"));
+    }
+  }
+  for (const char *block : {"Number_decimal_new_null", "Number_decimal_old"}) {
+    INFO(block);
+    const std::string symmetry =
+        (std::string(block) == "Number_decimal_new_null"
+             ? std::string("_space_group_IT_number ?\n")
+             : std::string()) +
+        number_line("229.0");
     std::string what;
     try {
-      const Read r = parse_cif_text(bcc(c.block, c.symmetry));
+      const Read r = parse_cif_text(bcc(block, symmetry));
       FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
     } catch (const std::exception &e) {
       what = e.what();
     }
     INFO("message: " << what);
-    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
-    if (c.quotes) CHECK(contains(what, "'229.0'"));
+    CHECK(contains(what, std::string("CIF text (data_") + block + "): "));
+    CHECK(contains(what, "'229.0'"));
   }
 }
 
 /* Pins: an H-M symbol that names a setting explicitly (origin choice,
- * axes) and differs from the operator loop's is reported: with the 192
- * operators of F d -3 m:2 (si_diamond_icsd_z_loop.cif), ICSD's
- * 'F d -3 m S' (origin choice 1) gives the loop's 8 atoms and one WARNING
- * naming F d -3 m:1 and F d -3 m:2, on every route; 'F d -3 m Z' prints
- * nothing (the ICSD suffix test above).
+ * axes) and differs from the operator loop's is reported:
+ * si_diamond_icsd_s_loop.cif, the 192 operators of F d -3 m:2 with ICSD's
+ * 'F d -3 m S' (origin choice 1), gives the loop's 8 atoms and one WARNING
+ * naming F d -3 m:1 and F d -3 m:2, through every route; 'F d -3 m Z'
+ * (si_diamond_icsd_z_loop.cif) prints nothing (the ICSD suffix test
+ * above).
  * Before the fix: gemmi's check compares the H-M symbols without their
- * setting, so 'F d -3 m S' printed nothing (count_of == 1 fails). */
+ * setting, so 'F d -3 m S' printed nothing (count_of == 1 fails). Review
+ * round 8: the test read the CIF only through parseCifContents. */
 TEST_CASE("CIF reader: an H-M symbol naming another setting than the loop's "
           "gives a WARNING",
           "[structure_readers][cif][spacegroup][warning]") {
   PeriodicTable::initialize();
-  std::ifstream in(kCifDir + "si_diamond_icsd_z_loop.cif");
-  REQUIRE(in.is_open());
-  std::ostringstream os;
-  os << in.rdbuf();
-  std::string text = os.str();
-  const std::string z = "_symmetry_space_group_name_H-M 'F d -3 m Z'";
-  const std::size_t at = text.find(z);
-  REQUIRE(at != std::string::npos);
-  text.replace(at, z.size(), "_symmetry_space_group_name_H-M 'F d -3 m S'");
-  Read r;
-  try {
-    r = parse_cif_text(text);
-  } catch (const std::exception &e) {
-    FAIL("refused: " << e.what());
+  const std::string path = kCifDir + "si_diamond_icsd_s_loop.cif";
+  for (const Route route : kRoutes) {
+    INFO("si_diamond_icsd_s_loop.cif via " << route_name(route));
+    const Read r = read_cif(path, route);
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kSiDiamond);
+    CHECK(count_of(r.log, "WARNING") == 1);
+    CHECK(contains(r.log, "WARNING: " +
+                              source_of(path, route,
+                                        "Si_diamond_icsd_s_loop") +
+                              ": "));
+    CHECK(contains(r.log, "F d -3 m:1"));
+    CHECK(contains(r.log, "F d -3 m:2"));
   }
+}
+
+// ================================================ review round 8 ====
+
+namespace {
+
+// The 12 operators of R -3 m on rhombohedral axes (R -3 m:R).
+const std::string kRm3mRLoop =
+    "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'z,x,y'\n'y,z,x'\n"
+    "'-y,-x,-z'\n'-x,-z,-y'\n'-z,-y,-x'\n'-x,-y,-z'\n'-z,-x,-y'\n"
+    "'-y,-z,-x'\n'y,x,z'\n'x,z,y'\n'z,y,x'\n";
+
+// Bi in its rhombohedral and hexagonal cells (bi_rh_number_only.cif,
+// bi_hex_number_only.cif), Bi1 at x = 0.2339 on 2c or 6c.
+std::string bi_rh(const char *block, const std::string &symmetry) {
+  return cif_cell(block, 4.7236, 4.7236, 4.7236, 57.35, 57.35, 57.35,
+                  symmetry, "Bi1 Bi 0.2339 0.2339 0.2339\n");
+}
+std::string bi_hex(const char *block, const std::string &symmetry) {
+  return cif_cell(block, 4.5332, 4.5332, 11.7967, 90, 90, 120, symmetry,
+                  "Bi1 Bi 0 0 0.2339\n");
+}
+
+}  // namespace
+
+/* Pins: an R group must fit the axes of the cell, as a monoclinic one
+ * must: on hexagonal axes (R ... :H) the cell has alpha = beta = 90 and
+ * gamma = 120 degrees, on rhombohedral axes (:R) alpha = beta = gamma,
+ * each within 1e-3, or the CIF is refused with a std::runtime_error naming
+ * the source, the setting and the angles:
+ *   - the rhombohedral Bi cell (alpha = beta = gamma = 57.35) with the H-M
+ *     symbol 'R -3 m:H', or ICSD's 'R -3 m H', is refused, naming
+ *     R -3 m:H and 57.35;
+ *   - the hexagonal Bi cell (gamma = 120) with 'R -3 m:R' is refused,
+ *     naming R -3 m:R and 120;
+ *   - 'R -3 m', which names no axes, gives the axes of the cell: the 2
+ *     atoms of R -3 m:R in the rhombohedral cell and the 6 of R -3 m:H in
+ *     the hexagonal one (pins).
+ * Before the fix: the setting the symbol names was used whatever the cell:
+ * 'R -3 m:H' and 'R -3 m H' gave 36 atoms 0.78 A apart in the
+ * rhombohedral cell, and 'R -3 m:R' 6 atoms 1.06 A apart in the hexagonal
+ * one, without a message ("accepted: 36 atoms" twice, "accepted: 6
+ * atoms"). */
+TEST_CASE("CIF reader: an R group must fit the axes of the cell",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string text;
+    const char *block, *setting;
+    double angle;
+  };
+  for (const Case &c :
+       {Case{bi_rh("Bi_rh_colon_H", hm_line("R -3 m:H")), "Bi_rh_colon_H",
+             "R -3 m:H", 57.35},
+        Case{bi_rh("Bi_rh_icsd_H", hm_line("R -3 m H")), "Bi_rh_icsd_H",
+             "R -3 m:H", 57.35},
+        Case{bi_hex("Bi_hex_colon_R", hm_line("R -3 m:R")), "Bi_hex_colon_R",
+             "R -3 m:R", 120}}) {
+    INFO(c.block);
+    const std::string what = refusal(c.text);
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, c.setting));
+    CHECK(mentions_value(what, c.angle));
+  }
+  {
+    INFO("'R -3 m' in the rhombohedral cell");
+    Read r;
+    if (accepted(bi_rh("Bi_rh_plain", hm_line("R -3 m")), r))
+      check_sites(r.st, kBiRh);
+  }
+  INFO("'R -3 m' in the hexagonal cell");
+  Read r;
+  if (accepted(bi_hex("Bi_hex_plain", hm_line("R -3 m")), r))
+    check_sites(r.st, kBiHex);
+}
+
+/* Pins: ICSD's ' H' / ' R' suffix of an R group's H-M symbol names its
+ * axes, like ':H' / ':R', also for the WARNING on a symbol that names
+ * another setting than the loop's: the rhombohedral Bi cell with the 12
+ * operators of R -3 m:R and the H-M symbol 'R -3 m R' prints nothing (2
+ * atoms); with 'R -3 m H' it gives the 2 atoms of the loop and one WARNING
+ * naming R -3 m:H and R -3 m:R.
+ * Before the fix: only ':' marked an explicit setting, so 'R -3 m H'
+ * printed nothing (count_of == 1 fails). */
+TEST_CASE("CIF reader: ICSD's H and R suffixes name the axes",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  {
+    INFO("'R -3 m R' with the R -3 m:R loop");
+    Read r;
+    if (accepted(bi_rh("Bi_rh_loop_R", hm_line("R -3 m R") + kRm3mRLoop), r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kBiRh);
+      CHECK_FALSE(contains(lower(r.log), "warning"));
+    }
+  }
+  INFO("'R -3 m H' with the R -3 m:R loop");
+  Read r;
+  if (!accepted(bi_rh("Bi_rh_loop_H", hm_line("R -3 m H") + kRm3mRLoop), r))
+    return;
   INFO("printed:\n" << r.log);
-  check_sites(r.st, kSiDiamond);
+  check_sites(r.st, kBiRh);
   CHECK(count_of(r.log, "WARNING") == 1);
-  CHECK(contains(r.log, "F d -3 m:1"));
-  CHECK(contains(r.log, "F d -3 m:2"));
+  CHECK(contains(r.log, "R -3 m:H"));
+  CHECK(contains(r.log, "R -3 m:R"));
+}
+
+/* Pins: an unknown value of the new operator-loop tag does not hide the
+ * old one: _space_group_symop_operation_xyz ? with the loop
+ * _symmetry_equiv_pos_as_xyz x,y,z; x+1/2,y+1/2,z+1/2 (the I centring),
+ * in a bcc cell (a = 2.8665 A) with Fe1 at the origin, gives the 2 atoms
+ * of bcc Fe and prints nothing.
+ * Before the fix: gemmi takes the first loop tag present, so the loop was
+ * the single operator '?', which forms no group: P 1, 1 atom, with a
+ * WARNING (check_sites fails). */
+TEST_CASE("CIF reader: an unknown value of the new loop tag does not hide "
+          "the old loop",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  Read r;
+  if (!accepted(cif_cell("Loop_null_new", 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                         "_space_group_symop_operation_xyz ?\n"
+                         "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n"
+                         "'x+1/2,y+1/2,z+1/2'\n",
+                         "Fe1 Fe 0 0 0\n"),
+                r))
+    return;
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, kFeBcc);
+  CHECK_FALSE(contains(lower(r.log), "warning"));
+}
+
+/* Pins: an error gemmi raises while parsing the text names the source:
+ *   - two_blocks.cif (data_a, then data_b) through CifReader::read and the
+ *     selector: "CIF file <path>: ";
+ *   - the same text, and a CIF with an unterminated quoted string, through
+ *     parseCifContents: "CIF text: ".
+ * Before the fix: gemmi's messages ("single data block expected, got 2",
+ * "string:4:...: unterminated 'string'") named neither (four CHECKs
+ * fail). */
+TEST_CASE("CIF reader: a CIF gemmi cannot parse is refused naming the "
+          "source",
+          "[structure_readers][cif]") {
+  PeriodicTable::initialize();
+  const std::string path = kCifDir + "two_blocks.cif";
+  for (const Route route : {Route::File, Route::Selector}) {
+    INFO("two_blocks.cif via " << route_name(route));
+    std::string what;
+    try {
+      read_cif(path, route);
+      FAIL_CHECK("accepted");
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    INFO("message: " << what);
+    CHECK(contains(what, "CIF file " + path + ": "));
+  }
+  for (const std::string &text :
+       {slurp(path),
+        std::string("data_q\n_cell_length_a 'unterminated\n")}) {
+    std::string what;
+    try {
+      parse_cif_text(text);
+      FAIL_CHECK("accepted");
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    INFO("message: " << what);
+    CHECK(contains(what, "CIF text: "));
+  }
 }
