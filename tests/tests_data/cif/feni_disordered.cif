@@ -1,0 +1,21 @@
+# Disordered fcc FeNi (F m -3 m). Fixture for test_cif_reader_symmetry.cpp:
+# Fe1 and Ni1 share site 4a with occupancy 0.5 each. Tadah has no
+# representation for a partly occupied site (reading both gives 8 atoms,
+# Fe and Ni coincident in pairs), so the file is refused.
+data_FeNi_disordered_fcc
+_cell_length_a 3.56
+_cell_length_b 3.56
+_cell_length_c 3.56
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'F m -3 m'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+Fe1 Fe 0 0 0 0.5
+Ni1 Ni 0 0 0 0.5

@@ -1,0 +1,20 @@
+# Fixture for test_cif_reader_symmetry.cpp: P 1 (no symmetry record) with
+# Fe1 at x = 0 and Fe2 at x = 1, one position modulo the lattice vector a,
+# and Fe3 at the body centre. Both rows are kept (3 atoms); the r = 0 pair
+# between Fe1 and the (1,0,0) image of Fe2 is for NNFinder to refuse.
+data_Fe_dup_by_frac1
+_cell_length_a 2.8665
+_cell_length_b 2.8665
+_cell_length_c 2.8665
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Fe1 Fe 0 0 0
+Fe2 Fe 1 0 0
+Fe3 Fe 0.5 0.5 0.5
