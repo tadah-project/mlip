@@ -1346,6 +1346,11 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  *     (197), whose other table entries are CCP4's extra origins (no ITA
  *     origin choice), print nothing: Fe1 at the origin gives the 4 atoms
  *     of the F lattice for 22 and (0,0,0), (1/2,1/2,1/2) for the others.
+ *   - I b c a (73), whose other ITA setting I c a b differs from it by
+ *     what gemmi encodes as an origin shift (x+1/4,y-1/4,z+1/4), warns,
+ *     naming I b c a: Fe1 at the origin gives 8 atoms, every point with
+ *     coordinates 0 or 1/2 (the images of the origin under -x+1/2,-y,z+1/2;
+ *     -x,y+1/2,-z+1/2 and the I centring).
  * The numbers 227 and 14 warn too (the number-only WARNING test and the
  * monoclinic number test); 166 does not (the number-only WARNING test).
  * Before the fix: the WARNING counted every table entry of the number, so
@@ -1356,7 +1361,9 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  * and the CHECKs for their WARNING fail four times. Review round 6: every
  * setting with the same determinant counted, whatever the cell, so 11 with
  * beta = 110, 22, 23, 94 and 197 warned: the CHECK_FALSE fails five
- * times. */
+ * times. Review round 7: an entry with the rotations of the setting used
+ * counted only as an origin choice (1 or 2), so I c a b did not, and 73
+ * printed nothing: the CHECKs for its WARNING fail. */
 TEST_CASE("CIF reader: a number alone warns only when the cell could be in "
           "another setting of its group",
           "[structure_readers][cif][spacegroup][warning]") {
@@ -1387,6 +1394,16 @@ TEST_CASE("CIF reader: a number alone warns only when the cell could be in "
        nullptr},
       {"11", 5, 6, 7, 90, 90, 90, "Fe1 Fe 0.1 0.2 0.3\n", kFeP21mB,
        "P 1 21/m 1"},
+      {"73", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n",
+       {{"Fe", {0.0, 0.0, 0.0}},
+        {"Fe", {0.0, 0.0, 0.5}},
+        {"Fe", {0.0, 0.5, 0.0}},
+        {"Fe", {0.0, 0.5, 0.5}},
+        {"Fe", {0.5, 0.0, 0.0}},
+        {"Fe", {0.5, 0.0, 0.5}},
+        {"Fe", {0.5, 0.5, 0.0}},
+        {"Fe", {0.5, 0.5, 0.5}}},
+       "I b c a"},
       {"35", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
        {{"Fe", {0.0, 0.0, 0.1}}, {"Fe", {0.5, 0.5, 0.1}}}, "C m m 2"},
       {"37", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
@@ -1748,7 +1765,9 @@ TEST_CASE("CIF reader: an H-M value that normalises to nothing is refused",
 
 /* Pins: a short monoclinic symbol is read in the setting gemmi gives it,
  * which is unique axis b except for the B-centred 'B 2', 'B m', 'B b',
- * 'B 2/m' and 'B 2/b' (unique axis c, the PDB convention): with gamma =
+ * 'B n', 'B 2/m', 'B 2/b' and 'B 2/n' (unique axis c, the PDB
+ * convention; 'B 2/n' and 'B n' with beta = 110 are refused, naming
+ * B 1 1 2/n and B 1 1 n and unique axis c): with gamma =
  * 110, 'B 2/m' gives the 8 atoms of B 1 1 2/m from Fe1 at (0.1,0.2,0.3);
  * with beta = 110 it is refused, naming B 1 1 2/m and unique axis c.
  * 'B 21' is read as B 1 21 1, unique axis b: refused with gamma = 110,
@@ -1779,6 +1798,16 @@ TEST_CASE("CIF reader: a B-centred short monoclinic symbol means unique "
       CHECK(contains(what, "B 1 1 2/m"));
       CHECK(contains(what, "unique axis c"));
       CHECK(mentions_value(what, 110.0));
+    }
+  }
+  for (const char *hm : {"B 2/n", "B n"}) {
+    INFO("'" << hm << "' with beta = 110");
+    const std::string what = refusal(cif_cell(
+        "Bn_beta", 5, 6, 7, 90, 110, 90, hm_line(hm), kFeGeneral));
+    INFO("message: " << what);
+    if (!what.empty()) {
+      CHECK(contains(what, std::string("B 1 1 ") + (hm + 2)));
+      CHECK(contains(what, "unique axis c"));
     }
   }
   INFO("'B 21' with gamma = 110");
@@ -1887,17 +1916,23 @@ TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
   }
 }
 
-/* Pins: a tag whose value is unknown ('?') does not hide the other tag of
- * its pair: in a bcc cell (a = 2.8665 A) with Fe1 at the origin,
+/* Pins: a tag whose value is unknown ('?') or blank does not hide the
+ * other tag of its pair: in a bcc cell (a = 2.8665 A) with Fe1 at the
+ * origin,
  *   - _space_group_name_H-M_alt ? with _symmetry_space_group_name_H-M
  *     'I m -3 m';
  *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229;
  *   - _space_group_name_Hall '-I 4 2 3' with
- *     _symmetry_space_group_name_Hall ?
+ *     _symmetry_space_group_name_Hall ?;
+ *   - _space_group_name_Hall '' with _symmetry_space_group_name_Hall
+ *     '-I 4 2 3', and _space_group_name_H-M_alt ' ' with
+ *     _symmetry_space_group_name_H-M 'I m -3 m'
  * each give the 2 atoms of bcc Fe and print nothing.
  * Before the fix: gemmi takes the first H-M and number tag present, null
  * or not, and the last Hall tag present, so each CIF was read as P 1, 1
- * atom, without a message (check_sites fails three times). */
+ * atom, without a message (check_sites fails three times). Review round
+ * 7: a blank value was taken as known, so the two blank cases were read as
+ * P 1 (check_sites fails twice). */
 TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
           "pair",
           "[structure_readers][cif][spacegroup]") {
@@ -1908,7 +1943,11 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
         std::string("_space_group_IT_number ?\n") +
             "_symmetry_Int_Tables_number 229\n",
         std::string("_space_group_name_Hall '-I 4 2 3'\n") +
-            "_symmetry_space_group_name_Hall ?\n"}) {
+            "_symmetry_space_group_name_Hall ?\n",
+        std::string("_space_group_name_Hall ''\n") +
+            "_symmetry_space_group_name_Hall '-I 4 2 3'\n",
+        std::string("_space_group_name_H-M_alt ' '\n") +
+            "_symmetry_space_group_name_H-M 'I m -3 m'\n"}) {
     INFO(symmetry);
     Read r;
     if (!accepted(cif_cell("Null_tag", 2.8665, 2.8665, 2.8665, 90, 90, 90,
@@ -1919,4 +1958,96 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
     check_sites(r.st, kFeBcc);
     CHECK_FALSE(contains(lower(r.log), "warning"));
   }
+}
+
+// ================================================ review round 7 ====
+
+/* Pins: the space-group number is read only when it is used, and a value
+ * that is not an integer is refused naming the source:
+ *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229.0 and
+ *     the H-M symbol 'I m -3 m': the symbol gives the group, 2 atoms of bcc
+ *     Fe (the number is not needed);
+ *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229.0
+ *     alone: refused, naming the source and quoting '229.0';
+ *   - _symmetry_Int_Tables_number 229.0 alone (gemmi reads it itself):
+ *     refused, naming the source.
+ * Before the fix: the first two threw gemmi's std::invalid_argument "not
+ * an integer: 229." naming neither the file nor the tag (the first CIF is
+ * then not read at all), and the third the same from gemmi. */
+TEST_CASE("CIF reader: a space-group number that is not an integer is "
+          "refused only when it is used, naming the source",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const auto bcc = [](const char *block, const std::string &symmetry) {
+    return cif_cell(block, 2.8665, 2.8665, 2.8665, 90, 90, 90, symmetry,
+                    "Fe1 Fe 0 0 0\n");
+  };
+  {
+    INFO("'229.0' with an H-M symbol");
+    Read r;
+    try {
+      r = parse_cif_text(bcc("Number_decimal_hm",
+                             "_space_group_IT_number ?\n" +
+                                 number_line("229.0") +
+                                 hm_line("I m -3 m")));
+      check_sites(r.st, kFeBcc);
+    } catch (const std::exception &e) {
+      FAIL_CHECK("refused: " << e.what());
+    }
+  }
+  struct Case {
+    const char *block;
+    std::string symmetry;
+    bool quotes;
+  };
+  for (const Case &c :
+       {Case{"Number_decimal_new_null",
+             "_space_group_IT_number ?\n" + number_line("229.0"), true},
+        Case{"Number_decimal_old", number_line("229.0"), false}}) {
+    INFO(c.block);
+    std::string what;
+    try {
+      const Read r = parse_cif_text(bcc(c.block, c.symmetry));
+      FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    INFO("message: " << what);
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    if (c.quotes) CHECK(contains(what, "'229.0'"));
+  }
+}
+
+/* Pins: an H-M symbol that names a setting explicitly (origin choice,
+ * axes) and differs from the operator loop's is reported: with the 192
+ * operators of F d -3 m:2 (si_diamond_icsd_z_loop.cif), ICSD's
+ * 'F d -3 m S' (origin choice 1) gives the loop's 8 atoms and one WARNING
+ * naming F d -3 m:1 and F d -3 m:2, on every route; 'F d -3 m Z' prints
+ * nothing (the ICSD suffix test above).
+ * Before the fix: gemmi's check compares the H-M symbols without their
+ * setting, so 'F d -3 m S' printed nothing (count_of == 1 fails). */
+TEST_CASE("CIF reader: an H-M symbol naming another setting than the loop's "
+          "gives a WARNING",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  std::ifstream in(kCifDir + "si_diamond_icsd_z_loop.cif");
+  REQUIRE(in.is_open());
+  std::ostringstream os;
+  os << in.rdbuf();
+  std::string text = os.str();
+  const std::string z = "'F d -3 m Z'";
+  const std::size_t at = text.find(z);
+  REQUIRE(at != std::string::npos);
+  text.replace(at, z.size(), "'F d -3 m S'");
+  Read r;
+  try {
+    r = parse_cif_text(text);
+  } catch (const std::exception &e) {
+    FAIL("refused: " << e.what());
+  }
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, kSiDiamond);
+  CHECK(count_of(r.log, "WARNING") == 1);
+  CHECK(contains(r.log, "F d -3 m:1"));
+  CHECK(contains(r.log, "F d -3 m:2"));
 }
