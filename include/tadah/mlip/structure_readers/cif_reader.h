@@ -60,12 +60,14 @@ namespace mlip {
  * rhombohedral axes (':R') alpha = beta = gamma, within 1e-3 degrees (a
  * symbol without its axes takes them from the cell). A group in no
  * tabulated setting (an origin moved, an unusual centring) is checked as
- * the tabulated group with its rotations and centring, else, for a
- * centring by thirds (R on hexagonal axes in the reverse setting), as on
- * hexagonal axes, else as the tabulated primitive group with its
- * rotations; one whose rotations are those of no tabulated setting (a
- * monoclinic group on the axes of a primitive cell of a centred lattice,
- * say) is not checked. A short symbol
+ * the tabulated group with its rotations and centring, else, for an R
+ * (obverse or reverse) or H centring, as on hexagonal axes, else as the
+ * tabulated primitive group with its rotations (a supercell's extra
+ * translations, x+1/3 and so on, are no centring that fixes axes); one
+ * whose rotations are those of no tabulated setting (a monoclinic group
+ * on the axes of a primitive cell of a centred lattice, say) is not
+ * checked. A refusal advises another setting only when one fits the cell,
+ * and otherwise correcting the cell. A short symbol
  * is read in the setting gemmi gives it: unique axis b, except the
  * B-centred 'B 2', 'B m', 'B b', 'B n', 'B 2/m', 'B 2/b' and 'B 2/n'
  * (unique axis c, as in the PDB; 'B 21' is unique axis b); a number means
@@ -76,11 +78,13 @@ namespace mlip {
  * 0.4 A, never two _atom_site rows.
  *
  * When the symmetry record is inconsistent (gemmi's
- * SmallStructure::check_spacegroup(), say an H-M symbol that differs from
- * the loop; an H-M symbol that names another setting, such as another
- * origin choice, of the group the cell is built with; an H-M symbol that
- * is a number; a number that is not an integer and is not used), a
- * WARNING on std::cerr names the file,
+ * SmallStructure::check_spacegroup() for the loop, the Hall symbol and
+ * the number; an H-M symbol that names another group than the one the
+ * cell is built with, or another setting of it, such as another origin
+ * choice, compared by the operations it names, so an equivalent name of
+ * the same setting such as 'C c c b:1' agrees; an H-M symbol that is a
+ * number or cannot be read; a number that is not an integer and is not
+ * used), a WARNING on std::cerr names the file,
  * quotes the findings and says what the unit cell is built with.
  *
  * A site whose _atom_site_occupancy differs from 1 by more than 1e-6 is
