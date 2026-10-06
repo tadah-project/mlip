@@ -93,7 +93,8 @@ int PredictEngine::run(mlip::Task &task) {
   apply_load_transforms(stdb, potContext);
 
   // The force and stress metrics leave out structures with force or stress
-  // weight 0; a dataset made only of such structures has none, and is
+  // weight 0; a dataset made only of such structures is not measured (nan,
+  // left out of the mean), and a run in which no dataset is measured is
   // refused before the prediction (ANALYTICS excludes STRUCTURE, so the
   // datasets are the DBFILE files).
   if (taskContext.get<bool>("ANALYTICS")) {
@@ -142,6 +143,11 @@ int PredictEngine::run(mlip::Task &task) {
     const int col_width = 16;
     const int val_width = 16;
 
+    std::vector<std::string> files;
+    if (taskContext.contains("DBFILE")) files = taskContext("DBFILE");
+    const std::vector<bool> measured_f = measured_datasets(stdb, MetricQuantity::Forces);
+    const std::vector<bool> measured_s = measured_datasets(stdb, MetricQuantity::Stress);
+
     // Prepare a sample vector to determine the number of values per metric
     auto sample_values = a.calc_e_mae();
     size_t n_vals = sample_values.size();
@@ -163,8 +169,13 @@ int PredictEngine::run(mlip::Task &task) {
     }
     std::cout << std::setfill(' ') << std::endl;
 
-    auto print_metric = [col_width, val_width](const std::string& name, const auto& values, double scale = 1.0) {
-      double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+    // The mean column of a force or stress metric runs over the measured
+    // datasets only.
+    auto print_metric = [col_width, val_width](const std::string& name, const auto& values,
+                                               double scale = 1.0,
+                                               const std::vector<bool>* measured = nullptr) {
+      double mean = measured ? measured_mean(values, *measured)
+                             : std::accumulate(values.begin(), values.end(), 0.0) / values.size();
       std::cout << std::setw(col_width) << std::left << name
         << std::setw(val_width) << std::right << std::scientific << std::setprecision(6) << scale * mean;
       for (const auto& v : values) {
@@ -180,17 +191,32 @@ int PredictEngine::run(mlip::Task &task) {
 
     if (taskContext.get<bool>("FORCE")) {
       std::cout << std::endl;
-      print_metric("Force MAE", a.calc_f_mae());
-      print_metric("Force RMSE", a.calc_f_rmse());
-      print_metric("Force R^2", a.calc_f_r_sq());
+      print_metric("Force MAE", a.calc_f_mae(), 1.0, &measured_f);
+      print_metric("Force RMSE", a.calc_f_rmse(), 1.0, &measured_f);
+      print_metric("Force R^2", a.calc_f_r_sq(), 1.0, &measured_f);
     }
 
     if (taskContext.get<bool>("STRESS")) {
       std::cout << std::endl;
-      print_metric("Stress MAE", a.calc_s_mae());
-      print_metric("Stress RMSE", a.calc_s_rmse());
-      print_metric("Stress R^2", a.calc_s_r_sq());
+      print_metric("Stress MAE", a.calc_s_mae(), 1.0, &measured_s);
+      print_metric("Stress RMSE", a.calc_s_rmse(), 1.0, &measured_s);
+      print_metric("Stress R^2", a.calc_s_r_sq(), 1.0, &measured_s);
     }
+
+    // The datasets a requested metric does not measure, named.
+    auto note = [&](const std::vector<bool> &measured, const char *data, const char *weight,
+                    const char *metrics) {
+      for (size_t d = 0; d < measured.size(); ++d)
+        if (!measured[d])
+          std::cout << "\nNote: dataset " << d + 1
+                    << (d < files.size() ? " (" + files[d] + ")" : std::string())
+                    << " has no structure with " << data << " (" << weight
+                    << " 0 everywhere): its " << metrics
+                    << " metrics are not measured (nan) and left out of the mean." << std::endl;
+    };
+    if (taskContext.get<bool>("FORCE")) note(measured_f, "forces", "force weight", "force");
+    if (taskContext.get<bool>("STRESS"))
+      note(measured_s, "a stress tensor", "stress weight", "stress");
   }
 
   delete modelp;

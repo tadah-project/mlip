@@ -274,7 +274,9 @@ void ersq(const StructureDB& truth, const StructureDB& pred,
  *
  * N_s^F = sum_{i in s with fweight != 0} 3 * natoms_i is the per-segment
  * force-cell count. A structure with force weight 0 (counts_in_metric())
- * is left out, as in Analytics::calc_f_rmse: none of its cells is emitted.
+ * is left out, as in Analytics::calc_f_rmse: none of its cells is emitted;
+ * a segment without such structures (N_s^F = 0) is not measured and emits
+ * nothing.
  * Per-segment partitioning aligns with the energy partition because
  * Analytics::calc_f_rmse uses truth.dbidx to detect segment boundaries:
  * each segment's frmse is built from the force cells of its structures
@@ -290,7 +292,6 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
     if (truth.dbidx != pred.dbidx)
         throw std::runtime_error("analytics_grad::frmse: dataset layout mismatch");
     require_predicted_forces(truth, pred, "analytics_grad::frmse");
-    require_metric_structures(truth, MetricQuantity::Forces, "analytics_grad::frmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
@@ -357,7 +358,8 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
  * N_s^S = 6 * (#structures in segment s with sweight != 0) is the
  * per-segment stress-cell count. A structure with stress weight 0
  * (counts_in_metric()) is left out, as in Analytics::calc_s_rmse: none of
- * its cells is emitted. Voigt-like 6-cell ordering matches Analytics:
+ * its cells is emitted; a segment without such structures is not measured
+ * and emits nothing. Voigt-like 6-cell ordering matches Analytics:
  * (xx, xy, xz, yy, yz, zz). */
 template<class F>
 void srmse(const StructureDB& truth, const StructureDB& pred,
@@ -365,7 +367,6 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
 {
     if (truth.size() != pred.size())
         throw std::runtime_error("analytics_grad::srmse: size mismatch");
-    require_metric_structures(truth, MetricQuantity::Stress, "analytics_grad::srmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
