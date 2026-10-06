@@ -1,32 +1,53 @@
 #include <tadah/mlip/output/writable_outputs.h>
 
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <system_error>
+
+#include <unistd.h>
 
 namespace tadah {
 namespace mlip {
 
+namespace {
+namespace fs = std::filesystem;
+
+/* The file that writing to @p p writes: @p p, or, when it is a symbolic link,
+ * the end of its chain of links (which need not exist yet). */
+fs::path write_target(fs::path p) {
+  for (int hops = 0; hops < 40; ++hops) {
+    std::error_code ec;
+    if (!fs::is_symlink(fs::symlink_status(p, ec)) || ec) return p;
+    const fs::path next = fs::read_symlink(p, ec);
+    if (ec) return p;
+    p = next.is_absolute() ? next : p.parent_path() / next;
+  }
+  return p;  // a loop of links: fs::status() reports it below
+}
+}  // namespace
+
 void require_writable_outputs(const std::vector<std::string> &paths,
                               const std::string &who) {
-  namespace fs = std::filesystem;
   for (const auto &path : paths) {
+    const auto refuse = [&](const std::string &why) {
+      return std::runtime_error(who + ": cannot write the output file '" + path +
+                                "': " + why + "; nothing was written");
+    };
+    const fs::path target = write_target(path);
     std::error_code ec;
-    const bool existed = fs::exists(path, ec);
-    {
-      std::ofstream probe(path, std::ios::app);
-      if (!probe.is_open()) {
-        const fs::path parent = fs::path(path).parent_path();
-        const std::string why =
-            !parent.empty() && !fs::is_directory(parent, ec)
-                ? "the directory '" + parent.string() + "' does not exist"
-                : "it cannot be opened for writing";
-        throw std::runtime_error(who + ": cannot write the output file '" + path +
-                                 "': " + why + "; nothing was written");
-      }
+    const fs::file_status st = fs::status(target, ec);
+    if (st.type() == fs::file_type::none) throw refuse(ec.message());
+    if (fs::exists(st)) {
+      if (fs::is_directory(st)) throw refuse("it is a directory");
+      if (::access(target.c_str(), W_OK) != 0) throw refuse("it is not writable");
+      continue;
     }
-    if (!existed) fs::remove(path, ec);
+    // A new file: its directory must exist and take new files.
+    const fs::path dir = target.parent_path().empty() ? fs::path(".") : target.parent_path();
+    if (!fs::is_directory(dir, ec))
+      throw refuse("the directory '" + dir.string() + "' does not exist");
+    if (::access(dir.c_str(), W_OK | X_OK) != 0)
+      throw refuse("the directory '" + dir.string() + "' is not writable");
   }
 }
 
