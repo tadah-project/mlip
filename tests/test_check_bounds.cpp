@@ -411,3 +411,43 @@ TEST_CASE("check_bounds: a dataset with two atoms at the same position is "
   CHECK(t.second.find("atoms 1 and 3 (Ta, Ta)") != std::string::npos);
   CHECK(t.second.find("same position") != std::string::npos);
 }
+
+/* Pins: check_bounds refuses a dataset whose statistics cannot be computed,
+ * whatever the reason, instead of auditing the corners against empty
+ * statistics (which reports every corner safe): of a bcc Ta cell and
+ * 'tiny' (one Ta in a 0.4 A cube, too small for the 5 A cutoff: NNFinder's
+ * std::runtime_error), check_bounds_at_corners throws, naming "structure 2
+ * of 2 ('tiny')" and "too small".
+ * Before the fix: only std::invalid_argument was let out; this failure was
+ * logged ("per-corner audits will run with empty stats") and the corners
+ * were reported, so nothing was thrown. */
+TEST_CASE("check_bounds: a dataset whose statistics cannot be computed is "
+          "refused",
+          "[check_bounds]") {
+  tadah::core::PeriodicTable::initialize();
+  Context seed;
+  seed.add("ATOM", "Ta");
+  seed.add("INIT2B", "false");
+  seed.add("INITMB", "true");
+  seed.add("TYPEMB", "DM_Blip 0 4 4 Ta Ta");
+  seed.add("CGRIDMB", "3.0 3.5 4.0 4.5");
+  seed.add("SGRIDMB", "1.0 1.0 1.0 1.0");
+  seed.add("RCTYPEMB", "Cut_Cos");
+  seed.add("RCUTMB", 5.0);
+  seed.add("VERBOSE", 0);
+  const std::vector<Bound> b = {box("CGRIDMB", 2, 3.9, 4.1)};
+  tadah::mlip::Structure tiny;
+  tiny.label = "tiny";
+  tiny.energy = -10.0;
+  tiny.cell.load(0.4, 0.0, 0.0, 0.0, 0.4, 0.0, 0.0, 0.0, 0.4);
+  tiny.add_atom(tadah::mlip::Atom(tadah::core::PeriodicTable::find_by_symbol("Ta"),
+                                  0.0, 0.0, 0.0));
+  tadah::mlip::StructureDB stdb;
+  stdb.add(bcc_ta_cell("bcc-Ta", false));
+  stdb.add(tiny);
+  const auto t = thrown_by([&] { (void)run_corners(stdb, seed, b); });
+  INFO(t.first << ": " << t.second);
+  CHECK_FALSE(t.first.empty());
+  CHECK(t.second.find("structure 2 of 2 ('tiny')") != std::string::npos);
+  CHECK(t.second.find("too small") != std::string::npos);
+}

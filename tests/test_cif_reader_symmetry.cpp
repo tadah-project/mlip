@@ -861,3 +861,106 @@ TEST_CASE("CIF reader: an occupancy 2e-6 from 1 is refused, quoting the "
     }
   }
 }
+
+namespace {
+
+// A CIF with no operator loop: cell a, b, c, alpha, beta, gamma, the
+// symmetry lines `symmetry` and the _atom_site rows `sites`.
+std::string cif_cell(const std::string &block, double a, double b, double c,
+                     double alpha, double beta, double gamma,
+                     const std::string &symmetry, const std::string &sites) {
+  std::ostringstream s;
+  s << "data_" << block << "\n"
+    << "_cell_length_a " << a << "\n_cell_length_b " << b
+    << "\n_cell_length_c " << c << "\n_cell_angle_alpha " << alpha
+    << "\n_cell_angle_beta " << beta << "\n_cell_angle_gamma " << gamma
+    << "\n" << symmetry
+    << "loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+    << "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+    << sites;
+  return s.str();
+}
+
+}  // namespace
+
+/* Pins: an H-M symbol with the ICSD origin suffix (' S' origin choice 1,
+ * ' Z' origin choice 2) is read as that setting, and the number next to it
+ * adds nothing (no "only by its number" WARNING): diamond Si (a = 5.431 A)
+ * as 'F d -3 m S' with Si at (0,0,0) and as 'F d -3 m Z' with Si at
+ * (1/8,1/8,1/8), each with _symmetry_Int_Tables_number 227, gives the 8
+ * atoms of the cell. An H-M symbol nobody knows ('F d -3 m Q'), with the
+ * number, is refused, naming the symbol: the setting cannot be told.
+ * Before the fix: gemmi does not read the suffixes, so the number was used
+ * in origin choice 2 with a WARNING that the group was given only by its
+ * number: 16 atoms 1.92 A apart for the 'S' file; the unknown symbol was
+ * accepted the same way. */
+TEST_CASE("CIF reader: an ICSD origin suffix is read, and an unknown H-M "
+          "symbol is refused",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string n227 = "_symmetry_Int_Tables_number 227\n";
+  struct Case { std::string hm, x; };
+  for (const Case &c : {Case{"F d -3 m S", "0"}, Case{"F d -3 m Z", "0.125"}}) {
+    INFO(c.hm);
+    const std::string text = cif_cell(
+        "Si_icsd", 5.431, 5.431, 5.431, 90, 90, 90,
+        "_symmetry_space_group_name_H-M '" + c.hm + "'\n" + n227,
+        "Si1 Si " + c.x + " " + c.x + " " + c.x + "\n");
+    Read r;
+    try {
+      r = parse_cif_text(text);
+    } catch (const std::exception &e) {
+      FAIL_CHECK("refused: " << e.what());
+      continue;
+    }
+    INFO("printed:\n" << r.log);
+    CHECK(r.st.natoms() == 8);
+    CHECK_FALSE(contains(r.log, "only by its number"));
+  }
+  const std::string unknown = cif_cell(
+      "Si_unknown_symbol", 5.431, 5.431, 5.431, 90, 90, 90,
+      "_symmetry_space_group_name_H-M 'F d -3 m Q'\n" + n227,
+      "Si1 Si 0.125 0.125 0.125\n");
+  try {
+    const Read r = parse_cif_text(unknown);
+    FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+  } catch (const std::runtime_error &e) {
+    INFO("message: " << e.what());
+    CHECK(contains(e.what(), "F d -3 m Q"));
+  }
+}
+
+/* Pins: a monoclinic space-group number alone (14) is used in its standard
+ * setting, unique axis b, only when the cell has that form (alpha = gamma =
+ * 90): a cell with beta = 110 gives the 4 atoms of P 1 21/c 1 and the
+ * WARNING naming it; a cell with gamma = 110 (unique axis c) is refused,
+ * saying the number alone cannot give that setting.
+ * Before the fix: the number was expanded in P 1 21/c 1 whatever the cell,
+ * so the gamma = 110 cell gave 4 atoms with two different environments (not
+ * one crystal), with a WARNING saying the setting fitted the cell angles. */
+TEST_CASE("CIF reader: a monoclinic space-group number alone needs the "
+          "unique-axis-b cell",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string n14 = "_symmetry_Int_Tables_number 14\n";
+  {
+    const std::string b_unique = cif_cell("P21c_b", 5, 6, 7, 90, 110, 90, n14,
+                                          "Fe1 Fe 0.1 0.2 0.3\n");
+    Read r;
+    REQUIRE_NOTHROW(r = parse_cif_text(b_unique));
+    INFO("printed:\n" << r.log);
+    CHECK(r.st.natoms() == 4);
+    CHECK(contains(r.log, "only by its number (14)"));
+    CHECK(contains(r.log, "P 1 21/c 1"));
+  }
+  const std::string c_unique = cif_cell("P21c_c", 5, 6, 7, 90, 90, 110, n14,
+                                        "Fe1 Fe 0.1 0.2 0.3\n");
+  try {
+    const Read r = parse_cif_text(c_unique);
+    FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+  } catch (const std::runtime_error &e) {
+    INFO("message: " << e.what());
+    CHECK(contains(e.what(), "only by its number (14)"));
+    CHECK(contains(e.what(), "unique axis b"));
+  }
+}
