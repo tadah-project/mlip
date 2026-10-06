@@ -11,24 +11,38 @@ namespace mlip {
  * @brief Reads a Structure from a CIF file with gemmi.
  *
  * gemmi::make_small_structure_from_block reads the cell parameters, the
- * symmetry record and the atom sites. The space group comes from the
- * symmetry-operator loop (_space_group_symop_operation_xyz or
- * _symmetry_equiv_pos_as_xyz) when there is one; gemmi falls back to the
- * Hall and H-M symbols when the loop does not form a group (and a CIF
- * with only a number is then P 1, with the WARNING below). Without a loop
- * it comes from the Hall symbol, the H-M symbol (_space_group_name_H-M_alt
- * or _symmetry_space_group_name_H-M) or the space-group number
- * (_space_group_IT_number or _symmetry_Int_Tables_number), in that order,
- * in the standard setting (hexagonal or rhombohedral axes from the cell
- * angles, origin choice 2 where the group has two; ICSD's ' S' and ' Z'
- * suffixes of the H-M symbol name origin choice 1 and 2). A symbol that
- * names no known group is refused; a number is used only without a
- * symbol, a monoclinic one only for a cell with unique axis b (alpha =
- * gamma = 90), and a number that has more than one setting gives a
- * WARNING naming the one used. A CIF with no symmetry record is P 1. Every site of the unit cell
- * (get_all_unit_cell_sites) becomes an atom at its Cartesian position;
- * gemmi merges the images of one site within 0.4 A, never two _atom_site
- * rows.
+ * symmetry record and the atom sites. The H-M symbol
+ * (_space_group_name_H-M_alt or _symmetry_space_group_name_H-M) is first
+ * put in the form gemmi's table lookup reads: blanks trimmed, '_' removed
+ * ('P 2_1/c'), subscripts in parentheses closed up ('P 4(2)/n m c'), a
+ * trailing ' (No. N)' dropped, and ICSD's ' S' and ' Z' suffixes (either
+ * case) read as origin choice 1 and 2.
+ *
+ * The space group comes from the symmetry-operator loop
+ * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
+ * there is one; gemmi falls back to the Hall and H-M symbols when the loop
+ * does not form a group (and a CIF with only a number is then P 1, with
+ * the WARNING below). Without a loop it comes from the Hall symbol (one of
+ * no tabulated setting expands the sites with its own operators), else
+ * the H-M symbol, else the space-group number (_space_group_IT_number or
+ * _symmetry_Int_Tables_number), each in the setting it names or else in
+ * the standard one: hexagonal or rhombohedral axes from the cell angles,
+ * origin choice 2 where the group has two. A symbol that cannot be read
+ * (or an H-M symbol that is a number) is refused, quoting it ("cannot
+ * read"); a number is used only without a symbol and only from 1 to 230,
+ * and one whose group has more than one setting with that centring letter
+ * gives a WARNING naming the one used. A CIF with no symmetry record is
+ * P 1.
+ *
+ * However it was given, a monoclinic group (IT 3 to 15) of gemmi's table
+ * must fit the cell: the two angles that do not involve its unique axis
+ * (alpha and gamma for unique axis b) are 90 degrees within 1e-3, or the
+ * CIF is refused, naming the setting and the angles (a short symbol such
+ * as 'P 21/m', or a number, means unique axis b).
+ *
+ * Every site of the unit cell (get_all_unit_cell_sites) becomes an atom at
+ * its Cartesian position; gemmi merges the images of one site within
+ * 0.4 A, never two _atom_site rows.
  *
  * When gemmi's SmallStructure::check_spacegroup() reports the symmetry
  * record inconsistent (say an H-M symbol that differs from the loop), a
