@@ -111,20 +111,37 @@ std::pair<double, double> angles_at(const gemmi::UnitCell &c, char axis) {
 
 constexpr double kAngleTol = 1e-3;  // degrees
 
-// The axes a group's operators fix, which the cell angles must fit: a
+// The axes a group's rotations fix, which the cell angles must fit: a
 // monoclinic group's unique axis (the angles between it and the other two
-// axes are 90 degrees; the third is free), an R group's hexagonal axes
-// (alpha = beta = 90, gamma = 120) or rhombohedral axes (alpha = beta =
-// gamma). Other groups are not checked (Free).
+// axes are 90 degrees; the third is free), hexagonal axes (alpha = beta =
+// 90, gamma = 120: any 3-fold rotation about c) or an R group's
+// rhombohedral axes (alpha = beta = gamma). Other groups are not checked
+// (Free).
 struct Axes {
   enum Kind { Free, Monoclinic, Hexagonal, Rhombohedral } kind = Free;
   char unique = 0;  // Monoclinic: 'a', 'b' or 'c'
 };
 
+// Whether @p ops hold a 3-fold rotation (proper or not) about c on
+// hexagonal axes, -y,x-y,z or -x+y,-x,z: the rotation that needs alpha =
+// beta = 90 and gamma = 120 (every trigonal and hexagonal group on such
+// axes, R or P, has one; a centring or other translation fixes nothing).
+bool has_hexagonal_threefold(const gemmi::GroupOps &ops) {
+  constexpr int d = gemmi::Op::DEN;
+  using Rot = gemmi::Op::Rot;
+  const Rot r1 = {{{0, -d, 0}, {d, -d, 0}, {0, 0, d}}};
+  const Rot r2 = {{{-d, d, 0}, {-d, 0, 0}, {0, 0, d}}};
+  for (const gemmi::Op &op : ops.sym_ops) {
+    const Rot neg = op.negated_rot();
+    if (op.rot == r1 || op.rot == r2 || neg == r1 || neg == r2) return true;
+  }
+  return false;
+}
+
 Axes axes_of(const gemmi::SpaceGroup &sg) {
   if (const char axis = monoclinic_axis(sg)) return {Axes::Monoclinic, axis};
-  if (sg.hm[0] == 'R' && sg.ext == 'H') return {Axes::Hexagonal, 0};
   if (sg.hm[0] == 'R' && sg.ext == 'R') return {Axes::Rhombohedral, 0};
+  if (has_hexagonal_threefold(sg.operations())) return {Axes::Hexagonal, 0};
   return {};
 }
 
@@ -189,32 +206,16 @@ int settings_of_the_cell(const gemmi::SpaceGroup &sg,
 }
 
 // The axes of operators in no tabulated setting (an origin moved, an
-// unusual centring), which depend on their rotations and centring alone:
-// those of the tabulated group with their rotations and centring (the
-// translations removed); else, for an R or H centring gemmi does not
-// tabulate with these rotations (the reverse setting), hexagonal axes;
-// else those of the tabulated primitive group with their rotations.
-// @p like is set to the tabulated group used, or nullptr.
+// unusual centring), which depend on their rotations alone: those of the
+// tabulated group with their rotations and centring (the translations
+// removed); else hexagonal axes for a 3-fold rotation about c (R in the
+// reverse setting, which gemmi does not tabulate); else those of the
+// tabulated primitive group with their rotations. @p like is set to the
+// tabulated group used, or nullptr.
 Axes axes_of_ops(gemmi::GroupOps ops, const gemmi::SpaceGroup *&like) {
   for (gemmi::Op &op : ops.sym_ops) op.tran = {0, 0, 0};
   if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
-  // The centrings of hexagonal axes: R obverse, R reverse and the H cell
-  // (the translations, in gemmi's units of 1/24, sorted). Other
-  // translations by thirds (a supercell's x+1/3) are no such centring.
-  constexpr int t = gemmi::Op::DEN / 3;
-  using Tran = gemmi::Op::Tran;
-  static const std::vector<std::vector<Tran>> hexagonal = {
-      {{0, 0, 0}, {t, 2 * t, 2 * t}, {2 * t, t, t}},
-      {{0, 0, 0}, {t, 2 * t, t}, {2 * t, t, 2 * t}},
-      {{0, 0, 0}, {t, 2 * t, 0}, {2 * t, t, 0}}};
-  std::vector<Tran> cen;
-  for (Tran v : ops.cen_ops) {
-    for (int &k : v) k = ((k % gemmi::Op::DEN) + gemmi::Op::DEN) % gemmi::Op::DEN;
-    cen.push_back(v);
-  }
-  std::sort(cen.begin(), cen.end());
-  for (const std::vector<Tran> &h : hexagonal)
-    if (cen == h) return {Axes::Hexagonal, 0};
+  if (has_hexagonal_threefold(ops)) return {Axes::Hexagonal, 0};
   ops.cen_ops = {gemmi::Op::Tran{0, 0, 0}};
   if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
   return {};
@@ -510,7 +511,7 @@ void CifReader::parseCif(const std::string &fileContents,
             : "the group of " + src.record + src.note +
                   " (in no tabulated setting; " +
                   (like ? "with the axes of " + like->xhm()
-                        : std::string("R-centred on hexagonal axes")) +
+                        : std::string("a 3-fold rotation about c")) +
                   ")";
     // An R group's axes come from the cell unless the symbol names them
     const bool axes_from_cell =
@@ -545,6 +546,10 @@ void CifReader::parseCif(const std::string &fileContents,
                          "its symmetry-operator loop"
                        : "the cell angles fit no monoclinic setting (two of "
                          "alpha, beta and gamma are 90): correct the cell";
+        else if (struc.spacegroup == nullptr ||
+                 struc.spacegroup->hm[0] != 'R')
+          advice = "the cell angles do not fit hexagonal axes (alpha = beta "
+                   "= 90, gamma = 120): correct the cell";
         else if (axes_from_cell || !other_r_fits)
           advice = std::string(axes_from_cell
                                    ? "the axes are taken from the cell "
@@ -647,9 +652,16 @@ void CifReader::parseCif(const std::string &fileContents,
       if (struc.spacegroup_hm.find(':') != std::string::npos)
         diagnostic += "H-M symbol (" + hm_as_written + ") names " +
                       named->xhm() + ", not " + used->xhm() + "\n";
-      else if (std::strcmp(named->hm, used->hm) != 0)
-        diagnostic += "space group from H-M symbol (" + hm_as_written +
-                      ") differs: " + named->hm + "\n";
+      else {
+        // A name without a setting agrees with any setting of that name
+        bool agrees = false;
+        for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
+          agrees = agrees || (std::strcmp(t.hm, named->hm) == 0 &&
+                              t.operations().is_same_as(used->operations()));
+        if (!agrees)
+          diagnostic += "space group from H-M symbol (" + hm_as_written +
+                        ") differs: " + named->hm + "\n";
+      }
     }
   }
   if (!diagnostic.empty()) {
