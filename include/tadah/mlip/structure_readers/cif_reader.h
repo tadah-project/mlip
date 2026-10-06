@@ -14,12 +14,15 @@ namespace mlip {
  * symmetry record and the atom sites. The space group comes from the
  * symmetry-operator loop (_space_group_symop_operation_xyz or
  * _symmetry_equiv_pos_as_xyz) when there is one; gemmi falls back to the
- * Hall and H-M symbols when the loop does not form a group. Without a
- * loop it comes from the Hall symbol, the H-M symbol
- * (_space_group_name_H-M_alt or _symmetry_space_group_name_H-M) or the
- * space-group number (_space_group_IT_number or
- * _symmetry_Int_Tables_number, its standard setting), in that order; a
- * CIF with no symmetry record is P 1. Every site of the unit cell
+ * Hall and H-M symbols when the loop does not form a group (and a CIF
+ * with only a number is then P 1, with the WARNING below). Without a loop
+ * it comes from the Hall symbol, the H-M symbol (_space_group_name_H-M_alt
+ * or _symmetry_space_group_name_H-M) or the space-group number
+ * (_space_group_IT_number or _symmetry_Int_Tables_number), in that order,
+ * in the setting that fits the cell angles (hexagonal or rhombohedral
+ * axes) with origin choice 2 where the group has two; a number that has
+ * more than one setting gives a WARNING naming the one used. A CIF with no
+ * symmetry record is P 1. Every site of the unit cell
  * (get_all_unit_cell_sites) becomes an atom at its Cartesian position;
  * gemmi merges the images of one site within 0.4 A, never two _atom_site
  * rows.
@@ -30,7 +33,8 @@ namespace mlip {
  * what the unit cell is built with.
  *
  * A site whose _atom_site_occupancy differs from 1 by more than 1e-6 is
- * refused with std::runtime_error, "site <label> has occupancy <occ>":
+ * refused with std::runtime_error, "site <label> has occupancy <occ>" (as
+ * written):
  * Tadah has no representation for a disordered or partly vacant site, and
  * an occupancy above 1 is not valid. An unknown occupancy ('?' or '.') is
  * 1; one that is not a number is refused.

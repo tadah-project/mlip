@@ -82,10 +82,39 @@ void CifReader::parseCif(const std::string &fileContents,
   // gemmi looks the space group up in the order "S.H2": the operator loop,
   // then the Hall and H-M symbols, never the number. Without a loop it
   // reaches the symbols only because it swallows the std::length_error its
-  // own "S." step throws on the empty operator list. Look them up here,
-  // then the number (its standard setting); no record at all stays P 1.
-  if (struc.spacegroup == nullptr && struc.symops.empty())
-    struc.determine_and_set_spacegroup("H2N");
+  // own "S." step throws on the empty operator list. Without a loop, look
+  // the Hall and H-M symbols up here (origin choice 2, hexagonal or
+  // rhombohedral axes from the cell angles), then the number; no record at
+  // all stays P 1.
+  if (struc.symops.empty()) {
+    struc.determine_and_set_spacegroup("H2");
+    if (struc.spacegroup == nullptr && struc.spacegroup_number > 0) {
+      // gemmi's own number lookup takes the first tabulated setting,
+      // whatever the cell (R -3 m:H for a rhombohedral cell, F d -3 m:1):
+      // resolve the number through its H-M symbol as the symbol would be.
+      const gemmi::SpaceGroup *by_number =
+          gemmi::find_spacegroup_by_number(struc.spacegroup_number);
+      if (by_number) {
+        const gemmi::SpaceGroup *sg = gemmi::find_spacegroup_by_name(
+            by_number->hm, struc.cell.alpha, struc.cell.gamma, "2");
+        struc.spacegroup = sg ? sg : by_number;
+        struc.setup_cell_images();
+        int settings = 0;
+        for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
+          settings += t.number == struc.spacegroup->number;
+        if (settings > 1)
+          std::cerr << "WARNING: " << source
+                    << ": the space group is given only by its number ("
+                    << struc.spacegroup_number
+                    << "), which has more than one setting; the unit cell "
+                       "is built with space group "
+                    << struc.spacegroup->xhm()
+                    << ", the one that fits the cell angles (origin choice "
+                       "2 where the group has two)."
+                    << std::endl;
+      }
+    }
+  }
 
   // A partly occupied site (disorder or a vacancy) has no representation in
   // Tadah: two species sharing a site would become coincident atoms and a
@@ -105,7 +134,7 @@ void CifReader::parseCif(const std::string &fileContents,
     }
     if (occ < 1.0 - 1e-6) {
       std::ostringstream msg;
-      msg << source << ": site " << label << " has occupancy " << occ
+      msg << source << ": site " << label << " has occupancy " << text
           << "; Tadah has no representation for a partly occupied site "
              "(disorder or a vacancy): give an ordered structure, one atom "
              "per site.";
@@ -113,7 +142,7 @@ void CifReader::parseCif(const std::string &fileContents,
     }
     if (occ > 1.0 + 1e-6) {
       std::ostringstream msg;
-      msg << source << ": site " << label << " has occupancy " << occ
+      msg << source << ": site " << label << " has occupancy " << text
           << ", above 1, which is not a valid occupancy.";
       throw std::runtime_error(msg.str());
     }
