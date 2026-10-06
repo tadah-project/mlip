@@ -111,24 +111,41 @@ std::pair<double, double> angles_at(const gemmi::UnitCell &c, char axis) {
 
 constexpr double kAngleTol = 1e-3;  // degrees
 
-// Whether the angles of cell @p c fit the axes setting @p sg is in: a
+// The axes a group's operators fix, which the cell angles must fit: a
 // monoclinic group's unique axis (the angles between it and the other two
 // axes are 90 degrees; the third is free), an R group's hexagonal axes
 // (alpha = beta = 90, gamma = 120) or rhombohedral axes (alpha = beta =
-// gamma). Any other group: true.
-bool fits_cell(const gemmi::UnitCell &c, const gemmi::SpaceGroup &sg) {
+// gamma). Other groups are not checked (Free).
+struct Axes {
+  enum Kind { Free, Monoclinic, Hexagonal, Rhombohedral } kind = Free;
+  char unique = 0;  // Monoclinic: 'a', 'b' or 'c'
+};
+
+Axes axes_of(const gemmi::SpaceGroup &sg) {
+  if (const char axis = monoclinic_axis(sg)) return {Axes::Monoclinic, axis};
+  if (sg.hm[0] == 'R' && sg.ext == 'H') return {Axes::Hexagonal, 0};
+  if (sg.hm[0] == 'R' && sg.ext == 'R') return {Axes::Rhombohedral, 0};
+  return {};
+}
+
+bool fits_cell(const gemmi::UnitCell &c, const Axes &a) {
   const auto near = [](double x, double y) {
     return std::fabs(x - y) <= kAngleTol;
   };
-  if (const char axis = monoclinic_axis(sg)) {
-    const auto [first, second] = angles_at(c, axis);
-    return near(first, 90.0) && near(second, 90.0);
+  switch (a.kind) {
+    case Axes::Monoclinic: {
+      const auto [first, second] = angles_at(c, a.unique);
+      return near(first, 90.0) && near(second, 90.0);
+    }
+    case Axes::Hexagonal:
+      return near(c.alpha, 90.0) && near(c.beta, 90.0) &&
+             near(c.gamma, 120.0);
+    case Axes::Rhombohedral:
+      return near(c.alpha, c.beta) && near(c.beta, c.gamma) &&
+             near(c.alpha, c.gamma);
+    case Axes::Free:
+      break;
   }
-  if (sg.hm[0] == 'R' && sg.ext == 'H')
-    return near(c.alpha, 90.0) && near(c.beta, 90.0) && near(c.gamma, 120.0);
-  if (sg.hm[0] == 'R' && sg.ext == 'R')
-    return near(c.alpha, c.beta) && near(c.beta, c.gamma) &&
-           near(c.alpha, c.gamma);
   return true;
 }
 
@@ -148,46 +165,59 @@ int settings_of_the_cell(const gemmi::SpaceGroup &sg,
   for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
     if (t.number == sg.number && &t != &sg &&
         (t.ext != sg.ext || std::strcmp(t.qualifier, sg.qualifier) != 0) &&
-        std::abs(t.basisop().det_rot()) == det && fits_cell(c, t))
+        std::abs(t.basisop().det_rot()) == det && fits_cell(c, axes_of(t)))
       ++n;
   return n;
 }
 
-// The tabulated primitive group with the rotations of @p ops, or nullptr:
-// the setting whose axes a group in no tabulated setting (an origin moved,
-// an unusual centring) shares. The cell constraints depend on the
-// rotations alone.
-const gemmi::SpaceGroup *with_rotations_of(gemmi::GroupOps ops) {
+// The axes of operators in no tabulated setting (an origin moved, an
+// unusual centring), which depend on their rotations and centring alone:
+// those of the tabulated group with their rotations and centring (the
+// translations removed); else, for a centring by thirds (R on hexagonal
+// axes in the reverse setting, which gemmi does not tabulate), hexagonal
+// axes; else those of the tabulated primitive group with their rotations.
+// @p like is set to the tabulated group used, or nullptr.
+Axes axes_of_ops(gemmi::GroupOps ops, const gemmi::SpaceGroup *&like) {
   for (gemmi::Op &op : ops.sym_ops) op.tran = {0, 0, 0};
+  if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
+  constexpr int den = gemmi::Op::DEN;
+  for (const gemmi::Op::Tran &t : ops.cen_ops)
+    for (const int k : t) {
+      const int r = ((k % den) + den) % den;
+      if (r == den / 3 || r == 2 * den / 3) return {Axes::Hexagonal, 0};
+    }
   ops.cen_ops = {gemmi::Op::Tran{0, 0, 0}};
-  return gemmi::find_spacegroup_by_ops(ops);
+  if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
+  return {};
 }
 
 // A monoclinic group is described in the setting its unique axis names,
 // and an R group on the hexagonal or rhombohedral axes it names: in a cell
 // whose angles say otherwise the operators place the images of a site
-// where that crystal has none. @p axes is the tabulated group whose
-// rotations the cell is built with; @p what names the group, @p advice
-// says what to give instead.
-void require_cell_fits(const gemmi::UnitCell &c,
-                       const gemmi::SpaceGroup *axes, const std::string &what,
-                       const std::string &advice, const std::string &source) {
-  if (!axes || fits_cell(c, *axes)) return;
+// where that crystal has none. @p what names the group, @p advice says
+// what to give instead.
+void require_cell_fits(const gemmi::UnitCell &c, const Axes &axes,
+                       const std::string &what, const std::string &advice,
+                       const std::string &source) {
+  if (fits_cell(c, axes)) return;
   std::string needs;
-  if (const char axis = monoclinic_axis(*axes)) {
-    needs = std::string("is monoclinic with unique axis ") + axis +
-            ", which needs " +
-            (axis == 'a'   ? "beta = gamma"
-             : axis == 'b' ? "alpha = gamma"
-                           : "alpha = beta") +
-            " = 90 degrees (the angles between " + axis +
-            " and the other axes, within 1e-3)";
-  } else if (axes->ext == 'H') {
-    needs = "is on hexagonal axes, which need alpha = beta = 90 and gamma = "
-            "120 degrees (within 1e-3)";
-  } else {
-    needs = "is on rhombohedral axes, which need alpha = beta = gamma "
-            "(within 1e-3 degrees)";
+  switch (axes.kind) {
+    case Axes::Monoclinic:
+      needs = std::string("is monoclinic with unique axis ") + axes.unique +
+              ", which needs " +
+              (axes.unique == 'a'   ? "beta = gamma"
+               : axes.unique == 'b' ? "alpha = gamma"
+                                    : "alpha = beta") +
+              " = 90 degrees (the angles between " + axes.unique +
+              " and the other axes, within 1e-3)";
+      break;
+    case Axes::Hexagonal:
+      needs = "is on hexagonal axes, which need alpha = beta = 90 and "
+              "gamma = 120 degrees (within 1e-3)";
+      break;
+    default:
+      needs = "is on rhombohedral axes, which need alpha = beta = gamma "
+              "(within 1e-3 degrees)";
   }
   using tadah::core::format_roundtrip;
   throw std::runtime_error(
@@ -422,7 +452,7 @@ void CifReader::parseCif(const std::string &fileContents,
     }
   } else if (!from_symbols() && number_given) {
     try {
-      struc.spacegroup_number = as_int(*number_value);
+      struc.spacegroup_number = as_int(as_string(*number_value));
     } catch (const std::exception &) {
       throw std::runtime_error(
           source + ": the space-group number '" + as_string(*number_value) +
@@ -452,18 +482,24 @@ void CifReader::parseCif(const std::string &fileContents,
 
   // However the group was given, a monoclinic or R one must fit the cell.
   {
-    const gemmi::SpaceGroup *axes =
-        struc.spacegroup ? struc.spacegroup
-        : src.own_ops    ? with_rotations_of(*src.own_ops)
-                         : nullptr;
+    const gemmi::SpaceGroup *like = nullptr;
+    const Axes axes = struc.spacegroup ? axes_of(*struc.spacegroup)
+                      : src.own_ops    ? axes_of_ops(*src.own_ops, like)
+                                       : Axes{};
     const std::string what =
         struc.spacegroup
             ? "the space group " + struc.spacegroup->xhm() + " (from " +
                   src.record + src.note + ")"
-        : axes ? "the group of " + src.record + src.note +
-                     " (in no tabulated setting; the rotations of " +
-                     axes->xhm() + ")"
-               : std::string();
+            : "the group of " + src.record + src.note +
+                  " (in no tabulated setting; " +
+                  (like ? "with the axes of " + like->xhm()
+                        : std::string("R-centred on hexagonal axes")) +
+                  ")";
+    // An R group's axes come from the cell unless the symbol names them
+    const bool axes_from_cell =
+        src.kind == SymmetrySource::Number ||
+        (src.kind == SymmetrySource::HM &&
+         struc.spacegroup_hm.find(':') == std::string::npos);
     std::string advice;
     switch (src.kind) {
       case SymmetrySource::Loop:
@@ -475,13 +511,19 @@ void CifReader::parseCif(const std::string &fileContents,
                  "read before the H-M symbol)";
         break;
       default:
-        advice = axes && axes->hm[0] == 'R'
-                     ? "give the H-M symbol without its axes (e.g. 'R -3 m', "
-                       "which takes them from the cell), or the "
-                       "symmetry-operator loop"
-                     : "give the full H-M symbol of the setting the cell is "
-                       "in (e.g. 'P 1 1 21/m' for unique axis c), or its "
-                       "symmetry-operator loop";
+        if (axes.kind == Axes::Monoclinic)
+          advice = "give the full H-M symbol of the setting the cell is in "
+                   "(e.g. 'P 1 1 21/m' for unique axis c), or its "
+                   "symmetry-operator loop";
+        else if (axes_from_cell)
+          advice = "the axes are taken from the cell angles, which fit "
+                   "neither hexagonal (alpha = beta = 90, gamma = 120) nor "
+                   "rhombohedral (alpha = beta = gamma) axes: correct the "
+                   "cell, or give the symmetry-operator loop";
+        else
+          advice = "give the H-M symbol without its axes (e.g. 'R -3 m', "
+                   "which takes them from the cell), or the "
+                   "symmetry-operator loop";
     }
     require_cell_fits(struc.cell, axes, what, advice, source);
   }
@@ -534,13 +576,25 @@ void CifReader::parseCif(const std::string &fileContents,
   // The number, for gemmi's check, when it was not used
   if (number_given && src.kind != SymmetrySource::Number) {
     try {
-      struc.spacegroup_number = as_int(*number_value);
+      struc.spacegroup_number = as_int(as_string(*number_value));
     } catch (const std::exception &) {
       diagnostic += "space group number ('" + as_string(*number_value) +
                     "') is not an integer\n";
     }
   }
-  diagnostic += struc.check_spacegroup();
+  // gemmi's check takes an H-M symbol that is a number as a CCP4 code:
+  // report it as a number instead.
+  if (!struc.spacegroup_hm.empty() &&
+      std::isdigit(static_cast<unsigned char>(struc.spacegroup_hm[0]))) {
+    diagnostic += "H-M symbol (" + hm_as_written +
+                  ") is a number, not an H-M symbol\n";
+    const std::string hm = struc.spacegroup_hm;
+    struc.spacegroup_hm.clear();
+    diagnostic += struc.check_spacegroup();
+    struc.spacegroup_hm = hm;
+  } else {
+    diagnostic += struc.check_spacegroup();
+  }
   // gemmi compares the H-M symbol without its setting: one that names a
   // setting (':1', ':2', ':H', ':R', ICSD's ' S' or ' Z') other than the
   // one the cell is built with, in the same group, is reported too.
