@@ -2035,10 +2035,10 @@ TEST_CASE("CIF reader: an H-M symbol naming another setting than the loop's "
   std::ostringstream os;
   os << in.rdbuf();
   std::string text = os.str();
-  const std::string z = "'F d -3 m Z'";
+  const std::string z = "_symmetry_space_group_name_H-M 'F d -3 m Z'";
   const std::size_t at = text.find(z);
   REQUIRE(at != std::string::npos);
-  text.replace(at, z.size(), "'F d -3 m S'");
+  text.replace(at, z.size(), "_symmetry_space_group_name_H-M 'F d -3 m S'");
   Read r;
   try {
     r = parse_cif_text(text);
