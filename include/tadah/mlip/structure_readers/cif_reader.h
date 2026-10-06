@@ -36,12 +36,15 @@ namespace mlip {
  * each in the setting it names or else in the standard one: hexagonal or
  * rhombohedral axes from the cell angles, origin choice 2 where the group
  * has two (also for the current symbols gemmi lists apart, such as
- * 'C c c e' for C c c a). A symbol that cannot be read (or an H-M symbol
- * that is a number) is refused, quoting it ("cannot read"); the Hall
- * symbol is read before the H-M symbol, and an unreadable one is refused
- * even when the H-M symbol is fine. Without a loop and without a symbol it
+ * 'C c c e' for C c c a). A symbol used so that cannot be read (or an H-M
+ * symbol that is a number) is refused, quoting it ("cannot read"); the
+ * Hall symbol is read before the H-M symbol, and an unreadable one is
+ * refused even when the H-M symbol is fine. Next to a loop that forms a
+ * group, the symbols are only compared with it: one that cannot be read,
+ * or is a number, gives the WARNING below. Without a loop and without a symbol it
  * comes from the space-group number, which must be an integer from 1 to
- * 230 (it is read only then: 0 or '229.0' is refused there), in its
+ * 230 (it is read only then, quoted or not: 0 or '229.0' is refused
+ * there), in its
  * standard setting; when the cell could be in another ITA setting of the
  * group (another origin choice, or another choice of axes that fits the
  * cell) a WARNING names the one used. With a loop that forms no group and
@@ -57,9 +60,12 @@ namespace mlip {
  * rhombohedral axes (':R') alpha = beta = gamma, within 1e-3 degrees (a
  * symbol without its axes takes them from the cell). A group in no
  * tabulated setting (an origin moved, an unusual centring) is checked as
- * the tabulated primitive group with its rotations; one whose rotations
- * are those of no tabulated setting (a monoclinic group on the axes of a
- * primitive cell of a centred lattice, say) is not checked. A short symbol
+ * the tabulated group with its rotations and centring, else, for a
+ * centring by thirds (R on hexagonal axes in the reverse setting), as on
+ * hexagonal axes, else as the tabulated primitive group with its
+ * rotations; one whose rotations are those of no tabulated setting (a
+ * monoclinic group on the axes of a primitive cell of a centred lattice,
+ * say) is not checked. A short symbol
  * is read in the setting gemmi gives it: unique axis b, except the
  * B-centred 'B 2', 'B m', 'B b', 'B n', 'B 2/m', 'B 2/b' and 'B 2/n'
  * (unique axis c, as in the PDB; 'B 21' is unique axis b); a number means
@@ -72,8 +78,9 @@ namespace mlip {
  * When the symmetry record is inconsistent (gemmi's
  * SmallStructure::check_spacegroup(), say an H-M symbol that differs from
  * the loop; an H-M symbol that names another setting, such as another
- * origin choice, of the group the cell is built with; a number that is
- * not an integer and is not used), a WARNING on std::cerr names the file,
+ * origin choice, of the group the cell is built with; an H-M symbol that
+ * is a number; a number that is not an integer and is not used), a
+ * WARNING on std::cerr names the file,
  * quotes the findings and says what the unit cell is built with.
  *
  * A site whose _atom_site_occupancy differs from 1 by more than 1e-6 is
@@ -97,7 +104,9 @@ public:
   /**
    * @brief Parses the entire CIF text, populating m_structure with cell & atoms.
    *
-   * There is no file: warnings and errors name the data block instead.
+   * There is no file: warnings and errors name the data block ("CIF text
+   * (data_<name>)"), or, before one is found (a syntax error, two data
+   * blocks), the text ("CIF text").
    */
   void parseCifContents(const std::string &contents);
 
