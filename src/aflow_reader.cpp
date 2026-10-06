@@ -254,6 +254,12 @@ AflowReader::AflowReader()
   : m_dataProvider(std::make_unique<AFLOWDataProvider>()) {
 }
 
+AflowReader::AflowReader(std::unique_ptr<IMaterialsDataProvider> provider)
+  : m_dataProvider(std::move(provider)) {
+  if (!m_dataProvider)
+    throw std::invalid_argument("AflowReader: the data provider is null.");
+}
+
 void AflowReader::read(const std::string &auid) {
   fetchAndParseAflowByAuid(auid);
 }
@@ -265,9 +271,18 @@ Structure AflowReader::getStructure() const {
 void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
   RawResponse rr = m_dataProvider->QueryByID(auid);
   if (rr.httpStatus != 200) {
+    // The provider's reason (its own message, or the server's page, cut
+    // short: it may be a whole HTML page).
+    constexpr std::size_t kMaxReason = 300;
+    std::string reason = rr.response;
+    if (reason.size() > kMaxReason)
+      reason = reason.substr(0, kMaxReason) + " ... (" +
+               std::to_string(rr.response.size()) + " characters)";
     std::ostringstream oss;
     oss << "AflowReader: HTTP " << rr.httpStatus
-        << " for AUID '" << auid << "'.";
+        << " for AUID '" << auid << "'";
+    if (!reason.empty()) oss << ": " << reason;
+    else oss << ".";
     throw std::runtime_error(oss.str());
   }
   parseAflowJson(rr.response);

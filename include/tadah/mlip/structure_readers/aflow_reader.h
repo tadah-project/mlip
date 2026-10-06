@@ -21,7 +21,18 @@ public:
   AflowReader();
 
   /**
+   * @brief An AflowReader that fetches through @p provider (a stub in tests);
+   *        a null provider is refused (std::invalid_argument).
+   */
+  explicit AflowReader(std::unique_ptr<IMaterialsDataProvider> provider);
+
+  /**
    * @brief Reads structural data by an AUID string ("aflow:e9c6d914c4b8d9ca").
+   *
+   * A failed fetch throws std::runtime_error naming the HTTP status (or the
+   * provider's own: 404 for an AFLUX answer without an entry, 500 for a
+   * network error), the AUID and the provider's reason, cut to 300
+   * characters; the previous structure is kept.
    */
   void read(const std::string &auid) override;
 

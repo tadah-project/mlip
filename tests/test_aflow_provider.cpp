@@ -292,3 +292,15 @@ TEST_CASE("AFLOW reader: the entry a provider returns is read",
     }
   }
 }
+
+/* Pins: an AflowReader built on a null provider is refused at once
+ * (std::invalid_argument naming the provider), not when it reads.
+ * Before the fix: AflowReader had no constructor taking a provider. */
+TEST_CASE("AFLOW reader: a null provider is refused",
+          "[structure_readers][aflow]") {
+  CHECK(takes_provider<AflowReader>);
+  if constexpr (takes_provider<AflowReader>) {
+    CHECK_THROWS_AS(AflowReader(ProviderPtr{}), std::invalid_argument);
+    CHECK_THROWS_WITH(AflowReader(ProviderPtr{}), Catch::Contains("provider is null"));
+  }
+}
