@@ -29,15 +29,34 @@
 //   - a site with _atom_site_occupancy below 1 is refused, naming the site
 //     and its occupancy: Tadah has no representation for a disordered or
 //     partly vacant site, and two species sharing a site would become
-//     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1.
+//     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1;
+//   - the H-M symbol is normalised before any lookup and before gemmi's
+//     consistency check, with or without an operator loop: surrounding
+//     blanks trimmed, ICSD's ' S' / ' Z' (either case) read as origin
+//     choice 1 / 2, '_' removed (spglib's P2_1/c), subscripts in
+//     parentheses closed up (P2(1)/c, P6(3)/mmc) and a trailing
+//     ' (No. N)' dropped;
+//   - without a loop, a Hall symbol that gives a complete group gemmi does
+//     not tabulate expands the sites with its own operators; a symbol that
+//     still names nothing readable is refused, quoting it ("cannot read");
+//   - a number alone is accepted only in 1..230, and its "more than one
+//     setting" WARNING counts only the settings with the reference
+//     setting's centring letter (none for P 1, P -1, I 4/m m m);
+//   - a monoclinic group (3..15), however it was given, must fit the cell:
+//     the two angles its unique axis needs to be 90 (b: alpha, gamma; c:
+//     alpha, beta; a: beta, gamma) are 90 within 1e-3 degrees, or the CIF
+//     is refused, naming the setting and the angles as read.
 //
 // Fixtures: tests_data/cif/ (one file per row of the investigation table,
-// tmp/known-issues/report_leftovers.md section 6). The expected atoms are
-// hand-written from the Wyckoff positions (bcc Fe 2a, NaCl 4a + 4b, hcp Mg
-// 2c, Bi 2c of R -3 m:R and 6c of R -3 m:H, diamond Si 8a of F d -3 m
-// origin choice 2) or from the definition of the group (the 96 images of a
-// general position of I m -3 m); none is computed with the reader under
-// test.
+// tmp/known-issues/report_leftovers.md section 6, and
+// si_diamond_icsd_z_loop.cif, an ICSD-style record with the 192 operators
+// of F d -3 m:2); the space-group policy tests write their CIF inline
+// (cif_cell). The expected atoms are hand-written from the Wyckoff
+// positions (bcc Fe 2a, NaCl 4a + 4b, hcp Mg 2c, Bi 2c of R -3 m:R and 6c
+// of R -3 m:H, diamond Si 8a of F d -3 m origin choice 1 and 2) or from
+// the definition of the group (the 96 images of a general position of
+// I m -3 m, the 4 images of a general position under the operators of a
+// monoclinic setting); none is computed with the reader under test.
 
 #include "catch2/catch.hpp"
 
@@ -51,6 +70,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -864,12 +884,16 @@ TEST_CASE("CIF reader: an occupancy 2e-6 from 1 is refused, quoting the "
 
 namespace {
 
-// A CIF with no operator loop: cell a, b, c, alpha, beta, gamma, the
-// symmetry lines `symmetry` and the _atom_site rows `sites`.
+// A CIF with cell a, b, c, alpha, beta, gamma, the symmetry record
+// `symmetry` (tag lines, and an operator loop if any) and the _atom_site
+// rows `sites`. The cell is written with 15 significant digits, so that a
+// value such as 90.00101 reaches the CIF as given (the stream's default of
+// 6 digits would write 90.001).
 std::string cif_cell(const std::string &block, double a, double b, double c,
                      double alpha, double beta, double gamma,
                      const std::string &symmetry, const std::string &sites) {
   std::ostringstream s;
+  s.precision(15);
   s << "data_" << block << "\n"
     << "_cell_length_a " << a << "\n_cell_length_b " << b
     << "\n_cell_length_c " << c << "\n_cell_angle_alpha " << alpha
@@ -879,6 +903,97 @@ std::string cif_cell(const std::string &block, double a, double b, double c,
     << "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
     << sites;
   return s.str();
+}
+
+// Whether `text` writes `value` so that it reads back exactly: some number
+// in it (a run of characters from a digit that does not continue another
+// number) parses with std::strtod to `value`. A message that prints
+// 90.00101 as 90.001 does not mention 90.00101; one that prints it with
+// 17 significant digits (90.001009999999994) or as the shortest form that
+// reads back (90.00101) does.
+bool mentions_value(const std::string &text, double value) {
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(text[i]))) continue;
+    if (i > 0 && (std::isdigit(static_cast<unsigned char>(text[i - 1])) ||
+                  text[i - 1] == '.'))
+      continue;
+    if (std::strtod(text.c_str() + i, nullptr) == value) return true;
+  }
+  return false;
+}
+
+// Reads `text` through parseCifContents expecting it to be accepted: true
+// with `r` filled, or false after a failed check quoting the refusal.
+bool accepted(const std::string &text, Read &r) {
+  try {
+    r = parse_cif_text(text);
+  } catch (const std::exception &e) {
+    FAIL_CHECK("refused: " << e.what());
+    return false;
+  }
+  return true;
+}
+
+// Reads `text` through parseCifContents expecting it to be refused with a
+// std::runtime_error: its message, or "" after a failed check saying how
+// many atoms were read instead.
+std::string refusal(const std::string &text) {
+  try {
+    const Read r = parse_cif_text(text);
+    FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+  } catch (const std::runtime_error &e) {
+    return e.what();
+  }
+  return "";
+}
+
+// Fe1 at the general position (0.1,0.2,0.3) and its images under the
+// operators of a monoclinic setting:
+//   P 1 21/c 1: x,y,z; -x,y+1/2,-z+1/2; -x,-y,-z; x,-y+1/2,z+1/2;
+//   P 1 21/m 1: x,y,z; -x,y+1/2,-z;     -x,-y,-z; x,-y+1/2,z;
+//   P 1 1 21/m: x,y,z; -x,-y,z+1/2;     -x,-y,-z; x,y,-z+1/2;
+//   P 21/m 1 1: x,y,z; x+1/2,-y,-z;     -x,-y,-z; -x+1/2,y,z;
+// and under -P 2ybc (x+1/4,y,z), P 1 21/c 1 with the origin moved by a/4
+// (no tabulated setting): x,y,z; -x+1/2,y+1/2,-z+1/2; -x+1/2,-y,-z;
+// x,-y+1/2,z+1/2.
+const std::vector<Site> kFeP21c = {{"Fe", {0.1, 0.2, 0.3}},
+                                   {"Fe", {-0.1, 0.7, 0.2}},
+                                   {"Fe", {-0.1, -0.2, -0.3}},
+                                   {"Fe", {0.1, 0.3, 0.8}}};
+const std::vector<Site> kFeP21mB = {{"Fe", {0.1, 0.2, 0.3}},
+                                    {"Fe", {-0.1, 0.7, -0.3}},
+                                    {"Fe", {-0.1, -0.2, -0.3}},
+                                    {"Fe", {0.1, 0.3, 0.3}}};
+const std::vector<Site> kFeP21mC = {{"Fe", {0.1, 0.2, 0.3}},
+                                    {"Fe", {-0.1, -0.2, 0.8}},
+                                    {"Fe", {-0.1, -0.2, -0.3}},
+                                    {"Fe", {0.1, 0.2, 0.2}}};
+const std::vector<Site> kFeP21mA = {{"Fe", {0.1, 0.2, 0.3}},
+                                    {"Fe", {0.6, -0.2, -0.3}},
+                                    {"Fe", {-0.1, -0.2, -0.3}},
+                                    {"Fe", {0.4, 0.2, 0.3}}};
+const std::vector<Site> kFeP21cShifted = {{"Fe", {0.1, 0.2, 0.3}},
+                                          {"Fe", {0.4, 0.7, 0.2}},
+                                          {"Fe", {0.4, -0.2, -0.3}},
+                                          {"Fe", {0.1, 0.3, 0.8}}};
+// Diamond Si, F d -3 m origin choice 1, Si on 8a: (0,0,0) and
+// (1/4,1/4,1/4), each with the F-centring translations.
+const std::vector<Site> kSiDiamondOrigin1 = {
+    {"Si", {0.0, 0.0, 0.0}},    {"Si", {0.0, 0.5, 0.5}},
+    {"Si", {0.5, 0.0, 0.5}},    {"Si", {0.5, 0.5, 0.0}},
+    {"Si", {0.25, 0.25, 0.25}}, {"Si", {0.25, 0.75, 0.75}},
+    {"Si", {0.75, 0.25, 0.75}}, {"Si", {0.75, 0.75, 0.25}}};
+
+const std::string kFeGeneral = "Fe1 Fe 0.1 0.2 0.3\n";
+
+std::string hm_line(const std::string &hm) {
+  return "_symmetry_space_group_name_H-M '" + hm + "'\n";
+}
+std::string hall_line(const std::string &hall) {
+  return "_symmetry_space_group_name_Hall '" + hall + "'\n";
+}
+std::string number_line(const std::string &n) {
+  return "_symmetry_Int_Tables_number " + n + "\n";
 }
 
 }  // namespace
@@ -934,10 +1049,18 @@ TEST_CASE("CIF reader: an ICSD origin suffix is read, and an unknown H-M "
  * setting, unique axis b, only when the cell has that form (alpha = gamma =
  * 90): a cell with beta = 110 gives the 4 atoms of P 1 21/c 1 and the
  * WARNING naming it; a cell with gamma = 110 (unique axis c) is refused,
- * saying the number alone cannot give that setting.
+ * naming the setting (P 1 21/c 1), its unique axis b and the angle that
+ * breaks it (gamma 110).
  * Before the fix: the number was expanded in P 1 21/c 1 whatever the cell,
  * so the gamma = 110 cell gave 4 atoms with two different environments (not
- * one crystal), with a WARNING saying the setting fitted the cell angles. */
+ * one crystal), with a WARNING saying the setting fitted the cell angles.
+ * Updated for the space-group policy: the cell is now checked against the
+ * monoclinic setting however the group was given (the monoclinic tests
+ * below), so the refusal names the setting rather than saying the group
+ * came "only by its number (14)". Before that fix: the refusal read "the
+ * space group is given only by its number (14), a monoclinic group, and
+ * the cell (alpha 90, beta 90, gamma 110) is not in its standard setting,
+ * unique axis b ...", which does not name P 1 21/c 1: that CHECK fails. */
 TEST_CASE("CIF reader: a monoclinic space-group number alone needs the "
           "unique-axis-b cell",
           "[structure_readers][cif][spacegroup]") {
@@ -960,7 +1083,360 @@ TEST_CASE("CIF reader: a monoclinic space-group number alone needs the "
     FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
   } catch (const std::runtime_error &e) {
     INFO("message: " << e.what());
-    CHECK(contains(e.what(), "only by its number (14)"));
+    CHECK(contains(e.what(), "CIF text (data_P21c_c): "));
+    CHECK(contains(e.what(), "P 1 21/c 1"));
     CHECK(contains(e.what(), "unique axis b"));
+    CHECK(mentions_value(e.what(), 110.0));
   }
+}
+
+// ============================================== the space-group symbol ====
+
+/* Pins: without an operator loop, an H-M symbol written as spglib, other
+ * programs or people write it is normalised before it is looked up, and
+ * then agrees with the number next to it, so nothing is printed:
+ *   - 'P2_1/c' (spglib; '_' removed), 'P2(1)/c' (the subscript in
+ *     parentheses closed up), 'P 21/c (No. 14)' (the trailing number
+ *     dropped) and '  P 21/c  ' (surrounding blanks trimmed), each with
+ *     _symmetry_Int_Tables_number 14 in a cell with beta = 110: the 4 atoms
+ *     of P 1 21/c 1 from Fe1 at (0.1,0.2,0.3);
+ *   - 'P6(3)/mmc' with the number 194, hcp Mg (a = 3.2094 A, c = 5.2108 A,
+ *     gamma = 120, Mg1 at (1/3,2/3,1/4)): the 2 atoms on 2c.
+ * Before the fix: gemmi's find_spacegroup_by_name reads none of these
+ * forms, so 'P2_1/c', 'P2(1)/c', 'P 21/c (No. 14)' and 'P6(3)/mmc' were
+ * refused ("the space-group symbol 'P2_1/c' names no space group gemmi
+ * knows; ..."): four "refused: ..." failures. '  P 21/c  ' passes (a pin:
+ * gemmi skips the blanks). */
+TEST_CASE("CIF reader: an H-M symbol in spglib or annotated form is "
+          "normalised before it is looked up",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  for (const char *hm :
+       {"P2_1/c", "P2(1)/c", "P 21/c (No. 14)", "  P 21/c  "}) {
+    INFO("H-M '" << hm << "' with the number 14");
+    Read r;
+    if (!accepted(cif_cell("P21c_hm", 5, 6, 7, 90, 110, 90,
+                           hm_line(hm) + number_line("14"), kFeGeneral),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kFeP21c);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
+  INFO("hcp Mg, H-M 'P6(3)/mmc' with the number 194");
+  Read r;
+  if (!accepted(cif_cell("Mg_hcp_subscript", 3.2094, 3.2094, 5.2108, 90, 90,
+                         120, hm_line("P6(3)/mmc") + number_line("194"),
+                         "Mg1 Mg 0.333333333 0.666666667 0.25\n"),
+                r))
+    return;
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, kMgHcp);
+  CHECK_FALSE(contains(lower(r.log), "warning"));
+}
+
+/* Pins: ICSD's origin suffix is read in either case, and with an operator
+ * loop as well as without one:
+ *   - without a loop, lower-case 'F d -3 m z' with Si1 at (1/8,1/8,1/8)
+ *     and 'F d -3 m s' with Si1 at the origin, each with the number 227
+ *     (a = 5.431 A), give the 8 atoms of diamond Si on 8a of origin
+ *     choice 2 and origin choice 1;
+ *   - si_diamond_icsd_z_loop.cif, 'F d -3 m Z' with the number 227 and all
+ *     192 operators of F d -3 m:2, gives the 8 atoms and prints nothing:
+ *     the symbol, read as F d -3 m:2, agrees with the loop. Through every
+ *     route.
+ * Before the fix: only an upper-case suffix was read, and only without a
+ * loop: 'F d -3 m z' and 'F d -3 m s' were refused ("the space-group
+ * symbol 'F d -3 m z' names no space group gemmi knows; ..."); with the
+ * loop the 8 atoms were right (gemmi follows the loop) but gemmi's
+ * consistency check, given the symbol as written, printed a false "the
+ * symmetry record is inconsistent (gemmi: "H-M symbol (F d -3 m Z) not
+ * found in the table")" WARNING, on each of the three routes. */
+TEST_CASE("CIF reader: an ICSD origin suffix is read in either case, with "
+          "or without an operator loop",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *hm, *x;
+    const std::vector<Site> *sites;
+  };
+  for (const Case &c : {Case{"F d -3 m z", "0.125", &kSiDiamond},
+                        Case{"F d -3 m s", "0", &kSiDiamondOrigin1}}) {
+    INFO("H-M '" << c.hm << "' with the number 227, no operator loop");
+    Read r;
+    const std::string x = c.x;
+    if (!accepted(cif_cell("Si_icsd_lower_case", 5.431, 5.431, 5.431, 90, 90,
+                           90, hm_line(c.hm) + number_line("227"),
+                           "Si1 Si " + x + " " + x + " " + x + "\n"),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, *c.sites);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
+  const std::string path = kCifDir + "si_diamond_icsd_z_loop.cif";
+  for (const Route route : kRoutes) {
+    INFO("si_diamond_icsd_z_loop.cif via " << route_name(route));
+    const Read r = read_cif(path, route);
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kSiDiamond);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
+}
+
+/* Pins: without an operator loop, a Hall symbol that gives a complete
+ * group gemmi does not tabulate expands the sites with its own operators,
+ * as such an operator loop does (p2_shifted_origin_loop.cif): Hall
+ * '-P 2ybc (x+1/4,y,z)', P 1 21/c 1 with the origin moved by a/4, in a
+ * cell with beta = 110, gives 4 atoms from Fe1 at (0.1,0.2,0.3): (0.1,0.2,
+ * 0.3), (0.4,0.7,0.2), (0.4,0.8,0.7) and (0.1,0.3,0.8). Whether a WARNING
+ * is printed is not pinned here.
+ * Before the fix: the Hall symbol was looked up only among the tabulated
+ * settings, and the CIF was refused ("the space-group symbol '-P 2ybc
+ * (x+1/4,y,z)' names no space group gemmi knows; ..."). */
+TEST_CASE("CIF reader: a Hall symbol of no tabulated setting expands the "
+          "sites with its own operators",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  Read r;
+  if (!accepted(cif_cell("P21c_hall_shifted", 5, 6, 7, 90, 110, 90,
+                         hall_line("-P 2ybc (x+1/4,y,z)"), kFeGeneral),
+                r))
+    return;
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, kFeP21cShifted);
+}
+
+/* Pins: a symbol that names nothing readable once normalised is refused
+ * with a std::runtime_error that names the source, quotes the symbol as
+ * written and says the reader cannot read it ("cannot read"):
+ *   - the H-M symbol 'F d -3 m Q' with the number 227 (the number does not
+ *     stand in for the symbol: the setting cannot be told);
+ *   - the Hall symbol '-Q 2ybc' (Q is no lattice symbol);
+ *   - the Hall symbol '-P 2ybc (x+1/4,y,z' (the change of basis is not
+ *     closed).
+ * Before the fix: all three were refused, naming the source and the
+ * symbol, but saying "names no space group gemmi knows": the CHECK for
+ * "cannot read" fails three times. */
+TEST_CASE("CIF reader: a space-group symbol that cannot be read is refused, "
+          "quoting it",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *block, *symbol;
+    std::string text;
+  };
+  const std::vector<Case> cases = {
+      {"Si_unknown_symbol", "F d -3 m Q",
+       cif_cell("Si_unknown_symbol", 5.431, 5.431, 5.431, 90, 90, 90,
+                hm_line("F d -3 m Q") + number_line("227"),
+                "Si1 Si 0.125 0.125 0.125\n")},
+      {"Hall_unknown_lattice", "-Q 2ybc",
+       cif_cell("Hall_unknown_lattice", 5, 6, 7, 90, 110, 90,
+                hall_line("-Q 2ybc"), kFeGeneral)},
+      {"Hall_open_basis", "-P 2ybc (x+1/4,y,z",
+       cif_cell("Hall_open_basis", 5, 6, 7, 90, 110, 90,
+                hall_line("-P 2ybc (x+1/4,y,z"), kFeGeneral)}};
+  for (const Case &c : cases) {
+    INFO("symbol '" << c.symbol << "'");
+    const std::string what = refusal(c.text);
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, std::string("'") + c.symbol + "'"));
+    CHECK(contains(what, "cannot read"));
+  }
+}
+
+// ============================================ the space-group number ====
+
+/* Pins: a space-group number alone is accepted only in 1..230; 231, 999,
+ * -5 and 1003 (a CCP4 code, P 1 1 2 in gemmi's table, not an IT number)
+ * are refused with a std::runtime_error that names the source and the
+ * number as given.
+ * Before the fix: a number that is no IT number was not refused: 231, 999
+ * and -5 were ignored and the CIF read silently as P 1, the 1 atom as
+ * listed ("accepted: 1 atoms"); 1003 was looked up as gemmi's CCP4 code
+ * and expanded in P 1 1 2, 2 atoms ("accepted: 2 atoms"), with the number
+ * WARNING and a WARNING that the number (1003) differs. */
+TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  for (const char *n : {"231", "999", "-5", "1003"}) {
+    INFO("number " << n << " alone");
+    const std::string what =
+        refusal(cif_cell("Fe_bad_number", 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                         number_line(n), kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, "CIF text (data_Fe_bad_number): "));
+    CHECK(contains(what, n));
+  }
+}
+
+/* Pins: the "more than one setting" WARNING of a number alone counts only
+ * the settings with the centring letter of the number's reference setting
+ * (gemmi's SpaceGroup::hm[0]), the only ones the reader can choose for a
+ * number; gemmi's table also lists the group in unconventional centred
+ * cells (A 1 to I 1, A -1 to I -1, F 4/m m m), which it never chooses.
+ * The letter is hm[0], not centring_type(): R -3 m:R counts as R, so 166
+ * keeps its WARNING. So P 1 (1) and P -1 (2), in a triclinic cell, and
+ * I 4/m m m (139), in a tetragonal cell, print nothing: Fe1 at
+ * (0.1,0.2,0.3) gives 1 atom in P 1 and 2, (x,y,z) and (-x,-y,-z), in
+ * P -1; Fe1 at the origin gives 2 in I 4/m m m, (0,0,0) and (1/2,1/2,1/2).
+ * The numbers that do leave a choice still warn: 166 and 227 (the
+ * number-only WARNING test) and 14 (the monoclinic number test).
+ * Before the fix: the WARNING counted every table entry of the number,
+ * so each of the three printed "the space group is given only by its
+ * number (1), which has more than one setting; the unit cell is built with
+ * space group P 1, ..." (P -1, I 4/m m m): the CHECK_FALSE on the output
+ * fails three times; the atoms are right. */
+TEST_CASE("CIF reader: a number alone warns only when its centring letter "
+          "leaves a choice of setting",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *number;
+    double a, b, c, alpha, beta, gamma;
+    const char *site;
+    std::vector<Site> sites;
+  };
+  const std::vector<Case> cases = {
+      {"1", 4.2, 5.1, 6.3, 81.5, 96.2, 103.7, "Fe1 Fe 0.1 0.2 0.3\n",
+       {{"Fe", {0.1, 0.2, 0.3}}}},
+      {"2", 4.2, 5.1, 6.3, 81.5, 96.2, 103.7, "Fe1 Fe 0.1 0.2 0.3\n",
+       {{"Fe", {0.1, 0.2, 0.3}}, {"Fe", {-0.1, -0.2, -0.3}}}},
+      {"139", 2.9, 2.9, 4.1, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc}};
+  for (const Case &c : cases) {
+    INFO("number " << c.number << " alone");
+    Read r;
+    if (!accepted(cif_cell("Number_one_letter", c.a, c.b, c.c, c.alpha,
+                           c.beta, c.gamma, number_line(c.number), c.site),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, c.sites);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
+}
+
+// ================================================= monoclinic settings ====
+
+/* Pins: a monoclinic group must fit the cell however it is given: the two
+ * angles its unique axis needs to be 90 (unique axis b: alpha and gamma;
+ * c: alpha and beta; a: beta and gamma) are 90 within 1e-3 degrees, or the
+ * CIF is refused with a std::runtime_error naming the source, the setting
+ * (gemmi's xhm()), its unique axis and the cell angles. Fe1 at
+ * (0.1,0.2,0.3), a = 5, b = 6, c = 7 A:
+ *   - full H-M symbols: 'P 1 21/m 1' with beta = 110, 'P 1 1 21/m' with
+ *     gamma = 110 and 'P 21/m 1 1' with alpha = 110 each give their 4
+ *     atoms; 'P 1 21/m 1' with gamma = 110, 'P 1 1 21/m' with beta = 110
+ *     and 'P 21/m 1 1' with beta = 110 are refused;
+ *   - with gamma = 110, the short symbol 'P 21/m' with the number 11
+ *     (gemmi reads it as P 1 21/m 1), the Hall symbol '-P 2yb' and the
+ *     operator loop of P 1 21/m 1 (x,y,z; -x,y+1/2,-z; -x,-y,-z;
+ *     x,-y+1/2,z) are each refused, naming P 1 21/m 1 and unique axis b.
+ * The number alone is the monoclinic number test above.
+ * Before the fix: only a number alone was checked against the cell, so
+ * the six cells that do not fit were each accepted without a message, 4
+ * atoms in a cell that is not the setting's, with two different
+ * environments ("accepted: 4 atoms", six times). The three cells that fit
+ * pass (pins). */
+TEST_CASE("CIF reader: a monoclinic space group must fit the cell, "
+          "however it is given",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *block;
+    std::string symmetry;
+    double alpha, beta, gamma;
+    const char *setting;  // gemmi's xhm()
+    char axis;
+    double bad_angle;                // 0 when the cell fits
+    const std::vector<Site> *sites;  // when the cell fits
+  };
+  const std::string p21m_loop =
+      "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-x,y+1/2,-z'\n"
+      "'-x,-y,-z'\n'x,-y+1/2,z'\n";
+  const std::vector<Case> cases = {
+      {"P21m_b_fits", hm_line("P 1 21/m 1"), 90, 110, 90, "P 1 21/m 1", 'b',
+       0, &kFeP21mB},
+      {"P21m_c_fits", hm_line("P 1 1 21/m"), 90, 90, 110, "P 1 1 21/m", 'c',
+       0, &kFeP21mC},
+      {"P21m_a_fits", hm_line("P 21/m 1 1"), 110, 90, 90, "P 21/m 1 1", 'a',
+       0, &kFeP21mA},
+      {"P21m_b_gamma", hm_line("P 1 21/m 1"), 90, 90, 110, "P 1 21/m 1", 'b',
+       110, nullptr},
+      {"P21m_c_beta", hm_line("P 1 1 21/m"), 90, 110, 90, "P 1 1 21/m", 'c',
+       110, nullptr},
+      {"P21m_a_beta", hm_line("P 21/m 1 1"), 90, 110, 90, "P 21/m 1 1", 'a',
+       110, nullptr},
+      {"P21m_short_gamma", hm_line("P 21/m") + number_line("11"), 90, 90, 110,
+       "P 1 21/m 1", 'b', 110, nullptr},
+      {"P21m_hall_gamma", hall_line("-P 2yb"), 90, 90, 110, "P 1 21/m 1", 'b',
+       110, nullptr},
+      {"P21m_loop_gamma", p21m_loop, 90, 90, 110, "P 1 21/m 1", 'b', 110,
+       nullptr}};
+  for (const Case &c : cases) {
+    const std::string text = cif_cell(c.block, 5, 6, 7, c.alpha, c.beta,
+                                      c.gamma, c.symmetry, kFeGeneral);
+    INFO(c.block << ": alpha " << c.alpha << ", beta " << c.beta
+                 << ", gamma " << c.gamma << ", symmetry\n"
+                 << c.symmetry);
+    if (c.sites) {
+      Read r;
+      if (!accepted(text, r)) continue;
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, *c.sites);
+      continue;
+    }
+    const std::string what = refusal(text);
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, c.setting));
+    CHECK(contains(what, std::string("unique axis ") + c.axis));
+    CHECK(mentions_value(what, c.bad_angle));
+  }
+}
+
+/* Pins: the monoclinic check allows 1e-3 degrees and its message prints
+ * the angles as read, so that it shows why the cell does not fit. With the
+ * number 14 alone (P 1 21/c 1, unique axis b) and beta = 110:
+ *   - alpha = 90.0004 (within 1e-3) gives the 4 atoms of P 1 21/c 1 from
+ *     Fe1 at (0.1,0.2,0.3), with the number WARNING naming P 1 21/c 1;
+ *   - alpha = 90.00101 (1.01e-3 off) is refused, naming P 1 21/c 1, and
+ *     the message writes alpha so that it reads back as 90.00101 (6
+ *     significant digits would print 90.001, which looks within 1e-3).
+ * Before the fix: a number alone was checked to 1e-6 and the angles
+ * printed with 6 significant digits: alpha = 90.0004 was refused
+ * ("refused: ... the cell (alpha 90.0004, beta 110, gamma 90) is not in
+ * its standard setting, unique axis b ..."), and the refusal for 90.00101
+ * printed "alpha 90.001" and did not name P 1 21/c 1: both CHECKs on it
+ * fail. */
+TEST_CASE("CIF reader: the monoclinic check allows 1e-3 degrees and prints "
+          "the angles as read",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string n14 = number_line("14");
+  {
+    INFO("alpha 90.0004");
+    Read r;
+    if (accepted(cif_cell("P21c_alpha_within", 5, 6, 7, 90.0004, 110, 90, n14,
+                          kFeGeneral),
+                 r)) {
+      INFO("printed:\n" << r.log);
+      check_sites(r.st, kFeP21c);
+      CHECK(contains(r.log, "only by its number (14)"));
+      CHECK(contains(r.log, "P 1 21/c 1"));
+    }
+  }
+  INFO("alpha 90.00101");
+  const std::string what = refusal(
+      cif_cell("P21c_alpha_off", 5, 6, 7, 90.00101, 110, 90, n14, kFeGeneral));
+  INFO("message: " << what);
+  if (what.empty()) return;
+  CHECK(contains(what, "CIF text (data_P21c_alpha_off): "));
+  CHECK(contains(what, "P 1 21/c 1"));
+  CHECK(mentions_value(what, 90.00101));
 }
