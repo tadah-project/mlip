@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <utility>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -72,62 +73,102 @@ std::string normalised_hm(std::string hm) {
   return hm;
 }
 
-// The tabulated settings of the group of @p sg that the same cell could be
-// in: those whose change of basis from @p sg has determinant +-1 (another
-// origin choice, a permutation of the axes, another monoclinic cell
-// choice). gemmi's table also lists groups in larger centred cells (A 1,
-// ..., F 4/m m m) and R groups on both hexagonal and rhombohedral axes:
-// other cells, which the cell itself tells apart.
-int settings_of_the_cell(const gemmi::SpaceGroup &sg) {
-  const int det = std::abs(sg.basisop().det_rot());
+// The unique axis ('a', 'b' or 'c') of a monoclinic group (IT 3 to 15) of
+// gemmi's table, or 0 for any other group.
+char monoclinic_axis(const gemmi::SpaceGroup &sg) {
+  if (sg.number < 3 || sg.number > 15) return 0;
+  const char *q = sg.qualifier;
+  if (*q == '-') ++q;
+  if (*q != 'a' && *q != 'b' && *q != 'c')
+    throw std::logic_error("CifReader: monoclinic space group " + sg.xhm() +
+                           " has no unique axis in gemmi's table");
+  return *q;
+}
+
+// The two cell angles between unique axis @p axis and the other axes (for
+// b, alpha, between b and c, and gamma, between a and b), which a
+// monoclinic group needs to be 90 degrees; the third angle is free.
+std::pair<double, double> angles_at(const gemmi::UnitCell &c, char axis) {
+  switch (axis) {
+    case 'a': return {c.beta, c.gamma};
+    case 'b': return {c.alpha, c.gamma};
+    default: return {c.alpha, c.beta};
+  }
+}
+
+constexpr double kMonoclinicTol = 1e-3;  // degrees
+
+// Whether the cell can hold monoclinic group @p sg (any other group: true).
+bool fits_cell(const gemmi::UnitCell &c, const gemmi::SpaceGroup &sg) {
+  const char axis = monoclinic_axis(sg);
+  if (!axis) return true;
+  const auto [first, second] = angles_at(c, axis);
+  return std::fabs(first - 90.0) <= kMonoclinicTol &&
+         std::fabs(second - 90.0) <= kMonoclinicTol;
+}
+
+// The ITA settings of the group of @p sg that cell @p c could be in, @p sg
+// included: another origin choice (the groups with two), or another
+// choice of axes (a permutation, a monoclinic unique axis or cell choice:
+// a change of basis with determinant +-1) that fits the cell. gemmi's
+// table also lists groups in larger centred cells (A 1, ..., F 4/m m m),
+// R groups on both hexagonal and rhombohedral axes (other cells, which
+// the cell itself tells apart) and CCP4's extra origins of 22, 23, 94 and
+// 197 (no ITA origin choice): none of them counts.
+int settings_of_the_cell(const gemmi::SpaceGroup &sg,
+                         const gemmi::UnitCell &c) {
+  const gemmi::Op basis = sg.basisop();
+  const int det = std::abs(basis.det_rot());
+  const auto origin_choice = [](const gemmi::SpaceGroup &g) {
+    return g.ext == '1' || g.ext == '2';
+  };
   int n = 0;
-  for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
-    if (t.number == sg.number && std::abs(t.basisop().det_rot()) == det) ++n;
+  for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main) {
+    if (t.number != sg.number) continue;
+    if (&t == &sg) {
+      ++n;
+      continue;
+    }
+    const gemmi::Op tb = t.basisop();
+    if (std::abs(tb.det_rot()) != det) continue;
+    if (tb.rot == basis.rot ? origin_choice(t) && origin_choice(sg)
+                            : fits_cell(c, t))
+      ++n;
+  }
   return n;
 }
 
-// The tabulated group with the rotations (and the centring) of @p ops, or
-// nullptr: the setting whose axes a group in no tabulated setting (an
-// origin moved, say) shares.
+// The tabulated primitive group with the rotations of @p ops, or nullptr:
+// the setting whose axes a group in no tabulated setting (an origin moved,
+// an unusual centring) shares. The cell constraints depend on the
+// rotations alone.
 const gemmi::SpaceGroup *with_rotations_of(gemmi::GroupOps ops) {
   for (gemmi::Op &op : ops.sym_ops) op.tran = {0, 0, 0};
+  ops.cen_ops = {gemmi::Op::Tran{0, 0, 0}};
   return gemmi::find_spacegroup_by_ops(ops);
 }
 
 // A monoclinic group is described in the setting its unique axis names:
-// the cell angles between that axis and the other two are 90 degrees (for
-// unique axis b, alpha, between b and c, and gamma, between a and b); the
-// third angle is free. In a cell whose angles say otherwise the operators
-// place the images of a site where that crystal has none. @p axes is the
-// tabulated group whose rotations the cell is built with (the constraints
-// depend on the rotations alone); @p what names the group for the message.
+// the cell angles between that axis and the other two are 90 degrees. In
+// a cell whose angles say otherwise the operators place the images of a
+// site where that crystal has none. @p axes is the tabulated group whose
+// rotations the cell is built with; @p what names the group for the
+// message.
 void require_monoclinic_cell(const gemmi::UnitCell &c,
                              const gemmi::SpaceGroup *axes,
                              const std::string &what,
                              const std::string &advice,
                              const std::string &source) {
-  if (!axes || axes->number < 3 || axes->number > 15) return;
-  const char *q = axes->qualifier;
-  if (*q == '-') ++q;
-  double first = 0.0, second = 0.0;
-  const char *needs = nullptr;
-  switch (*q) {
-    case 'a': first = c.beta; second = c.gamma; needs = "beta = gamma"; break;
-    case 'b': first = c.alpha; second = c.gamma; needs = "alpha = gamma"; break;
-    case 'c': first = c.alpha; second = c.beta; needs = "alpha = beta"; break;
-    default:
-      throw std::logic_error("CifReader: monoclinic space group " +
-                             axes->xhm() +
-                             " has no unique axis in gemmi's table");
-  }
-  constexpr double tol = 1e-3;  // degrees
-  if (std::fabs(first - 90.0) <= tol && std::fabs(second - 90.0) <= tol)
-    return;
+  if (!axes || fits_cell(c, *axes)) return;
+  const char axis = monoclinic_axis(*axes);
+  const char *needs = axis == 'a'   ? "beta = gamma"
+                      : axis == 'b' ? "alpha = gamma"
+                                    : "alpha = beta";
   using tadah::core::format_roundtrip;
   throw std::runtime_error(
-      source + ": " + what + " is monoclinic with unique axis " + *q +
-      ", which needs " + needs + " = 90 degrees (the angles between " + *q +
-      " and the other axes, within 1e-3), but the cell has alpha " +
+      source + ": " + what + " is monoclinic with unique axis " + axis +
+      ", which needs " + needs + " = 90 degrees (the angles between " +
+      axis + " and the other axes, within 1e-3), but the cell has alpha " +
       format_roundtrip(c.alpha) + ", beta " + format_roundtrip(c.beta) +
       ", gamma " + format_roundtrip(c.gamma) + "; " + advice + ".");
 }
@@ -185,6 +226,26 @@ void CifReader::parseCif(const std::string &fileContents,
       path.empty() ? "CIF text (data_" + block.name + ")" : "CIF file " + path;
 
   gemmi::SmallStructure struc = gemmi::make_small_structure_from_block(block);
+  // gemmi takes the first H-M and number tag present and the last Hall tag
+  // present, even when its value is unknown ('?'), which then hides the
+  // other tag of the pair: take the first known value of each pair, and
+  // tell '0' from '?' (gemmi reads both as 0).
+  const auto known_value = [&](const char *new_tag, const char *old_tag) {
+    for (const char *tag : {new_tag, old_tag})
+      if (const std::string *v = block.find_value(tag))
+        if (!is_null(*v)) return v;
+    return static_cast<const std::string *>(nullptr);
+  };
+  const std::string *hm_value =
+      known_value("_space_group_name_H-M_alt", "_symmetry_space_group_name_H-M");
+  const std::string *hall_value =
+      known_value("_space_group_name_Hall", "_symmetry_space_group_name_Hall");
+  const std::string *number_value =
+      known_value("_space_group_IT_number", "_symmetry_Int_Tables_number");
+  struc.spacegroup_hm = hm_value ? as_string(*hm_value) : std::string();
+  struc.spacegroup_hall = hall_value ? as_string(*hall_value) : std::string();
+  struc.spacegroup_number = number_value ? as_int(*number_value) : 0;
+  const bool number_given = number_value != nullptr;
   // The H-M symbol as gemmi's table lookup reads it, for every use below
   // and gemmi's consistency check. A value that normalises to nothing
   // ('(No. 14)') is kept as written, a symbol that cannot be read.
@@ -196,14 +257,6 @@ void CifReader::parseCif(const std::string &fileContents,
     struc.spacegroup_hm =
         blank.empty() ? "" : normal.empty() ? hm_as_written : normal;
   }
-  // gemmi reads '0' and an unknown number ('?') alike, as 0: tell them
-  // apart (the tags in gemmi's order).
-  bool number_given = false;
-  for (const char *tag : {"_space_group_IT_number", "_symmetry_Int_Tables_number"})
-    if (const std::string *v = block.find_value(tag)) {
-      number_given = !is_null(*v);
-      break;
-    }
 
   // The space group, looked up here rather than with gemmi's
   // determine_and_set_spacegroup("S.H2") (which never uses the number, and
@@ -266,6 +319,17 @@ void CifReader::parseCif(const std::string &fileContents,
       if (!struc.spacegroup)
         throw cannot_read("H-M", hm_as_written,
                           "it names no space group gemmi knows");
+      // gemmi prefers origin choice 2 only for the symbols of its main
+      // table; one of its other names ('C c c e', the current symbol of
+      // C c c a) gives origin choice 1. Its table lists origin choice 2
+      // right after 1.
+      const gemmi::SpaceGroup *const end =
+          std::end(gemmi::spacegroup_tables::main);
+      if (struc.spacegroup_hm.find(':') == std::string::npos &&
+          struc.spacegroup->ext == '1' && struc.spacegroup + 1 != end &&
+          struc.spacegroup[1].number == struc.spacegroup->number &&
+          struc.spacegroup[1].ext == '2')
+        ++struc.spacegroup;
       struc.setup_cell_images();
       return true;
     }
@@ -317,7 +381,8 @@ void CifReader::parseCif(const std::string &fileContents,
         ref.hm, struc.cell.alpha, struc.cell.gamma, "2");
     struc.spacegroup = sg ? sg : &ref;
     struc.setup_cell_images();
-    number_has_choice = settings_of_the_cell(*struc.spacegroup) > 1;
+    number_has_choice =
+        settings_of_the_cell(*struc.spacegroup, struc.cell) > 1;
   }
 
   // However the group was given, a monoclinic one must fit the cell.
