@@ -14,11 +14,12 @@
 //   - a CIF with no symmetry record is P 1: the sites as listed, and two
 //     rows at one position modulo a lattice vector are both kept;
 //   - when the symmetry record contradicts itself (gemmi's
-//     SmallStructure::check_spacegroup() is not empty), the structure
-//     follows the record read first and a WARNING names the file, quotes
-//     the diagnostic and says what the cell was built with; a consistent
-//     or absent record prints nothing;
-//   - the H-M symbol is normalised before any lookup and before gemmi's
+//     SmallStructure::check_spacegroup() for the loop, the Hall symbol and
+//     the number; the reader's own comparison for the H-M symbol), the
+//     structure follows the record read first and a WARNING names the
+//     file, quotes the findings and says what the cell was built with; a
+//     consistent or absent record prints nothing;
+//   - the H-M symbol is normalised before any lookup and before the
 //     consistency check, with or without an operator loop: surrounding
 //     blanks trimmed, ICSD's ' S' / ' Z' (either case) read as origin
 //     choice 1 / 2, '_' removed (spglib's P2_1/c), subscripts in
@@ -49,12 +50,14 @@
 //     or the CIF is refused, naming the group and the angles as read; so
 //     must an R group its axes (hexagonal: alpha = beta = 90, gamma = 120;
 //     rhombohedral: alpha = beta = gamma), those it names or, without, the
-//     cell's. Operators in no tabulated setting are checked by the
-//     tabulated group with their rotations and centring, else (an R or H
-//     centring gemmi does not tabulate, such as the reverse setting) on
-//     hexagonal axes, else by the tabulated primitive group with their
-//     rotations: a supercell's extra translations (x+1/3, ...) are no R
-//     centring. A refusal says what can change the result;
+//     cell's. The axes come from the rotations alone: a 3-fold rotation
+//     about c on hexagonal axes (any trigonal or hexagonal group on such
+//     axes, R or P, tabulated or not) needs alpha = beta = 90 and gamma =
+//     120; translations (a centring, a supercell's x+1/3) fix nothing.
+//     Operators in no tabulated setting are otherwise checked by the
+//     tabulated group with their rotations and centring, else by the
+//     tabulated primitive group with their rotations. A refusal says what
+//     can change the result;
 //   - with a loop or a Hall symbol, the H-M symbol is compared with the
 //     group used by its operations, so an equivalent name of the same
 //     setting ('C c c b:1' for C c c a:1) is no inconsistency;
@@ -564,10 +567,10 @@ TEST_CASE("CIF reader: a CIF without a symmetry record is read as P 1, "
   }
 }
 
-// ==================================================== the gemmi diagnostic ====
+// ==================================================== the diagnostic ====
 
-/* Pins: when gemmi's SmallStructure::check_spacegroup() reports that the
- * symmetry record contradicts itself, the reader prints a WARNING that
+/* Pins: when the symmetry record contradicts itself (the H-M symbol
+ * names another group than the loop's), the reader prints a WARNING that
  * quotes the diagnostic, and reads the structure from the operator loop:
  *   - fe_bcc_mismatch.cif: H-M 'P m -3 m' with the I-centring operators
  *     (space group I 1): 2 atoms, and the diagnostic "space group from H-M
@@ -582,9 +585,10 @@ TEST_CASE("CIF reader: a CIF without a symmetry record is read as P 1, "
  * at WARNING, so either way of printing it is seen.
  * Before the fix: CifReader discarded the string check_spacegroup()
  * returned and printed nothing: every CHECK on the captured output fails
- * (it is empty), the atom counts pass. */
+ * (it is empty), the atom counts pass. (The H-M finding is the reader's
+ * own since review round 10, in gemmi's words.) */
 TEST_CASE("CIF reader: an inconsistent symmetry record gives a WARNING "
-          "naming the file and quoting gemmi's diagnostic",
+          "naming the file and quoting the diagnostic",
           "[structure_readers][cif][symmetry][warning]") {
   PeriodicTable::initialize();
   struct Case {
@@ -2572,4 +2576,151 @@ TEST_CASE("CIF reader: an equivalent name of the same setting is no "
                        {"Fe", {0.5, 0.5, 0.0}}});
     CHECK_FALSE(contains(lower(r.log), "warning"));
   }
+}
+
+// =============================================== review round 11 ====
+
+/* Pins: only rotations fix the cell's axes; translations do not, even the
+ * R and H centring vectors:
+ *   - a tetragonally strained fcc Cu (a = 3.615, c = 3.65 A) in its [111]
+ *     triple cell (a = 2.556191, b = 2.568595, c = 6.281636 A, alpha =
+ *     90.451474, beta = 90, gamma = 119.840381) with the loop x,y,z;
+ *     x+2/3,y+1/3,z+1/3; x+1/3,y+2/3,z+2/3 (P 1 in an R-centred triple
+ *     cell) and Cu1 at the origin: 3 atoms, (0,0,0), (2/3,1/3,1/3),
+ *     (1/3,2/3,2/3);
+ *   - the H translations x+2/3,y+1/3,z; x+1/3,y+2/3,z in a 4.0 x 4.1 x 5 A
+ *     cell with gamma = 119.5: 3 atoms, (0,0,0), (2/3,1/3,0), (1/3,2/3,0);
+ *   - a 3-fold rotation about c needs hexagonal axes whatever the group:
+ *     P 3 (x,y,z; -y,x-y,z; -x+y,-x,z) as a loop, and as the H-M symbol
+ *     'P 3', in a cell with gamma = 119.6 (a = b = 4.0, c = 5 A) are
+ *     refused, naming hexagonal axes and 119.6.
+ * Before the fix: an R or H centring set was taken as hexagonal axes
+ * whatever the rotations, so the first two were refused ("R-centred on
+ * hexagonal axes"), and a P group's 3-fold was never checked, so the last
+ * two were accepted, 3 atoms each: four failures. */
+TEST_CASE("CIF reader: only rotations fix the axes of the cell",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string loop_head = "loop_\n_symmetry_equiv_pos_as_xyz\n";
+  {
+    INFO("strained fcc Cu in its R-centred triple cell, P 1");
+    Read r;
+    if (accepted(cif_cell("Cu_strained_111", 2.556191, 2.568595, 6.281636,
+                          90.451474, 90, 119.840381,
+                          loop_head +
+                              "'x,y,z'\n'x+2/3,y+1/3,z+1/3'\n"
+                              "'x+1/3,y+2/3,z+2/3'\n",
+                          "Cu1 Cu 0 0 0\n"),
+                 r))
+      check_sites(r.st, {{"Cu", {0.0, 0.0, 0.0}},
+                         {"Cu", {2.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}},
+                         {"Cu", {1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0}}});
+  }
+  {
+    INFO("the H translations, P 1");
+    Read r;
+    if (accepted(cif_cell("H_cell_p1", 4.0, 4.1, 5, 90, 90, 119.5,
+                          loop_head +
+                              "'x,y,z'\n'x+2/3,y+1/3,z'\n'x+1/3,y+2/3,z'\n",
+                          "Fe1 Fe 0 0 0\n"),
+                 r))
+      check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}},
+                         {"Fe", {2.0 / 3.0, 1.0 / 3.0, 0.0}},
+                         {"Fe", {1.0 / 3.0, 2.0 / 3.0, 0.0}}});
+  }
+  struct Case {
+    const char *block;
+    std::string symmetry;
+  };
+  for (const Case &c :
+       {Case{"P3_loop_off",
+             loop_head + "'x,y,z'\n'-y,x-y,z'\n'-x+y,-x,z'\n"},
+        Case{"P3_hm_off", hm_line("P 3")}}) {
+    INFO(c.block);
+    const std::string what = refusal(cif_cell(c.block, 4.0, 4.0, 5, 90, 90,
+                                              119.6, c.symmetry, kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
+    CHECK(contains(what, "hexagonal axes"));
+    CHECK(mentions_value(what, 119.6));
+  }
+}
+
+/* Pins: an H-M symbol that names no setting agrees with the group used
+ * when any setting of that name has its operations: the Hall symbol
+ * 'C 2 2 -1ac' (C c c a:1) with 'C c c b', a name gemmi also lists for
+ * origin choice 1 (and, without a setting, takes as origin choice 2), in a
+ * 5 x 6 x 7 A cell with Fe1 at the origin: the 4 atoms of origin choice 1
+ * and nothing printed.
+ * Before the fix: a symbol without a setting was compared by its string
+ * with the group used, C c c b against C c c a, and gave the WARNING
+ * "space group from H-M symbol (C c c b) differs: C c c b". */
+TEST_CASE("CIF reader: a name of the group without a setting agrees with "
+          "either setting",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  Read r;
+  if (!accepted(cif_cell("Cccb_plain", 5, 6, 7, 90, 90, 90,
+                         hall_line("C 2 2 -1ac") + hm_line("C c c b"),
+                         "Fe1 Fe 0 0 0\n"),
+                r))
+    return;
+  INFO("printed:\n" << r.log);
+  check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}},
+                     {"Fe", {0.0, 0.5, 0.5}},
+                     {"Fe", {0.5, 0.0, 0.5}},
+                     {"Fe", {0.5, 0.5, 0.0}}});
+  CHECK_FALSE(contains(lower(r.log), "warning"));
+}
+
+/* Pins: gemmi's findings for the loop, the Hall symbol and the number are
+ * quoted in the WARNING: fe_bcc_full_loop.cif (the 96 operators of
+ * I m -3 m, H-M 'I m -3 m') with _symmetry_Int_Tables_number 225 gives
+ * the 2 atoms and a WARNING with "space group number (225) differs"; with
+ * the Hall symbol '-P 4 2 3' it gives one with "space group from Hall
+ * symbol (-P 4 2 3) differs". And an error gemmi raises while reading the
+ * block names the source: a CIF whose cell loop has two rows is refused
+ * with "CIF text (data_Two_cells): gemmi cannot read the data block".
+ * Before the fix: passes as well (pins of what the header documents). */
+TEST_CASE("CIF reader: gemmi's findings and errors are quoted naming the "
+          "source",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  const std::string text = slurp(kCifDir + "fe_bcc_full_loop.cif");
+  const std::string line = "_symmetry_space_group_name_H-M 'I m -3 m'";
+  REQUIRE(text.find(line) != std::string::npos);
+  struct Case {
+    std::string extra, finding;
+  };
+  for (const Case &c :
+       {Case{number_line("225"), "space group number (225) differs"},
+        Case{hall_line("-P 4 2 3"),
+             "space group from Hall symbol (-P 4 2 3) differs"}}) {
+    INFO(c.extra);
+    std::string t = text;
+    t.replace(t.find(line), line.size(), line + "\n" + c.extra);
+    Read r;
+    if (!accepted(t, r)) continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kFeBcc);
+    CHECK(count_of(r.log, "WARNING") == 1);
+    CHECK(contains(r.log, c.finding));
+  }
+  std::string what;
+  try {
+    parse_cif_text(
+        "data_Two_cells\nloop_\n_cell_length_a\n_cell_length_b\n"
+        "_cell_length_c\n_cell_angle_alpha\n_cell_angle_beta\n"
+        "_cell_angle_gamma\n2.8665 2.8665 2.8665 90 90 90\n3 3 3 90 90 90\n"
+        "loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+        "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+        "Fe1 Fe 0 0 0\n");
+    FAIL_CHECK("accepted");
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  INFO("message: " << what);
+  CHECK(contains(what, "CIF text (data_Two_cells): gemmi cannot read the "
+                       "data block"));
 }
