@@ -248,7 +248,7 @@ struct Entry {
   }
 };
 
-std::shared_ptr<NNTable> build_table(const Structure &st, double R) {
+std::shared_ptr<NNTable> build_table(const Structure &st, double R, bool list_coincident) {
   check_cutoff(R);
   const std::size_t natoms = st.natoms();
   auto tbl = std::make_shared<NNTable>();
@@ -442,6 +442,20 @@ std::shared_ptr<NNTable> build_table(const Structure &st, double R) {
               const double del = rp[c] - (rq[c] + D);
               rsq += del * del;
             }
+            // Two atoms at one position (here exactly the distance the
+            // consumers divide by, so every force would be nan) are not a
+            // physical structure: refused, unless the caller audits the data
+            // (dataset_stats lists them at distance 0).
+            if (rsq == 0.0 && !list_coincident) {
+              throw std::invalid_argument(
+                  "NNFinder: atoms " + std::to_string(p + 1) + " and " +
+                  std::to_string(q + 1) + " (" + st.atoms[p].symbol + ", " +
+                  st.atoms[q].symbol + ") are at the same position (" +
+                  fmt(rp[0]) + ", " + fmt(rp[1]) + ", " + fmt(rp[2]) +
+                  "), image shift (" + std::to_string(s[0]) + ", " +
+                  std::to_string(s[1]) + ", " + std::to_string(s[2]) +
+                  "): two atoms at one position are not a physical structure");
+            }
             if (rsq < Rinc_sq) {
               out[p].push_back({q, {s[0], s[1], s[2]}});
               out[q].push_back({p, {-s[0], -s[1], -s[2]}});
@@ -513,7 +527,7 @@ void NNFinder::populate_disp(const Structure &st,
 
 NNFinder::NNTablePtr NNFinder::build(const Structure &st, double cutoff) const
 {
-  return build_table(st, cutoff);
+  return build_table(st, cutoff, list_coincident_);
 }
 
 NNFinder::NNTablePtr NNFinder::build(const Structure &st,
