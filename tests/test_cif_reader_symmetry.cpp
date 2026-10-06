@@ -586,7 +586,12 @@ TEST_CASE("CIF reader: a CIF without a symmetry record is read as P 1, "
  * Before the fix: CifReader discarded the string check_spacegroup()
  * returned and printed nothing: every CHECK on the captured output fails
  * (it is empty), the atom counts pass. (The H-M finding is the reader's
- * own since review round 10, in gemmi's words.) */
+ * own since review round 10.) The finding says what the symbol names and
+ * what it differs from, the loop's group I 1: "space group from H-M
+ * symbol (P m -3 m) is P m -3 m, which differs from I 1". Before that
+ * (gemmi's words) it read "... (P m -3 m) differs: P m -3 m", and VESTA's
+ * 'P 1' with an I-centring loop "(P 1) differs: P 1": the last CHECK
+ * fails for each case and route. */
 TEST_CASE("CIF reader: an inconsistent symmetry record gives a WARNING "
           "naming the file and quoting the diagnostic",
           "[structure_readers][cif][symmetry][warning]") {
@@ -608,6 +613,8 @@ TEST_CASE("CIF reader: an inconsistent symmetry record gives a WARNING "
       CHECK(contains(r.log, "WARNING"));
       CHECK(contains(r.log, "differs"));
       CHECK(contains(r.log, std::string("(") + c.symbol + ")"));
+      CHECK(contains(r.log, std::string("is ") + c.symbol +
+                                ", which differs from I 1"));
       if (route != Route::Contents) CHECK(contains(r.log, path));
     }
   }
