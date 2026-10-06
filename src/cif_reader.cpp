@@ -10,6 +10,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -18,18 +19,24 @@ namespace mlip {
 
 namespace {
 
+// Where the symmetry the cell is built with comes from.
+struct SymmetrySource {
+  enum Kind { None, Loop, Hall, HM, Number } kind = None;
+  std::string record;  // "the Hall symbol '-P 2yb'", ...
+  std::string note;    // " (the operator loop forms no group)" or ""
+  // The operators, when they are in no tabulated setting
+  std::optional<gemmi::GroupOps> own_ops;
+};
+
 // What gemmi expands the listed sites with: a tabulated space group, the
-// operators of a symmetry-operator loop or a Hall symbol that is no
-// tabulated setting, or nothing (P 1).
-std::string symmetry_used(const gemmi::SmallStructure &struc) {
+// operators of a loop or a Hall symbol that is in no tabulated setting, or
+// nothing (P 1).
+std::string symmetry_used(const gemmi::SmallStructure &struc,
+                          const SymmetrySource &src) {
   if (struc.spacegroup) return "space group " + struc.spacegroup->xhm();
-  if (!struc.cell.images.empty())
-    return "the " + std::to_string(struc.cell.images.size() + 1) +
-           " operators of " +
-           (struc.symops.empty()
-                ? "the Hall symbol '" + struc.spacegroup_hall + "'"
-                : std::string("the symmetry-operator loop")) +
-           " (no tabulated space group)";
+  if (src.own_ops)
+    return "the " + std::to_string(src.own_ops->order()) + " operators of " +
+           src.record + " (no tabulated space group)";
   return "no symmetry (P 1, the sites as listed)";
 }
 
@@ -65,32 +72,43 @@ std::string normalised_hm(std::string hm) {
   return hm;
 }
 
-// The tabulated settings of the group of @p sg with its centring letter:
-// those a number alone leaves open once the cell is known (hexagonal or
-// rhombohedral axes, the origin choice, the cell choice of a monoclinic
-// group, the axes of an orthorhombic one). gemmi also lists P 1, P -1 and
-// a few others in centred cells (A 1, ..., F 4/m m m), which describe
-// another cell, not the given one.
-int settings_like(const gemmi::SpaceGroup &sg) {
+// The tabulated settings of the group of @p sg that the same cell could be
+// in: those whose change of basis from @p sg has determinant +-1 (another
+// origin choice, a permutation of the axes, another monoclinic cell
+// choice). gemmi's table also lists groups in larger centred cells (A 1,
+// ..., F 4/m m m) and R groups on both hexagonal and rhombohedral axes:
+// other cells, which the cell itself tells apart.
+int settings_of_the_cell(const gemmi::SpaceGroup &sg) {
+  const int det = std::abs(sg.basisop().det_rot());
   int n = 0;
   for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
-    n += t.number == sg.number && t.hm[0] == sg.hm[0];
+    if (t.number == sg.number && std::abs(t.basisop().det_rot()) == det) ++n;
   return n;
 }
 
-// A monoclinic group (IT 3 to 15) is described in the setting its unique
-// axis names, so the two cell angles that do not involve that axis are 90
-// degrees (alpha is the angle between b and c, beta between a and c, gamma
-// between a and b). In a cell whose angles say otherwise, the operators
-// place the images of a site where that crystal has none.
-void require_monoclinic_cell(const gemmi::SmallStructure &struc,
-                             const std::string &source,
-                             const std::string &given_by) {
-  const gemmi::SpaceGroup *sg = struc.spacegroup;
-  if (!sg || sg->number < 3 || sg->number > 15) return;
-  const char *q = sg->qualifier;
+// The tabulated group with the rotations (and the centring) of @p ops, or
+// nullptr: the setting whose axes a group in no tabulated setting (an
+// origin moved, say) shares.
+const gemmi::SpaceGroup *with_rotations_of(gemmi::GroupOps ops) {
+  for (gemmi::Op &op : ops.sym_ops) op.tran = {0, 0, 0};
+  return gemmi::find_spacegroup_by_ops(ops);
+}
+
+// A monoclinic group is described in the setting its unique axis names:
+// the cell angles between that axis and the other two are 90 degrees (for
+// unique axis b, alpha, between b and c, and gamma, between a and b); the
+// third angle is free. In a cell whose angles say otherwise the operators
+// place the images of a site where that crystal has none. @p axes is the
+// tabulated group whose rotations the cell is built with (the constraints
+// depend on the rotations alone); @p what names the group for the message.
+void require_monoclinic_cell(const gemmi::UnitCell &c,
+                             const gemmi::SpaceGroup *axes,
+                             const std::string &what,
+                             const std::string &advice,
+                             const std::string &source) {
+  if (!axes || axes->number < 3 || axes->number > 15) return;
+  const char *q = axes->qualifier;
   if (*q == '-') ++q;
-  const gemmi::UnitCell &c = struc.cell;
   double first = 0.0, second = 0.0;
   const char *needs = nullptr;
   switch (*q) {
@@ -98,7 +116,8 @@ void require_monoclinic_cell(const gemmi::SmallStructure &struc,
     case 'b': first = c.alpha; second = c.gamma; needs = "alpha = gamma"; break;
     case 'c': first = c.alpha; second = c.beta; needs = "alpha = beta"; break;
     default:
-      throw std::logic_error("CifReader: monoclinic space group " + sg->xhm() +
+      throw std::logic_error("CifReader: monoclinic space group " +
+                             axes->xhm() +
                              " has no unique axis in gemmi's table");
   }
   constexpr double tol = 1e-3;  // degrees
@@ -106,13 +125,11 @@ void require_monoclinic_cell(const gemmi::SmallStructure &struc,
     return;
   using tadah::core::format_roundtrip;
   throw std::runtime_error(
-      source + ": the space group " + sg->xhm() + " (from " + given_by +
-      ") is monoclinic with unique axis " + *q + ", which needs " + needs +
-      " = 90 degrees (within 1e-3), but the cell has alpha " +
+      source + ": " + what + " is monoclinic with unique axis " + *q +
+      ", which needs " + needs + " = 90 degrees (the angles between " + *q +
+      " and the other axes, within 1e-3), but the cell has alpha " +
       format_roundtrip(c.alpha) + ", beta " + format_roundtrip(c.beta) +
-      ", gamma " + format_roundtrip(c.gamma) +
-      "; give the full H-M symbol of the setting the cell is in (e.g. "
-      "'P 1 1 21/m' for unique axis c), or its symmetry-operator loop.");
+      ", gamma " + format_roundtrip(c.gamma) + "; " + advice + ".");
 }
 
 // gemmi's check_spacegroup() gives one finding per line; join them.
@@ -168,58 +185,57 @@ void CifReader::parseCif(const std::string &fileContents,
       path.empty() ? "CIF text (data_" + block.name + ")" : "CIF file " + path;
 
   gemmi::SmallStructure struc = gemmi::make_small_structure_from_block(block);
-  // The H-M symbol as gemmi's table lookup reads it, for every use below:
-  // the fallback from an operator loop that forms no group, the lookup
-  // without a loop and gemmi's consistency check.
+  // The H-M symbol as gemmi's table lookup reads it, for every use below
+  // and gemmi's consistency check. A value that normalises to nothing
+  // ('(No. 14)') is kept as written, a symbol that cannot be read.
   const std::string hm_as_written = struc.spacegroup_hm;
-  struc.spacegroup_hm = normalised_hm(struc.spacegroup_hm);
-  std::string given_by;  // for the monoclinic check's message
-  bool number_has_choice = false;
-  if (!struc.symops.empty()) {
-    // gemmi looked the space group up in the order "S.H2": the operator
-    // loop, then (when the loop forms no group) the Hall and H-M symbols.
-    // Repeat it with the normalised H-M symbol.
-    if (struc.spacegroup_hm != hm_as_written)
-      struc.determine_and_set_spacegroup("S.H2");
-    gemmi::GroupOps unused;
-    const gemmi::SpaceGroup *from_loop = nullptr;
-    try {
-      from_loop = struc.determine_spacegroup_from('S', unused);
-    } catch (const std::exception &) {
-      // an operator gemmi cannot parse: the group came from a symbol
+  {
+    std::string blank = hm_as_written;
+    trim(blank);
+    const std::string normal = normalised_hm(hm_as_written);
+    struc.spacegroup_hm =
+        blank.empty() ? "" : normal.empty() ? hm_as_written : normal;
+  }
+  // gemmi reads '0' and an unknown number ('?') alike, as 0: tell them
+  // apart (the tags in gemmi's order).
+  bool number_given = false;
+  for (const char *tag : {"_space_group_IT_number", "_symmetry_Int_Tables_number"})
+    if (const std::string *v = block.find_value(tag)) {
+      number_given = !is_null(*v);
+      break;
     }
-    if (struc.spacegroup == from_loop)
-      given_by = "the symmetry-operator loop";
-    else
-      given_by = "the " +
-                 (struc.spacegroup_hall.empty()
-                      ? "H-M symbol '" + hm_as_written + "'"
-                      : "Hall or H-M symbol") +
-                 ", as the operator loop forms no group";
-  } else {
-    // Without a loop gemmi reaches the symbols only because it swallows the
-    // std::length_error its own "S." step throws on the empty operator
-    // list, and it never uses the number. Look the space group up here:
-    // the Hall symbol, else the H-M symbol, else the number (each in the
-    // setting it names, or else origin choice 2 and hexagonal or
-    // rhombohedral axes from the cell angles); no record at all is P 1.
-    // A symbol that cannot be read is refused: the setting it means cannot
-    // be told, and the number would be a guess.
-    struc.spacegroup = nullptr;
-    const auto cannot_read = [&](const std::string &kind,
-                                 const std::string &symbol,
-                                 const std::string &why) {
-      return std::runtime_error(
-          source + ": cannot read the " + kind + " symbol '" + symbol +
-          "': " + why + "; give " +
-          (kind == "Hall" ? "a Hall symbol in standard form (e.g. '-F 4vw "
-                            "2vw 3'), the H-M symbol"
-                          : "it in a standard form (e.g. 'F d -3 m:2', or "
-                            "'F d -3 m Z' for origin choice 2)") +
-          ", or the symmetry-operator loop.");
-    };
+
+  // The space group, looked up here rather than with gemmi's
+  // determine_and_set_spacegroup("S.H2") (which never uses the number, and
+  // reaches the symbols without a loop only because it swallows the
+  // std::length_error its "S." step throws on the empty list): the
+  // operator loop, as gemmi does; else (no loop, or one that forms no
+  // group) the Hall symbol, else the H-M symbol, each in the setting it
+  // names or else origin choice 2 and hexagonal or rhombohedral axes from
+  // the cell angles; else, without a loop, the number; else P 1. A symbol
+  // that cannot be read is refused: the setting it means cannot be told,
+  // and the next record would be a guess.
+  SymmetrySource src;
+  struc.spacegroup = nullptr;
+  struc.setup_cell_images();
+  const auto cannot_read = [&](const std::string &kind,
+                               const std::string &symbol,
+                               const std::string &why) {
+    return std::runtime_error(
+        source + ": cannot read the " + kind + " symbol '" + symbol + "'" +
+        src.note + ": " + why + "; give " +
+        (kind == "Hall"
+             ? "a Hall symbol in standard form (e.g. '-F 4vw 2vw 3') or "
+               "none (the Hall symbol is read before the H-M symbol)"
+             : "it in a standard form (e.g. 'F d -3 m:2', or 'F d -3 m Z' "
+               "for origin choice 2)") +
+        ", or the symmetry-operator loop.");
+  };
+  // The Hall symbol, else the H-M symbol; false when there is neither.
+  const auto from_symbols = [&]() {
     if (!struc.spacegroup_hall.empty()) {
-      given_by = "the Hall symbol '" + struc.spacegroup_hall + "'";
+      src.kind = SymmetrySource::Hall;
+      src.record = "the Hall symbol '" + struc.spacegroup_hall + "'";
       gemmi::GroupOps ops;
       try {
         ops = gemmi::symops_from_hall(struc.spacegroup_hall.c_str());
@@ -228,57 +244,122 @@ void CifReader::parseCif(const std::string &fileContents,
                           std::string("gemmi: ") + e.what());
       }
       struc.spacegroup = gemmi::find_spacegroup_by_ops(ops);
-      if (struc.spacegroup)
+      if (struc.spacegroup) {
         struc.setup_cell_images();
-      else  // a group in no tabulated setting: its own operators
+      } else {  // a group in no tabulated setting: its own operators
         struc.cell.set_cell_images_from_groupops(ops);
-    } else if (!struc.spacegroup_hm.empty()) {
-      given_by = "the H-M symbol '" + hm_as_written + "'";
+        src.own_ops = ops;
+      }
+      return true;
+    }
+    if (!struc.spacegroup_hm.empty()) {
+      src.kind = SymmetrySource::HM;
+      src.record = "the H-M symbol '" + hm_as_written + "'";
       // gemmi's name lookup takes a number as a CCP4 code, which is the IT
       // number only up to 230 (1003 is P 1 1 2): a number is no H-M symbol.
       if (std::isdigit(static_cast<unsigned char>(struc.spacegroup_hm[0])))
-        throw cannot_read("space-group", hm_as_written,
+        throw cannot_read("H-M", hm_as_written,
                           "it is a number, not an H-M symbol (the number "
                           "goes in _space_group_IT_number)");
       struc.spacegroup = gemmi::find_spacegroup_by_name(
           struc.spacegroup_hm, struc.cell.alpha, struc.cell.gamma, "2");
       if (!struc.spacegroup)
-        throw cannot_read("space-group", hm_as_written,
+        throw cannot_read("H-M", hm_as_written,
                           "it names no space group gemmi knows");
       struc.setup_cell_images();
-    } else if (struc.spacegroup_number != 0) {
-      const int n = struc.spacegroup_number;
-      given_by = "the number " + std::to_string(n);
-      if (n < 1 || n > 230)
-        throw std::runtime_error(
-            source + ": the space-group number " + std::to_string(n) +
-            " is not one of the 230 space groups (1 to 230); give the H-M "
-            "symbol or the symmetry-operator loop.");
-      // gemmi's own number lookup takes the first tabulated setting,
-      // whatever the cell (R -3 m:H for a rhombohedral cell): resolve the
-      // number through the H-M symbol of its reference setting, as the
-      // symbol would be.
-      const gemmi::SpaceGroup &ref = gemmi::get_spacegroup_reference_setting(n);
-      const gemmi::SpaceGroup *sg = gemmi::find_spacegroup_by_name(
-          ref.hm, struc.cell.alpha, struc.cell.gamma, "2");
-      struc.spacegroup = sg ? sg : &ref;
-      struc.setup_cell_images();
-      number_has_choice = settings_like(*struc.spacegroup) > 1;
-    } else {
-      struc.setup_cell_images();
+      return true;
     }
+    return false;
+  };
+  bool number_has_choice = false;
+  if (!struc.symops.empty()) {
+    bool forms_group = false;
+    try {
+      const gemmi::GroupOps ops = gemmi::split_centering_vectors(
+          gemmi::triplets_to_ops(struc.symops));
+      struc.spacegroup = gemmi::find_spacegroup_by_ops(ops);
+      if (struc.spacegroup) {
+        struc.setup_cell_images();
+        forms_group = true;
+      } else if (ops.order() == static_cast<int>(struc.symops.size()) &&
+                 gemmi::is_complete(ops)) {
+        // a group in no tabulated setting: its own operators
+        struc.cell.set_cell_images_from_groupops(ops);
+        src.own_ops = ops;
+        forms_group = true;
+      }
+    } catch (const std::exception &) {
+      // an operator gemmi cannot parse: the loop forms no group
+    }
+    if (forms_group) {
+      src.kind = SymmetrySource::Loop;
+      src.record = "the symmetry-operator loop";
+    } else {
+      // gemmi's fallback; the number is not used (see the header)
+      src.note = " (the operator loop forms no group)";
+      from_symbols();
+    }
+  } else if (!from_symbols() && number_given) {
+    const int n = struc.spacegroup_number;
+    src.kind = SymmetrySource::Number;
+    src.record = "the number " + std::to_string(n);
+    if (n < 1 || n > 230)
+      throw std::runtime_error(
+          source + ": the space-group number " + std::to_string(n) +
+          " is not one of the 230 space groups (1 to 230); give the H-M "
+          "symbol or the symmetry-operator loop.");
+    // gemmi's own number lookup takes the first tabulated setting,
+    // whatever the cell (R -3 m:H for a rhombohedral cell): resolve the
+    // number through the H-M symbol of its reference setting, as the
+    // symbol would be.
+    const gemmi::SpaceGroup &ref = gemmi::get_spacegroup_reference_setting(n);
+    const gemmi::SpaceGroup *sg = gemmi::find_spacegroup_by_name(
+        ref.hm, struc.cell.alpha, struc.cell.gamma, "2");
+    struc.spacegroup = sg ? sg : &ref;
+    struc.setup_cell_images();
+    number_has_choice = settings_of_the_cell(*struc.spacegroup) > 1;
   }
-  require_monoclinic_cell(struc, source, given_by);
+
+  // However the group was given, a monoclinic one must fit the cell.
+  {
+    const gemmi::SpaceGroup *axes =
+        struc.spacegroup ? struc.spacegroup
+        : src.own_ops    ? with_rotations_of(*src.own_ops)
+                         : nullptr;
+    const std::string what =
+        struc.spacegroup
+            ? "the space group " + struc.spacegroup->xhm() + " (from " +
+                  src.record + src.note + ")"
+        : axes ? "the group of " + src.record + src.note +
+                     " (in no tabulated setting; the rotations of " +
+                     axes->xhm() + ")"
+               : std::string();
+    std::string advice;
+    switch (src.kind) {
+      case SymmetrySource::Loop:
+        advice = "correct the operator loop or the cell (the loop is read "
+                 "before the Hall and H-M symbols)";
+        break;
+      case SymmetrySource::Hall:
+        advice = "correct the Hall symbol or the cell (the Hall symbol is "
+                 "read before the H-M symbol)";
+        break;
+      default:
+        advice = "give the full H-M symbol of the setting the cell is in "
+                 "(e.g. 'P 1 1 21/m' for unique axis c), or its "
+                 "symmetry-operator loop";
+    }
+    require_monoclinic_cell(struc.cell, axes, what, advice, source);
+  }
   if (number_has_choice)
     std::cerr << "WARNING: " << source
               << ": the space group is given only by its number ("
               << struc.spacegroup_number
-              << "), which has more than one setting; the unit cell is "
-                 "built with space group "
+              << "), and the cell could be in more than one of its "
+                 "settings; the unit cell is built with space group "
               << struc.spacegroup->xhm()
-              << ", its standard setting (hexagonal or rhombohedral axes "
-                 "from the cell angles, origin choice 2 where the group has "
-                 "two)."
+              << ", its standard setting (origin choice 2 where the group "
+                 "has two): give the H-M symbol if the cell is in another."
               << std::endl;
 
   // A partly occupied site (disorder or a vacancy) has no representation in
@@ -320,7 +401,7 @@ void CifReader::parseCif(const std::string &fileContents,
     std::cerr << "WARNING: " << source
               << ": the symmetry record is inconsistent (gemmi: \""
               << one_line(diagnostic) << "\"); the unit cell is built with "
-              << symmetry_used(struc) << "." << std::endl;
+              << symmetry_used(struc, src) << "." << std::endl;
   }
 
   auto sites = struc.get_all_unit_cell_sites();

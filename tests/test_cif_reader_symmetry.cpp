@@ -469,9 +469,10 @@ TEST_CASE("CIF reader: a space-group number alone is expanded in the "
  * the source, the number and the setting the cell was built with. The
  * text is
  *   WARNING: <source>: the space group is given only by its number (<n>),
- *   which has more than one setting; the unit cell is built with space
- *   group <setting>, the one that fits the cell angles (origin choice 2
- *   where the group has two).
+ *   and the cell could be in more than one of its settings; the unit cell
+ *   is built with space group <setting>, its standard setting (origin
+ *   choice 2 where the group has two): give the H-M symbol if the cell is
+ *   in another.
  * with <source> "CIF file <path>" (CifReader::read and
  * StructureReaderSelector) or "CIF text (data_<block>)" (parseCifContents),
  * and <setting> gemmi's SpaceGroup::xhm(): F d -3 m:2 for
