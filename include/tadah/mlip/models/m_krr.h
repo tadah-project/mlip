@@ -259,7 +259,7 @@ tadah::core::Context get_param_file() {
 
     tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
     DesignMatrix<K> dm(kernel,context_pred);
-    // dm.scale=false; // do not scale energy, forces and stresses
+    dm.apply_weights = false;  // predict the values, not the weighted rows
     bool wcopy=false;
     dm.build(stdb,norm,dc,wcopy);
 

@@ -78,6 +78,10 @@ public:
 
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws;
+  /** Whether the rows are weighted by sqrt(weight * EWEIGHT/FWEIGHT/SWEIGHT)
+   *  (a fit); false builds the rows as they are, for a prediction
+   *  (M_BLR/M_KRR predict with error estimates). */
+  bool apply_weights = true;
   bool w_copy_=false;  // keep copy of Phi and T witoout weights
 
   /** \brief Per-block column layout populated at build()-time.
@@ -310,6 +314,10 @@ public:
     ws->Tlabels.set_zero();
   }
   void compute_wfactors(const StructureDB &stdb) {
+    if (!apply_weights) {  // a prediction: the rows as they are
+      for (std::size_t i = 0; i < ws->wfactors.size(); ++i) ws->wfactors(i) = 1.0;
+      return;
+    }
     size_t j=0;
     for (size_t s=0; s<stdb.size(); ++s) {
       ws->wfactors(j++) = std::sqrt(stdb(s).eweight*eweightglob);

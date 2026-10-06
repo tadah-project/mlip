@@ -45,6 +45,13 @@ int PredictEngine::run(mlip::Task &task) {
         "--no-eshift: ignoring ESHIFT recorded in pot.tadah.");
   }
 
+  // The training-only weight knobs a potential records with the rest of its
+  // training configuration (WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP) are not
+  // re-applied to the data predicted: they reweighted the training set, and
+  // the weights of the data predicted are their own.
+  for (const char *key : {"WDBFILE", "WDBFILE_AUTO", "EWEIGHT_TEMP"})
+    potContext.remove(key);
+
   // Knot-family refit pots: RCUT2B/RCUTMB are derived from the largest knot
   // — correct a stale stated value (warns) before the descriptors and the
   // neighbour list read RCUT*MAX.
@@ -81,8 +88,8 @@ int PredictEngine::run(mlip::Task &task) {
   // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, ZERO_COM_FORCE)
   // using the merged potContext, so the input dataset is reshaped to match
   // what the model was trained on. NB: at predict time the model has already
-  // been trained, so derived sources (ESHIFT_ATOM, ESHIFT_DBATOM) and
-  // training-only knobs (WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP) are no-ops here.
+  // been trained, so derived sources (ESHIFT_ATOM, ESHIFT_DBATOM) are no-ops
+  // here, and the training-only weight knobs were removed above.
   apply_load_transforms(stdb, potContext);
 
   // The force and stress metrics leave out structures with force or stress
@@ -92,6 +99,14 @@ int PredictEngine::run(mlip::Task &task) {
   if (taskContext.get<bool>("ANALYTICS")) {
     std::vector<std::string> files;
     if (taskContext.contains("DBFILE")) files = taskContext("DBFILE");
+    for (size_t d = 0; d + 1 < stdb.dbidx.size(); ++d)
+      if (stdb.dbidx[d] == stdb.dbidx[d + 1])
+        throw std::runtime_error(
+            "tadah predict -A: dataset " + std::to_string(d + 1) + " of " +
+            std::to_string(stdb.dbidx.size() - 1) +
+            (d < files.size() ? " (" + files[d] + ")" : std::string()) +
+            " has no structures after loading and filtering (EFILTER, "
+            "FFILTER): it has no metrics");
     if (taskContext.get<bool>("FORCE"))
       require_metric_structures(stdb, MetricQuantity::Forces, "tadah predict -A", files);
     if (taskContext.get<bool>("STRESS"))

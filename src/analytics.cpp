@@ -36,6 +36,9 @@ void require_metric_structures(const StructureDB &truth, MetricQuantity q,
         std::string msg = who + ": dataset " + std::to_string(d + 1) + " of "
             + std::to_string(n);
         if (d < dataset_names.size()) msg += " (" + dataset_names[d] + ")";
+        if (truth.dbidx[d] == truth.dbidx[d + 1])
+            throw std::runtime_error(msg + " has no structures, so it has no "
+                                     + (forces ? "force" : "stress") + " metrics");
         msg += std::string(" has no structure with ")
             + (forces ? "forces" : "a stress tensor") + ": every one has "
             + (forces ? "force weight 0 (fweight)" : "stress weight 0 (sweight)")
