@@ -1524,6 +1524,76 @@ TEST_CASE("CASTEP .castep reader: an MD step's stress printed after its MD Data 
   CHECK(db(1).T == Approx(563.548574));
 }
 
+// Pins: the last MD step ends at ' Finished MD' when the file has no
+// '... finished MD iteration' line for it: md_no_stress.castep with a stress
+// block (diagonal -94.737913, -94.737913, -95.561163 GPa) after step 2's MD
+// Data, then ' Finished MD' and a second stress block (diagonal -1, -2, -3
+// GPa), keeps the first for step 2: its own stress (the block printed after
+// the run's end goes to the last step only when that has none).
+// Before the fix: step 2 was stored at its Temperature line, so its own block
+// was dropped and the second was stored as its stress. (With the step open
+// until the end of the file instead, the second block replaces the first.)
+TEST_CASE("CASTEP .castep reader: ' Finished MD' ends the last MD step",
+          "[castep_readers][castep][md][stress]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines("./tests_data/valid_castep_castep/md_no_stress.castep");
+  REQUIRE(lines.back().find("Temperature:") == std::string::npos);
+  REQUIRE(lines.at(2248).find("Temperature:") != std::string::npos);
+  const std::vector<std::string> go = read_lines(kGeomCastep);
+  REQUIRE(go.at(687).find("Symmetrised Stress Tensor") != std::string::npos);
+  const std::vector<std::string> own = block_at(go, 687);
+  std::vector<std::string> after = block_at(go, 687);
+  const char *diag[3] = {"-1.000000", "-2.000000", "-3.000000"};
+  for (int r = 0; r < 3; ++r)
+    for (int c = 0; c < 3; ++c)
+      after[6 + r] = replace_token(after[6 + r], 2 + c, r == c ? diag[r] : "0.000000");
+  lines.push_back("");
+  lines.insert(lines.end(), own.begin(), own.end());
+  lines.push_back("");
+  lines.push_back(" Finished MD");
+  lines.push_back("");
+  lines.insert(lines.end(), after.begin(), after.end());
+  TempFile tmp("tmp_castep_rv_md_finished.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 3);
+  INFO("label '" << db(2).label << "'");
+  CHECK(db(2).sweight == 1.0);
+  CHECK(db(2).stress(0, 0) == Approx(-94.737913 / kGPa).epsilon(1e-7));
+  CHECK(db(2).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
+  CHECK(db(2).T == Approx(962.274424));
+}
+
+// Pins: 'Unconstrained Forces', the physical forces a constrained
+// optimisation prints before its 'Constrained Forces', are read: geom.castep
+// with its iteration-1 'Symmetrised Forces' banner renamed 'Unconstrained
+// Forces' and a 'Constrained Forces' block (every component 0.5) after it
+// gives structure 2 force weight 1 and H1 force z 0.00189 eV/A.
+// A pin of the list of physical blocks: without 'Unconstrained Forces' in it,
+// neither block is read and the structure gets force weight 0.
+TEST_CASE("CASTEP .castep reader: 'Unconstrained Forces' are the physical forces",
+          "[castep_readers][castep][constraints]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines(kGeomCastep);
+  REQUIRE(lines.at(668).find("Symmetrised Forces") != std::string::npos);
+  std::vector<std::string> constrained = block_at(lines, 668);
+  REQUIRE(constrained.size() == 18);
+  constrained[0] = " ****************************** Constrained Forces ******************************";
+  for (size_t k = 6; k + 2 < constrained.size(); ++k)
+    for (int c = 0; c < 3; ++c) constrained[k] = replace_token(constrained[k], 3 + c, "0.50000");
+  lines[668] = " ***************************** Unconstrained Forces *****************************";
+  lines.insert(lines.begin() + 686, constrained.begin(), constrained.end());
+  TempFile tmp("tmp_castep_rv_unconstrained.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 8);
+  CHECK(db(1).fweight == 1.0);
+  CHECK(db(1).atoms[0].force[2] == Approx(0.00189).margin(1e-12));
+  CHECK(db(1).atoms[0].force[0] == Approx(0.0).margin(1e-12));
+}
+
 // Pins: a run whose type is not single point energy, band structure,
 // geometry optimization or molecular dynamics stores nothing, also when it
 // does the finite basis set correction: castep_triclinic_spe.castep as a
