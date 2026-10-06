@@ -46,9 +46,18 @@
 //   - a monoclinic group, however it was given, must fit the cell: the
 //     angles between its unique axis and the other two axes (b: alpha,
 //     gamma; c: alpha, beta; a: beta, gamma) are 90 within 1e-3 degrees,
-//     or the CIF is refused, naming the group and the angles as read; a
-//     group in no tabulated setting is checked by the tabulated primitive
-//     group with its rotations;
+//     or the CIF is refused, naming the group and the angles as read; so
+//     must an R group its axes (hexagonal: alpha = beta = 90, gamma = 120;
+//     rhombohedral: alpha = beta = gamma), those it names or, without, the
+//     cell's. Operators in no tabulated setting are checked by the
+//     tabulated group with their rotations and centring, else (an R or H
+//     centring gemmi does not tabulate, such as the reverse setting) on
+//     hexagonal axes, else by the tabulated primitive group with their
+//     rotations: a supercell's extra translations (x+1/3, ...) are no R
+//     centring. A refusal says what can change the result;
+//   - with a loop or a Hall symbol, the H-M symbol is compared with the
+//     group used by its operations, so an equivalent name of the same
+//     setting ('C c c b:1' for C c c a:1) is no inconsistency;
 //   - a site with _atom_site_occupancy below 1 is refused, naming the site
 //     and its occupancy: Tadah has no representation for a disordered or
 //     partly vacant site, and two species sharing a site would become
@@ -77,6 +86,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -1359,7 +1369,9 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  * beta = 110; the test began with the first three).
  * Review round 5: the WARNING counted the settings with the letter of the
  * setting used, so 35, 37, 65 and 66 (one C setting each) printed nothing
- * and the CHECKs for their WARNING fail four times. Review round 6: every
+ * and the CHECKs for their WARNING fail (with the cases of this test, 12
+ * CHECKs for those four, and the CHECK_FALSE for 22, 23, 94, 197 and 11
+ * with beta = 110, which round 6 added). Review round 6: every
  * setting with the same determinant counted, whatever the cell, so 11 with
  * beta = 110, 22, 23, 94 and 197 warned: the CHECK_FALSE fails five
  * times. Review round 7: an entry with the rotations of the setting used
@@ -1606,7 +1618,8 @@ const std::string kShiftedP21cLoop =
  * the unique axis and the angle.
  * Before the fix: the check looked only at a tabulated group, so the two
  * P cases were accepted, 4 atoms each, with only the WARNING that the
- * group is in no table ("accepted: 4 atoms", twice). Review round 6: the
+ * group is in no table ("accepted: 4 atoms", twice; with the cases of
+ * this test the three centred ones too, five in all). Review round 6: the
  * centred ones were looked up with their centring, which gemmi tabulates
  * for none of these settings, and accepted, 8 atoms each ("accepted: 8
  * atoms", three times). */
@@ -1884,7 +1897,9 @@ TEST_CASE("CIF reader: a refusal from a record read first says so",
  * Before the fix: gemmi's name lookup applies its origin preference only
  * to the main table, and finds 'C c c e' among the other names, origin
  * choice 1: 'Ccce' and 'C c c e' gave the 4 atoms of origin choice 1, a
- * different crystal, without a message (check_sites fails twice). */
+ * different crystal, without a message (check_sites fails twice; 'A e a a'
+ * and 'B b e b', added in review round 9, fail the same way: four times
+ * in all). */
 TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
           "choice 2 as well",
           "[structure_readers][cif][spacegroup]") {
@@ -1935,8 +1950,8 @@ TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
  * each give the 2 atoms of bcc Fe and print nothing.
  * Before the fix: gemmi takes the first H-M and number tag present, null
  * or blank or not, and the last Hall tag present, so the first three and
- * the blank H-M case were read as P 1, 1 atom, without a message
- * (check_sites fails four times); the blank new Hall tag passed (gemmi
+ * the blank and '.' H-M cases were read as P 1, 1 atom, without a message
+ * (check_sites fails five times); the blank new Hall tag passed (gemmi
  * took the old tag, the last). Review round 7: a blank value was taken as
  * known, so the two blank cases were read as P 1 (check_sites fails
  * twice). */
@@ -2395,4 +2410,166 @@ TEST_CASE("CIF reader: an H-M symbol naming another setting than the Hall "
   CHECK(count_of(r.log, "WARNING") == 1);
   CHECK(contains(r.log, "F d -3 m:1"));
   CHECK(contains(r.log, "F d -3 m:2"));
+}
+
+// =============================================== review round 10 ====
+
+/* Pins: the extra translations of a supercell are no R centring: in a
+ * loop, x+1/3 and x+2/3 make the cell 3 times the primitive one, and the
+ * cell is checked by the axes of the rotations (none for P 1):
+ *   - the 3 operators x,y,z; x+1/3,y,z; x+2/3,y,z (P 1 in a 3 x 1 x 1
+ *     supercell, a = 8.6, b = c = 2.8665 A, all angles 90) with Fe1 at the
+ *     origin: 3 atoms, (0,0,0), (1/3,0,0), (2/3,0,0);
+ *   - the 6 operators VESTA writes for that supercell of bcc Fe (those 3
+ *     and x+1/6,y+1/2,z+1/2; x+1/2,y+1/2,z+1/2; x+5/6,y+1/2,z+1/2): 6
+ *     atoms;
+ *   - the 4 operators of P 1 2/m 1 (x,y,z; -x,y,-z; -x,-y,-z; x,-y,z),
+ *     each also with x+1/3 and x+2/3 (a 3 x 1 x 1 supercell, a = 15, b = 6,
+ *     c = 7 A): with beta = 100, the 12 atoms from Fe1 at (0.1,0.2,0.3);
+ *     with gamma = 110 refused, naming unique axis b and 110.
+ * Before the fix: a centring vector with a third was taken as an R
+ * centring on hexagonal axes, so each was refused ("... R-centred on
+ * hexagonal axes) is on hexagonal axes ... gamma 90"): three "refused"
+ * failures, and the last refusal names no unique axis. */
+TEST_CASE("CIF reader: a supercell's translations by thirds are no R "
+          "centring",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string loop_head = "loop_\n_symmetry_equiv_pos_as_xyz\n";
+  {
+    INFO("P 1 in a 3 x 1 x 1 supercell");
+    Read r;
+    if (accepted(cif_cell("Sc311_p1", 8.6, 2.8665, 2.8665, 90, 90, 90,
+                          loop_head + "'x,y,z'\n'x+1/3,y,z'\n'x+2/3,y,z'\n",
+                          "Fe1 Fe 0 0 0\n"),
+                 r))
+      check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}},
+                         {"Fe", {1.0 / 3.0, 0.0, 0.0}},
+                         {"Fe", {2.0 / 3.0, 0.0, 0.0}}});
+  }
+  {
+    INFO("VESTA's 6 operators for the 3 x 1 x 1 supercell of bcc Fe");
+    Read r;
+    if (accepted(cif_cell("Sc311_vesta", 8.6, 2.8665, 2.8665, 90, 90, 90,
+                          loop_head +
+                              "'x,y,z'\n'x+1/3,y,z'\n'x+2/3,y,z'\n"
+                              "'x+1/6,y+1/2,z+1/2'\n'x+1/2,y+1/2,z+1/2'\n"
+                              "'x+5/6,y+1/2,z+1/2'\n",
+                          "Fe1 Fe 0 0 0\n"),
+                 r))
+      check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}},
+                         {"Fe", {1.0 / 3.0, 0.0, 0.0}},
+                         {"Fe", {2.0 / 3.0, 0.0, 0.0}},
+                         {"Fe", {1.0 / 6.0, 0.5, 0.5}},
+                         {"Fe", {0.5, 0.5, 0.5}},
+                         {"Fe", {5.0 / 6.0, 0.5, 0.5}}});
+  }
+  std::string mono = loop_head;
+  std::vector<Site> mono_sites;
+  for (const char *t : {"", "+1/3", "+2/3"}) {
+    for (const char *op : {"x%s,y,z", "-x%s,y,-z", "-x%s,-y,-z", "x%s,-y,z"}) {
+      char buf[32];
+      std::snprintf(buf, sizeof buf, op, t);
+      mono += std::string("'") + buf + "'\n";
+    }
+  }
+  for (double t : {0.0, 1.0 / 3.0, 2.0 / 3.0}) {
+    mono_sites.push_back({"Fe", {0.1 + t, 0.2, 0.3}});
+    mono_sites.push_back({"Fe", {-0.1 + t, 0.2, -0.3}});
+    mono_sites.push_back({"Fe", {-0.1 + t, -0.2, -0.3}});
+    mono_sites.push_back({"Fe", {0.1 + t, -0.2, 0.3}});
+  }
+  {
+    INFO("P 1 2/m 1 in a 3 x 1 x 1 supercell, beta = 100");
+    Read r;
+    if (accepted(cif_cell("Sc311_mono", 15, 6, 7, 90, 100, 90, mono,
+                          kFeGeneral),
+                 r))
+      check_sites(r.st, mono_sites);
+  }
+  INFO("P 1 2/m 1 in a 3 x 1 x 1 supercell, gamma = 110");
+  const std::string what = refusal(
+      cif_cell("Sc311_mono_gamma", 15, 6, 7, 90, 90, 110, mono, kFeGeneral));
+  INFO("message: " << what);
+  if (what.empty()) return;
+  CHECK(contains(what, "unique axis b"));
+  CHECK(mentions_value(what, 110.0));
+}
+
+/* Pins: a refusal advises correcting the cell when no setting of the group
+ * fits it, and another setting when one does:
+ *   - 'R -3 m H' and 'R -3 m:H' in a cell with gamma = 119.99 (a = b =
+ *     4.5332, c = 11.7967 A), which fits neither hexagonal nor
+ *     rhombohedral axes: "correct the cell", not "without its axes";
+ *   - 'R -3 m:R' in the hexagonal Bi cell (which fits hexagonal axes):
+ *     "without its axes";
+ *   - 'P 1 21/m 1' with alpha = 100 and gamma = 110 (a = 5, b = 6, c = 7
+ *     A), which fits no unique axis: "correct the cell", not "full H-M
+ *     symbol"; with only gamma = 110 (unique axis c fits): "full H-M
+ *     symbol".
+ * Before the fix: a symbol naming its axes was always told to drop them,
+ * and a monoclinic symbol to give the setting the cell is in, which a
+ * second read refuses as well (the CHECKs for "correct the cell" fail
+ * three times). */
+TEST_CASE("CIF reader: a refusal advises correcting the cell when no "
+          "setting fits it",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string text;
+    const char *advice, *not_advice;
+  };
+  const std::string bi_site = "Bi1 Bi 0 0 0.2339\n";
+  const std::vector<Case> cases = {
+      {cif_cell("R_named_H_off", 4.5332, 4.5332, 11.7967, 90, 90, 119.99,
+                hm_line("R -3 m H"), bi_site),
+       "correct the cell", "without its axes"},
+      {cif_cell("R_colon_H_off", 4.5332, 4.5332, 11.7967, 90, 90, 119.99,
+                hm_line("R -3 m:H"), bi_site),
+       "correct the cell", "without its axes"},
+      {bi_hex("R_colon_R_hex", hm_line("R -3 m:R")), "without its axes",
+       "correct the cell"},
+      {cif_cell("P21m_no_axis", 5, 6, 7, 100, 90, 110, hm_line("P 1 21/m 1"),
+                kFeGeneral),
+       "correct the cell", "full H-M symbol"},
+      {cif_cell("P21m_axis_c", 5, 6, 7, 90, 90, 110, hm_line("P 1 21/m 1"),
+                kFeGeneral),
+       "full H-M symbol", "correct the cell"}};
+  for (const Case &c : cases) {
+    const std::string what = refusal(c.text);
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, c.advice));
+    CHECK_FALSE(contains(what, c.not_advice));
+  }
+}
+
+/* Pins: an H-M symbol is compared with the group used by its operations,
+ * so a name gemmi tabulates for the same operations is no inconsistency:
+ * the Hall symbol 'C 2 2 -1ac' (C c c a:1) with the H-M symbol
+ * 'C c c b:1', or ICSD's 'C c c b S', in a 5 x 6 x 7 A cell with Fe1 at
+ * the origin, gives the 4 atoms of origin choice 1, (0,0,0), (0,1/2,1/2),
+ * (1/2,0,1/2), (1/2,1/2,0), and prints nothing.
+ * Before the fix: gemmi's check compares the H-M strings, C c c b and
+ * C c c a, and printed "space group from H-M symbol (C c c b:1) differs"
+ * (the CHECK_FALSE fails twice). */
+TEST_CASE("CIF reader: an equivalent name of the same setting is no "
+          "inconsistency",
+          "[structure_readers][cif][spacegroup][warning]") {
+  PeriodicTable::initialize();
+  for (const char *hm : {"C c c b:1", "C c c b S"}) {
+    INFO("Hall 'C 2 2 -1ac' with H-M '" << hm << "'");
+    Read r;
+    if (!accepted(cif_cell("Cccb1", 5, 6, 7, 90, 90, 90,
+                           hall_line("C 2 2 -1ac") + hm_line(hm),
+                           "Fe1 Fe 0 0 0\n"),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}},
+                       {"Fe", {0.0, 0.5, 0.5}},
+                       {"Fe", {0.5, 0.0, 0.5}},
+                       {"Fe", {0.5, 0.5, 0.0}}});
+    CHECK_FALSE(contains(lower(r.log), "warning"));
+  }
 }
