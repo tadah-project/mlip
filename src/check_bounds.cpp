@@ -221,19 +221,11 @@ CheckBoundsResult check_bounds_at_corners(
       // whatever was already there.
     }
   }
-  tadah::core::stats::DataStats data;
-  try {
-    data = compute_data_stats(stdb, stats_ctx, /*with_descriptor_stats=*/false);
-  } catch (const std::invalid_argument&) {
-    // The data cannot be used (two atoms at one position, a singular
-    // cell, ...): refused, as by training and HPO, not audited around.
-    throw;
-  } catch (const std::exception& e) {
-    tadah::core::Logger::instance().log(
-        tadah::core::LogLevel::WARNING,
-        std::string("check_bounds: dataset stats failed (") + e.what() +
-        "); per-corner audits will run with empty stats.");
-  }
+  // Statistics that cannot be computed (two atoms at one position, a cell
+  // too small for the cutoff, ...) stop the audit: audited against empty
+  // statistics every corner would pass.
+  tadah::core::stats::DataStats data =
+      compute_data_stats(stdb, stats_ctx, /*with_descriptor_stats=*/false);
 
   // The low-bound rules of the seed (models::optim_low_bound_rule(key,
   // ctx)): under RHOFORM NONNEG / MONOTONE AMPGRIDMB >= 0, WATOM > 0 and
