@@ -13,18 +13,30 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+namespace {
+/* The 1-based INDEX list of the DBFILE structures, checked against their
+ * number, @p total (core::parse_dataset_indices). */
+std::vector<size_t> dbfile_indices(const core::Context &taskContext, size_t total) {
+  std::vector<std::string> indicesStr(taskContext.size("INDEX"));
+  taskContext.get<>("INDEX", indicesStr);
+  return core::parse_dataset_indices(indicesStr, total, "tadah data write");
+}
+}  // namespace
+
 int DataWriteEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
 
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "DataWriteEngine started...");
 
-  std::vector<std::string> indicesStr;
+  // The 0-based places in stdb of the structures to write: the DBFILE
+  // structures INDEX selects (1-based, checked against their number), then
+  // every -s structure (STRUCTURE excludes INDEX).
   StructureDB stdb;
+  std::vector<size_t> indices;
   if(taskContext.contains("DBFILE")) {
     stdb.add(taskContext);
-    indicesStr.resize(taskContext.size("INDEX"));
-    taskContext.get<>("INDEX", indicesStr);
+    for (size_t i : dbfile_indices(taskContext, stdb.size())) indices.push_back(i - 1);
   }
   if(taskContext.contains("STRUCTURE")) {
     std::vector<std::string> structures(taskContext.size("STRUCTURE"));
@@ -34,14 +46,11 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
       reader->read(struc);
       Structure s = reader->getStructure();
       stdb.add(s);
-      // Every -s structure is written (STRUCTURE excludes INDEX): its
-      // 1-based place in stdb, after any DBFILE structures.
-      indicesStr.push_back(core::to_string(stdb.size())+",");
+      indices.push_back(stdb.size() - 1);
     }
   }
-  std::vector<size_t> indices =  core::parse_indices(indicesStr);
-  // Adjust for 0-based indexing
-  for (auto &i : indices) i--;
+  if (taskContext.size("OUTFILE") != indices.size())
+    throw std::runtime_error("Number of OUTFILE must be equal to the number of INDEX");
 
   const std::string format = core::to_upper(taskContext.get<std::string>("FORMAT"));
   auto writer = StructureWriterSelector::get_writer(format,stdb);
@@ -57,9 +66,12 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
     writer->set_precision(taskContext.get<size_t>("NUMERIC"));
   }
 
+  // Every structure and every output is checked before any file is written.
   std::vector<std::string> outFiles;
-  for (size_t i=0; i<indices.size(); ++i)
+  for (size_t i=0; i<indices.size(); ++i) {
+    writer->check(indices[i]);
     outFiles.push_back(taskContext.get<std::string>("OUTFILE",i));
+  }
   require_writable_outputs(outFiles, "tadah data write");
   for (size_t i=0; i<indices.size(); ++i) {
     writer->write_data(outFiles[i], indices[i]);
@@ -75,10 +87,8 @@ void DataWriteEngine::validate(const tadah::mlip::Task &task) {
   // if dbfile is provided than we check if number of indices is equal to
   // the number of outfiles
   if(taskContext.contains("DBFILE")) {
-    std::vector<std::string> indicesStr;
-    indicesStr.resize(taskContext.size("INDEX"));
-    taskContext.get<>("INDEX", indicesStr);
-    std::vector<size_t> indices =  core::parse_indices(indicesStr);
+    const std::vector<size_t> indices =
+        dbfile_indices(taskContext, StructureDB::count(taskContext).first);
     if (taskContext.size("OUTFILE") != indices.size()) {
       throw std::runtime_error("Number of OUTFILE must be equal to the number of INDEX");
     }

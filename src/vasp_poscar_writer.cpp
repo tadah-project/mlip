@@ -9,18 +9,9 @@ namespace mlip {
 
 VaspPoscarWriter::VaspPoscarWriter(StructureDB& db) : StructureWriter(db) {}
 
-void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
-
-  if (i >= stdb.size()) {
-    throw std::out_of_range("Index i is out of range.");
-  }
-
+void VaspPoscarWriter::check(const size_t i) const {
+  StructureWriter::check(i);
   const Structure &st = stdb(i);
-
-  // The rows of the cell are the lattice vectors. VASP stops on a
-  // left-handed basis (negative triple product), so such a cell is written
-  // as (a0, a1, -a2), the same lattice right-handed; the Cartesian
-  // positions are unchanged. A singular cell is refused.
   const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
                     a2 = st.cell.row(2);
   const double det = a0 * a1.cross(a2);
@@ -29,6 +20,21 @@ void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
                              "' has a singular cell (coplanar or zero "
                              "lattice vectors).");
   }
+}
+
+void VaspPoscarWriter::write_data(const std::string& filename, const size_t i) {
+
+  check(i);
+
+  const Structure &st = stdb(i);
+
+  // The rows of the cell are the lattice vectors. VASP stops on a
+  // left-handed basis (negative triple product), so such a cell is written
+  // as (a0, a1, -a2), the same lattice right-handed; the Cartesian
+  // positions are unchanged. A singular cell is refused (check()).
+  const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
+                    a2 = st.cell.row(2);
+  const double det = a0 * a1.cross(a2);
   const double csign = det < 0.0 ? -1.0 : 1.0;
 
   std::ofstream file(filename);
