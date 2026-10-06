@@ -52,7 +52,7 @@ public:
   using tadah::models::M_BLR_Train<BF>::bf;
 
   /** 
-   * @brief Initializes for training or prediction using a contexturation.
+   * @brief Initializes for training or prediction using a configuration.
    *
    * **Example**:
    * \code{.cpp}
@@ -70,7 +70,7 @@ public:
   }
 
   /** 
-   * @brief Initializes for training or prediction using a basis function and contexturation.
+   * @brief Initializes for training or prediction using a basis function and configuration.
    * 
    * @param bf Basis function.
    * @param c Contexturation object.

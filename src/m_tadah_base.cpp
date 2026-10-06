@@ -62,6 +62,13 @@ predict(const tadah::core::Context &c, StDescriptors &std, const Structure &stOr
     stPred.atoms.resize(stOrig.natoms());
     stress_force_predict(std, stPred, stOrig);
   }
+  // spredict and stress_force_predict fill the upper triangle (y >= x);
+  // the stress is symmetric.
+  if (c.get<bool>("STRESS")) {
+    for (size_t x=0; x<3; ++x)
+      for (size_t y=x+1; y<3; ++y)
+        stPred.stress(y,x) = stPred.stress(x,y);
+  }
 
   return stPred;
 }

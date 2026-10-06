@@ -19,7 +19,10 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Adding structures to the database...");
 
-  if(taskContext.size("DBFILE") && !taskContext.contains("INDEX")) {
+  // has_stored, not size(): size() throws for a key that is not set
+  // (`data print -s` has no DBFILE).
+  const bool has_dbfile = taskContext.has_stored("DBFILE");
+  if(has_dbfile && !taskContext.contains("INDEX")) {
     // just print the summary and exit
     std::string dbFile = taskContext.get<std::string>("DBFILE");
     stdb.add(dbFile);
@@ -28,7 +31,7 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
     std::cout << stdb << std::endl;
     return EXIT_SUCCESS;
   }
-  if(taskContext.size("DBFILE") && taskContext.contains("INDEX")) {
+  if(has_dbfile && taskContext.contains("INDEX")) {
     std::vector<std::string> indicesStrVec;
     indicesStrVec.resize(taskContext.size("INDEX")); // required for DBFILE
     taskContext.get<>("INDEX", indicesStrVec);

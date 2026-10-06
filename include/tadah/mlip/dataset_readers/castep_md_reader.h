@@ -20,10 +20,19 @@ namespace mlip {
  * Implements data extraction and processing for molecular dynamics
  * simulations by converting data from atomic units to common units:
  * eV for energy, Ångström for distance, eV/Å for force, eV/Å³
- * for pressure and ps for time.
+ * for stress and ps for time.
  * 
- * The virial stress tensor is extracted from full pressure tensor
- * by removing kinetic contributions.
+ * The stored stress is the Cauchy stress (positive under tension) without
+ * its kinetic part: the '<-- S' tensor of a .md frame includes
+ * -(1/V) sum m v (x) v, which is removed with the frame's velocities and
+ * the periodic-table masses, scaled to the frame's kinetic energy (the third
+ * '<-- E' value). A frame with a '<-- S' tensor whose kinetic energy is
+ * more than 1e-3 off those masses (a custom SPECIES_MASS) is refused; a
+ * frame without one needs no masses and is read, with zero stress and
+ * stress weight 0 (sweight), so that a STRESS fit ignores it. Every frame is read, the first
+ * one included. A malformed frame is an error naming the file, the frame
+ * (1-based) and the line; a last frame that the file ends inside (a run
+ * stopped while writing it) is skipped with one WARNING.
  *
  * Example usage:
  * @code
@@ -91,24 +100,25 @@ protected:
   double t_conv = 2.418884326505e-5; /**< Time conversion to ps */ 
   double k_b = 8.617333262145e-5 / e_conv; /**< Boltzmann constant in atomic units (Hartree/K) */
 
-  // Helper methods
+public:
+  /** One line of the file and its 1-based number. */
+  struct FrameLine {
+    size_t number;
+    std::string text;
+  };
+
+protected:
+  /**
+   * @brief Whether frames carry velocities ('<-- V') and a kinetic energy
+   *        whose stress part is removed: true for .md, false for .geom.
+   */
+  virtual bool has_velocities() const { return true; }
 
   /**
-   * @brief Calculates the ideal gas pressure.
-   * @param s Reference to a Structure object.
-   * @param T Temperature in atomic units.
-   * @return Calculated ideal gas pressure.
+   * @brief The structure of one frame (its non-blank lines); frame_index is
+   *        0 for the file's first frame, which gets get_first_label().
    */
-  virtual double calc_P_ideal(Structure &s, double T);
-
-  /**
-   * @brief Performs post-processing on the given structure.
-   * @param s Reference to a Structure object.
-   */
-  void postproc_structure(Structure &s);
-
-  double T = 0; /**< Temperature in atomic units (Hartree/k_B) */
-  bool stress_tensor_bool = false; /**< Indicates presence of a stress tensor */
+  Structure parse_frame(const std::vector<FrameLine> &frame, size_t frame_index);
 
 private:
   virtual std::string get_first_label(std::string &) override;

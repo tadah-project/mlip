@@ -4,6 +4,8 @@
 
 
 #include <iostream>
+#include <stdexcept>
+#include <string>
 
 namespace tadah {
 namespace mlip {
@@ -19,6 +21,13 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
   bool append = taskContext.get<bool>("APPEND");
   bool merge = taskContext.get<bool>("MERGE");
   size_t numeric = StructureDB::dataset_digits(taskContext);
+  // No default: how close two positions must be to count as equal depends
+  // on how precisely the data were written.
+  if (!taskContext.has_stored("THRESHOLD"))
+    throw std::runtime_error(
+        "tadah data dedup needs --threshold <Angstrom>: the largest "
+        "difference, in each Cartesian component, at which two atom "
+        "positions count as equal (e.g. --threshold 1e-6)");
   double threshold = taskContext.get<double>("THRESHOLD");
 
   std::vector<StructureDB> inStdbs(taskContext.size("DBFILE"));
@@ -42,15 +51,35 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     }
   }
 
+  // In input order (the files in order), a structure is a duplicate when
+  // it is the same as an earlier structure that is kept; the first of each
+  // set of equal structures is kept. Pairs are (kept, removed).
   std::vector<std::pair<size_t, size_t>> duplicates;
-  for (size_t i=0; i < indices.size(); ++i) {
-    for (size_t j=i+1; j < indices.size(); ++j) {
+  std::vector<size_t> kept;
+  for (size_t j=0; j < indices.size(); ++j) {
+    Structure &st_j = inStdbs[indices[j].first](indices[j].second);
+    bool duplicate = false;
+    for (size_t i : kept) {
       Structure &st_i = inStdbs[indices[i].first](indices[i].second);
-      Structure &st_j = inStdbs[indices[j].first](indices[j].second);
-      if (st_i.is_the_same(st_j,threshold)) {
+      bool same;
+      try {
+        same = st_i.is_the_same(st_j,threshold);
+      } catch (const std::invalid_argument &e) {
+        // Name both structures by file and 1-based position.
+        throw std::runtime_error(
+            "tadah data dedup: comparing structure #" +
+            std::to_string(indices[i].second + 1) + " of " +
+            inFiles[indices[i].first] + " with structure #" +
+            std::to_string(indices[j].second + 1) + " of " +
+            inFiles[indices[j].first] + ": " + e.what());
+      }
+      if (same) {
         duplicates.push_back(std::make_pair(i,j));
+        duplicate = true;
+        break;
       }
     }
+    if (!duplicate) kept.push_back(j);
   }
 
   if (core::Logger::instance().getLogLevel() == tadah::core::LogLevel::INFO) {
@@ -86,11 +115,11 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     } 
   }
 
-  // finally prune...
+  // finally prune: each removed structure once, the last first, so that
+  // removing one does not move the others of its file.
   for (size_t idx = duplicates.size(); idx-- > 0;) {
-    auto &dup = duplicates[idx];
-    size_t i1 = dup.first;  
-    inStdbs[indices[i1].first].remove(indices[i1].second);
+    const size_t removed = duplicates[idx].second;
+    inStdbs[indices[removed].first].remove(indices[removed].second);
   }
 
   size_t newTotal=0;

@@ -7,8 +7,14 @@
 
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 namespace tadah {
 namespace mlip {
+
+namespace {
+const char *const kRecognisedDftOutputs =
+    "VASP OUTCAR, vasprun.xml, CASTEP .castep, .md, .geom";
+}
 
 // Factory method implementation
 std::unique_ptr<DatasetReader> DatasetReaderSelector::get_reader(const std::string& filepath, StructureDB& db) {
@@ -26,8 +32,10 @@ std::unique_ptr<DatasetReader> DatasetReaderSelector::get_reader(const std::stri
   } else if (type == "VASP.OUTCAR") {
     return std::make_unique<VaspOutcarReader>(db,filepath);
   } else {
-    std::cerr << "Unknown type! Returning nullptr." << std::endl;
-    return nullptr;
+    throw std::runtime_error(
+        "'" + filepath + "' is not a recognised DFT output (" +
+        kRecognisedDftOutputs + "); structure files such as POSCAR, CIF or "
+        ".cell are read with -s by tadah data print, data write and predict");
   }
 
 }
@@ -36,8 +44,9 @@ std::unique_ptr<DatasetReader> DatasetReaderSelector::get_reader(const std::stri
 std::string DatasetReaderSelector::determine_file_type_by_content(const std::string& filepath) {
   std::ifstream file(filepath);
   if (!file.is_open()) {
-    std::cerr << "Could not open file: " << filepath << std::endl;
-    return "Unknown file type";
+    throw std::runtime_error("cannot open '" + filepath +
+                             "' (recognised DFT outputs: " +
+                             kRecognisedDftOutputs + ")");
   }
 
   std::string line;

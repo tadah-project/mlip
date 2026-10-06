@@ -3,6 +3,9 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/utils.h>
 #include <tadah/core/logger.h>
+
+#include <stdexcept>
+#include <string>
 #include <tadah/core/number_format.h>
 #include <cstdio>
 #include <cctype>   // For std::isspace
@@ -23,15 +26,27 @@ void StructureDB::add(const std::string fn) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
   parseFile(fn);
+  size_t read = 0;
   while (true) {
     structures.push_back(Structure());
-    int t = structures.back().read(ifs);
+    int t;
+    try {
+      t = structures.back().read(ifs);
+    } catch (const std::exception &e) {
+      structures.pop_back();
+      throw std::runtime_error("DBFILE " + fn + ": structure " +
+                               std::to_string(read + 1) + ": " + e.what());
+    }
 
     // did we read structure successfully?
     // if not remove last object from the list
     if (t==1) structures.pop_back();
+    else ++read;
 
     if (ifs.eof()) break;
+    if (ifs.fail())
+      throw std::runtime_error("DBFILE " + fn + ": cannot read on after structure " +
+                               std::to_string(read));
   }
   ifs.close();
 }
@@ -47,15 +62,27 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
   }
 
   int count=0;
+  size_t read = 0;
   while (count++<N) {
     structures.push_back(Structure());
-    int t = structures.back().read(ifs);
+    int t;
+    try {
+      t = structures.back().read(ifs);
+    } catch (const std::exception &e) {
+      structures.pop_back();
+      throw std::runtime_error("DBFILE " + fn + ": structure " +
+                               std::to_string(first + read + 1) + ": " + e.what());
+    }
 
     // did we read structure successfully?
     // if not remove last object from the list
     if (t==1) structures.pop_back();
+    else ++read;
 
     if (ifs.eof()) break;
+    if (ifs.fail())
+      throw std::runtime_error("DBFILE " + fn + ": cannot read on after structure " +
+                               std::to_string(first + read));
   }
   ifs.close();
 

@@ -26,11 +26,11 @@ void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
   file << "%BLOCK LATTICE_CART" << std::endl;
   file << "ANG" << std::endl;
   for (int i=0; i<3; ++i) {
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << st.cell(i,0);
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << st.cell(i,1);
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << st.cell(i,2);
     file << std::endl;
   }
@@ -40,17 +40,17 @@ void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
 
   file << "%BLOCK POSITIONS_ABS" << std::endl;
   for (const auto &atom : st) {
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << atom.symbol;
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << atom.position(0);
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << atom.position(1);
-    file << std::right << std::fixed << std::setw(w)
+    file << ' ' << std::right << std::fixed << std::setw(w)
       << std::setprecision(p) << atom.position(2);
     file << std::endl;
   }
-  file << "%ENDBLOCK POSITIONS_ABS	" << std::endl;
+  file << "%ENDBLOCK POSITIONS_ABS" << std::endl;
   file.close();
 }
 } // namespace mlip

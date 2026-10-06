@@ -1,4 +1,9 @@
 #include <tadah/mlip/dataset_readers/vasp_vasprun_reader.h>
+#include <tadah/mlip/dataset_readers/missing_stress.h>
+
+#include <sstream>
+#include <stdexcept>
+#include <string>
 namespace tadah {
 namespace mlip {
 
@@ -15,6 +20,7 @@ VaspVasprunReader::~VaspVasprunReader() {
 }
 
 void VaspVasprunReader::read_data(const std::string& filename) {
+  filename_ = filename;
   std::ifstream infile(filename);
   if (!infile.good()) {
     std::cerr << "Error: File " << filename << " cannot be opened or read." << std::endl;
@@ -78,7 +84,11 @@ void VaspVasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
         for (auto rc_node = atoms_node->first_node("rc"); rc_node; rc_node = rc_node->next_sibling("rc")) {
           auto c_node = rc_node->first_node("c");
           if (c_node) {
-            atom_types.push_back(c_node->value());
+            // VASP pads the name to two characters ('W ', 'O ').
+            std::string name = c_node->value();
+            name.erase(0, name.find_first_not_of(" \t"));
+            name.erase(name.find_last_not_of(" \t") + 1);
+            atom_types.push_back(name);
           }
         }
       }
@@ -87,15 +97,20 @@ void VaspVasprunReader::extract_atom_types(rx::xml_node<> *root_node) {
 }
 
 void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
-  size_t counter=0;
+  size_t counter=0, without_stress=0;
   for (auto calculation_node = root_node->first_node("calculation");
   calculation_node; calculation_node = calculation_node->next_sibling("calculation")) {
 
+    calculation_ = counter + 1;
     extract_total_energy(calculation_node);
 
     extract_stress_tensor(calculation_node);
     if (!stress_tensor_bool) {
+      // No stress tensor: zero stress and stress weight 0, so that a
+      // STRESS fit ignores it.
       _s.stress.set_zero();
+      _s.sweight = 0.0;
+      ++without_stress;
     }
     stress_tensor_bool = false;
 
@@ -111,24 +126,41 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
     stdb.add(_s);
     _s = Structure(); // reset
   }
+  log_missing_stress("VASP vasprun.xml " + filename_, without_stress, counter);
 }
 
 void VaspVasprunReader::extract_total_energy(rx::xml_node<> *calculation_node) {
+  bool found = false;
   auto energy_node = calculation_node->first_node("energy");
   if (energy_node) {
     for (auto energy_val_node = energy_node->first_node("i");
     energy_val_node; energy_val_node = energy_val_node->next_sibling("i")) {
 
+      // The free energy F, whose gradient the forces and the stress are.
+      // (The calculation-level 'e_wo_entrp' holds energy(sigma->0) in VASP
+      // 5.4.4, a labelling bug; 'e_fr_energy' is right in every version.)
       auto attribute = energy_val_node->first_attribute("name");
-      if (attribute && std::string(attribute->value()) == "e_wo_entrp") {
-        try {
-          _s.energy = std::stod(energy_val_node->value());
-        } catch (const std::invalid_argument&) {
-          std::cerr << "Error converting energy value." << std::endl;
-        }
+      if (attribute && std::string(attribute->value()) == "e_fr_energy") {
+        const std::string value = energy_val_node->value();
+        std::istringstream iss(value);
+        double e;
+        std::string rest;
+        if (!(iss >> e) || (iss >> rest))
+          throw std::runtime_error(
+            "VASP vasprun.xml " + filename_ + ": calculation " +
+            std::to_string(calculation_) +
+            ": the calculation-level <i name=\"e_fr_energy\"> value '" +
+            value + "' is not a number");
+        _s.energy = e;
+        found = true;
       }
     }
   }
+  if (!found)
+    throw std::runtime_error(
+      "VASP vasprun.xml " + filename_ + ": calculation " +
+      std::to_string(calculation_) +
+      " has no calculation-level <i name=\"e_fr_energy\"> (the free energy)");
 }
 
 void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) {
@@ -151,7 +183,9 @@ void VaspVasprunReader::extract_stress_tensor(rx::xml_node<> *calculation_node) 
         }
         r++;
       }
-      _s.stress *= s_conv;
+      // VASP's tensor is pressure-signed (positive under compression);
+      // Tadah stores the Cauchy stress, positive under tension.
+      _s.stress *= -s_conv;
       break;
     }
     varray_node = varray_node->next_sibling("varray");

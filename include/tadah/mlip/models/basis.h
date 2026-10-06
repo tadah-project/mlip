@@ -91,7 +91,7 @@ larger than the amount of available AEDs\n");
     b.set_zero();
     b(0,0)=1;
     // Here we add all atomic energy descriptors into single
-    // descriptor which represents total energy of this contexturation
+    // descriptor which represents total energy of this configuration
     for (size_t i=1; i<s; ++i) {
       const size_t st = indices[i];
       T(i)=stdb(st).energy/st_desc_db(st).naed();

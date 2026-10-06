@@ -20,6 +20,13 @@ namespace rx = rapidxml;
  * This class implements the DatasetReader interface for handling
  * VASP vasprun.xml files and stores the parsed data in a StructureDB.
  *
+ * Each <calculation> gives a structure with the free energy F (the
+ * calculation-level e_fr_energy, whose gradient the forces and the stress
+ * are; e_wo_entrp at that level holds energy(sigma->0) in VASP 5.4.4) and
+ * the Cauchy stress in eV/A^3, minus the 'stress' varray (pressure sign).
+ * A calculation without a 'stress' varray is stored with zero stress and
+ * stress weight 0 (sweight), so that a STRESS fit ignores it.
+ *
  * Example usage:
  * @code
  * StructureDB my_db;
@@ -118,9 +125,11 @@ protected:
   void extract_calculations(rx::xml_node<> *root_node);
 
   /**
-     * @brief Extracts total energy from a calculation node.
+     * @brief Extracts the free energy (e_fr_energy) from a calculation node.
      *
-     * Retrieves the total energy value from each calculation.
+     * Throws std::runtime_error, naming the file and the calculation
+     * (1-based), when the calculation has none or its value is not a
+     * number.
      *
      * @param calculation_node Pointer to the calculation XML node.
      */
@@ -162,6 +171,8 @@ protected:
 private:
   Structure _s; ///< Internal structure representation.
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
+  std::string filename_; ///< The file read, for messages.
+  size_t calculation_ = 0; ///< The calculation being read, 1-based, for messages.
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3
 };
 

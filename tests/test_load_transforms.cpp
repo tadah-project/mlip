@@ -257,6 +257,10 @@ TEST_CASE("stamp_into_param_file stores LSCALE / ESHIFT bit-exactly",
   REQUIRE(bits(pot.get<double>("ESHIFT", 1)) == bits(rep.eshift[nb]));
 }
 
+// ESHIFT_ATOM then LSCALE 1.05 through apply_load_transforms: energies
+// shifted per atom, cell times s, forces divided by s, and the Cauchy stress
+// (eV/A^3) divided by s^3 (0.7 -> 0.604686318972033, by hand).
+// Before the fix: the stress stayed 0.7.
 TEST_CASE("apply_load_transforms — round trip ESHIFT_ATOM + LSCALE",
           "[load_transforms]") {
   StructureDB stdb;
@@ -288,8 +292,62 @@ TEST_CASE("apply_load_transforms — round trip ESHIFT_ATOM + LSCALE",
   REQUIRE(stdb(0).energy == Approx(0.0));
   REQUIRE(stdb(1).energy == Approx(1.0));
 
-  // After LSCALE 1.05: positions scaled, force divided, stress invariant
+  // After LSCALE 1.05: positions scaled, force divided by s, and the Cauchy
+  // stress (eV/A^3) divided by s^3: 0.7 / 1.157625 = 0.604686318972033.
+  // Before the fix the stress stayed 0.7 (taken for an energy-unit virial).
   REQUIRE(stdb(1).cell(0, 0) == Approx(5.0 * 1.05));
   REQUIRE(stdb(1).atoms[0].force[0] == Approx(0.5 / 1.05));
-  REQUIRE(stdb(1).stress(0, 0) == Approx(0.7));
+  CHECK(stdb(1).stress(0, 0) == Approx(0.604686318972033).epsilon(1e-13));
+  CHECK(stdb(1).stress(1, 1) == 0.0);
+}
+
+// Pins the LSCALE stress rule through apply_load_transforms (what train,
+// predict and HPO call): with LSCALE s every stored stress component is
+// divided by s^3, so the Cauchy stress (1/V) dE/d(strain) belongs to the
+// rescaled cell, as the forces (divided by s) already do. Worked example
+// by hand: a cube a = 3 A (V = 27 A^3) with sigma = 0.01 I eV/A^3 and the
+// off-diagonal sigma_xy = sigma_yx = -0.004 at LSCALE 2 becomes a = 6 A
+// (V = 216 A^3) with 0.01 / 8 = 0.00125 and -0.004 / 8 = -0.0005; V*sigma
+// stays 0.27 eV. A structure in a second dataset gets the same rule.
+// Before the fix: the stress stayed 0.01 and -0.004 (`tadah predict
+// --lscale 2` printed "True Stress 1.00000000e-02").
+TEST_CASE("apply_load_transforms: LSCALE divides the stress by s^3",
+          "[load_transforms][lscale][stress_convention]") {
+  StructureDB stdb;
+  Structure cube = make_structure(
+      "cube", -20.0, {{"Ta", Vec3d(0, 0, 0)}, {"Ta", Vec3d(1.5, 1.5, 1.5)}},
+      3.0);
+  cube.stress(0, 0) = cube.stress(1, 1) = cube.stress(2, 2) = 0.01;
+  cube.stress(0, 1) = cube.stress(1, 0) = -0.004;
+  cube.atoms[1].force = Vec3d(0.2, -0.6, 0.0);
+  stdb.add(cube);
+  Structure other = cube;
+  other.label = "cube, second dataset";
+  other.stress(2, 2) = -0.08;
+  stdb.add(other);
+  stdb.dbidx = {0, 1, 2};
+
+  Context ctx;
+  ctx.add("LSCALE", 2.0);
+  const auto report = apply_load_transforms(stdb, ctx);
+  REQUIRE(report.applied);
+  REQUIRE(report.lscale == 2.0);
+
+  const Structure &st = stdb(0);
+  REQUIRE(st.get_volume() == Approx(216.0).epsilon(1e-14));
+  CHECK(st.energy == -20.0);
+  CHECK(st.atoms[1].force[0] == Approx(0.1).epsilon(1e-14));
+  CHECK(st.atoms[1].force[1] == Approx(-0.3).epsilon(1e-14));
+  for (int i = 0; i < 3; ++i) {
+    INFO("diagonal " << i);
+    CHECK(st.stress(i, i) == Approx(0.00125).epsilon(1e-14));
+    CHECK(st.get_volume() * st.stress(i, i) == Approx(0.27).epsilon(1e-13));
+  }
+  CHECK(st.stress(0, 1) == Approx(-0.0005).epsilon(1e-14));
+  CHECK(st.stress(1, 0) == Approx(-0.0005).epsilon(1e-14));
+  CHECK(st.stress(0, 2) == 0.0);
+  CHECK(st.stress(1, 2) == 0.0);
+
+  CHECK(stdb(1).stress(2, 2) == Approx(-0.01).epsilon(1e-14));
+  CHECK(stdb(1).stress(0, 0) == Approx(0.00125).epsilon(1e-14));
 }

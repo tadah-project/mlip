@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string_view>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -134,53 +135,80 @@ size_t Structure::nn_size(size_t i) const {
  *     Structure st;
  *     int status = st.read(ifs);
  */
+namespace {
+/* The whole token `tok` as a finite number; throws std::runtime_error
+ * naming `what` and the token otherwise ('nan', 'inf', '1e309', '1.0x'). */
+double finite_value(const std::string &tok, const std::string &what) {
+  double v = 0.0;
+  if (!tadah::core::parse_number(tok, v) || !std::isfinite(v))
+    throw std::runtime_error(what + " '" + tok + "' is not a finite number");
+  return v;
+}
+
+std::vector<std::string> tokens_of(const std::string &line) {
+  std::vector<std::string> t;
+  std::istringstream in(line);
+  for (std::string w; in >> w;) t.push_back(w);
+  return t;
+}
+}  // namespace
+
 int Structure::read(std::ifstream &ifs) {
   std::string line;
-  // Ignore extra empty lines
+  // Ignore extra empty lines (a line of only whitespace, '\r' included, is
+  // empty)
   std::getline(ifs, line);
-  if(line.empty()) return 1;
+  if (tadah::core::is_blank_line(line)) return 1;
 
   // The first line read is used as a label
   label = line;
 
-  // The second line might be energy, or scaling factors eweight fweight sweight, or energy T
-  std::getline(ifs, line);
-  std::stringstream stream(line);
-  std::string temp;
-  size_t count = 0;
-
-  while(stream >> temp) { ++count; }
-  stream.clear();
-  stream.seekg(0, std::ios::beg);
-
+  // Every value must be a finite number: a token the stream cannot read
+  // would leave it failed short of the end of the file. Errors name the
+  // structure; StructureDB::add adds the file and the position.
   try {
-  if (count == 3) {
-    // eweight, fweight, sweight
-    stream >> eweight >> fweight >> sweight;
-    // read the next line for energy and T
+  // The second line is the energy, 'energy T', or the weights 'eweight
+  // fweight sweight' followed by a line 'energy [T]'.
+  std::getline(ifs, line);
+  std::vector<std::string> tok = tokens_of(line);
+  if (tok.size() == 3) {
+    eweight = finite_value(tok[0], "eweight");
+    fweight = finite_value(tok[1], "fweight");
+    sweight = finite_value(tok[2], "sweight");
     std::getline(ifs, line);
-    std::stringstream stream2(line);
-    stream2 >> energy;
-    if(stream2) stream2 >> T;
+    tok = tokens_of(line);
+    if (tok.empty() || tok.size() > 2)
+      throw std::runtime_error("the line after the weights, '" + line +
+                               "', is not 'energy' or 'energy T'");
+    energy = finite_value(tok[0], "energy");
+    if (tok.size() == 2) T = finite_value(tok[1], "temperature");
   }
-  else if (count == 2) {
-    // energy, T
-    stream >> energy >> T;
+  else if (tok.size() == 2) {
+    energy = finite_value(tok[0], "energy");
+    T = finite_value(tok[1], "temperature");
+  }
+  else if (tok.size() == 1) {
+    energy = finite_value(tok[0], "energy");
   }
   else {
-    // only energy (to_double: std::stod that also accepts a subnormal)
-    energy = tadah::core::to_double(tadah::core::trim(line));
+    throw std::runtime_error("the line after the label, '" + line +
+                             "', is not 'energy', 'energy T' or 'eweight "
+                             "fweight sweight'");
   }
 
-  // 3x3 cell matrix
-  for (int i = 0; i < 3; ++i)
-    for (int j = 0; j < 3; ++j)
-      ifs >> cell(i, j);
-
-  // 3x3 stress matrix
-  for (int i = 0; i < 3; ++i)
-    for (int j = 0; j < 3; ++j)
-      ifs >> stress(i, j);
+  // 3x3 cell matrix, then the 3x3 stress matrix
+  auto read_matrix = [&](tadah::core::Matrix3d &m, const std::string &what) {
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j) {
+        std::string t;
+        if (!(ifs >> t))
+          throw std::runtime_error("the file ends inside the " + what + " block");
+        m(i, j) = finite_value(t, what + " entry (" + std::to_string(i + 1) +
+                                      ", " + std::to_string(j + 1) + ")");
+      }
+  };
+  read_matrix(cell, "cell");
+  read_matrix(stress, "stress");
 
   // Move to next line to start reading atoms
   std::getline(ifs, line);
@@ -188,24 +216,29 @@ int Structure::read(std::ifstream &ifs) {
   // Clear existing atoms
   atoms.clear();
 
-  // Local variables for reading each line
-  char symbol[3];
-  double px, py, pz, fx, fy, fz;
-
-  // Read in each atom
+  // Read in each atom: 'Element px py pz fx fy fz'
   while(std::getline(ifs, line)) {
-    if(line.empty())  break;
-    if(line == "\r")  break; // Windows newline detection
-    
-    std::istringstream tmp(line);
-    tmp >> symbol >> px >> py >> pz >> fx >> fy >> fz;
-    tadah::core::Element e = tadah::core::PeriodicTable::find_by_symbol(symbol);
-    atoms.push_back(Atom(e, px, py, pz, fx, fy, fz));
+    if (tadah::core::is_blank_line(line)) break;  // '\r' (CRLF) included
+
+    tok = tokens_of(line);
+    if (tok.size() < 7)
+      throw std::runtime_error("the atom line '" + line +
+                               "' is not 'Element px py pz fx fy fz'");
+    double v[6];
+    static const char *const names[6] = {"px", "py", "pz", "fx", "fy", "fz"};
+    for (int k = 0; k < 6; ++k)
+      v[k] = finite_value(tok[k + 1], std::string(names[k]) + " of the atom line '" + line + "'");
+    tadah::core::Element e;
+    try {
+      e = tadah::core::PeriodicTable::find_by_symbol(tok[0]);
+    } catch (const std::exception &) {
+      throw std::runtime_error("the atom line '" + line + "' starts with '" +
+                               tok[0] + "', which is not an element symbol");
+    }
+    atoms.push_back(Atom(e, v[0], v[1], v[2], v[3], v[4], v[5]));
   }
   } catch (const std::exception &e) {
-    std::cerr << "Error reading structure: " << e.what() << std::endl;
-    std::cerr << "The error occurred while reading line: " << line << std::endl;
-    throw std::runtime_error("Error reading structure from file.");
+    throw std::runtime_error("structure '" + label + "': " + e.what());
   }
   return 0;
 }
@@ -356,11 +389,12 @@ double Structure::get_temperature() const {
 }
 
 /**
- * Returns the virial pressure, units of (energy / distance^3).
- * Reason: The virial pressure is needed for dealing with stress or internal equations of state.
+ * Returns the virial pressure -trace(stress)/3 in the stress unit
+ * (eV/A^3): positive under compression, since the stored stress is the
+ * Cauchy stress, positive under tension.
  */
 double Structure::get_virial_pressure() const {
-  return stress.trace() / get_volume() / 3.0;
+  return -stress.trace() / 3.0;
 }
 
 /**
@@ -372,7 +406,7 @@ double Structure::get_virial_pressure() const {
  */
 double Structure::get_pressure(double T, double kB) const {
   double vpress = get_virial_pressure();
-  return vpress + natoms() * kB * T / get_volume();
+  return vpress + natoms() * kB * T / get_volume();  // + N k_B T / V
 }
 
 /**
@@ -402,27 +436,198 @@ bool Structure::operator==(const Structure& st) const {
   return true;
 }
 
+namespace {
+/* Refuses a cell whose lattice vectors are zero, non-finite or (nearly)
+ * coplanar: positions are compared through its inverse. The criterion is
+ * the one of the POSCAR exporter: |det| <= 1e-12 |a0| |a1| |a2|. */
+void require_regular_cell(const Structure &st) {
+  const tadah::core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
+                           a2 = st.cell.row(2);
+  const double det = a0 * a1.cross(a2);
+  if (!std::isfinite(det) ||
+      !(std::fabs(det) > 1e-12 * a0.norm() * a1.norm() * a2.norm()))
+    throw std::invalid_argument(
+        "Structure::is_the_same: structure '" + st.label + "' (" +
+        std::to_string(st.natoms()) +
+        " atoms) has a singular cell (zero, non-finite or coplanar lattice "
+        "vectors); its positions cannot be compared through the cell");
+}
+
+/* The cell as is_the_same compares positions through it: its inverse, the
+ * spacings h_k of its lattice planes (1 / |column k of the inverse|) and
+ * the length of its shortest lattice vector. */
+struct ComparisonCell {
+  tadah::core::Matrix3d cell, inv;
+  double h[3];
+  double shortest;
+};
+
+ComparisonCell comparison_cell(const Structure &st) {
+  ComparisonCell c;
+  c.cell = st.cell;
+  c.inv = st.cell.inverse();
+  for (int k = 0; k < 3; ++k)
+    c.h[k] = 1.0 / std::sqrt(c.inv(0, k) * c.inv(0, k) + c.inv(1, k) * c.inv(1, k) +
+                             c.inv(2, k) * c.inv(2, k));
+  // A lattice vector n.cell no longer than L has |n_k| <= L / h_k, with L
+  // the shortest row: enumerate those n.
+  double L = std::numeric_limits<double>::infinity();
+  for (int r = 0; r < 3; ++r) L = std::min(L, st.cell.row(r).norm());
+  long N[3];
+  double count = 1.0;
+  for (int k = 0; k < 3; ++k) {
+    N[k] = static_cast<long>(std::floor(L / c.h[k] * (1.0 + 1e-12)));
+    count *= 2.0 * N[k] + 1.0;
+  }
+  if (!(count <= 1e6))
+    throw std::invalid_argument(
+        "Structure::is_the_same: the cell of structure '" + st.label +
+        "' is too skewed to compare positions through it (write it with a "
+        "reduced basis)");
+  c.shortest = L;
+  for (long a = -N[0]; a <= N[0]; ++a)
+    for (long b = -N[1]; b <= N[1]; ++b)
+      for (long d = -N[2]; d <= N[2]; ++d) {
+        if (a == 0 && b == 0 && d == 0) continue;
+        double v2 = 0.0;
+        for (int x = 0; x < 3; ++x) {
+          const double v = a * st.cell(0, x) + b * st.cell(1, x) + d * st.cell(2, x);
+          v2 += v * v;
+        }
+        c.shortest = std::min(c.shortest, std::sqrt(v2));
+      }
+  return c;
+}
+
+/* Whether d minus some lattice vector of c lies within thr in every
+ * Cartesian component. Every lattice vector n.cell for which that holds has
+ * |n_k - f_k| <= sqrt(3) thr / h_k (f the fractional coordinates of d), so
+ * those n are all tried. */
+bool within_through(const ComparisonCell &c, const double d[3], double thr) {
+  double f[3];
+  long lo[3], hi[3];
+  for (int k = 0; k < 3; ++k) {
+    f[k] = d[0] * c.inv(0, k) + d[1] * c.inv(1, k) + d[2] * c.inv(2, k);
+    const double r = std::sqrt(3.0) * thr / c.h[k] + 1e-9 * (1.0 + std::fabs(f[k]));
+    lo[k] = static_cast<long>(std::ceil(f[k] - r));
+    hi[k] = static_cast<long>(std::floor(f[k] + r));
+  }
+  for (long a = lo[0]; a <= hi[0]; ++a)
+    for (long b = lo[1]; b <= hi[1]; ++b)
+      for (long e = lo[2]; e <= hi[2]; ++e) {
+        bool within = true;
+        for (int x = 0; x < 3 && within; ++x)
+          within = std::fabs(d[x] - (a * c.cell(0, x) + b * c.cell(1, x) +
+                                     e * c.cell(2, x))) <= thr;
+        if (within) return true;
+      }
+  return false;
+}
+
+/* Refuses a threshold at which two images of one position could both lie
+ * within it: two such images differ by a lattice vector no longer than
+ * 2 sqrt(3) thr. */
+void require_unambiguous_threshold(const Structure &st, const ComparisonCell &c,
+                                   double thr) {
+  const double limit = c.shortest / (2.0 * std::sqrt(3.0));
+  if (!(thr < limit)) {
+    std::ostringstream oss;
+    oss << "Structure::is_the_same: the threshold " << thr
+        << " A is too large for structure '" << st.label
+        << "': it must be below lambda / (2 sqrt 3) = " << limit
+        << " A, lambda = " << c.shortest
+        << " A its shortest lattice vector, so that at most one image of a "
+           "position lies within it";
+    throw std::invalid_argument(oss.str());
+  }
+}
+}  // namespace
+
 /**
  * Checks if two structures match in cell vectors, number of atoms, species, and coordinates,
  * ignoring order of atoms and not comparing energies, forces, or labels.
  * Reason: More lenient check to see if structures represent the "same" geometry.
+ *
+ * Each atom must match a distinct atom of `st` of the same element whose
+ * position differs by a lattice vector, of either structure's cell, plus at
+ * most `thr` in every Cartesian component; every such lattice vector is
+ * tried (within_through). The structures are the same when such a
+ * one-to-one matching of all atoms exists; it is searched for with
+ * augmenting paths (Kuhn's algorithm), so the result depends neither on the
+ * order of the atoms nor on which structure is called. Throws
+ * std::invalid_argument when either cell is singular, or `thr` is negative,
+ * not finite or so large that two images of a position could both match.
  */
 bool Structure::is_the_same(const Structure& st, double thr) const {
+  require_regular_cell(*this);
+  require_regular_cell(st);
+  if (!(thr >= 0.0) || !std::isfinite(thr))
+    throw std::invalid_argument("Structure::is_the_same: the threshold must be a "
+                                "finite number of at least 0");
+  const ComparisonCell ca = comparison_cell(*this), cb = comparison_cell(st);
+  require_unambiguous_threshold(*this, ca, thr);
+  require_unambiguous_threshold(st, cb, thr);
   bool result =
     cell.isApprox(st.cell, thr) &&
     (natoms() == st.natoms());
 
   if (!result) return false;
 
-  size_t count = 0;
-  for (size_t i = 0; i < natoms(); ++i) {
-    for (size_t j = i; j < natoms(); ++j) {
-      if (atoms[i].is_the_same(st.atoms[j], thr)) {
-        count++;
+  const size_t n = natoms();
+  const size_t none = static_cast<size_t>(-1);
+
+  // candidates[i]: the atoms of st that atom i may match.
+  std::vector<std::vector<size_t>> candidates(n);
+  for (size_t i = 0; i < n; ++i) {
+    for (size_t j = 0; j < n; ++j) {
+      if (!(static_cast<const tadah::core::Element &>(atoms[i]) ==
+            static_cast<const tadah::core::Element &>(st.atoms[j])))
+        continue;
+      double d[3];
+      for (size_t x = 0; x < 3; ++x)
+        d[x] = st.atoms[j].position[x] - atoms[i].position[x];
+      if (within_through(ca, d, thr) || within_through(cb, d, thr))
+        candidates[i].push_back(j);
+    }
+    if (candidates[i].empty()) return false;
+  }
+
+  // Kuhn's algorithm, with a breadth-first search for each augmenting path
+  // (no recursion). If atom i has no augmenting path, no matching covers
+  // every atom.
+  std::vector<size_t> match_of_this(n, none), match_of_st(n, none);
+  std::vector<size_t> reached_from(n), queue;
+  std::vector<char> seen(n);
+  queue.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    std::fill(seen.begin(), seen.end(), 0);
+    queue.assign(1, i);
+    size_t free_j = none;
+    for (size_t q = 0; q < queue.size() && free_j == none; ++q) {
+      const size_t u = queue[q];
+      for (size_t j : candidates[u]) {
+        if (seen[j]) continue;
+        seen[j] = 1;
+        reached_from[j] = u;
+        if (match_of_st[j] == none) {
+          free_j = j;
+          break;
+        }
+        queue.push_back(match_of_st[j]);
       }
     }
+    if (free_j == none) return false;
+    // Flip the path back to i: each atom on it takes the atom of st it
+    // reached, and its previous match goes to the atom before it.
+    for (size_t j = free_j; j != none;) {
+      const size_t u = reached_from[j];
+      const size_t previous = match_of_this[u];
+      match_of_this[u] = j;
+      match_of_st[j] = u;
+      j = previous;
+    }
   }
-  return (count == natoms());
+  return true;
 }
 
 /**

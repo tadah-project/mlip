@@ -64,7 +64,7 @@ public:
   /** \brief Predict energy, forces and stresses for a set of Structures. */
   virtual Structure predict(tadah::core::Context &c, const Structure &st, DC_Base &dc);
 
-  /** \brief Predict virial stresses in a Structure stOrig. */
+  /** \brief Predict the stress (Cauchy, eV/A^3, positive under tension) of a Structure stOrig. */
   virtual tadah::core::stress_type spredict(const StDescriptors &std, const Structure &stOrig);
 
   /** \brief Predict virial stresses in all Structures. */

@@ -67,7 +67,10 @@ struct Structure {
    *  [0, 1) are fine): NNFinder finds every periodic image. */
   tadah::core::Matrix3d cell;
 
-  /** Virial stress tensor. */
+  /** Stress tensor: the Cauchy stress in eV/Angstrom^3, positive under
+   *  tension (sigma = (1/V) dE/d(strain), what the model predicts; the
+   *  negative of VASP's 'in kB' tensor, and of the pressure LAMMPS
+   *  reports). The rows are those of the 3x3 tensor; it is symmetric. */
   tadah::core::stress_type stress;
 
   /** Container for atoms which belong to this structure */
@@ -134,9 +137,11 @@ struct Structure {
   /** @return temperature of this structure in K */
   double get_temperature() const;
 
-  /** @return virial pressure calculated from the stress tensor.
+  /** @return the virial pressure, -trace(stress)/3: positive under
+   *  compression, since the stored stress is the Cauchy stress (positive
+   *  under tension).
    *
-   *  Units: energy/distance^3
+   *  Units: those of the stress, eV/Angstrom^3.
    */
   double get_virial_pressure() const;
 
@@ -171,7 +176,15 @@ struct Structure {
    * If a stream contains more than one structure,
    * the first structure will be read.
    *
+   * A line of only whitespace (a CRLF file's '\r' included) is empty: it
+   * ends the structure. Fields after the seventh of an atom line are
+   * ignored.
+   *
    * @returns 0 if success, 1 otherwise
+   * @throws std::runtime_error when a value is not a finite number or an
+   *         atom line has fewer than the seven fields 'Element px py pz fx
+   *         fy fz'; the message names the structure's label and the bad
+   *         text.
    */
   int read(std::ifstream &ifs);
 
@@ -283,9 +296,22 @@ struct Structure {
    * This method compares cell vectors, number of atoms,
    * species and atomic coordinates
    *
-   * Order of atoms does not matter.
+   * Order of atoms does not matter: the structures are the same when each
+   * atom can be paired with a distinct atom of `st` of the same element
+   * whose position differs by a lattice vector of either cell plus at most
+   * `thr` in each Cartesian component (one-to-one, found whenever it
+   * exists). The relation is symmetric.
    *
    * It does NOT compare energies, stresses, forces and labels.
+   *
+   * @throws std::invalid_argument when the cell of either structure is
+   *         singular (zero, non-finite or coplanar lattice vectors), or
+   *         `thr` is negative, not finite, or not below lambda/(2 sqrt 3),
+   *         lambda the shortest lattice vector of either cell (above it two
+   *         images of one position could both match), or a cell is written
+   *         with so skewed a basis that finding lambda would take more than
+   *         10^6 trial translations (write it with a reduced basis); the
+   *         message names the structure.
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 

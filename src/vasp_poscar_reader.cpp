@@ -185,6 +185,20 @@ void VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   std::vector<std::string> elemSymbols;
   if (hasElementSymbols) {
     elemSymbols = split(lines[5]);
+    // VASP 6 writes POTCAR names here ('Ti_pv/8c1b2d3e', 'Si/b0d4a2'): the
+    // element is the part before '/' and '_'.
+    for (auto &token : elemSymbols) {
+      std::string element = token.substr(0, token.find('/'));
+      element = element.substr(0, element.find('_'));
+      try {
+        tadah::core::PeriodicTable::find_by_symbol(element);
+      } catch (const std::exception &) {
+        throw std::runtime_error(
+          "VaspPoscarReader: '" + token + "' on line 6 is not an element "
+          "symbol (or a VASP POTCAR name such as Ti_pv or Si/b0d4a2).");
+      }
+      token = element;
+    }
   } else {
     throw std::runtime_error(
       "VaspPoscarReader: line 6 holds the atom counts, not the element "

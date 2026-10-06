@@ -28,14 +28,14 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
   if(taskContext.contains("STRUCTURE")) {
     std::vector<std::string> structures(taskContext.size("STRUCTURE"));
     taskContext.get<>("STRUCTURE", structures);
-    size_t index = 0;
     for (std::string &struc : structures) {
       auto reader = StructureReaderSelector::getReader(struc);
       reader->read(struc);
       Structure s = reader->getStructure();
       stdb.add(s);
-      // generate full list of indices as structure excludes INDEX key
-      indicesStr.push_back(core::to_string(index++)+",");
+      // Every -s structure is written (STRUCTURE excludes INDEX): its
+      // 1-based place in stdb, after any DBFILE structures.
+      indicesStr.push_back(core::to_string(stdb.size())+",");
     }
   }
   std::vector<size_t> indices =  core::parse_indices(indicesStr);

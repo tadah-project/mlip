@@ -27,10 +27,35 @@ namespace mlip {
  * - eV for energy
  * - Ångström for distance
  * - eV/Å for force
- * - eV/Å³ for pressure (converted from GPa)
+ * - eV/Å³ for the stress (converted from GPa), the Cauchy stress as
+ *   CASTEP prints it (positive under tension)
  * - ps for time
  * 
- * If there is no stress tensor, it is set to zero.
+ * Each run of the file starts at its 'type of calculation' line, which
+ * gives the run type (single point energy, band structure, geometry
+ * optimization, molecular dynamics; any other run stores nothing) and
+ * resets the parser's state.
+ *
+ * Each structure takes the results of the last SCF on the last geometry
+ * printed before them: its energy, its forces and its stress. The energy is
+ * the one the forces and the stress are the gradient of: the 'Final free
+ * energy (E-TS)'; the 'Final energy =' of a fixed-occupancy run, which
+ * prints no free energy; with a dispersion correction (DFT-D, SEDC), the
+ * 'Dispersion corrected final free energy*', or F plus the correction, or
+ * (fixed occupancy) the 'Dispersion corrected final energy*'; for an MD
+ * step, the MD Data 'Potential Energy:' (step 0 included when the finite
+ * basis correction is on). 'Constrained' stress and forces blocks (the
+ * projections a constrained optimisation uses) are skipped.
+ *
+ * A structure without an energy of its own is refused (std::runtime_error
+ * naming the file); a band-structure step without an SCF (a continuation)
+ * is skipped with a WARNING. A structure without a stress tensor of its own
+ * is stored with zero stress and stress weight 0 (sweight), and one without
+ * forces with zero forces and force weight 0 (fweight), so that a fit
+ * ignores them (one INFO line each per file). The stress and forces printed
+ * for a geometry optimisation's final configuration, or after ' Finished
+ * MD', go to the last stored step when that has the same geometry and none
+ * of its own.
  *
  * Example usage:
  * @code

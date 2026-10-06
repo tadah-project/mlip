@@ -114,15 +114,20 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     for (auto &stdb : inStdbs) {
       for (auto &s: stdb) {
         if (!indicesBool[currentIndex++]) continue;
+        // A weight of 0 marks a quantity the structure has no data for (the
+        // DFT readers write it for a structure without forces or stress) or
+        // that is excluded: rescaling keeps it 0.
         // ENERGY WEIGHT (threshold is per atom)
-        if (std::fabs(s.energy) / s.natoms() < thresholdVec[0]) {
-          s.eweight = 1.0;
-        } else {
-          s.eweight = 1.0 / std::fabs(s.energy);
+        if (s.eweight != 0.0) {
+          if (std::fabs(s.energy) / s.natoms() < thresholdVec[0]) {
+            s.eweight = 1.0;
+          } else {
+            s.eweight = 1.0 / std::fabs(s.energy);
+          }
         }
 
         // FORCE WEIGHT
-        if (force) {
+        if (force && s.fweight != 0.0) {
           double fweight = 0.0;
           for (auto &atom : s) {
             double fnorm = atom.force.norm();
@@ -137,7 +142,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
         }
 
         // STRESS WEIGHT
-        if (stress) {
+        if (stress && s.sweight != 0.0) {
           double sweight = s.stress.norm();
           if (std::fabs(sweight) < thresholdVec[stressIdx]) {
             s.sweight = 1.0;

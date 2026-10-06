@@ -2,10 +2,15 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/dataset_readers/vasp_outcar_reader.h>
+#include <tadah/mlip/dataset_readers/missing_stress.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <numeric>
+#include <sstream>
 #include <stdexcept>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -17,6 +22,7 @@ VaspOutcarReader::VaspOutcarReader(StructureDB& db, const std::string& filename)
 }
 
 void VaspOutcarReader::read_data(const std::string& filename) {
+  filename_ = filename;
   std::ifstream file(filename);
   if (!file.is_open()) {
     throw std::runtime_error("Could not open the file: " + filename);
@@ -38,12 +44,35 @@ void VaspOutcarReader::parse_data() {
   std::vector<size_t> natom_types;
 
   size_t natoms;;
-  bool stress_tensor_bool = false;
   bool complete_structure = false;
   bool is_md = false;
 
   Structure s;
-  size_t counter=0;
+  // Ionic steps, counted where they end: an MD step at its EKIN_LAT line,
+  // a relaxation step at its free-energy line. The label numbers them.
+  size_t ionic_step = 0;
+  bool have_energy = false;  // this step's first-principles free energy
+  bool have_stress = false;  // this step's 'in kB' line
+  size_t stored = 0, without_stress = 0;
+
+  // Steps of VASP's machine-learned force field (ML_MODE = train/run) are
+  // not first-principles data. Their blocks are marked 'ML' ('ML FORCE on
+  // cell', 'TOTAL-FORCE (eV/Angst) (ML)', 'free  energy ML TOTEN'); they are
+  // never read, and the steps are skipped with one warning at the end.
+  bool ml_in_step = false;
+  bool ml_stress_block = false;  // the next 'in kB' line is an ML one
+  std::vector<size_t> skipped_ml_steps;
+
+  // Starts the next step from scratch; the label so far (the file name,
+  // set from the header for the first structure) is kept.
+  auto discard_step = [&]() {
+    const std::string label = s.label;
+    s = Structure();
+    s.label = label;
+    have_energy = false;
+    have_stress = false;
+    ml_in_step = false;
+  };
 
   while (std::getline(stream, line)) {
     if (line.find("molecular dynamics") != std::string::npos) {
@@ -106,19 +135,37 @@ void VaspOutcarReader::parse_data() {
 
     }
 
+    else if (line.find("FORCE on cell") != std::string::npos) {
+      ml_stress_block = line.find("ML FORCE on cell") != std::string::npos;
+      if (ml_stress_block) ml_in_step = true;
+    }
+
+    else if (line.find("in kB") != std::string::npos && ml_stress_block) {
+      ml_stress_block = false;
+    }
+
     else if (line.find("in kB") != std::string::npos) {
-      stress_tensor_bool = true;
       std::vector<double> row(6); // xx yy zz xy yz zx
       std::istringstream iss(line);
       std::string tmp;
       if (!(iss >> tmp >> tmp >> row[0] >> row[1] >> row[2] >> row[3] >> row[4] >> row[5])) {
-        std::cerr << "Warning: Unexpected end of data when reading stress tensor" << std::endl;
+        // An unreadable tensor (e.g. VASP's '*****' overflow) is no stress.
+        std::cerr << "Warning: VASP OUTCAR " << filename_
+                  << ": the stress line '" << line
+                  << "' cannot be read; the step is stored without stress"
+                  << std::endl;
+        s.stress.set_zero();
+        have_stress = false;
       } else {
+        have_stress = true;
         s.stress(0,0) = row[0], s.stress(1,1) = row[1], s.stress(2,2) = row[2];
         s.stress(0,1) = s.stress(1,0) = row[3]; // xy
         s.stress(1,2) = s.stress(2,1) = row[4]; // yz
         s.stress(0,2) = s.stress(2,0) = row[5]; // zx
-        s.stress *= s_conv;
+        // VASP prints the pressure-signed tensor (positive under
+        // compression); Tadah stores the Cauchy stress, positive under
+        // tension: negate, and convert kB to eV/A^3.
+        s.stress *= -s_conv;
       }
     }
 
@@ -135,6 +182,11 @@ void VaspOutcarReader::parse_data() {
           break;
         }
       }
+    }
+
+    else if (line.find("TOTAL-FORCE") != std::string::npos &&
+             line.find("ML") != std::string::npos) {
+      ml_in_step = true;
     }
 
     else if (line.find("TOTAL-FORCE (eV/Angst)") != std::string::npos) {
@@ -168,15 +220,30 @@ void VaspOutcarReader::parse_data() {
 
     }
 
-    else if (line.find("entropy=") != std::string::npos) {
+    // The free energy F (TOTEN) of the ionic step, the energy whose
+    // gradient the forces and the stress are. The ionic-step line has two
+    // spaces between the words ('free  energy   TOTEN'), the per-SCF lines
+    // one ('free energy    TOTEN'). A relaxation's structure is complete
+    // here; an MD step's at its EKIN_LAT line.
+    else if (line.find("free  energy   TOTEN  =") != std::string::npos) {
       std::istringstream iss(line);
       std::string tmp;
-      if (!(iss >> tmp >> tmp >> tmp >> s.energy)) {
-        std::cerr << "Warning: Unexpected end of data when reading total energy" << std::endl;
+      if (!(iss >> tmp >> tmp >> tmp >> tmp >> s.energy)) {
+        std::cerr << "Warning: Unexpected end of data when reading the free energy" << std::endl;
       }
-      else if (!is_md) {
-        complete_structure = true;
-        s.label += "Structure " + std::to_string(++counter);
+      else {
+        have_energy = true;
+        if (!is_md) {
+          complete_structure = true;
+          s.label += "Structure " + std::to_string(++ionic_step);
+        }
+      }
+    }
+    else if (line.find("free  energy ML TOTEN") != std::string::npos) {
+      ml_in_step = true;
+      if (!is_md) {  // a relaxation step of the force field ends here
+        skipped_ml_steps.push_back(++ionic_step);
+        discard_step();
       }
     }
     else if (line.find("EKIN_LAT=") != std::string::npos) {
@@ -185,22 +252,66 @@ void VaspOutcarReader::parse_data() {
       if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.T)) {
         std::cerr << "Warning: Unexpected end of data when reading temperature" << std::endl;
       }
-      else {
+      else if (have_energy) {
         complete_structure = true;
-        s.label += "Structure " + std::to_string(++counter);
+        s.label += "Structure " + std::to_string(++ionic_step);
+      }
+      else if (ml_in_step) {
+        skipped_ml_steps.push_back(++ionic_step);
+        discard_step();
+      }
+      else {
+        throw std::runtime_error(
+            "VASP OUTCAR " + filename_ + ": ionic step " +
+            std::to_string(ionic_step + 1) +
+            " has no 'free  energy   TOTEN' line before its EKIN_LAT line "
+            "(an incomplete step, or one this reader does not recognise)");
       }
     }
 
     if (complete_structure) {
+      // A step without a stress tensor: zero stress and stress weight 0,
+      // so that a STRESS fit ignores it.
+      if (!have_stress) {
+        s.stress.set_zero();
+        s.sweight = 0.0;
+        ++without_stress;
+      }
       stdb.add(s);
+      ++stored;
       complete_structure = false;
       s = Structure();
+      have_energy = false;
+      have_stress = false;
+      ml_in_step = false;
     }
 
   }
 
-  if (!stress_tensor_bool) {
-    for (auto &s : stdb) s.stress.set_zero();
+  // An MD run cut off after a step's free energy, before its EKIN_LAT line.
+  if (is_md && have_energy) {
+    std::cerr << "WARNING: VASP OUTCAR " << filename_ << ": ionic step "
+              << ionic_step + 1
+              << ", the last, has no EKIN_LAT line (the file ends inside it) "
+                 "and was skipped; "
+              << stored << " structure(s) read." << std::endl;
+  }
+  log_missing_stress("VASP OUTCAR " + filename_, without_stress, stored);
+
+  if (!skipped_ml_steps.empty()) {
+    const size_t shown = std::min<size_t>(skipped_ml_steps.size(), 10);
+    std::ostringstream steps;
+    for (size_t i = 0; i < shown; ++i)
+      steps << (i ? ", " : "") << skipped_ml_steps[i];
+    if (shown < skipped_ml_steps.size()) steps << ", ...";
+    const bool one = skipped_ml_steps.size() == 1;
+    std::cerr << "WARNING: VASP OUTCAR " << filename_ << ": "
+              << (one ? "ionic step " : "ionic steps ") << steps.str();
+    if (!one) std::cerr << " (" << skipped_ml_steps.size() << " steps)";
+    std::cerr << (one ? " was" : " were")
+              << " computed by VASP's machine-learned force field (marked ML) "
+                 "and skipped: only first-principles steps are stored."
+              << std::endl;
   }
 }
 
