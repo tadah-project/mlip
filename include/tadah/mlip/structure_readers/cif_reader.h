@@ -19,10 +19,13 @@ namespace mlip {
  * it comes from the Hall symbol, the H-M symbol (_space_group_name_H-M_alt
  * or _symmetry_space_group_name_H-M) or the space-group number
  * (_space_group_IT_number or _symmetry_Int_Tables_number), in that order,
- * in the setting that fits the cell angles (hexagonal or rhombohedral
- * axes) with origin choice 2 where the group has two; a number that has
- * more than one setting gives a WARNING naming the one used. A CIF with no
- * symmetry record is P 1. Every site of the unit cell
+ * in the standard setting (hexagonal or rhombohedral axes from the cell
+ * angles, origin choice 2 where the group has two; ICSD's ' S' and ' Z'
+ * suffixes of the H-M symbol name origin choice 1 and 2). A symbol that
+ * names no known group is refused; a number is used only without a
+ * symbol, a monoclinic one only for a cell with unique axis b (alpha =
+ * gamma = 90), and a number that has more than one setting gives a
+ * WARNING naming the one used. A CIF with no symmetry record is P 1. Every site of the unit cell
  * (get_all_unit_cell_sites) becomes an atom at its Cartesian position;
  * gemmi merges the images of one site within 0.4 A, never two _atom_site
  * rows.

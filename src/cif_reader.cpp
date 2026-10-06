@@ -87,7 +87,25 @@ void CifReader::parseCif(const std::string &fileContents,
   // rhombohedral axes from the cell angles), then the number; no record at
   // all stays P 1.
   if (struc.symops.empty()) {
+    // ICSD writes the origin choice as a suffix of the H-M symbol, ' S'
+    // (origin choice 1) or ' Z' (origin choice 2), which gemmi does not read.
+    std::string &hm = struc.spacegroup_hm;
+    while (!hm.empty() && hm.back() == ' ') hm.pop_back();
+    if (hm.size() > 2 && hm[hm.size() - 2] == ' ' &&
+        (hm.back() == 'S' || hm.back() == 'Z'))
+      hm = hm.substr(0, hm.size() - 2) + (hm.back() == 'S' ? ":1" : ":2");
     struc.determine_and_set_spacegroup("H2");
+    // A symbol that names no group gemmi knows is refused: its setting
+    // cannot be told (the number alone would be a guess).
+    if (struc.spacegroup == nullptr &&
+        (!struc.spacegroup_hm.empty() || !struc.spacegroup_hall.empty()))
+      throw std::runtime_error(
+          source + ": the space-group symbol '" +
+          (struc.spacegroup_hm.empty() ? struc.spacegroup_hall
+                                       : struc.spacegroup_hm) +
+          "' names no space group gemmi knows; give it in a standard form "
+          "(e.g. 'F d -3 m:2' or 'F d -3 m Z' for origin choice 2), or the "
+          "symmetry-operator loop.");
     if (struc.spacegroup == nullptr && struc.spacegroup_number > 0) {
       // gemmi's own number lookup takes the first tabulated setting,
       // whatever the cell (R -3 m:H for a rhombohedral cell, F d -3 m:1):
@@ -95,6 +113,22 @@ void CifReader::parseCif(const std::string &fileContents,
       const gemmi::SpaceGroup *by_number =
           gemmi::find_spacegroup_by_number(struc.spacegroup_number);
       if (by_number) {
+        // A monoclinic number gives the standard setting, unique axis b;
+        // a cell with another unique axis is not that setting.
+        const int n = by_number->number;
+        if (n >= 3 && n <= 15 &&
+            (std::fabs(struc.cell.alpha - 90.0) > 1e-6 ||
+             std::fabs(struc.cell.gamma - 90.0) > 1e-6)) {
+          std::ostringstream msg;
+          msg << source << ": the space group is given only by its number ("
+              << struc.spacegroup_number << "), a monoclinic group, and the "
+              << "cell (alpha " << struc.cell.alpha << ", beta "
+              << struc.cell.beta << ", gamma " << struc.cell.gamma
+              << ") is not in its standard setting, unique axis b (alpha = "
+                 "gamma = 90); give the H-M symbol or the symmetry-operator "
+                 "loop.";
+          throw std::runtime_error(msg.str());
+        }
         const gemmi::SpaceGroup *sg = gemmi::find_spacegroup_by_name(
             by_number->hm, struc.cell.alpha, struc.cell.gamma, "2");
         struc.spacegroup = sg ? sg : by_number;
@@ -109,8 +143,9 @@ void CifReader::parseCif(const std::string &fileContents,
                     << "), which has more than one setting; the unit cell "
                        "is built with space group "
                     << struc.spacegroup->xhm()
-                    << ", the one that fits the cell angles (origin choice "
-                       "2 where the group has two)."
+                    << ", its standard setting (hexagonal or rhombohedral "
+                       "axes from the cell angles, origin choice 2 where the "
+                       "group has two)."
                     << std::endl;
       }
     }
