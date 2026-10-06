@@ -319,7 +319,9 @@ TEST_CASE("compute_data_stats counts a pair of coincident atoms, so r_min "
 
   Context c = make_ctx_with_rcut(6.0);
   DataStats d;
-  REQUIRE_NOTHROW(d = compute_data_stats(stdb, c, false));
+  // The audit's opt-in (dataset_stats); without it the pair is refused, as
+  // by suggest_bounds and check_bounds (their tests).
+  REQUIRE_NOTHROW(d = compute_data_stats(stdb, c, false, 0, /*list_coincident=*/true));
   REQUIRE(d.n_atoms == 3);
   REQUIRE(d.per_pair.size() == 1);
   INFO("r_min " << d.per_pair[0].r_min << ", n_pairs "

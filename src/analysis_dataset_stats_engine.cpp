@@ -1,3 +1,4 @@
+#include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/engines/analysis_dataset_stats_engine.h>
 
 #include <algorithm>
@@ -31,7 +32,7 @@ namespace {
 std::optional<double> close_contact(const tadah::core::Context& ctx) {
   if (!ctx.has_stored("CLOSE_CONTACT")) return std::nullopt;
   const double cc = ctx.get<double>("CLOSE_CONTACT");
-  if (!std::isfinite(cc) || !(cc > 0.0))
+  if (!detail::is_finite_bits(cc) || !(cc > 0.0))
     throw std::invalid_argument(
         "analysis dataset_stats: CLOSE_CONTACT (--close-contact) must be a "
         "finite distance greater than 0 (Angstrom), got " +
@@ -95,7 +96,10 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
         "audit cutoff is well-defined.");
   }
 
-  auto stats = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false);
+  // The audit of the data: two atoms at one position are a pair at
+  // distance 0 (r_min 0), listed rather than refused.
+  auto stats = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false,
+                                  /*sample_size=*/0, /*list_coincident=*/true);
 
   // Pairs closer than CLOSE_CONTACT, from the lists compute_data_stats built
   // at RCUTMAX; a CLOSE_CONTACT beyond RCUTMAX is answered from lists out to

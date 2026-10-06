@@ -224,6 +224,10 @@ CheckBoundsResult check_bounds_at_corners(
   tadah::core::stats::DataStats data;
   try {
     data = compute_data_stats(stdb, stats_ctx, /*with_descriptor_stats=*/false);
+  } catch (const std::invalid_argument&) {
+    // The data cannot be used (two atoms at one position, a singular
+    // cell, ...): refused, as by training and HPO, not audited around.
+    throw;
   } catch (const std::exception& e) {
     tadah::core::Logger::instance().log(
         tadah::core::LogLevel::WARNING,

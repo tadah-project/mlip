@@ -28,14 +28,16 @@ namespace mlip {
  *  in the scan if its NN list is missing or was built for a cutoff below
  *  RCUTMAX (idempotent if NNs already populated). Hence stdb is non-const.
  *
- *  The lists are built with NNFinder::list_coincident(true): this is the
- *  audit of a dataset, so it shows what training, prediction and HPO
- *  refuse. Two atoms at one position (also through a periodic image) are
- *  a pair at distance 0, counted like any other pair strictly inside
- *  RCUTMAX (in n_pairs, the neighbour counts and the distance
- *  statistics), so per_pair r_min is 0 for such a structure. A list built
- *  here stays in `st.nn` and holds that pair: descriptors must not be
- *  computed from it (they divide by the distance).
+ *  Two atoms at one position (also through a periodic image) are refused,
+ *  as by training, prediction and HPO (NNFinder; the message names the
+ *  structure). With `list_coincident` true (tadah analysis dataset_stats,
+ *  the audit of a dataset) the lists are built with
+ *  NNFinder::list_coincident(true) instead: such atoms are a pair at
+ *  distance 0, counted like any other pair strictly inside RCUTMAX (in
+ *  n_pairs, the neighbour counts and the distance statistics), so per_pair
+ *  r_min is 0 for such a structure. A list built so stays in `st.nn` and
+ *  holds that pair: descriptors must not be computed from it (they divide
+ *  by the distance).
  *
  *  RCUTMAX is read from `ctx`. The caller is responsible for setting
  *  it (the standard CoreUserConfigParser path does this automatically
@@ -61,7 +63,8 @@ tadah::core::stats::DataStats
 compute_data_stats(StructureDB& stdb,
                    tadah::core::Context& ctx,
                    bool with_descriptor_stats = false,
-                   std::size_t sample_size = 0);
+                   std::size_t sample_size = 0,
+                   bool list_coincident = false);
 
 /** \brief A pair of atoms closer than a threshold (find_close_contacts). */
 struct CloseContact {

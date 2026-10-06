@@ -1,3 +1,4 @@
+#include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/data_stats_compute.h>
 
 #include <algorithm>
@@ -56,7 +57,8 @@ std::vector<double> linspace(double lo, double hi, std::size_t n) {
 DataStats compute_data_stats(StructureDB& stdb,
                              tadah::core::Context& ctx,
                              bool /*with_descriptor_stats*/,
-                             std::size_t sample_size) {
+                             std::size_t sample_size,
+                             bool list_coincident) {
   DataStats out;
 
   if (!ctx.contains("RCUTMAX")) {
@@ -102,10 +104,10 @@ DataStats compute_data_stats(StructureDB& stdb,
   }
   if (!need_nn_idx.empty()) {
     NNFinder nnf;
-    // This is the audit of the data: two atoms at one position are listed
-    // as a pair at distance 0 (counted below, so r_min is 0), not refused
-    // as training, prediction and HPO refuse them.
-    nnf.list_coincident(true);
+    // For the audit of the data (dataset_stats) two atoms at one position
+    // are listed as a pair at distance 0 (counted below, so r_min is 0);
+    // every other caller refuses them, as training, prediction and HPO do.
+    nnf.list_coincident(list_coincident);
     // An exception may not leave the OpenMP loop: each iteration keeps its
     // own, and the lowest-numbered structure's is rethrown after the loop.
     std::vector<std::exception_ptr> errors(need_nn_idx.size());
@@ -243,7 +245,7 @@ DataStats compute_data_stats(StructureDB& stdb,
 
 std::vector<CloseContact> find_close_contacts(const StructureDB& stdb,
                                               double threshold) {
-  if (!std::isfinite(threshold) || !(threshold > 0.0))
+  if (!detail::is_finite_bits(threshold) || !(threshold > 0.0))
     throw std::invalid_argument(
         "find_close_contacts: the threshold must be a finite distance "
         "greater than 0, got " + core::format_roundtrip(threshold));
