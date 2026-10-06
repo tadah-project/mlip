@@ -38,6 +38,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstring>
+#include <cstdint>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -54,6 +56,15 @@ namespace analytics_grad = tadah::mlip::analytics_grad;
 namespace {
 
 constexpr double kRel = 1e-12;
+
+/* Whether @p v is a NaN, from its bits: the build may use -ffast-math, under
+ * which std::isnan can be folded to false. */
+bool is_nan_bits(double v) {
+  std::uint64_t b;
+  std::memcpy(&b, &v, sizeof b);
+  return (b & UINT64_C(0x7ff0000000000000)) == UINT64_C(0x7ff0000000000000) &&
+         (b & UINT64_C(0x000fffffffffffff)) != 0;
+}
 
 /* The reference: dataset 1 = {A, Bf, Bs}, dataset 2 = {C}. */
 StructureDB reference() {
@@ -253,9 +264,9 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     const auto rsq = a.calc_f_r_sq();
     CHECK(mae(0) == Approx(0.3 / 12).epsilon(kRel));
     CHECK(rmse(0) == Approx(std::sqrt(0.09 / 12)).epsilon(kRel));
-    CHECK(std::isnan(mae(1)));
-    CHECK(std::isnan(rmse(1)));
-    CHECK(std::isnan(rsq(1)));
+    CHECK(is_nan_bits(mae(1)));
+    CHECK(is_nan_bits(rmse(1)));
+    CHECK(is_nan_bits(rsq(1)));
     std::size_t cells_2 = 0;
     CHECK_NOTHROW(analytics_grad::frmse_per_dataset(
         truth, pred, 1.0,
@@ -279,9 +290,9 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     const auto rsq = a.calc_s_r_sq();
     CHECK(mae(0) == Approx(0.01 / 12).epsilon(kRel));
     CHECK(rmse(0) == Approx(std::sqrt(0.0001 / 12)).epsilon(kRel));
-    CHECK(std::isnan(mae(1)));
-    CHECK(std::isnan(rmse(1)));
-    CHECK(std::isnan(rsq(1)));
+    CHECK(is_nan_bits(mae(1)));
+    CHECK(is_nan_bits(rmse(1)));
+    CHECK(is_nan_bits(rsq(1)));
     std::size_t cells_c = 0;
     CHECK_NOTHROW(analytics_grad::srmse(
         truth, pred, 1.0,
