@@ -33,7 +33,8 @@ namespace mlip {
  * 
  * Each run of the file starts at its 'type of calculation' line, which
  * gives the run type (single point energy, band structure, geometry
- * optimization, molecular dynamics; any other run stores nothing) and
+ * optimization, molecular dynamics; any other run, a phonon calculation
+ * say, stores nothing, its finite basis set correction included) and
  * resets the parser's state.
  *
  * Each structure takes the results of the last SCF on the last geometry
@@ -44,8 +45,17 @@ namespace mlip {
  * 'Dispersion corrected final free energy*', or F plus the correction, or
  * (fixed occupancy) the 'Dispersion corrected final energy*'; for an MD
  * step, the MD Data 'Potential Energy:' (step 0 included when the finite
- * basis correction is on). 'Constrained' stress and forces blocks (the
- * projections a constrained optimisation uses) are skipped.
+ * basis correction is on). Only the physical forces and stress are read:
+ * the blocks titled 'Forces', 'Symmetrised Forces', 'Unconstrained Forces',
+ * 'Stress Tensor' and 'Symmetrised Stress Tensor'. Others are skipped: the
+ * 'Constrained' projections a constrained optimisation uses, the per-term
+ * breakdown printed at iprint 2 or more ('Ewald forces', ...) and MD's
+ * 'Finite Temperature Pressure Tensor'.
+ *
+ * An MD step ends at the next step, its '... finished MD iteration' line,
+ * ' Finished MD', the next run or the end of the file, so that a stress
+ * tensor printed after the step's MD Data (CASTEP samples the stress every
+ * few steps) is the step's.
  *
  * A structure without an energy of its own is refused (std::runtime_error
  * naming the file); a band-structure step without an SCF (a continuation)

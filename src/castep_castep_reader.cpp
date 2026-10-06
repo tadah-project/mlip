@@ -1,5 +1,6 @@
 #include "tadah/core/element.h"
 #include "tadah/core/utils.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -222,7 +223,12 @@ void CastepCastepReader::parse_data() {
   std::size_t stored = 0, stored_without_stress = 0, stored_without_forces = 0;
   bool final_configuration = false;
   bool last_has_stress = true, last_has_forces = true;
-  std::string banner;  // the last ' *** <title> ***' line of a forces or stress block
+  std::string banner_title;  // the title of the last ' *** <title> ***' banner
+  // An MD step is complete once its MD Data (potential energy, temperature)
+  // is read; it is stored at the next step boundary, so that a stress block
+  // CASTEP prints after the MD Data (properties sampled every N steps) is
+  // the step's.
+  bool md_step_ready = false;
   tadah::core::Matrix3d last_cell;
   std::vector<Atom> last_atoms;
   auto same_geometry_as_last = [&]() {
@@ -331,6 +337,18 @@ void CastepCastepReader::parse_data() {
   while (std::getline(stream, line)) {
     ++line_counter;
 
+    // The end of an MD step: the next step, its '... finished MD iteration'
+    // line, the end of the run or the next run.
+    if (md_step_ready &&
+        (line.find("finished MD iteration") != std::string::npos ||
+         line.find("Starting MD iteration") != std::string::npos ||
+         line.find("Finished MD") != std::string::npos ||
+         line.find("type of calculation") != std::string::npos)) {
+      finalize_structure();
+      md_step_ready = false;
+      reset_flags(CalcState::Idle);
+    }
+
     // A run starts with its 'type of calculation' line: the run type comes
     // from that line only, and nothing of an earlier run carries over.
     if (line.find("type of calculation") != std::string::npos &&
@@ -396,8 +414,12 @@ void CastepCastepReader::parse_data() {
     // Detect starting of basis set correction calculation (FBSC). In an MD
     // run the correction's SCFs belong to step 0, which is completed at its
     // MD Data lines like every later step.
+    // A run of another type (phonons, spectroscopy, ...) stores nothing,
+    // its correction included.
     if (line.find("Calculating finite basis set correction") != std::string::npos &&
-        !md_task) {
+        (current_state == CalcState::SinglePointEnergy ||
+         current_state == CalcState::BandStructure ||
+         current_state == CalcState::GeometryOptimization)) {
       reset_flags(CalcState::FiniteBasisSetCorrection);
       simLabel.calcState = CalcState::FiniteBasisSetCorrection;
       simLabel.startLine = line_counter;
@@ -518,20 +540,28 @@ void CastepCastepReader::parse_data() {
       geometry_printed = true;
     }
 
-    // The title of the forces or stress block that follows.
-    if (line.rfind(" ***", 0) == 0 &&
-        (line.find("Forces") != std::string::npos ||
-         line.find("Stress Tensor") != std::string::npos)) {
-      banner = line;
+    // The title of every boxed ' *** <title> ***' banner. Only the physical
+    // forces and stress are read: 'Forces', 'Symmetrised Forces',
+    // 'Unconstrained Forces', 'Stress Tensor', 'Symmetrised Stress Tensor'.
+    // Not the projections a constrained optimisation uses ('Constrained
+    // ...'), the per-term breakdown printed at iprint >= 2 ('Ewald forces',
+    // 'Local potential forces', ...) or MD's 'Finite Temperature Pressure
+    // Tensor'.
+    if (line.rfind(" ***", 0) == 0) {
+      std::string title = line;
+      title.erase(std::remove(title.begin(), title.end(), '*'), title.end());
+      title = tadah::core::trim(title);
+      if (!title.empty()) banner_title = title;
     }
-    // A 'Constrained' block (the projection a constrained optimisation
-    // uses, printed after the physical 'Forces', 'Symmetrised Forces',
-    // 'Unconstrained Forces' or '(Symmetrised) Stress Tensor') is not stored.
-    const bool constrained_block = banner.find("Constrained") != std::string::npos;
+    const bool physical_forces = banner_title == "Forces" ||
+                                 banner_title == "Symmetrised Forces" ||
+                                 banner_title == "Unconstrained Forces";
+    const bool physical_stress = banner_title == "Stress Tensor" ||
+                                 banner_title == "Symmetrised Stress Tensor";
 
     // Detect forces block
     if (line.find("Cartesian components (eV/A)") != std::string::npos &&
-        !constrained_block) {
+        physical_forces) {
       if (debug) std::cout << "Reading forces..." << std::endl;
       take_result_geometry();
       // Usually there are three lines of header/blank text before actual force lines
@@ -595,7 +625,7 @@ void CastepCastepReader::parse_data() {
 
     // Detect stress block
     if (line.find("Cartesian components (GPa)") != std::string::npos &&
-        !constrained_block) {
+        physical_stress) {
       if (debug) std::cout << "Reading stress..." << std::endl;
       take_result_geometry();
       jumpNLines(stream, 3);
@@ -622,6 +652,8 @@ void CastepCastepReader::parse_data() {
         simLabel.stressStopLine = line_counter;
         if (row == 2) stress_tensor_found = true;
       }
+      // An MD step's stress printed after its MD Data ends the step's lines.
+      if (md_step_ready) simLabel.stopLine = line_counter;
       if (current_state == CalcState::SinglePointEnergy ||
           (current_state == CalcState::FiniteBasisSetCorrection && !go_task) ||
           current_state == CalcState::BandStructure) {
@@ -765,7 +797,7 @@ void CastepCastepReader::parse_data() {
       }
       simLabel.T = s.T;
       simLabel.stopLine = line_counter;
-      data_block_complete = true;
+      md_step_ready = true;
     }
 
     // If a completed data set is detected, finalize
@@ -774,6 +806,7 @@ void CastepCastepReader::parse_data() {
       reset_flags(CalcState::Idle);
     }
   } // end while getline
+  if (md_step_ready) finalize_structure();  // the file ends after an MD step
   log_missing_stress("CASTEP .castep " + simLabel.filename, stored_without_stress, stored);
   log_missing_forces("CASTEP .castep " + simLabel.filename, stored_without_forces, stored);
 }

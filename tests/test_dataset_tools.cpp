@@ -14,6 +14,7 @@
 //
 // Every expected value is written out by hand below.
 
+#include "tadah_test_skip.hpp"
 #include "catch2/catch.hpp"
 
 #include "tadah/core/periodic_table.h"
@@ -30,6 +31,7 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -625,4 +627,147 @@ TEST_CASE("StructureDB: whitespace-only lines and CRLF blank lines separate stru
       CHECK(db(k).cell(0, 0) == want(k).cell(0, 0));
     }
   }
+}
+
+/* Pins: writing a dataset or a structure to a file that cannot be opened
+ * throws std::runtime_error naming the file (a missing directory), for
+ * StructureDB::dump_to_file and Structure::dump_to_file.
+ * Before the fix: both printed 'Error: Could not open file for writing' and
+ * returned, so every data command reported success. */
+TEST_CASE("StructureDB/Structure::dump_to_file: an unwritable file is refused",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("dump_unwritable");
+  StructureDB db;
+  db.add(tmp.write("good.tadah", dataset_with("-11.4", "-11.4")));
+  REQUIRE(db.size() == 2);
+  const std::string path = (tmp.dir / "missing" / "out.tadah").string();
+  try {
+    db.dump_to_file(path, false);
+    FAIL("no exception from StructureDB::dump_to_file");
+  } catch (const std::runtime_error &e) {
+    CHECK_THAT(e.what(), Catch::Contains(path));
+  }
+  try {
+    db(0).dump_to_file(path);
+    FAIL("no exception from Structure::dump_to_file");
+  } catch (const std::runtime_error &e) {
+    CHECK_THAT(e.what(), Catch::Contains(path));
+  }
+}
+
+/* Pins: the scanners that read a dataset without loading it treat a
+ * whitespace-only line, a CRLF blank line and extra blank lines as
+ * Structure::read does: for the two-structure dataset written with a
+ * separator line of spaces, with
+ * CRLF line endings and with two blank lines,
+ * StructureDB::find_unique_elements gives {Ta} (what tadah train and HPO
+ * read first), StructureDB::count gives 2 structures and 4 atoms, and
+ * StructureDB::add(file, 1) reads the second structure, S2.
+ * Before the fix: find_unique_elements stopped only at an empty line, so a
+ * separator of spaces or a CRLF blank line was read as an atom line
+ * ('Unknown symbol: S2'); count and add(file, first) (through
+ * Structure::next_structure, which also stopped at '\r') read a separator
+ * of spaces as an atom line, merging the two structures, and an extra blank
+ * line ended the count. */
+TEST_CASE("StructureDB: the scanners accept whitespace-only, CRLF and extra blank lines",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_scan_blank");
+  const std::string plain = dataset_with("-11.4", "-11.4");
+  const std::string sep = "Ta 1.65 1.65 1.65 0 0 0\n\n";
+  const auto p = plain.find(sep);
+  REQUIRE(p != std::string::npos);
+  const std::string head = plain.substr(0, p + sep.size() - 1);
+  const std::string tail = plain.substr(p + sep.size());
+  auto crlf = [](const std::string &t) {
+    std::string out;
+    for (char c : t) {
+      if (c == '\n') out += '\r';
+      out += c;
+    }
+    return out;
+  };
+  const std::vector<std::pair<std::string, std::string>> variants = {
+      {"spaces", head + "   \n" + tail},
+      {"CRLF", crlf(plain)},
+      {"two blank lines", head + "\n\n" + tail}};
+  int n = 0;
+  for (const auto &v : variants) {
+    INFO(v.first);
+    const std::string path = tmp.write("s" + std::to_string(++n) + ".tadah", v.second);
+    std::set<tadah::core::Element> elements;
+    REQUIRE_NOTHROW(elements = StructureDB::find_unique_elements(path));
+    CHECK(elements.size() == 1);
+    CHECK(elements.count(PeriodicTable::find_by_symbol("Ta")) == 1);
+    const auto counted = StructureDB::count(path);
+    CHECK(counted.first == 2);
+    CHECK(counted.second == 4);
+    StructureDB second;
+    second.add(path, 1, 1);
+    REQUIRE(second.size() == 1);
+    CHECK(second(0).label.rfind("S2", 0) == 0);
+  }
+}
+
+/* Pins: StructureDB::add(file, first, N) returns the number of structures it
+ * loaded, as documented: on the two-structure dataset, add(file, 1, 1) gives
+ * 1, and add(file, 0, 5) (N larger than the dataset) gives 2, with the file
+ * written without a trailing blank line and with two blank lines between the
+ * structures.
+ * Before the fix: it returned one less after a structure that ended the file
+ * (0 and 1) and counted a blank line as a structure (3). */
+TEST_CASE("StructureDB::add(file, first, N) returns the number of structures it loaded",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_add_count");
+  const std::string plain = dataset_with("-11.4", "-11.4");
+  const std::string sep = "Ta 1.65 1.65 1.65 0 0 0\n\n";
+  const auto p = plain.find(sep);
+  REQUIRE(p != std::string::npos);
+  REQUIRE(plain.substr(plain.size() - 2) == "\n\n");
+  const std::string no_trailing = tmp.write("no_trailing.tadah", plain.substr(0, plain.size() - 1));
+  const std::string two_blank = tmp.write(
+      "two_blank.tadah", plain.substr(0, p + sep.size()) + "\n" + plain.substr(p + sep.size()));
+  for (const auto &path : {no_trailing, two_blank}) {
+    INFO(path);
+    StructureDB second;
+    CHECK(second.add(path, 1, 1) == 1);
+    CHECK(second.size() == 1);
+    StructureDB all;
+    CHECK(all.add(path, 0, 5) == 2);
+    CHECK(all.size() == 2);
+  }
+}
+
+/* Pins: StructureDB::find_unique_elements (what tadah train and tadah hpo
+ * read first) takes the whole first field of an atom line as the symbol, as
+ * Structure::read does: a dataset with the atom line 'Tab 0 0 0 0.1 0 0' is
+ * refused, naming 'Tab'.
+ * Before the fix: it read two characters, so 'Tab' was taken as Ta. */
+TEST_CASE("StructureDB::find_unique_elements reads the whole element field",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_scan_symbol");
+  const std::string path =
+      tmp.write("tab.tadah", dataset_with("Ta 0 0 0 0.1 0 0", "Tab 0 0 0 0.1 0 0"));
+  CHECK_THROWS_WITH(StructureDB::find_unique_elements(path), Contains("Tab"));
+}
+
+/* Pins: a write that fails after the file opened (a full device: /dev/full
+ * gives ENOSPC) is refused too, naming the file, for both dump_to_file (the
+ * check after close() that 22158ff added had no test). Skipped where
+ * /dev/full does not exist. */
+TEST_CASE("StructureDB/Structure::dump_to_file: a failed write is refused",
+          "[dataset_tools][structure_db]") {
+  if (!fs::exists("/dev/full")) TADAH_SKIP("/dev/full does not exist here");
+  PeriodicTable::initialize();
+  ScratchDir tmp("dump_full");
+  StructureDB db;
+  db.add(tmp.write("good.tadah", dataset_with("-11.4", "-11.4")));
+  REQUIRE(db.size() == 2);
+  CHECK_THROWS_WITH(db.dump_to_file("/dev/full", false),
+                    Catch::Contains("/dev/full") && Catch::Contains("write"));
+  CHECK_THROWS_WITH(db(0).dump_to_file("/dev/full"),
+                    Catch::Contains("/dev/full") && Catch::Contains("write"));
 }

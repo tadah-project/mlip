@@ -8,10 +8,8 @@ CastepCellWriter::CastepCellWriter(StructureDB& db) : StructureWriter(db) {}
 
 void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
 
-  if (i >= stdb.size()) {
-    throw std::out_of_range("Index i is out of range.");
-  }
-    
+  check(i);
+
   std::ofstream file(outFile);
   if (!file.is_open()) {
     throw std::runtime_error("Could not open the file: " + outFile);
@@ -52,6 +50,8 @@ void CastepCellWriter::write_data(const std::string& outFile, const size_t i) {
   }
   file << "%ENDBLOCK POSITIONS_ABS" << std::endl;
   file.close();
+  // A write can fail after the file opened (a full disk).
+  if (file.fail()) throw std::runtime_error("Could not write the file: " + outFile);
 }
 } // namespace mlip
 } // namespace tadah

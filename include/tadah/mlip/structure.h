@@ -318,6 +318,8 @@ struct Structure {
   // move iterator forward to the next structure
   // return number of atoms in the structure
   // return 0 if there is no more structures
+  // Blank lines (whitespace only, '\r' included) before a label are
+  // skipped, and a blank line ends the atoms, as in read().
   static int next_structure(std::ifstream &ifs);
 
   /* clearing == drop the shared pointer */
@@ -336,7 +338,9 @@ struct Structure {
    */
   void dump_to_file(std::ostream &file, size_t prec=18) const;
 
-  /** Method to dump class content to a file (appends; see above) */
+  /** Method to dump class content to a file (appends; see above).
+   * @throws std::runtime_error naming the file when it cannot be opened or
+   *         written. */
   void dump_to_file(const std::string& filepath, size_t prec=18) const;
 
   /** List of chemical elements in this structure. */

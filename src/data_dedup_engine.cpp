@@ -1,5 +1,6 @@
 #include <tadah/core/logger.h>
 #include <tadah/mlip/engines/data_dedup_engine.h>
+#include <tadah/mlip/output/writable_outputs.h>
 #include <tadah/mlip/structure_db.h>
 
 
@@ -127,6 +128,7 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     newTotal += inStdbs[i].size();
   }
 
+  require_writable_outputs(outFiles, "tadah data dedup");
   if (merge) {
     StructureDB stdb;
     for (const auto& _stdb : inStdbs) stdb.add(_stdb);

@@ -26,6 +26,9 @@ public:
 
   virtual void write_data(const std::string& filename, const size_t i) override;
 
+  /** The index, and a singular cell (coplanar or zero lattice vectors). */
+  virtual void check(const size_t i) const override;
+
 };
 
 } // namespace mlip

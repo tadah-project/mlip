@@ -61,9 +61,9 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
     Structure::next_structure(ifs);
   }
 
-  int count=0;
+  // N structures, blank lines between them not counted.
   size_t read = 0;
-  while (count++<N) {
+  while (N > 0 && read < static_cast<size_t>(N)) {
     structures.push_back(Structure());
     int t;
     try {
@@ -86,7 +86,7 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
   }
   ifs.close();
 
-  return --count;
+  return static_cast<int>(read);
 }
 
 void StructureDB::add(const Structure &s) {
@@ -160,8 +160,10 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
-  char symbol[3];
   while (std::getline(ifs, line)) {
+    // Blank lines before a label are skipped (a line of only whitespace,
+    // '\r' included, is blank, as in Structure::read).
+    if (tadah::core::is_blank_line(line)) continue;
     // the second line could be energy or
     // a scalling factors eweight fweight sweight
     std::getline(ifs,line);  
@@ -176,8 +178,10 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
       std::getline(ifs,line);
 
     while (std::getline(ifs, line)) {
-      if(line.empty()) break;
-      sscanf(line.c_str(), "%2s", symbol);
+      if (tadah::core::is_blank_line(line)) break;
+      std::istringstream atom(line);
+      std::string symbol;
+      atom >> symbol;
       s.insert(tadah::core::PeriodicTable::find_by_symbol(symbol));
     }
 
@@ -313,14 +317,14 @@ void StructureDB::dump_to_file(const std::string& filepath, bool append, size_t 
     }
 
     std::ofstream file(filepath, mode);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-        return;
-    }
+    if (!file.is_open())
+        throw std::runtime_error("Could not open file for writing: " + filepath);
     for (const auto &s : structures) {
         s.dump_to_file(file, prec);  
     }
     file.close();
+    if (file.fail())
+        throw std::runtime_error("Could not write the file: " + filepath);
 }
 
 namespace {

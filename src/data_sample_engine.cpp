@@ -1,13 +1,21 @@
 #include <tadah/core/logger.h>
+#include <tadah/core/utils.h>
 #include <tadah/mlip/engines/data_sample_engine.h>
 #include <tadah/mlip/structure_db.h>
 
 
+#include <algorithm>
 #include <iostream>
+#include <numeric>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace tadah {
 namespace mlip {
 namespace engines {
+
 
 int DataSampleEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
@@ -23,22 +31,22 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
 
   StructureDB outStdb;
   if (taskContext.contains("UNIFORM")) {
-    size_t every = taskContext.get<size_t>("UNIFORM");
-    for (size_t j=0; j < inStdb.size(); ++j) {
-      if (!(j++ % every)) outStdb.add(inStdb(j));
-    }
+    // Every N-th structure, from the first (validate() refuses N = 0).
+    const size_t every = taskContext.get<size_t>("UNIFORM");
+    for (size_t j = 0; j < inStdb.size(); j += every) outStdb.add(inStdb(j));
   }
   else if (taskContext.contains("RANDOM")) {
-    size_t N = taskContext.get<size_t>("RANDOM");
-    indices.resize(N);
-    std::iota(indices.begin(), indices.end(), 0);
+    // N distinct structures, each with the same chance, written in their
+    // dataset order: the first N of a random permutation of all of them.
+    const size_t N = taskContext.get<size_t>("RANDOM");
+    std::vector<size_t> all(inStdb.size());
+    std::iota(all.begin(), all.end(), 0);
     std::random_device rd;
     std::mt19937 g(rd());
-    std::shuffle(indices.begin(), indices.end(), g);
-    for (size_t i : indices) {
-      outStdb.add(inStdb(i));
-      if (outStdb.size() >= N) break;
-    }
+    std::shuffle(all.begin(), all.end(), g);
+    all.resize(N);
+    std::sort(all.begin(), all.end());
+    for (size_t i : all) outStdb.add(inStdb(i));
   }
   else if (taskContext.contains("INDEX")) {
     if (!isIndexParsed) parseIndices(taskContext);
@@ -53,11 +61,6 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       outStdb.summary());
 
-  return 0;
-
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataSampleEngine finished.");
-
   resetState();
   return EXIT_SUCCESS;
 }
@@ -68,29 +71,46 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
 
   if (!areDataLoaded) loadInput(taskContext);
 
+  // Exactly one selection: the command line excludes the others, and a
+  // task file must too (run() would apply only the first).
+  std::vector<std::string> given;
+  for (const char *key : {"UNIFORM", "RANDOM", "INDEX"})
+    if (taskContext.has_stored(key)) given.push_back(key);
+  if (given.empty())
+    throw std::runtime_error(
+        "tadah data sample: say what to sample: --uniform N (every N-th "
+        "structure), --random N (N structures at random) or --index "
+        "<indices> (UNIFORM, RANDOM or INDEX in a task file)");
+  if (given.size() > 1)
+    throw std::runtime_error("tadah data sample: give one of UNIFORM, RANDOM "
+                             "and INDEX, not " +
+                             given[0] + " and " + given[1]);
+
+  const size_t total = inStdb.size();
+  const std::string structures = std::to_string(total) + " structures";
   if (taskContext.contains("UNIFORM")) {
-    size_t N = taskContext.get<size_t>("UNIFORM");
-    size_t total = inStdb.size();
-    if (N>total) throw std::runtime_error(
-        "Selected number is larger than total number of configurations available.");
+    const size_t every = taskContext.get<size_t>("UNIFORM");
+    if (every == 0)
+      throw std::runtime_error(
+          "tadah data sample: --uniform 0: the step must be at least 1 "
+          "(--uniform N keeps every N-th structure)");
+    if (every > total)
+      throw std::runtime_error("tadah data sample: --uniform " +
+                               std::to_string(every) +
+                               " is larger than the dataset's " + structures);
   }
   if (taskContext.contains("RANDOM")) {
-    size_t N = taskContext.get<size_t>("RANDOM");
-    size_t total = inStdb.size();
-    if (N>total) throw std::runtime_error(
-        "Selected number is larger than total number of configurations available.");
+    const size_t N = taskContext.get<size_t>("RANDOM");
+    if (N > total)
+      throw std::runtime_error("tadah data sample: --random " + std::to_string(N) +
+                               ": the dataset has only " + structures);
   }
   if (taskContext.contains("INDEX")) {
+    // Parsed against 1 ... total (parse_dataset_indices refuses what it
+    // cannot use).
     if (!isIndexParsed) parseIndices(taskContext);
-    if (indices.empty()) {
-      throw std::runtime_error("Parsing of indices failed.");
-    }
-    if (indices.size() >= inStdb.size()) {
-      throw std::runtime_error("Number of indices is larger than the number of available structures.");
-    }
-    size_t max_index = *std::max_element(indices.begin(), indices.end());
-    if (max_index>=inStdb.size())   // INDEX starts from 1
-      throw std::runtime_error("Selected index is larger than the number of available structures.");
+    if (indices.empty())
+      throw std::runtime_error("tadah data sample: --index selects nothing");
   }
 }
 
@@ -108,7 +128,8 @@ void DataSampleEngine::parseIndices(const core::Context &taskContext) {
     std::vector<std::string> indicesStrVec;
     indicesStrVec.resize(taskContext.size("INDEX"));
     taskContext.get<>("INDEX", indicesStrVec);
-    indices = core::parse_indices(indicesStrVec);
+    indices = core::parse_dataset_indices(indicesStrVec, inStdb.size(),
+                                          "tadah data sample");
   }
   isIndexParsed = true;
 

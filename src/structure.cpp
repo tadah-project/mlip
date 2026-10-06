@@ -638,9 +638,12 @@ bool Structure::is_the_same(const Structure& st, double thr) const {
  */
 int Structure::next_structure(std::ifstream &ifs) {
   std::string line;
-  // Skip the structure label line
-  std::getline(ifs, line);
-  if(line.empty()) return 0;
+  // Skip the structure label line, after any blank lines (a line of only
+  // whitespace, '\r' included, is blank, as in Structure::read); 0 at the
+  // end of the file.
+  do {
+    if (!std::getline(ifs, line)) return 0;
+  } while (tadah::core::is_blank_line(line));
 
   // Read the second line
   std::getline(ifs, line);
@@ -662,8 +665,7 @@ int Structure::next_structure(std::ifstream &ifs) {
 
   int natoms = 0;
   while(std::getline(ifs, line)) {
-    if (line.empty()) break;
-    if (line == "\r") break;
+    if (tadah::core::is_blank_line(line)) break;
     natoms++;
   }
   return natoms;
@@ -766,12 +768,12 @@ void Structure::dump_to_file(std::ostream &file, size_t prec) const {
  */
 void Structure::dump_to_file(const std::string &filepath, size_t prec) const {
   std::ofstream file(filepath, std::ios::app); // Open in append mode
-  if (!file.is_open()) {
-    std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-    return;
-  }
+  if (!file.is_open())
+    throw std::runtime_error("Could not open file for writing: " + filepath);
   dump_to_file(file, prec);
   file.close();
+  if (file.fail())
+    throw std::runtime_error("Could not write the file: " + filepath);
 }
 
 /**

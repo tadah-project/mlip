@@ -8,20 +8,9 @@ namespace mlip {
 
 LammpsStructureWriter::LammpsStructureWriter(StructureDB& db) : StructureWriter(db) {}
 
-void LammpsStructureWriter::write_data(const std::string& filename, const size_t i) {
-
-  if (i >= stdb.size()) {
-    throw std::out_of_range("Index i is out of range.");
-  }
-
+void LammpsStructureWriter::check(const size_t i) const {
+  StructureWriter::check(i);
   const Structure &st = stdb(i);
-
-  // The rows of the cell are the lattice vectors. A LAMMPS general
-  // triclinic box needs a right-handed, non-degenerate (avec, bvec, cvec):
-  // a left-handed cell is written as (a0, a1, -a2) from origin a2, the
-  // same parallelepiped (so every atom stays inside the box and each
-  // lattice direction keeps its boundary flag), and a singular cell is
-  // refused.
   const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
                     a2 = st.cell.row(2);
   const double det = a0 * a1.cross(a2);
@@ -30,6 +19,23 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
                              "' has a singular cell (coplanar or zero "
                              "lattice vectors).");
   }
+}
+
+void LammpsStructureWriter::write_data(const std::string& filename, const size_t i) {
+
+  check(i);
+
+  const Structure &st = stdb(i);
+
+  // The rows of the cell are the lattice vectors. A LAMMPS general
+  // triclinic box needs a right-handed, non-degenerate (avec, bvec, cvec):
+  // a left-handed cell is written as (a0, a1, -a2) from origin a2, the
+  // same parallelepiped (so every atom stays inside the box and each
+  // lattice direction keeps its boundary flag), and a singular cell is
+  // refused (check()).
+  const core::Vec3d a0 = st.cell.row(0), a1 = st.cell.row(1),
+                    a2 = st.cell.row(2);
+  const double det = a0 * a1.cross(a2);
   const double csign = det < 0.0 ? -1.0 : 1.0;
 
   std::ofstream file(filename);
@@ -110,6 +116,8 @@ void LammpsStructureWriter::write_data(const std::string& filename, const size_t
   // END LAMMPS BODY
   
   file.close();
+  // A write can fail after the file opened (a full disk).
+  if (file.fail()) throw std::runtime_error("Could not write the file: " + filename);
 }
 } // namespace mlip
 } // namespace tadah

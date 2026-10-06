@@ -5,6 +5,7 @@
 #include <tadah/core/number_format.h>
 
 #include <algorithm>
+#include <stdexcept>
 #include <iomanip>
 #include <ostream>
 #include <string>
@@ -18,6 +19,15 @@ class StructureWriter {
     virtual ~StructureWriter() = default;
 
     virtual void write_data(const std::string& filename, const size_t i) = 0;
+
+    /** Throws, naming the structure, when structure @p i cannot be written
+     *  in this format: an index out of range, and for the VASP POSCAR and
+     *  LAMMPS data writers a singular cell. write_data() checks it first; a
+     *  command that writes several files checks every structure before
+     *  writing any. */
+    virtual void check(const size_t i) const {
+      if (i >= stdb.size()) throw std::out_of_range("Index i is out of range.");
+    }
 
     StructureWriter(StructureDB& db) : stdb(db) {};
 

@@ -1441,6 +1441,181 @@ TEST_CASE("CASTEP .castep reader: an MD run's final stress goes to the last step
   CHECK(db(2).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
 }
 
+// Pins: only the physical forces and stress blocks are read: 'Forces',
+// 'Symmetrised Forces', 'Unconstrained Forces', 'Stress Tensor' and
+// 'Symmetrised Stress Tensor'. CASTEP at iprint >= 2 prints the per-term
+// breakdown before the forces ('Ewald forces', 'Local potential forces',
+// ...): castep_triclinic_spe.castep with 'stress calculation : off' and an
+// 'Ewald forces' block (every component 9.0) before its 'Symmetrised Forces'
+// gives the same forces as without it, with force weight 1.
+// Before the fix: the first 'Cartesian components (eV/A)' block completed the
+// single point, so the Ewald term was stored as the forces. (Real case:
+// FLiBe md_lastframe_elf/seed.castep, 358 eV/A off.)
+TEST_CASE("CASTEP .castep reader: per-term force breakdown blocks are not stored",
+          "[castep_readers][castep][forces]") {
+  PeriodicTable::initialize();
+  const std::string kSpe = "./tests_data/cell_convention/castep_triclinic_spe.castep";
+  std::vector<std::string> lines =
+      substitute(read_lines(kSpe), "stress calculation                             : on",
+                 "stress calculation                             : off");
+  TempFile ref("tmp_castep_rv_spe_off.castep");
+  ref.write_lines(lines);
+  REQUIRE(lines.at(66).find("Symmetrised Forces") != std::string::npos);
+  std::vector<std::string> ewald = block_at(lines, 66);
+  ewald[0] = " ********************************** Ewald forces **********************************";
+  for (size_t k = 6; k + 2 < ewald.size(); ++k)
+    for (int c = 0; c < 3; ++c) ewald[k] = replace_token(ewald[k], 3 + c, "9.00000");
+  lines.insert(lines.begin() + 66, ewald.begin(), ewald.end());
+  lines.insert(lines.begin() + 66 + ewald.size(), "");
+  TempFile tmp("tmp_castep_rv_ewald.castep");
+  tmp.write_lines(lines);
+  StructureDB want, db;
+  read_into<CastepCastepReader>(want, ref.path);
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(want.size() == 1);
+  REQUIRE(db.size() == 1);
+  CHECK(db(0).fweight == 1.0);
+  REQUIRE(db(0).natoms() == want(0).natoms());
+  for (size_t a = 0; a < db(0).natoms(); ++a)
+    for (int c = 0; c < 3; ++c) CHECK(db(0).atoms[a].force[c] == want(0).atoms[a].force[c]);
+}
+
+// Pins: an MD step ends at the next step boundary ('... finished MD
+// iteration', 'Starting MD iteration', ' Finished MD', the next run, the end
+// of the file), not at its MD Data 'Temperature:' line, so a stress tensor
+// that CASTEP 20.11/23.1 prints after the MD Data (ab initio properties
+// sampled every N steps) is the step's; the 'Finite Temperature Pressure
+// Tensor' that follows is not read. md_no_stress.castep with a 'Stress
+// Tensor' (diagonal -94.737913, -94.737913, -95.561163 GPa) and a 'Finite
+// Temperature Pressure Tensor' after step 1's MD Data gives step 1 that
+// stress with sweight 1; steps 0 and 2 keep sweight 0.
+// Before the fix: the step was stored at 'Temperature:' and its stress block
+// dropped. (Real case: CH4 ch4-phasei.castep, every sampled stress lost.)
+TEST_CASE("CASTEP .castep reader: an MD step's stress printed after its MD Data is kept",
+          "[castep_readers][castep][md][stress]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines("./tests_data/valid_castep_castep/md_no_stress.castep");
+  REQUIRE(lines.at(1607).find("Temperature:") != std::string::npos);
+  REQUIRE(lines.at(1612).find("finished MD iteration") != std::string::npos);
+  const std::vector<std::string> go = read_lines(kGeomCastep);
+  REQUIRE(go.at(687).find("Symmetrised Stress Tensor") != std::string::npos);
+  std::vector<std::string> stress = block_at(go, 687);
+  stress[0] = " ***************** Stress Tensor *****************";
+  std::vector<std::string> ftp = block_at(go, 687);
+  ftp[0] = " ****** Finite Temperature Pressure Tensor *******";
+  for (int r = 0; r < 3; ++r)
+    for (int c = 0; c < 3; ++c) ftp[6 + r] = replace_token(ftp[6 + r], 2 + c, r == c ? "7.000000" : "0.000000");
+  std::vector<std::string> insert = stress;
+  insert.push_back("");
+  insert.insert(insert.end(), ftp.begin(), ftp.end());
+  insert.push_back("");
+  lines.insert(lines.begin() + 1611, insert.begin(), insert.end());
+  TempFile tmp("tmp_castep_rv_md_sampled.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 3);
+  CHECK(db(0).sweight == 0.0);
+  CHECK(db(2).sweight == 0.0);
+  INFO("label '" << db(1).label << "'");
+  CHECK(db(1).sweight == 1.0);
+  CHECK(db(1).stress(0, 0) == Approx(-94.737913 / kGPa).epsilon(1e-7));
+  CHECK(db(1).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
+  CHECK(db(1).T == Approx(563.548574));
+}
+
+// Pins: the last MD step ends at ' Finished MD' when the file has no
+// '... finished MD iteration' line for it: md_no_stress.castep with a stress
+// block (diagonal -94.737913, -94.737913, -95.561163 GPa) after step 2's MD
+// Data, then ' Finished MD' and a second stress block (diagonal -1, -2, -3
+// GPa), keeps the first for step 2: its own stress (the block printed after
+// the run's end goes to the last step only when that has none).
+// Before the fix: step 2 was stored at its Temperature line, so its own block
+// was dropped and the second was stored as its stress. (With the step open
+// until the end of the file instead, the second block replaces the first.)
+TEST_CASE("CASTEP .castep reader: ' Finished MD' ends the last MD step",
+          "[castep_readers][castep][md][stress]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines("./tests_data/valid_castep_castep/md_no_stress.castep");
+  REQUIRE(lines.back().find("Temperature:") == std::string::npos);
+  REQUIRE(lines.at(2248).find("Temperature:") != std::string::npos);
+  const std::vector<std::string> go = read_lines(kGeomCastep);
+  REQUIRE(go.at(687).find("Symmetrised Stress Tensor") != std::string::npos);
+  const std::vector<std::string> own = block_at(go, 687);
+  std::vector<std::string> after = block_at(go, 687);
+  const char *diag[3] = {"-1.000000", "-2.000000", "-3.000000"};
+  for (int r = 0; r < 3; ++r)
+    for (int c = 0; c < 3; ++c)
+      after[6 + r] = replace_token(after[6 + r], 2 + c, r == c ? diag[r] : "0.000000");
+  lines.push_back("");
+  lines.insert(lines.end(), own.begin(), own.end());
+  lines.push_back("");
+  lines.push_back(" Finished MD");
+  lines.push_back("");
+  lines.insert(lines.end(), after.begin(), after.end());
+  TempFile tmp("tmp_castep_rv_md_finished.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 3);
+  INFO("label '" << db(2).label << "'");
+  CHECK(db(2).sweight == 1.0);
+  CHECK(db(2).stress(0, 0) == Approx(-94.737913 / kGPa).epsilon(1e-7));
+  CHECK(db(2).stress(2, 2) == Approx(-95.561163 / kGPa).epsilon(1e-7));
+  CHECK(db(2).T == Approx(962.274424));
+}
+
+// Pins: 'Unconstrained Forces', the physical forces a constrained
+// optimisation prints before its 'Constrained Forces', are read: geom.castep
+// with its iteration-1 'Symmetrised Forces' banner renamed 'Unconstrained
+// Forces' and a 'Constrained Forces' block (every component 0.5) after it
+// gives structure 2 force weight 1 and H1 force z 0.00189 eV/A.
+// A pin of the list of physical blocks: without 'Unconstrained Forces' in it,
+// neither block is read and the structure gets force weight 0.
+TEST_CASE("CASTEP .castep reader: 'Unconstrained Forces' are the physical forces",
+          "[castep_readers][castep][constraints]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = read_lines(kGeomCastep);
+  REQUIRE(lines.at(668).find("Symmetrised Forces") != std::string::npos);
+  std::vector<std::string> constrained = block_at(lines, 668);
+  REQUIRE(constrained.size() == 18);
+  constrained[0] = " ****************************** Constrained Forces ******************************";
+  for (size_t k = 6; k + 2 < constrained.size(); ++k)
+    for (int c = 0; c < 3; ++c) constrained[k] = replace_token(constrained[k], 3 + c, "0.50000");
+  lines[668] = " ***************************** Unconstrained Forces *****************************";
+  lines.insert(lines.begin() + 686, constrained.begin(), constrained.end());
+  TempFile tmp("tmp_castep_rv_unconstrained.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  REQUIRE(db.size() == 8);
+  CHECK(db(1).fweight == 1.0);
+  CHECK(db(1).atoms[0].force[2] == Approx(0.00189).margin(1e-12));
+  CHECK(db(1).atoms[0].force[0] == Approx(0.0).margin(1e-12));
+}
+
+// Pins: a run whose type is not single point energy, band structure,
+// geometry optimization or molecular dynamics stores nothing, also when it
+// does the finite basis set correction: castep_triclinic_spe.castep as a
+// 'phonon calculation' with a 'Calculating finite basis set correction' line
+// gives no structure.
+// Before the fix: the correction's state stored its SCF as a 'CASTEP FBSC'
+// structure.
+TEST_CASE("CASTEP .castep reader: an unsupported run type stores nothing, FBSC included",
+          "[castep_readers][castep][fbsc]") {
+  PeriodicTable::initialize();
+  std::vector<std::string> lines = substitute(
+      read_lines("./tests_data/cell_convention/castep_triclinic_spe.castep"),
+      "type of calculation                            : single point energy",
+      "type of calculation                            : phonon calculation");
+  lines.insert(lines.begin() + 17, "Calculating finite basis set correction with  3 cut-off energies.");
+  TempFile tmp("tmp_castep_rv_phonon_fbsc.castep");
+  tmp.write_lines(lines);
+  StructureDB db;
+  read_into<CastepCastepReader>(db, tmp.path);
+  CHECK(db.size() == 0);
+}
+
 // Pins: atoms read from a .castep file carry their element, Z included:
 // geom.castep (8 H and 2 Ra per structure) gives Z 1 and 88, and
 // StructureDB::get_unique_elements() has both.
