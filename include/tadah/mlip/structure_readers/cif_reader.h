@@ -13,7 +13,11 @@ namespace mlip {
  * A CIF holds one data block (one structure); an error gemmi raises while
  * parsing it, or reading the block (make_small_structure_from_block: the
  * cell parameters and the atom sites), is rethrown as std::runtime_error
- * naming the file (or the text, or its data block). Of each pair of
+ * naming the file (or the text, or its data block). The cell is read by
+ * the reader: the three lengths must be given, an angle left out (or '.')
+ * is 90 degrees, the CIF dictionary's default, and an unknown length or
+ * angle ('?') is refused naming the tag (gemmi kept a 1 A cube unless all
+ * six were given). Of each pair of
  * symmetry tags (the operator loop _space_group_symop_operation_xyz or
  * _symmetry_equiv_pos_as_xyz, the H-M symbol _space_group_name_H-M_alt or
  * _symmetry_space_group_name_H-M, the Hall symbol _space_group_name_Hall
@@ -22,15 +26,23 @@ namespace mlip {
  * unknown ('?', '.') or blank one does not hide the other tag. The H-M
  * symbol is first put in the form gemmi's table lookup reads: blanks
  * trimmed, '_' removed ('P 2_1/c'), subscripts in parentheses closed up
- * ('P 4(2)/n m c'), a trailing ' (No. N)' dropped, ICSD's ' S' and ' Z'
- * suffixes (either case) read as origin choice 1 and 2, and an R group's
- * axes written as a suffix ('R -3 m H', 'R3R') as ':H' / ':R'. A value
- * that this leaves empty ('(No. 14)', '_') cannot be read.
+ * ('P 4(2)/n m c'), a trailing ' (No. N)' dropped, the CIF dictionary's
+ * notes '(origin choice N)', '(origin at -1)' (origin choice 2, or the
+ * group's only origin), '(hexagonal axes)' and '(rhombohedral axes)' read
+ * as ':N', ':2', ':H' and ':R', ICSD's ' S' and ' Z' suffixes (either
+ * case) as origin choice 1 and 2, and an R group's axes written as a
+ * suffix ('R -3 m H', 'R3R') as ':H' / ':R'. A full symbol, which the
+ * dictionary asks for and FINDSYM writes ('I 4/m -3 2/m', 'P 63/m 2/m
+ * 2/c', 'R -3 2/m'), is read by its short one (ITA's rule: every 'n/x'
+ * reduced to 'x' for an orthorhombic or cubic group, all but the first
+ * for a tetragonal, trigonal or hexagonal one). A value that this leaves
+ * empty ('(No. 14)', '_') cannot be read.
  *
  * The space group comes from the symmetry-operator loop
  * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
  * there is one: a tabulated setting, or the loop's own operators when they
- * form a group in no tabulated setting. Without a loop, or when the loop
+ * form a group in no tabulated setting (closed under products,
+ * translations included). Without a loop, or when the loop
  * forms no group, it comes from the Hall symbol (one in no tabulated
  * setting expands the sites with its own operators), else the H-M symbol,
  * each in the setting it names or else in the standard one: hexagonal or
@@ -83,7 +95,9 @@ namespace mlip {
  * the number; an H-M symbol that names another group than the one the
  * cell is built with, or another setting of it, such as another origin
  * choice, compared by the operations it names, so an equivalent name of
- * the same setting such as 'C c c b:1' agrees; an H-M symbol that is a
+ * the same setting such as 'C c c b:1' agrees, and a name without a
+ * setting ('F d -3 m', 'C c c b') agrees with any setting of that name;
+ * next to a loop or a readable Hall symbol, an H-M symbol that is a
  * number or cannot be read; a number that is not an integer and is not
  * used), a WARNING on std::cerr names the file,
  * quotes the findings and says what the unit cell is built with.
