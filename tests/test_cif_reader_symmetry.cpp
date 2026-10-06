@@ -2771,7 +2771,10 @@ double dot_rows(const Structure &st, int i, int j) {
  * Before the fix: gemmi sets the cell only when all six tags are given,
  * and kept a 1 A cube otherwise, without a word: the P 21/c cell had
  * vectors 1 A long, and the three refusals were accepted ("accepted",
- * three times; the length CHECKs fail). */
+ * three times; the length CHECKs fail). With all six tags given and an
+ * angle '.' or '?', gemmi read the angle as NaN: the bcc '.' case gave 96
+ * atoms at NaN positions (check_sites fails), and the unknown-gamma case
+ * likewise was accepted. */
 TEST_CASE("CIF reader: a missing cell angle is 90 degrees, a missing or "
           "unknown cell length is refused",
           "[structure_readers][cif]") {
@@ -2907,26 +2910,47 @@ TEST_CASE("CIF reader: full H-M symbols and their origin and axes notes "
 }
 
 /* Pins: a loop whose operators are not closed, translations included,
- * forms no group: x,y,z; x+1/3,y,z (x+2/3,y,z is missing) in an 8.6 x
- * 2.8665 x 2.8665 A cell with Fe1 at the origin, and no symbol, gives P 1,
- * 1 atom, with the WARNING that the loop is incomplete.
+ * forms no group, and the WARNING says so ("the operator loop forms no
+ * group"), with no symbol giving P 1:
+ *   - x,y,z; x+1/3,y,z (x+2/3,y,z is missing) in an 8.6 x 2.8665 x 2.8665
+ *     A cell with Fe1 at the origin: 1 atom;
+ *   - x,y,z; x+1/2,y,z; -x,-y,-z; -x+1/4,-y,-z (the products give
+ *     -x+3/4,-y,-z, which is not listed; gemmi's own split of the loop keeps
+ *     -x,-y,-z and drops -x+1/4,-y,-z, so its reduced set is closed) in an
+ *     8 x 3 x 3 A cell with Fe1 at (0.1,0.2,0.3): 1 atom.
  * Before the fix: gemmi checks only that the rotations are closed, so the
- * loop was taken as a group of 2 operators: 2 atoms (check_sites fails). */
+ * first loop was taken as a group of 2 operators: 2 atoms (check_sites
+ * fails). Review round 13: the closure was checked on gemmi's reduced set,
+ * so the second gave 4 atoms, one from -x+1/2,-y,-z, which the loop does
+ * not list; and the WARNING quoted only gemmi's findings, which do not say
+ * the loop forms no group (the CHECKs for "forms no group" fail twice). */
 TEST_CASE("CIF reader: a loop not closed in its translations forms no "
           "group",
           "[structure_readers][cif][spacegroup]") {
   PeriodicTable::initialize();
-  Read r;
-  if (!accepted(cif_cell("Not_closed", 8.6, 2.8665, 2.8665, 90, 90, 90,
-                         "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n"
-                         "'x+1/3,y,z'\n",
-                         "Fe1 Fe 0 0 0\n"),
-                r))
-    return;
-  INFO("printed:\n" << r.log);
-  check_sites(r.st, {{"Fe", {0.0, 0.0, 0.0}}});
-  CHECK(count_of(r.log, "WARNING") == 1);
-  CHECK(contains(r.log, "no symmetry (P 1"));
+  struct Case {
+    std::string text;
+    std::vector<Site> sites;
+  };
+  const std::vector<Case> cases = {
+      {cif_cell("Not_closed", 8.6, 2.8665, 2.8665, 90, 90, 90,
+                "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'x+1/3,y,z'\n",
+                "Fe1 Fe 0 0 0\n"),
+       {{"Fe", {0.0, 0.0, 0.0}}}},
+      {cif_cell("Not_closed_shared_rotation", 8, 3, 3, 90, 90, 90,
+                "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'x+1/2,y,z'\n"
+                "'-x,-y,-z'\n'-x+1/4,-y,-z'\n",
+                kFeGeneral),
+       {{"Fe", {0.1, 0.2, 0.3}}}}};
+  for (const Case &c : cases) {
+    Read r;
+    if (!accepted(c.text, r)) continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, c.sites);
+    CHECK(count_of(r.log, "WARNING") == 1);
+    CHECK(contains(r.log, "the operator loop forms no group"));
+    CHECK(contains(r.log, "no symmetry (P 1"));
+  }
 }
 
 /* Pins: next to a readable Hall symbol, an H-M symbol that cannot be read,
@@ -2949,5 +2973,87 @@ TEST_CASE("CIF reader: an unreadable H-M symbol next to a Hall symbol "
     INFO("printed:\n" << r.log);
     check_sites(r.st, kFeBcc);
     CHECK(count_of(r.log, "WARNING") == 1);
+  }
+}
+
+// =============================================== review round 13 ====
+
+/* Pins: the full symbols of the cubic m-3 groups (200 to 206), three
+ * symmetry directions, are read by their short ones as the other full
+ * symbols are: pyrite FeS2 (a = 5.417 A, Fe1 at the origin on 4a, S1 at
+ * (0.385,0.385,0.385) on 8c) with 'P 21/a -3', and with spglib's
+ * 'P 2_1/a -3', gives the 12 atoms that 'P a -3' gives; bcc Fe with
+ * 'I 2/m -3' gives 2 atoms (I m -3); 'I 21/a -3' with Fe1 at the origin
+ * (8a of I a -3) gives 8; Si at (1/8,1/8,1/8) with 'F 2/d -3 (origin
+ * choice 2)' gives the 8 atoms 'F d -3:2' gives.
+ * Before the fix: the reduction took only four-token symbols as cubic, so
+ * each was refused ("cannot read the H-M symbol 'P 21/a -3'": five
+ * "refused" failures). */
+TEST_CASE("CIF reader: the full symbols of the m-3 groups are read",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  const std::string pyrite =
+      "Fe1 Fe 0 0 0\nS1 S 0.385 0.385 0.385\n";
+  const auto atoms_of = [](const std::string &text) -> int {
+    try {
+      return static_cast<int>(parse_cif_text(text).st.natoms());
+    } catch (const std::exception &e) {
+      FAIL_CHECK("refused: " << e.what());
+      return -1;
+    }
+  };
+  struct Case {
+    std::string full, short_symbol, sites;
+    double a;
+    int atoms;
+  };
+  for (const Case &c :
+       {Case{"P 21/a -3", "P a -3", pyrite, 5.417, 12},
+        Case{"P 2_1/a -3", "P a -3", pyrite, 5.417, 12},
+        Case{"I 2/m -3", "I m -3", "Fe1 Fe 0 0 0\n", 2.8665, 2},
+        Case{"I 21/a -3", "I a -3", "Fe1 Fe 0 0 0\n", 9.4, 8},
+        Case{"F 2/d -3 (origin choice 2)", "F d -3:2",
+             "Si1 Si 0.125 0.125 0.125\n", 5.431, 8}}) {
+    INFO("'" << c.full << "' against '" << c.short_symbol << "'");
+    const int full = atoms_of(cif_cell("Full_m3", c.a, c.a, c.a, 90, 90, 90,
+                                       hm_line(c.full), c.sites));
+    const int brief = atoms_of(cif_cell("Short_m3", c.a, c.a, c.a, 90, 90,
+                                        90, hm_line(c.short_symbol),
+                                        c.sites));
+    CHECK(brief == c.atoms);
+    CHECK(full == c.atoms);
+  }
+}
+
+/* Pins: the documented notes and suffixes of the H-M symbol name their
+ * setting: 'R -3 m (hexagonal axes)' in the hexagonal Bi cell gives the 6
+ * atoms of R -3 m:H; 'R -3 m (rhombohedral axes)' and 'R-3mR' in the
+ * rhombohedral Bi cell give the 2 of R -3 m:R; 'F d -3 m (origin choice
+ * 1)' with Si at the origin gives the 8 atoms of diamond Si in origin
+ * choice 1 (and 'F 41/d -3 2/m (origin choice 1)' the same).
+ * Before the fix: passes as well (pins of the header). */
+TEST_CASE("CIF reader: the notes and suffixes of an H-M symbol name its "
+          "setting",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string text;
+    std::vector<Site> sites;
+  };
+  const std::vector<Case> cases = {
+      {bi_hex("Note_hex", hm_line("R -3 m (hexagonal axes)")), kBiHex},
+      {bi_rh("Note_rh", hm_line("R -3 m (rhombohedral axes)")), kBiRh},
+      {bi_rh("Suffix_rh", hm_line("R-3mR")), kBiRh},
+      {cif_cell("Note_origin1", 5.431, 5.431, 5.431, 90, 90, 90,
+                hm_line("F d -3 m (origin choice 1)"), "Si1 Si 0 0 0\n"),
+       kSiDiamondOrigin1},
+      {cif_cell("Note_origin1_full", 5.431, 5.431, 5.431, 90, 90, 90,
+                hm_line("F 41/d -3 2/m (origin choice 1)"), "Si1 Si 0 0 0\n"),
+       kSiDiamondOrigin1}};
+  for (const Case &c : cases) {
+    Read r;
+    if (!accepted(c.text, r)) continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, c.sites);
   }
 }
