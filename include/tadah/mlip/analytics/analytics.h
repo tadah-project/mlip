@@ -50,7 +50,8 @@ void require_metric_structures(const StructureDB &truth, MetricQuantity q,
  *  out the structures stored with force weight 0, and the stress metrics
  *  (calc_s_*) those with stress weight 0 (counts_in_metric()): they have no
  *  data of their own. A dataset without a structure that counts is refused
- *  (require_metric_structures()). The energy metrics count every structure.
+ *  (require_metric_structures()). The energy metrics ignore the weights
+ *  (calc_e_rrmse leaves out a structure whose reference energy is 0).
  */
 class Analytics {
     private:

@@ -269,10 +269,12 @@ void ersq(const StructureDB& truth, const StructureDB& pred,
 }
 
 /* d(frmse)/d(F_pred_iak) where
- *   metric_s = sqrt((1/N_s^F) * sum_{i in s, a, k} (F_truth_iak - F_pred_iak)^2)
+ *   metric_s = sqrt((1/N_s^F) * sum_{i in s with fweight != 0, a, k} (F_truth_iak - F_pred_iak)^2)
  *   scalar   = (1/S) * sum_s metric_s
  *
- * N_s^F = sum_{i in s} 3 * natoms_i is the per-segment force-cell count.
+ * N_s^F = sum_{i in s with fweight != 0} 3 * natoms_i is the per-segment
+ * force-cell count. A structure with force weight 0 (counts_in_metric())
+ * is left out, as in Analytics::calc_f_rmse: none of its cells is emitted.
  * Per-segment partitioning aligns with the energy partition because
  * Analytics::calc_f_rmse uses truth.dbidx to detect segment boundaries:
  * each segment's frmse is built from the force cells of its structures
@@ -349,11 +351,13 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
 }
 
 /* d(srmse)/d(S_pred_ixy) where
- *   metric_s = sqrt((1/N_s^S) * sum_{i in s, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
+ *   metric_s = sqrt((1/N_s^S) * sum_{i in s with sweight != 0, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
  *   scalar   = (1/S_seg) * sum_s metric_s
  *
- * N_s^S = 6 * (#structures in segment s) is the per-segment stress-cell
- * count. Voigt-like 6-cell ordering matches Analytics:
+ * N_s^S = 6 * (#structures in segment s with sweight != 0) is the
+ * per-segment stress-cell count. A structure with stress weight 0
+ * (counts_in_metric()) is left out, as in Analytics::calc_s_rmse: none of
+ * its cells is emitted. Voigt-like 6-cell ordering matches Analytics:
  * (xx, xy, xz, yy, yz, zz). */
 template<class F>
 void srmse(const StructureDB& truth, const StructureDB& pred,
