@@ -269,10 +269,14 @@ void ersq(const StructureDB& truth, const StructureDB& pred,
 }
 
 /* d(frmse)/d(F_pred_iak) where
- *   metric_s = sqrt((1/N_s^F) * sum_{i in s, a, k} (F_truth_iak - F_pred_iak)^2)
+ *   metric_s = sqrt((1/N_s^F) * sum_{i in s with fweight != 0, a, k} (F_truth_iak - F_pred_iak)^2)
  *   scalar   = (1/S) * sum_s metric_s
  *
- * N_s^F = sum_{i in s} 3 * natoms_i is the per-segment force-cell count.
+ * N_s^F = sum_{i in s with fweight != 0} 3 * natoms_i is the per-segment
+ * force-cell count. A structure with force weight 0 (counts_in_metric())
+ * is left out, as in Analytics::calc_f_rmse: none of its cells is emitted;
+ * a segment without such structures (N_s^F = 0) is not measured and emits
+ * nothing.
  * Per-segment partitioning aligns with the energy partition because
  * Analytics::calc_f_rmse uses truth.dbidx to detect segment boundaries:
  * each segment's frmse is built from the force cells of its structures
@@ -299,6 +303,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         double sumsq = 0.0;
         std::size_t N_F = 0;
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Forces)) continue;
             for (std::size_t a = 0; a < truth(i).natoms(); ++a) {
                 for (std::size_t k = 0; k < 3; ++k) {
                     const double d = truth(i).atoms[a].force(k)
@@ -318,6 +323,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         const std::size_t hi = truth.dbidx[s + 1];
         const std::size_t N_F = N_F_per_seg[s];
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Forces)) continue;
             for (std::size_t a = 0; a < truth(i).natoms(); ++a) {
                 for (std::size_t k = 0; k < 3; ++k) {
                     const double d = truth(i).atoms[a].force(k)
@@ -333,12 +339,15 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
     }
 }
 
-// Compatibility wrapper: derivative of the arithmetic mean of dataset metrics.
+// Compatibility wrapper: derivative of the arithmetic mean of the dataset
+// metrics over the measured datasets (a dataset without forces is not
+// measured: it emits nothing and is not counted).
 template<class F>
 void frmse(const StructureDB& truth, const StructureDB& pred,
            double scale, F set_dydp)
 {
-    const auto count = truth.dbidx.size() > 1 ? truth.dbidx.size() - 1 : 0;
+    std::size_t count = 0;
+    for (bool m : measured_datasets(truth, MetricQuantity::Forces)) count += m;
     frmse_per_dataset(truth, pred, scale,
         [&](std::size_t, std::size_t i, PredCellKind kind, std::size_t comp, double partial) {
             set_dydp(i, kind, comp, partial / static_cast<double>(count));
@@ -346,11 +355,17 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
 }
 
 /* d(srmse)/d(S_pred_ixy) where
- *   metric_s = sqrt((1/N_s^S) * sum_{i in s, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
- *   scalar   = (1/S_seg) * sum_s metric_s
+ *   metric_s = sqrt((1/N_s^S) * sum_{i in s with sweight != 0, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
+ *   scalar   = (1/S_seg) * sum_{measured s} metric_s
  *
- * N_s^S = 6 * (#structures in segment s) is the per-segment stress-cell
- * count. Voigt-like 6-cell ordering matches Analytics:
+ * S_seg is the number of measured segments (N_s^S > 0): the scalar is the
+ * mean over them, as Analytics' measured_mean() takes it.
+ *
+ * N_s^S = 6 * (#structures in segment s with sweight != 0) is the
+ * per-segment stress-cell count. A structure with stress weight 0
+ * (counts_in_metric()) is left out, as in Analytics::calc_s_rmse: none of
+ * its cells is emitted; a segment without such structures is not measured
+ * and emits nothing. Voigt-like 6-cell ordering matches Analytics:
  * (xx, xy, xz, yy, yz, zz). */
 template<class F>
 void srmse(const StructureDB& truth, const StructureDB& pred,
@@ -369,6 +384,7 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
         double sumsq = 0.0;
         std::size_t N_S_cells = 0;
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
             for (std::size_t x = 0; x < 3; ++x) {
                 for (std::size_t y = x; y < 3; ++y) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
@@ -381,18 +397,21 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
         if (N_S_cells > 0)
             metric_per_seg[s] = std::sqrt(sumsq / static_cast<double>(N_S_cells));
     }
+    std::size_t S_measured = 0;  // the segments the scalar averages
+    for (std::size_t s = 0; s < S; ++s) S_measured += N_S_per_seg[s] > 0;
     for (std::size_t s = 0; s < S; ++s) {
         if (!(metric_per_seg[s] > 0.0)) continue;
         const std::size_t lo = truth.dbidx[s];
         const std::size_t hi = truth.dbidx[s + 1];
         const std::size_t N_S_cells = N_S_per_seg[s];
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
             std::size_t comp = 0;
             for (std::size_t x = 0; x < 3; ++x) {
                 for (std::size_t y = x; y < 3; ++y) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
                     const double v = -scale * d
-                                   / (static_cast<double>(S)
+                                   / (static_cast<double>(S_measured)
                                       * static_cast<double>(N_S_cells)
                                       * metric_per_seg[s]);
                     set_dydp(i, PredCellKind::STRESS, comp, v);

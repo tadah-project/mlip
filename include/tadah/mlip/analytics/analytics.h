@@ -3,6 +3,9 @@
 
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/core_types.h>
+
+#include <string>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -20,8 +23,45 @@ void require_predicted_forces(const StructureDB &truth,
                               const StructureDB &pred,
                               const char *who);
 
+/** What a force or stress metric measures. */
+enum class MetricQuantity { Forces, Stress };
+
+/** Whether structure @p s counts in the @p q metrics: a structure stored
+ *  with force weight 0 (fweight) has no force data of its own, and one with
+ *  stress weight 0 (sweight) no stress tensor (tadah data convert stores
+ *  them so); the metrics leave them out, as training does. */
+inline bool counts_in_metric(const Structure &s, MetricQuantity q) {
+    return (q == MetricQuantity::Forces ? s.fweight : s.sweight) != 0.0;
+}
+
+/** For each dataset of @p truth, whether the @p q metrics measure it: a
+ *  dataset in which no structure counts (every one has that weight 0, or
+ *  none is left) is not measured; its metric is nan (MK, 2026-10-06). */
+std::vector<bool> measured_datasets(const StructureDB &truth, MetricQuantity q);
+
+/** The mean of the per-dataset values @p v over the datasets @p measured
+ *  marks (with every dataset marked, v.mean() itself); nan when it marks
+ *  none. */
+double measured_mean(const tadah::core::t_type &v, const std::vector<bool> &measured);
+
+/** Refuses @p truth when no dataset is measured by the @p q metrics (every
+ *  structure has that weight 0): they would have nothing to measure. Throws
+ *  std::runtime_error, prefixed with @p who, naming the files when
+ *  @p dataset_names has them and the weight ("force weight 0 (fweight)",
+ *  "stress weight 0 (sweight)"). A dataset of only such structures among
+ *  others is not refused: it is not measured (measured_datasets()). */
+void require_metric_structures(const StructureDB &truth, MetricQuantity q,
+                               const std::string &who,
+                               const std::vector<std::string> &dataset_names = {});
+
 /** Class for analysing and comparing datasets
  *
+ *  Each metric is per dataset (DBFILE). The force metrics (calc_f_*) leave
+ *  out the structures stored with force weight 0, and the stress metrics
+ *  (calc_s_*) those with stress weight 0 (counts_in_metric()): they have no
+ *  data of their own. A dataset without a structure that counts is not
+ *  measured: its value is nan (measured_datasets(), measured_mean()). The energy metrics ignore the weights
+ *  (calc_e_rrmse leaves out a structure whose reference energy is 0).
  */
 class Analytics {
     private:
