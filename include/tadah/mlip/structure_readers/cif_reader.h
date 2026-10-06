@@ -42,27 +42,25 @@ namespace mlip {
  * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
  * there is one: a tabulated setting, or the loop's own operators when they
  * form a group in no tabulated setting (closed under products,
- * translations included). Without a loop, or when the loop
- * forms no group, it comes from the Hall symbol (one in no tabulated
- * setting expands the sites with its own operators), else the H-M symbol,
- * each in the setting it names or else in the standard one: hexagonal or
+ * translations included). Without a loop, or when the loop forms no
+ * group, it comes from the Hall symbol (one in no tabulated setting
+ * expands the sites with its own operators), else the H-M symbol, each in
+ * the setting it names or else in the standard one: hexagonal or
  * rhombohedral axes from the cell angles, origin choice 2 where the group
  * has two (also for the current symbols gemmi lists apart, such as
- * 'C c c e' for C c c a). A symbol used so that cannot be read (or an H-M
- * symbol that is a number) is refused, quoting it ("cannot read"); the
- * Hall symbol is read before the H-M symbol, and an unreadable one is
- * refused even when the H-M symbol is fine. Next to a loop that forms a
- * group, the symbols are only compared with it: one that cannot be read,
- * or is a number, gives the WARNING below. Without a loop and without a symbol it
- * comes from the space-group number, which must be an integer from 1 to
- * 230 (it is read only then, quoted or not: 0 or '229.0' is refused
- * there), in its
- * standard setting; when the cell could be in another ITA setting of the
- * group (another origin choice, or another choice of axes that fits the
- * cell) a WARNING names the one used. With a loop that forms no group and
- * no symbol, the number is not used: the cell is P 1, with the WARNING
- * below quoting the diagnostic of the loop. A CIF with no symmetry record
- * is P 1.
+ * 'C c c e' for C c c a); else the space-group number, in its standard
+ * setting. A symbol used so that cannot be read (or an H-M symbol that is
+ * a number) is refused, quoting it ("cannot read"); the Hall symbol is
+ * read before the H-M symbol, and an unreadable one is refused even when
+ * the H-M symbol is fine. Next to a loop that forms a group, or a readable
+ * Hall symbol, the symbols are only compared with it: one that cannot be
+ * read, or is a number, gives the WARNING below. The number is read only
+ * when it is used (quoted or not), and must be an integer from 1 to 230
+ * (0 or '229.0' is refused there); when the cell could be in another ITA
+ * setting of its group (another origin choice, or another choice of axes
+ * that fits the cell) a WARNING names the one used. A loop that forms no
+ * group also gives the WARNING below, quoting the diagnostic of the loop.
+ * A CIF with no symmetry record is P 1.
  *
  * However it was given, a monoclinic group must fit the cell: the angles
  * between its unique axis and the other two axes (alpha and gamma for
