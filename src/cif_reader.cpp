@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -108,33 +109,23 @@ bool fits_cell(const gemmi::UnitCell &c, const gemmi::SpaceGroup &sg) {
 }
 
 // The ITA settings of the group of @p sg that cell @p c could be in, @p sg
-// included: another origin choice (the groups with two), or another
-// choice of axes (a permutation, a monoclinic unique axis or cell choice:
-// a change of basis with determinant +-1) that fits the cell. gemmi's
-// table also lists groups in larger centred cells (A 1, ..., F 4/m m m),
-// R groups on both hexagonal and rhombohedral axes (other cells, which
-// the cell itself tells apart) and CCP4's extra origins of 22, 23, 94 and
-// 197 (no ITA origin choice): none of them counts.
+// included: another origin choice (the groups with two) or another choice
+// of axes (a permutation, a monoclinic unique axis or cell choice) that
+// fits the cell, each a change of basis with determinant +-1 and a setting
+// code (gemmi's qualifier and ext) of its own. gemmi's table also lists
+// groups in larger centred cells (A 1, ..., F 4/m m m), R groups on both
+// hexagonal and rhombohedral axes (other cells, which the cell itself
+// tells apart), and CCP4's extra origins of 18, 20, 21, 22, 23, 94 and 197
+// under the setting code of the standard setting: none of them counts.
 int settings_of_the_cell(const gemmi::SpaceGroup &sg,
                          const gemmi::UnitCell &c) {
-  const gemmi::Op basis = sg.basisop();
-  const int det = std::abs(basis.det_rot());
-  const auto origin_choice = [](const gemmi::SpaceGroup &g) {
-    return g.ext == '1' || g.ext == '2';
-  };
-  int n = 0;
-  for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main) {
-    if (t.number != sg.number) continue;
-    if (&t == &sg) {
+  const int det = std::abs(sg.basisop().det_rot());
+  int n = 1;
+  for (const gemmi::SpaceGroup &t : gemmi::spacegroup_tables::main)
+    if (t.number == sg.number && &t != &sg &&
+        (t.ext != sg.ext || std::strcmp(t.qualifier, sg.qualifier) != 0) &&
+        std::abs(t.basisop().det_rot()) == det && fits_cell(c, t))
       ++n;
-      continue;
-    }
-    const gemmi::Op tb = t.basisop();
-    if (std::abs(tb.det_rot()) != det) continue;
-    if (tb.rot == basis.rot ? origin_choice(t) && origin_choice(sg)
-                            : fits_cell(c, t))
-      ++n;
-  }
   return n;
 }
 
@@ -225,15 +216,24 @@ void CifReader::parseCif(const std::string &fileContents,
   const std::string source =
       path.empty() ? "CIF text (data_" + block.name + ")" : "CIF file " + path;
 
-  gemmi::SmallStructure struc = gemmi::make_small_structure_from_block(block);
+  gemmi::SmallStructure struc;
+  try {
+    struc = gemmi::make_small_structure_from_block(block);
+  } catch (const std::exception &e) {
+    throw std::runtime_error(source + ": gemmi cannot read the data block: " +
+                             e.what());
+  }
   // gemmi takes the first H-M and number tag present and the last Hall tag
   // present, even when its value is unknown ('?'), which then hides the
   // other tag of the pair: take the first known value of each pair, and
   // tell '0' from '?' (gemmi reads both as 0).
   const auto known_value = [&](const char *new_tag, const char *old_tag) {
     for (const char *tag : {new_tag, old_tag})
-      if (const std::string *v = block.find_value(tag))
-        if (!is_null(*v)) return v;
+      if (const std::string *v = block.find_value(tag)) {
+        std::string text = is_null(*v) ? std::string() : as_string(*v);
+        trim(text);
+        if (!text.empty()) return v;
+      }
     return static_cast<const std::string *>(nullptr);
   };
   const std::string *hm_value =
@@ -244,7 +244,8 @@ void CifReader::parseCif(const std::string &fileContents,
       known_value("_space_group_IT_number", "_symmetry_Int_Tables_number");
   struc.spacegroup_hm = hm_value ? as_string(*hm_value) : std::string();
   struc.spacegroup_hall = hall_value ? as_string(*hall_value) : std::string();
-  struc.spacegroup_number = number_value ? as_int(*number_value) : 0;
+  // The number is read where it is used (no loop, no symbol).
+  struc.spacegroup_number = 0;
   const bool number_given = number_value != nullptr;
   // The H-M symbol as gemmi's table lookup reads it, for every use below
   // and gemmi's consistency check. A value that normalises to nothing
@@ -364,6 +365,14 @@ void CifReader::parseCif(const std::string &fileContents,
       from_symbols();
     }
   } else if (!from_symbols() && number_given) {
+    try {
+      struc.spacegroup_number = as_int(*number_value);
+    } catch (const std::exception &) {
+      throw std::runtime_error(
+          source + ": the space-group number '" + as_string(*number_value) +
+          "' is not an integer; give the number (1 to 230), the H-M symbol "
+          "or the symmetry-operator loop.");
+    }
     const int n = struc.spacegroup_number;
     src.kind = SymmetrySource::Number;
     src.record = "the number " + std::to_string(n);
@@ -461,10 +470,32 @@ void CifReader::parseCif(const std::string &fileContents,
 
   // A record that contradicts itself (or names nothing gemmi knows) is
   // reported; the structure is built with what gemmi found first.
-  const std::string diagnostic = struc.check_spacegroup();
+  std::string diagnostic;
+  // The number, for gemmi's check, when it was not used
+  if (number_given && src.kind != SymmetrySource::Number) {
+    try {
+      struc.spacegroup_number = as_int(*number_value);
+    } catch (const std::exception &) {
+      diagnostic += "space group number ('" + as_string(*number_value) +
+                    "') is not an integer\n";
+    }
+  }
+  diagnostic += struc.check_spacegroup();
+  // gemmi compares the H-M symbol without its setting: one that names a
+  // setting (':1', ':2', ':H', ':R', ICSD's ' S' or ' Z') other than the
+  // one the cell is built with, in the same group, is reported too.
+  if (struc.spacegroup && src.kind != SymmetrySource::HM &&
+      struc.spacegroup_hm.find(':') != std::string::npos) {
+    const gemmi::SpaceGroup *named = gemmi::find_spacegroup_by_name(
+        struc.spacegroup_hm, struc.cell.alpha, struc.cell.gamma, "2");
+    if (named && named != struc.spacegroup &&
+        std::strcmp(named->hm, struc.spacegroup->hm) == 0)
+      diagnostic += "H-M symbol (" + hm_as_written + ") names " +
+                    named->xhm() + ", not " + struc.spacegroup->xhm() + "\n";
+  }
   if (!diagnostic.empty()) {
     std::cerr << "WARNING: " << source
-              << ": the symmetry record is inconsistent (gemmi: \""
+              << ": the symmetry record is inconsistent (\""
               << one_line(diagnostic) << "\"); the unit cell is built with "
               << symmetry_used(struc, src) << "." << std::endl;
   }
