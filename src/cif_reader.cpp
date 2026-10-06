@@ -644,7 +644,8 @@ void CifReader::parseCif(const std::string &fileContents,
           "H-M symbol (" + hm_as_written + ") not found in the table\n";
     else if (!used)
       diagnostic += "space group from H-M symbol (" + hm_as_written +
-                    ") differs: " + named->xhm() + "\n";
+                    ") is " + named->xhm() +
+                    ", which differs from the operators used\n";
     else if (named != used &&
              !named->operations().is_same_as(used->operations())) {
       // A symbol that names a setting (':1', ':2', ':H', ':R', ICSD's
@@ -660,7 +661,8 @@ void CifReader::parseCif(const std::string &fileContents,
                               t.operations().is_same_as(used->operations()));
         if (!agrees)
           diagnostic += "space group from H-M symbol (" + hm_as_written +
-                        ") differs: " + named->hm + "\n";
+                        ") is " + named->hm + ", which differs from " +
+                        used->xhm() + "\n";
       }
     }
   }
