@@ -1248,6 +1248,29 @@ TEST_CASE("CIF reader: a space-group symbol that cannot be read is refused, "
   }
 }
 
+/* Pins: an H-M symbol that is a number is no H-M symbol and is refused,
+ * quoting it and saying the reader cannot read it: '14' and '1003', each
+ * without a loop, a Hall symbol or a number, in a cell with beta = 110.
+ * gemmi's name lookup would take it as a CCP4 code, which is the IT number
+ * only up to 230 (1003 is P 1 1 2).
+ * Before the fix: gemmi's lookup was used as it is, so '14' gave the 4
+ * atoms of P 1 21/c 1 and '1003' the 2 atoms of P 1 1 2, without a
+ * message ("accepted: 4 atoms", "accepted: 2 atoms"). */
+TEST_CASE("CIF reader: an H-M symbol that is a number is refused",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  for (const char *hm : {"14", "1003"}) {
+    INFO("H-M '" << hm << "'");
+    const std::string what = refusal(
+        cif_cell("Numeric_hm", 5, 6, 7, 90, 110, 90, hm_line(hm), kFeGeneral));
+    INFO("message: " << what);
+    if (what.empty()) continue;
+    CHECK(contains(what, "CIF text (data_Numeric_hm): "));
+    CHECK(contains(what, std::string("'") + hm + "'"));
+    CHECK(contains(what, "cannot read"));
+  }
+}
+
 // ============================================ the space-group number ====
 
 /* Pins: a space-group number alone is accepted only in 1..230; 231, 999,
