@@ -11,13 +11,17 @@ namespace mlip {
  * @brief Reads a Structure from a CIF file with gemmi.
  *
  * gemmi::make_small_structure_from_block reads the cell parameters, the
- * symmetry record and the atom sites. The H-M symbol
- * (_space_group_name_H-M_alt or _symmetry_space_group_name_H-M) is first
+ * symmetry record and the atom sites. Of each pair of symmetry tags (the
+ * H-M symbol _space_group_name_H-M_alt or _symmetry_space_group_name_H-M,
+ * the Hall symbol _space_group_name_Hall or
+ * _symmetry_space_group_name_Hall, the number _space_group_IT_number or
+ * _symmetry_Int_Tables_number) the first known value is used: an unknown
+ * one ('?' or '.') does not hide the other tag. The H-M symbol is first
  * put in the form gemmi's table lookup reads: blanks trimmed, '_' removed
  * ('P 2_1/c'), subscripts in parentheses closed up ('P 4(2)/n m c'), a
  * trailing ' (No. N)' dropped, and ICSD's ' S' and ' Z' suffixes (either
- * case) read as origin choice 1 and 2. A value that this leaves empty is a
- * symbol that cannot be read.
+ * case) read as origin choice 1 and 2. A value of blanks is no symbol; one
+ * that this otherwise leaves empty ('(No. 14)', '_') cannot be read.
  *
  * The space group comes from the symmetry-operator loop
  * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
@@ -27,27 +31,30 @@ namespace mlip {
  * setting expands the sites with its own operators), else the H-M symbol,
  * each in the setting it names or else in the standard one: hexagonal or
  * rhombohedral axes from the cell angles, origin choice 2 where the group
- * has two. A symbol that cannot be read (or an H-M symbol that is a
- * number) is refused, quoting it ("cannot read"); the Hall symbol is read
- * before the H-M symbol, and an unreadable one is refused even when the
- * H-M symbol is fine. Without a loop and without a symbol it comes from
- * the space-group number (_space_group_IT_number or
- * _symmetry_Int_Tables_number), which must be 1 to 230 (0 is refused; '?'
- * is no number), in its standard setting; when the same cell could be in
- * another setting of the group (another origin choice or choice of axes,
- * not the R groups' hexagonal or rhombohedral axes, which the cell tells
- * apart) a WARNING names the one used. With a loop that forms no group
- * and no symbol, the number is not used: the cell is P 1, with the
- * WARNING below quoting gemmi's diagnostic of the loop. A CIF with no
- * symmetry record is P 1.
+ * has two (also for the current symbols gemmi lists apart, such as
+ * 'C c c e' for C c c a). A symbol that cannot be read (or an H-M symbol
+ * that is a number) is refused, quoting it ("cannot read"); the Hall
+ * symbol is read before the H-M symbol, and an unreadable one is refused
+ * even when the H-M symbol is fine. Without a loop and without a symbol it
+ * comes from the space-group number, which must be 1 to 230 (0 is
+ * refused), in its standard setting; when the cell could be in another
+ * ITA setting of the group (another origin choice, or another choice of
+ * axes that fits the cell) a WARNING names the one used. With a loop that
+ * forms no group and no symbol, the number is not used: the cell is P 1,
+ * with the WARNING below quoting gemmi's diagnostic of the loop. A CIF
+ * with no symmetry record is P 1.
  *
  * However it was given, a monoclinic group must fit the cell: the angles
  * between its unique axis and the other two axes (alpha and gamma for
  * unique axis b) are 90 degrees within 1e-3, or the CIF is refused, naming
  * the group, the record it came from and the angles. A group in no
- * tabulated setting is checked as the tabulated group with its rotations.
- * A short symbol such as 'P 21/m', and a number, mean unique axis b, except
- * B-centred short symbols ('B 2/m'), which gemmi reads as unique axis c.
+ * tabulated setting (an origin moved, an unusual centring) is checked as
+ * the tabulated primitive group with its rotations; one whose rotations
+ * are those of no tabulated setting (a monoclinic group on the axes of a
+ * primitive cell of a centred lattice, say) is not checked. A short symbol
+ * is read in the setting gemmi gives it: unique axis b, except 'B 2',
+ * 'B m', 'B b', 'B 2/m' and 'B 2/b' (unique axis c, as in the PDB); a
+ * number means unique axis b.
  *
  * Every site of the unit cell (get_all_unit_cell_sites) becomes an atom at
  * its Cartesian position; gemmi merges the images of one site within
