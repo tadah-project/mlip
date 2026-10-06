@@ -17,7 +17,7 @@ namespace mlip {
  * the reader: the three lengths must be given, an angle left out (or '.')
  * is 90 degrees, the CIF dictionary's default, and an unknown length or
  * angle ('?') is refused naming the tag (gemmi kept a 1 A cube unless all
- * six were given). Of each pair of
+ * six were given, and read a '.' or '?' angle among them as NaN). Of each pair of
  * symmetry tags (the operator loop _space_group_symop_operation_xyz or
  * _symmetry_equiv_pos_as_xyz, the H-M symbol _space_group_name_H-M_alt or
  * _symmetry_space_group_name_H-M, the Hall symbol _space_group_name_Hall
@@ -41,8 +41,8 @@ namespace mlip {
  * The space group comes from the symmetry-operator loop
  * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
  * there is one: a tabulated setting, or the loop's own operators when they
- * form a group in no tabulated setting (closed under products,
- * translations included). Without a loop, or when the loop forms no
+ * form a group in no tabulated setting (the operators listed, closed
+ * under products, translations included). Without a loop, or when the loop forms no
  * group, it comes from the Hall symbol (one in no tabulated setting
  * expands the sites with its own operators), else the H-M symbol, each in
  * the setting it names or else in the standard one: hexagonal or
@@ -59,7 +59,8 @@ namespace mlip {
  * (0 or '229.0' is refused there); when the cell could be in another ITA
  * setting of its group (another origin choice, or another choice of axes
  * that fits the cell) a WARNING names the one used. A loop that forms no
- * group also gives the WARNING below, quoting the diagnostic of the loop.
+ * group also gives the WARNING below, which says so and quotes gemmi's
+ * diagnostic of the loop.
  * A CIF with no symmetry record is P 1.
  *
  * However it was given, a monoclinic group must fit the cell: the angles
