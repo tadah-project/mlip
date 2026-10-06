@@ -10,19 +10,22 @@ namespace mlip {
 /**
  * @brief Reads a Structure from a CIF file with gemmi.
  *
- * gemmi::make_small_structure_from_block reads the cell parameters, the
- * symmetry record and the atom sites; an error it raises is rethrown as
- * std::runtime_error naming the file (or the data block). Of each pair of
- * symmetry tags (the H-M symbol _space_group_name_H-M_alt or
+ * A CIF holds one data block (one structure); an error gemmi raises while
+ * parsing it, or reading the block (make_small_structure_from_block: the
+ * cell parameters and the atom sites), is rethrown as std::runtime_error
+ * naming the file (or the text, or its data block). Of each pair of
+ * symmetry tags (the operator loop _space_group_symop_operation_xyz or
+ * _symmetry_equiv_pos_as_xyz, the H-M symbol _space_group_name_H-M_alt or
  * _symmetry_space_group_name_H-M, the Hall symbol _space_group_name_Hall
  * or _symmetry_space_group_name_Hall, the number _space_group_IT_number or
- * _symmetry_Int_Tables_number) the first known value is used: an unknown
- * ('?', '.') or blank one does not hide the other tag. The H-M symbol is
- * first put in the form gemmi's table lookup reads: blanks trimmed, '_'
- * removed ('P 2_1/c'), subscripts in parentheses closed up
- * ('P 4(2)/n m c'), a trailing ' (No. N)' dropped, and ICSD's ' S' and
- * ' Z' suffixes (either case) read as origin choice 1 and 2. A value that
- * this leaves empty ('(No. 14)', '_') cannot be read.
+ * _symmetry_Int_Tables_number) the first with a known value is used: an
+ * unknown ('?', '.') or blank one does not hide the other tag. The H-M
+ * symbol is first put in the form gemmi's table lookup reads: blanks
+ * trimmed, '_' removed ('P 2_1/c'), subscripts in parentheses closed up
+ * ('P 4(2)/n m c'), a trailing ' (No. N)' dropped, ICSD's ' S' and ' Z'
+ * suffixes (either case) read as origin choice 1 and 2, and an R group's
+ * axes written as a suffix ('R -3 m H', 'R3R') as ':H' / ':R'. A value
+ * that this leaves empty ('(No. 14)', '_') cannot be read.
  *
  * The space group comes from the symmetry-operator loop
  * (_space_group_symop_operation_xyz or _symmetry_equiv_pos_as_xyz) when
@@ -49,7 +52,10 @@ namespace mlip {
  * However it was given, a monoclinic group must fit the cell: the angles
  * between its unique axis and the other two axes (alpha and gamma for
  * unique axis b) are 90 degrees within 1e-3, or the CIF is refused, naming
- * the group, the record it came from and the angles. A group in no
+ * the group, the record it came from and the angles. So must an R group:
+ * on hexagonal axes (':H') alpha = beta = 90 and gamma = 120, on
+ * rhombohedral axes (':R') alpha = beta = gamma, within 1e-3 degrees (a
+ * symbol without its axes takes them from the cell). A group in no
  * tabulated setting (an origin moved, an unusual centring) is checked as
  * the tabulated primitive group with its rotations; one whose rotations
  * are those of no tabulated setting (a monoclinic group on the axes of a
