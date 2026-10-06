@@ -339,12 +339,15 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
     }
 }
 
-// Compatibility wrapper: derivative of the arithmetic mean of dataset metrics.
+// Compatibility wrapper: derivative of the arithmetic mean of the dataset
+// metrics over the measured datasets (a dataset without forces is not
+// measured: it emits nothing and is not counted).
 template<class F>
 void frmse(const StructureDB& truth, const StructureDB& pred,
            double scale, F set_dydp)
 {
-    const auto count = truth.dbidx.size() > 1 ? truth.dbidx.size() - 1 : 0;
+    std::size_t count = 0;
+    for (bool m : measured_datasets(truth, MetricQuantity::Forces)) count += m;
     frmse_per_dataset(truth, pred, scale,
         [&](std::size_t, std::size_t i, PredCellKind kind, std::size_t comp, double partial) {
             set_dydp(i, kind, comp, partial / static_cast<double>(count));
@@ -353,7 +356,10 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
 
 /* d(srmse)/d(S_pred_ixy) where
  *   metric_s = sqrt((1/N_s^S) * sum_{i in s with sweight != 0, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
- *   scalar   = (1/S_seg) * sum_s metric_s
+ *   scalar   = (1/S_seg) * sum_{measured s} metric_s
+ *
+ * S_seg is the number of measured segments (N_s^S > 0): the scalar is the
+ * mean over them, as Analytics' measured_mean() takes it.
  *
  * N_s^S = 6 * (#structures in segment s with sweight != 0) is the
  * per-segment stress-cell count. A structure with stress weight 0
@@ -391,6 +397,8 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
         if (N_S_cells > 0)
             metric_per_seg[s] = std::sqrt(sumsq / static_cast<double>(N_S_cells));
     }
+    std::size_t S_measured = 0;  // the segments the scalar averages
+    for (std::size_t s = 0; s < S; ++s) S_measured += N_S_per_seg[s] > 0;
     for (std::size_t s = 0; s < S; ++s) {
         if (!(metric_per_seg[s] > 0.0)) continue;
         const std::size_t lo = truth.dbidx[s];
@@ -403,7 +411,7 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
                 for (std::size_t y = x; y < 3; ++y) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
                     const double v = -scale * d
-                                   / (static_cast<double>(S)
+                                   / (static_cast<double>(S_measured)
                                       * static_cast<double>(N_S_cells)
                                       * metric_per_seg[s]);
                     set_dydp(i, PredCellKind::STRESS, comp, v);
