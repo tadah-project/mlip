@@ -22,9 +22,7 @@ namespace mlip {
  *    s is an integer triple (j == i when s ≠ 0). It may also list pairs up
  *    to R + NNTable::guard, the rounding bound of a distance (about
  *    1e-13 relative for atoms near the cell, growing with their distance
- *    from the origin); consumers filter by their own cutoff. Two atoms at
- *    the same position are listed as neighbours at distance 0 (consumers
- *    divide by the distance: such a structure is not physical).
+ *    from the origin); consumers filter by their own cutoff.
  *  - **Relative to the stored positions:** positions are never changed;
  *    an atom outside the cell gets the shift that places its image.
  *  - **Symmetric and ordered:** (i → j, s) is listed iff (j → i, −s) is;
@@ -37,7 +35,13 @@ namespace mlip {
  * coordinates sized by the cell heights, and each unordered pair is
  * tested once with the distance computed as consumers compute it.
  *
- * Refused with std::invalid_argument: a cutoff that is not finite and
+ * Refused with std::invalid_argument: two atoms at the same position, or an
+ * atom on a periodic image of another (distance exactly 0: every consumer
+ * divides by the distance, so forces and stresses would be nan; two atoms at
+ * one position are not a physical structure), naming the atoms (1-based,
+ * with their symbols), the position and the image shift in the stored basis
+ * (unless list_coincident(true): then such a pair is listed at distance 0,
+ * for tools that audit the data); a cutoff that is not finite and
  * positive, a non-finite cell entry or position, a cell vector shorter
  * than 2^-200 Å or longer than 2^200 Å, a singular (or numerically
  * singular) cell, an atom more than 2^31 cells from the origin, and
@@ -59,6 +63,8 @@ private:
      */
     double get_cutoff(const tadah::core::Context &context) const;
 
+    bool list_coincident_ = false;
+
 public:
     /**
      * True iff every height of the (reduced) lattice is at least @p cutoff:
@@ -78,6 +84,14 @@ public:
     void populate_disp(const Structure &st, std::shared_ptr<NNTable> tbl) const;
 
     NNFinder() = default;
+
+    /**
+     * List a pair of atoms at the same position at distance 0 instead of
+     * refusing it (the default). For tools that audit a dataset
+     * (`tadah analysis dataset_stats`); every other consumer divides by the
+     * distance. Returns *this.
+     */
+    NNFinder &list_coincident(bool on = true) { list_coincident_ = on; return *this; }
 
     /**
      * Build the neighbour list of one Structure at @p cutoff (see the class

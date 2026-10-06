@@ -9,6 +9,8 @@
 //   * lo, hi are populated from the BoundSuggester closure
 //   * write_optim_block collapses vector entries to a single (1-N) line
 //   * write_optim_block emits scalar entries as (1)
+//   * `tadah analysis suggest_bounds` refuses a dataset with two atoms at
+//     one position, naming the structure (NNFinder's refusal)
 
 #include "catch2/catch.hpp"
 
@@ -163,4 +165,160 @@ TEST_CASE("print_suggestions: writes a header and one row per suggestion", "[bou
   REQUIRE(txt.find("TEST.CGRID2B[1]") != std::string::npos);
   REQUIRE(txt.find("CRITICAL") != std::string::npos);
   REQUIRE(txt.find("recommended") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+//  tadah analysis suggest_bounds on a dataset with two atoms at one position
+// ---------------------------------------------------------------------------
+
+#include <tadah/core/logger.h>
+#include <tadah/core/periodic_table.h>
+#include <tadah/mlip/atom.h>
+#include <tadah/mlip/engines/analysis_suggest_bounds_engine.h>
+#include <tadah/mlip/structure.h>
+#include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/task.h>
+
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <iostream>
+#include <stdexcept>
+#include <unistd.h>
+#include <utility>
+
+namespace {
+
+namespace sb_fs = std::filesystem;
+
+struct SbTempDir {
+  sb_fs::path dir;
+  SbTempDir() {
+    static int counter = 0;
+    dir = sb_fs::temp_directory_path() /
+          ("tadah_sbcoinc_" + std::to_string(::getpid()) + "_" +
+           std::to_string(counter++));
+    sb_fs::create_directories(dir);
+  }
+  ~SbTempDir() {
+    std::error_code ec;
+    sb_fs::remove_all(dir, ec);
+  }
+  std::string path(const std::string &name) const {
+    return (dir / name).string();
+  }
+};
+
+/* bcc Ta (a = 3.3 A) labelled `label`; with `coincident` a third Ta on top
+ * of atom 1, at (0, 0, 0). */
+Structure sb_bcc_ta(const std::string &label, bool coincident) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  Structure st;
+  st.label = label;
+  st.energy = -20.0;
+  st.cell.load(3.3, 0.0, 0.0, 0.0, 3.3, 0.0, 0.0, 0.0, 3.3);
+  st.add_atom(Atom(ta, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+  st.add_atom(Atom(ta, 1.65, 1.65, 1.65, 0.0, 0.0, 0.0));
+  if (coincident) st.add_atom(Atom(ta, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+  return st;
+}
+
+/* Runs `tadah analysis suggest_bounds` (validate, then run, as the scheduler
+ * does) on `db`, written to a dataset file, with RCUT2B 4 (no descriptor:
+ * the dataset is scanned before any descriptor is looked at) and OUTFILE
+ * `outfile`, at the CLI default verbosity (WARNING), with std::cout (the
+ * suggestion table, and the Logger's console) captured. Returns the exit
+ * code; what the engine throws reaches the caller, with std::cout and the
+ * log level restored. */
+int run_suggest_bounds(const StructureDB &db, const SbTempDir &tmp,
+                       const std::string &outfile) {
+  const std::string dbfile = tmp.path("data.tadahdb");
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  Context c;
+  c.add("DBFILE", dbfile);
+  c.add("RCUT2B", 4.0);  // RCUTMAX follows
+  c.add("OUTFILE", outfile);
+  Task task("analysis", c);
+
+  auto &log = tadah::core::Logger::instance();
+  const auto old_level = log.getLogLevel();
+  log.setLogLevel(tadah::core::LogLevel::WARNING);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  int rc = -1;
+  try {
+    engines::AnalysisSuggestBoundsEngine engine;
+    engine.validate(task);
+    rc = engine.run(task);
+  } catch (...) {
+    std::cout.rdbuf(old_buf);
+    log.setLogLevel(old_level);
+    throw;
+  }
+  std::cout.rdbuf(old_buf);
+  log.setLogLevel(old_level);
+  return rc;
+}
+
+/* The type and message of what @p f throws: {"", ""} when nothing is
+ * thrown. */
+template <class F>
+std::pair<std::string, std::string> sb_thrown(F f) {
+  try {
+    f();
+  } catch (const std::invalid_argument &e) {
+    return {"invalid_argument", e.what()};
+  } catch (const std::exception &e) {
+    return {"other exception", e.what()};
+  }
+  return {"", ""};
+}
+
+}  // namespace
+
+/* Pins: `tadah analysis suggest_bounds` refuses a dataset in which two atoms
+ * are at the same position, as training, prediction and HPO do (NNFinder's
+ * refusal), instead of suggesting bounds from statistics that count the
+ * pair at distance 0: of a bcc Ta cell and 'coincident-Ta' (the same cell
+ * with a third Ta on atom 1) it throws std::invalid_argument naming
+ * "structure 2 of 2 ('coincident-Ta')", "atoms 1 and 3 (Ta, Ta)" and "same
+ * position", and writes no OUTFILE. The bcc cell alone is accepted (exit
+ * code 0, OUTFILE written), so the refusal is the dataset's. Only `tadah
+ * analysis dataset_stats`, which audits the data, lists such a pair.
+ * Before the fix: compute_data_stats builds its lists with
+ * NNFinder::list_coincident(true), so it counts the pair at distance 0
+ * (per_pair r_min 0) and throws nothing; the engine prints the suggestion
+ * table and writes the OPTIM block to OUTFILE (headers only, no descriptor
+ * being configured) and returns EXIT_SUCCESS, so the type CHECK fails
+ * (nothing thrown, empty message), every message CHECK fails and OUTFILE
+ * exists. */
+TEST_CASE("analysis suggest_bounds refuses a dataset with two atoms at the "
+          "same position, naming the structure",
+          "[bound_suggester][suggest_bounds][coincident]") {
+  tadah::core::PeriodicTable::initialize();
+  {
+    SbTempDir tmp;
+    StructureDB clean;
+    clean.add(sb_bcc_ta("bcc-Ta", false));
+    const std::string out = tmp.path("clean.hpo");
+    int rc = -1;
+    REQUIRE_NOTHROW(rc = run_suggest_bounds(clean, tmp, out));
+    CHECK(rc == EXIT_SUCCESS);
+    CHECK(sb_fs::exists(out));
+  }
+
+  SbTempDir tmp;
+  StructureDB db;
+  db.add(sb_bcc_ta("bcc-Ta", false));
+  db.add(sb_bcc_ta("coincident-Ta", true));
+  const std::string out = tmp.path("suggested.hpo");
+  const auto t = sb_thrown([&] { (void)run_suggest_bounds(db, tmp, out); });
+  INFO(t.first << ": " << t.second);
+  CHECK(t.first == "invalid_argument");
+  CHECK(t.second.find("structure 2 of 2 ('coincident-Ta')") !=
+        std::string::npos);
+  CHECK(t.second.find("atoms 1 and 3 (Ta, Ta)") != std::string::npos);
+  CHECK(t.second.find("same position") != std::string::npos);
+  CHECK_FALSE(sb_fs::exists(out));
 }

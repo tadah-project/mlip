@@ -1,0 +1,25 @@
+# Fixture for test_cif_reader_symmetry.cpp: a complete operator loop that
+# is no tabulated setting: P 2 with the twofold axis along c through
+# (1/4,0,z) instead of the origin, {x,y,z; -x+1/2,-y,z}. gemmi finds no
+# table entry for these operators and expands the sites with the loop
+# itself (UnitCell::images): Fe1 at (0.1,0.2,0.3) gives 2 atoms, the
+# second at (0.4,-0.2,0.3). The record is reported as inconsistent ("space
+# group from symops not found in the table", a WARNING).
+data_P2_shifted_origin_loop
+_cell_length_a 3.0
+_cell_length_b 4.0
+_cell_length_c 5.0
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_symmetry_equiv_pos_as_xyz
+'x,y,z'
+'-x+1/2,-y,z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Fe1 Fe 0.1 0.2 0.3

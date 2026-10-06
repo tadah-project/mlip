@@ -1,3 +1,4 @@
+#include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/data_stats_compute.h>
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/stats/histogram.h>
 #include <tadah/core/stats/kde.h>
 #include <tadah/core/stats/percentiles.h>
@@ -55,7 +57,8 @@ std::vector<double> linspace(double lo, double hi, std::size_t n) {
 DataStats compute_data_stats(StructureDB& stdb,
                              tadah::core::Context& ctx,
                              bool /*with_descriptor_stats*/,
-                             std::size_t sample_size) {
+                             std::size_t sample_size,
+                             bool list_coincident) {
   DataStats out;
 
   if (!ctx.contains("RCUTMAX")) {
@@ -101,6 +104,10 @@ DataStats compute_data_stats(StructureDB& stdb,
   }
   if (!need_nn_idx.empty()) {
     NNFinder nnf;
+    // For the audit of the data (dataset_stats) two atoms at one position
+    // are listed as a pair at distance 0 (counted below, so r_min is 0);
+    // every other caller refuses them, as training, prediction and HPO do.
+    nnf.list_coincident(list_coincident);
     // An exception may not leave the OpenMP loop: each iteration keeps its
     // own, and the lowest-numbered structure's is rethrown after the loop.
     std::vector<std::exception_ptr> errors(need_nn_idx.size());
@@ -148,7 +155,8 @@ DataStats compute_data_stats(StructureDB& stdb,
 
       // neighbour-count summary uses the audit cutoff (== RCUTMAX),
       // strictly inside it as the model counts a pair (the list may hold
-      // pairs a rounding margin beyond its cutoff, NNTable::guard).
+      // pairs a rounding margin beyond its cutoff, NNTable::guard). A pair
+      // at distance 0 (two atoms at one position) counts like any other.
       double n_count = 0.0;
       const size_t nnsize = st.nn_size(i);
       for (size_t jj = 0; jj < nnsize; ++jj) {
@@ -157,7 +165,7 @@ DataStats compute_data_stats(StructureDB& stdb,
         const double dy = ai.position[1] - nnp[1];
         const double dz = ai.position[2] - nnp[2];
         const double rij = std::sqrt(dx*dx + dy*dy + dz*dz);
-        if (rij <= 0.0 || rij >= rcut_audit) continue;
+        if (rij >= rcut_audit) continue;
         n_count += 1.0;
         const std::size_t neigh_idx = st.nn->idx[i][jj];
         const std::string Sj = st(neigh_idx).symbol;
@@ -232,6 +240,77 @@ DataStats compute_data_stats(StructureDB& stdb,
   // 6) Material-class label.
   out.class_label = classify_dataset(out);
 
+  return out;
+}
+
+std::vector<CloseContact> find_close_contacts(const StructureDB& stdb,
+                                              double threshold) {
+  if (!detail::is_finite_bits(threshold) || !(threshold > 0.0))
+    throw std::invalid_argument(
+        "find_close_contacts: the threshold must be a finite distance "
+        "greater than 0, got " + core::format_roundtrip(threshold));
+
+  const std::size_t n = stdb.size();
+  NNFinder nnf;
+  nnf.list_coincident(true);  // a pair at distance 0 is listed
+  // Each structure's pairs in a slot of its own (no lock), joined in
+  // dataset order after the loop. An exception may not leave the OpenMP
+  // loop: each iteration keeps its own, and the lowest-numbered
+  // structure's is rethrown after the loop.
+  std::vector<std::vector<CloseContact>> found(n);
+  std::vector<std::exception_ptr> errors(n);
+#ifdef _OPENMP
+  #pragma omp parallel for schedule(dynamic)
+#endif
+  for (std::size_t s = 0; s < n; ++s) {
+    try {
+      const Structure& st = stdb(s);
+      // The stored list holds every pair closer than its cutoff; one built
+      // for a smaller cutoff (or none) is replaced, for this scan only, by
+      // a list out to the threshold.
+      NNTablePtr tbl = st.nn;
+      if (!tbl || tbl->cutoff < threshold) tbl = nnf.build(st, threshold);
+      for (std::size_t i = 0; i < st.natoms(); ++i) {
+        const tadah::core::Vec3d& ri = st.atoms[i].position;
+        for (std::size_t k = 0; k < tbl->idx[i].size(); ++k) {
+          const std::size_t j = tbl->idx[i][k];
+          const tadah::core::Vec3d& sh = tbl->shift[i][k];
+          // Each unordered pair once: i -> j is also listed as j -> i with
+          // the opposite shift (an atom and its own image as both s and -s).
+          if (j < i) continue;
+          if (j == i) {
+            const double lead = sh[0] != 0.0 ? sh[0]
+                              : sh[1] != 0.0 ? sh[1] : sh[2];
+            if (!(lead > 0.0)) continue;
+          }
+          // The distance as compute_data_stats computes it (nn_pos).
+          const tadah::core::Vec3d nnp = st.atoms[j].position + tbl->disp[i][k];
+          const double dx = ri[0] - nnp[0];
+          const double dy = ri[1] - nnp[1];
+          const double dz = ri[2] - nnp[2];
+          const double rij = std::sqrt(dx*dx + dy*dy + dz*dz);
+          if (!(rij < threshold)) continue;
+          CloseContact c;
+          c.structure = s;
+          c.i = i;
+          c.j = j;
+          for (int a = 0; a < 3; ++a)
+            c.shift[a] = static_cast<long long>(sh[a]);
+          c.r = rij;
+          found[s].push_back(c);
+        }
+      }
+    } catch (...) {
+      errors[s] = std::current_exception();
+    }
+  }
+  for (std::size_t s = 0; s < n; ++s)
+    if (errors[s])
+      detail::rethrow_for_structure(errors[s], s, n, stdb(s).label,
+                                    "find_close_contacts");
+
+  std::vector<CloseContact> out;
+  for (auto& v : found) out.insert(out.end(), v.begin(), v.end());
   return out;
 }
 

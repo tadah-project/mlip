@@ -67,7 +67,11 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
  *  the Gaussian basis, under NONNEG; in every form every radial bump width
  *  > 0, SGRIDMB of a Blip/Blip5 density and SGRID2B of a D2_Blip/D2_Blip5
  *  pair term). A DM_REAM `seed` without RHOFORM throws
- *  models::DensityFormError (the migration text), as tadah hpo does.
+ *  models::DensityFormError (the migration text), as tadah hpo does. A
+ *  dataset whose statistics cannot be computed (compute_data_stats: two
+ *  atoms at one position, a cell too small for the cutoff, ...) throws
+ *  that error, naming the structure: audited against empty statistics
+ *  every corner would pass.
  *
  *  Side-effect: emits one INFO line per corner via Logger and a
  *  WARNING summarising the worst corner.

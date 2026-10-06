@@ -1,9 +1,11 @@
+#include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/engines/analysis_dataset_stats_engine.h>
 
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -11,6 +13,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/stats/data_stats.h>
 #include <tadah/core/stats/data_stats_io.h>
 #include <tadah/mlip/data_stats_compute.h>
@@ -21,13 +24,34 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-void AnalysisDatasetStatsEngine::validate(const tadah::mlip::Task& /*task*/) {
+namespace {
+
+// CLOSE_CONTACT when it is given, nullopt otherwise. A value that is not a
+// finite distance greater than 0 is refused: no pair is closer than 0, so it
+// could only report 0 pairs.
+std::optional<double> close_contact(const tadah::core::Context& ctx) {
+  if (!ctx.has_stored("CLOSE_CONTACT")) return std::nullopt;
+  const double cc = ctx.get<double>("CLOSE_CONTACT");
+  if (!detail::is_finite_bits(cc) || !(cc > 0.0))
+    throw std::invalid_argument(
+        "analysis dataset_stats: CLOSE_CONTACT (--close-contact) must be a "
+        "finite distance greater than 0 (Angstrom), got " +
+        tadah::core::format_roundtrip(cc));
+  return cc;
+}
+
+}  // namespace
+
+void AnalysisDatasetStatsEngine::validate(const tadah::mlip::Task& task) {
   // Blueprint validation already enforces input-group requirements
-  // (DBFILE | STRUCTURE | task). No additional pre-conditions here.
+  // (DBFILE | STRUCTURE | task). CLOSE_CONTACT is checked here, before
+  // anything is read, computed or written.
+  close_contact(task.getContext());
 }
 
 int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
   auto& taskContext = task.getContext();
+  const std::optional<double> closeContact = close_contact(taskContext);
 
   // Build a working context. If the user passed `-c train.tadah`, the
   // CLI dispatcher will have run CoreUserConfigParser on it already
@@ -72,7 +96,16 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
         "audit cutoff is well-defined.");
   }
 
-  auto stats = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false);
+  // The audit of the data: two atoms at one position are a pair at
+  // distance 0 (r_min 0), listed rather than refused.
+  auto stats = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false,
+                                  /*sample_size=*/0, /*list_coincident=*/true);
+
+  // Pairs closer than CLOSE_CONTACT, from the lists compute_data_stats built
+  // at RCUTMAX; a CLOSE_CONTACT beyond RCUTMAX is answered from lists out to
+  // it, built for the scan only (find_close_contacts).
+  std::vector<CloseContact> closePairs;
+  if (closeContact) closePairs = find_close_contacts(stdb, *closeContact);
 
   // Structures whose cell is not symmetric (max |C - C^T| > 0). A cell that
   // an older Tadah stored transposed (see the data-migration note of the
@@ -100,6 +133,28 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
       for (std::size_t s : nonsym)
         std::cout << "  structure " << s + 1 << ": " << stdb(s).label
                   << std::endl;
+    }
+  }
+
+  // The close contacts, only when CLOSE_CONTACT is given: part of the
+  // report asked for, so printed at every log level. Each pair once, in
+  // dataset order, 1-based as `tadah data print` counts; the image shift
+  // of the second atom when the pair is through a periodic image.
+  if (closeContact) {
+    std::cout << "Atom pairs closer than "
+              << tadah::core::format_roundtrip(*closeContact)
+              << " A (CLOSE_CONTACT): " << closePairs.size() << std::endl;
+    for (const CloseContact& p : closePairs) {
+      const Structure& st = stdb(p.structure);
+      std::cout << "  structure " << p.structure + 1 << " ('" << st.label
+                << "'): atoms " << p.i + 1 << " and " << p.j + 1 << " ("
+                << st.atoms[p.i].symbol << ", " << st.atoms[p.j].symbol
+                << "), distance " << tadah::core::format_sig(p.r, 10)
+                << " A";
+      if (p.shift[0] != 0 || p.shift[1] != 0 || p.shift[2] != 0)
+        std::cout << ", image shift (" << p.shift[0] << ", " << p.shift[1]
+                  << ", " << p.shift[2] << ")";
+      std::cout << std::endl;
     }
   }
 

@@ -1,0 +1,16 @@
+# Fe at (0,0,0) in a cubic cell. Fixture for test_cif_reader_symmetry.cpp:
+# no symmetry record at all, so P 1 by convention: 1 atom.
+data_Fe_bcc_none
+_cell_length_a 2.8665
+_cell_length_b 2.8665
+_cell_length_c 2.8665
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Fe1 Fe 0 0 0

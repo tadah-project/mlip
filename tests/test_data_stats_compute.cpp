@@ -287,3 +287,46 @@ TEST_CASE("compute_data_stats rebuilds a neighbour list built with a smaller "
   const auto &counts = d.nn_count_percentiles_per_element.at("Ta");
   CHECK(counts[tadah::core::stats::IDX_MEAN] == 58.0);
 }
+
+/* Pins: compute_data_stats counts a pair of atoms at distance 0 like any
+ * other pair strictly inside the cutoff, so two atoms at one position give
+ * per_pair r_min 0. It reports such a structure rather than refusing it:
+ * dataset_stats is the tool that audits a dataset, so it must show what
+ * training, prediction and HPO refuse.
+ *
+ * bcc Ta (a = 3.3) with a third Ta on top of atom 1, cutoff 6 A. In the
+ * 2-atom cell each atom has 58 neighbours within 6 A (8 + 6 + 12 + 24 + 8),
+ * 26 on its own simple-cubic sublattice and 32 on the other. Atoms 1 and 3
+ * each see 58 + 26 + 1 (the other's images plus the pair at distance 0),
+ * atom 2 sees 58 + 32, so the cell holds 2 x 85 + 90 = 260 directed pairs,
+ * 2 of them (1 -> 3 and 3 -> 1) at distance 0 (counted by brute force as
+ * well).
+ *
+ * Before the fix: the pair loop skipped rij <= 0
+ * (data_stats_compute.cpp, `if (rij <= 0.0 || rij >= rcut_audit)
+ * continue;`), so r_min was the first-neighbour distance a sqrt(3)/2 =
+ * 2.858 A and n_pairs 258. */
+TEST_CASE("compute_data_stats counts a pair of coincident atoms, so r_min "
+          "is 0",
+          "[data_stats][nn][coincident]") {
+  PeriodicTable::initialize();
+  Structure st = make_bcc_ta_cell(3.30);
+  st.label = "coincident_Ta";
+  st.add_atom(Atom(PeriodicTable::find_by_symbol("Ta"), 0.0, 0.0, 0.0));
+  REQUIRE(st.natoms() == 3);
+  StructureDB stdb;
+  stdb.add(st);
+
+  Context c = make_ctx_with_rcut(6.0);
+  DataStats d;
+  // The audit's opt-in (dataset_stats); without it the pair is refused, as
+  // by suggest_bounds and check_bounds (their tests).
+  REQUIRE_NOTHROW(d = compute_data_stats(stdb, c, false, 0, /*list_coincident=*/true));
+  REQUIRE(d.n_atoms == 3);
+  REQUIRE(d.per_pair.size() == 1);
+  INFO("r_min " << d.per_pair[0].r_min << ", n_pairs "
+                << d.per_pair[0].n_pairs);
+  CHECK(d.per_pair[0].r_min == 0.0);
+  CHECK(d.per_pair[0].n_pairs == 260);
+  CHECK(d.per_pair[0].r_max < 6.0);
+}
