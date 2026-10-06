@@ -9,43 +9,50 @@
 // Contract pinned here:
 //   - a space group given by any one of the H-M symbol (old or new tag), the
 //     Hall symbol, the space-group number or a symmetry-operator loop (old
-//     or new tag) gives every atom of the unit cell;
+//     or new tag) gives every atom of the unit cell; a tag whose value is
+//     unknown ('?') does not hide the other tag of the pair;
 //   - a CIF with no symmetry record is P 1: the sites as listed, and two
 //     rows at one position modulo a lattice vector are both kept;
 //   - when the symmetry record contradicts itself (gemmi's
 //     SmallStructure::check_spacegroup() is not empty), the structure
-//     follows the operator loop and a WARNING names the file and quotes the
-//     diagnostic; a consistent or absent record prints nothing;
-//   - a space-group number alone (no operator loop, no symbol) names the
-//     group, not the setting: the reader takes the number's H-M symbol in
-//     the setting that fits the cell angles (hexagonal or rhombohedral
-//     axes) and origin choice 2, as gemmi does for an H-M symbol, and, when
-//     the number has more than one tabulated setting, a WARNING names the
-//     setting used;
-//   - an operator loop that is incomplete is not completed or replaced by
-//     the number: gemmi falls back to the H-M symbol, or to P 1 when there
-//     is none, and the WARNING says which; a complete loop that is no
-//     tabulated setting expands the sites with its own operators;
-//   - a site with _atom_site_occupancy below 1 is refused, naming the site
-//     and its occupancy: Tadah has no representation for a disordered or
-//     partly vacant site, and two species sharing a site would become
-//     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1;
+//     follows the record read first and a WARNING names the file, quotes
+//     the diagnostic and says what the cell was built with; a consistent
+//     or absent record prints nothing;
 //   - the H-M symbol is normalised before any lookup and before gemmi's
 //     consistency check, with or without an operator loop: surrounding
 //     blanks trimmed, ICSD's ' S' / ' Z' (either case) read as origin
 //     choice 1 / 2, '_' removed (spglib's P2_1/c), subscripts in
 //     parentheses closed up (P2(1)/c, P6(3)/mmc) and a trailing
-//     ' (No. N)' dropped;
-//   - without a loop, a Hall symbol that gives a complete group gemmi does
-//     not tabulate expands the sites with its own operators; a symbol that
-//     still names nothing readable is refused, quoting it ("cannot read");
-//   - a number alone is accepted only in 1..230, and its "more than one
-//     setting" WARNING counts only the settings with the reference
-//     setting's centring letter (none for P 1, P -1, I 4/m m m);
-//   - a monoclinic group (3..15), however it was given, must fit the cell:
-//     the two angles its unique axis needs to be 90 (b: alpha, gamma; c:
-//     alpha, beta; a: beta, gamma) are 90 within 1e-3 degrees, or the CIF
-//     is refused, naming the setting and the angles as read.
+//     ' (No. N)' dropped; a value of blanks is no symbol, one that this
+//     otherwise leaves empty cannot be read;
+//   - the order: the operator loop (a tabulated setting, or its own
+//     operators when they form a group in no table); else (no loop, or a
+//     loop that forms no group) the Hall symbol (one in no tabulated
+//     setting expands the sites with its own operators), else the H-M
+//     symbol, in the setting it names or else origin choice 2 (also for
+//     the current symbols such as 'C c c e') and hexagonal or rhombohedral
+//     axes from the cell angles; else, without a loop only, the number;
+//     else P 1. A symbol that cannot be read (or an H-M symbol that is a
+//     number) is refused, quoting it ("cannot read"); a refusal from a
+//     record read first says so ("read before");
+//   - a space-group number alone is accepted only in 1..230 and gives the
+//     setting its H-M symbol would; a WARNING names the setting used when
+//     the cell could be in another setting of the group: another origin
+//     choice, or another choice of axes that fits the cell (not the R
+//     groups' other axes, the larger centred cells of P 1 or I 4/m m m, or
+//     gemmi's extra CCP4 origins of 22, 23, 94 and 197);
+//   - an incomplete operator loop is not replaced by the number: with no
+//     symbol the cell is P 1, with the WARNING;
+//   - a monoclinic group, however it was given, must fit the cell: the
+//     angles between its unique axis and the other two axes (b: alpha,
+//     gamma; c: alpha, beta; a: beta, gamma) are 90 within 1e-3 degrees,
+//     or the CIF is refused, naming the group and the angles as read; a
+//     group in no tabulated setting is checked by the tabulated primitive
+//     group with its rotations;
+//   - a site with _atom_site_occupancy below 1 is refused, naming the site
+//     and its occupancy: Tadah has no representation for a disordered or
+//     partly vacant site, and two species sharing a site would become
+//     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1.
 //
 // Fixtures: tests_data/cif/ (one file per row of the investigation table,
 // tmp/known-issues/report_leftovers.md section 6, and
@@ -1331,6 +1338,14 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  *     with Fe1 at (0,0,0.1): those and (0,0,0.6), (1/2,1/2,0.6); C m m m
  *     (65) with Fe1 at the origin: (0,0,0), (1/2,1/2,0); C c c m (66) with
  *     Fe1 at the origin: (0,0,0), (0,0,1/2), (1/2,1/2,0), (1/2,1/2,1/2).
+ *   - Only the settings that fit the cell count, and only ITA's: P 21/m
+ *     (11) in a cell with beta = 110 prints nothing (its unique-axis-a and
+ *     -c settings need beta = 90), in a cell with all angles 90 it warns,
+ *     naming P 1 21/m 1 (Fe1 at (0.1,0.2,0.3), the 4 atoms of P 1 21/m 1
+ *     either way); F 2 2 2 (22), I 2 2 2 (23), P 42 21 2 (94) and I 2 3
+ *     (197), whose other table entries are CCP4's extra origins (no ITA
+ *     origin choice), print nothing: Fe1 at the origin gives the 4 atoms
+ *     of the F lattice for 22 and (0,0,0), (1/2,1/2,1/2) for the others.
  * The numbers 227 and 14 warn too (the number-only WARNING test and the
  * monoclinic number test); 166 does not (the number-only WARNING test).
  * Before the fix: the WARNING counted every table entry of the number, so
@@ -1338,7 +1353,10 @@ TEST_CASE("CIF reader: a space-group number outside 1..230 is refused",
  * fails three times.
  * Review round 5: the WARNING counted the settings with the letter of the
  * setting used, so 35, 37, 65 and 66 (one C setting each) printed nothing
- * and the CHECKs for their WARNING fail four times. */
+ * and the CHECKs for their WARNING fail four times. Review round 6: every
+ * setting with the same determinant counted, whatever the cell, so 11 with
+ * beta = 110, 22, 23, 94 and 197 warned: the CHECK_FALSE fails five
+ * times. */
 TEST_CASE("CIF reader: a number alone warns only when the cell could be in "
           "another setting of its group",
           "[structure_readers][cif][spacegroup][warning]") {
@@ -1356,6 +1374,19 @@ TEST_CASE("CIF reader: a number alone warns only when the cell could be in "
       {"2", 4.2, 5.1, 6.3, 81.5, 96.2, 103.7, "Fe1 Fe 0.1 0.2 0.3\n",
        {{"Fe", {0.1, 0.2, 0.3}}, {"Fe", {-0.1, -0.2, -0.3}}}, nullptr},
       {"139", 2.9, 2.9, 4.1, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc, nullptr},
+      {"22", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n",
+       {{"Fe", {0.0, 0.0, 0.0}},
+        {"Fe", {0.0, 0.5, 0.5}},
+        {"Fe", {0.5, 0.0, 0.5}},
+        {"Fe", {0.5, 0.5, 0.0}}},
+       nullptr},
+      {"23", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc, nullptr},
+      {"94", 3, 3, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc, nullptr},
+      {"197", 5, 5, 5, 90, 90, 90, "Fe1 Fe 0 0 0\n", kFeBcc, nullptr},
+      {"11", 5, 6, 7, 90, 110, 90, "Fe1 Fe 0.1 0.2 0.3\n", kFeP21mB,
+       nullptr},
+      {"11", 5, 6, 7, 90, 90, 90, "Fe1 Fe 0.1 0.2 0.3\n", kFeP21mB,
+       "P 1 21/m 1"},
       {"35", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
        {{"Fe", {0.0, 0.0, 0.1}}, {"Fe", {0.5, 0.5, 0.1}}}, "C m m 2"},
       {"37", 3, 4, 5, 90, 90, 90, "Fe1 Fe 0 0 0.1\n",
@@ -1546,11 +1577,21 @@ const std::string kShiftedP21cLoop =
  * Hall symbol '-P 2ybc (x+1/4,y,z)' and the operator loop of that group
  * (x,y,z; -x+1/2,y+1/2,-z+1/2; -x+1/2,-y,-z; x,-y+1/2,z+1/2), each with
  * Fe1 at (0.1,0.2,0.3), are refused with a std::runtime_error naming the
- * source, unique axis b and the angle (110). With beta = 110 they are read
- * (the Hall test above, p2_shifted_origin_loop.cif).
- * Before the fix: the check looked only at a tabulated group, so both were
- * accepted, 4 atoms each, with only the WARNING that the group is in no
- * table ("accepted: 4 atoms", twice). */
+ * source, unique axis b and the angle (110). With beta = 110 they are read:
+ * 4 atoms each, (0.1,0.2,0.3), (0.4,0.7,0.2), (0.4,0.8,0.7) and
+ * (0.1,0.3,0.8).
+ * Centred groups in no tabulated setting are checked the same way (the
+ * check uses the primitive group with their rotations): with Fe1 at
+ * (0.1,0.2,0.3), the Hall symbol '-B 2y' (B 1 2/m 1, unique axis b) and
+ * the 8 operators of that group with gamma = 110, and the Hall symbol
+ * '-C 2' (C 1 1 2/m, unique axis c) with beta = 110, are refused, naming
+ * the unique axis and the angle.
+ * Before the fix: the check looked only at a tabulated group, so the two
+ * P cases were accepted, 4 atoms each, with only the WARNING that the
+ * group is in no table ("accepted: 4 atoms", twice). Review round 6: the
+ * centred ones were looked up with their centring, which gemmi tabulates
+ * for none of these settings, and accepted, 8 atoms each ("accepted: 8
+ * atoms", three times). */
 TEST_CASE("CIF reader: a monoclinic group in no tabulated setting must fit "
           "the cell",
           "[structure_readers][cif][spacegroup]") {
@@ -1558,18 +1599,41 @@ TEST_CASE("CIF reader: a monoclinic group in no tabulated setting must fit "
   struct Case {
     const char *block;
     std::string symmetry;
+    double beta, gamma;
+    char axis;
   };
+  const std::string b12m1_loop =
+      "loop_\n_symmetry_equiv_pos_as_xyz\n'x,y,z'\n'-x,y,-z'\n'-x,-y,-z'\n"
+      "'x,-y,z'\n'x+1/2,y,z+1/2'\n'-x+1/2,y,-z+1/2'\n'-x+1/2,-y,-z+1/2'\n"
+      "'x+1/2,-y,z+1/2'\n";
   for (const Case &c :
-       {Case{"P21c_hall_shifted_gamma", hall_line("-P 2ybc (x+1/4,y,z)")},
-        Case{"P21c_loop_shifted_gamma", kShiftedP21cLoop}}) {
+       {Case{"P21c_hall_shifted_gamma", hall_line("-P 2ybc (x+1/4,y,z)"), 90,
+             110, 'b'},
+        Case{"P21c_loop_shifted_gamma", kShiftedP21cLoop, 90, 110, 'b'},
+        Case{"B12m1_hall_gamma", hall_line("-B 2y"), 90, 110, 'b'},
+        Case{"B12m1_loop_gamma", b12m1_loop, 90, 110, 'b'},
+        Case{"C112m_hall_beta", hall_line("-C 2"), 110, 90, 'c'}}) {
     INFO(c.block);
-    const std::string what = refusal(
-        cif_cell(c.block, 5, 6, 7, 90, 90, 110, c.symmetry, kFeGeneral));
+    const std::string what = refusal(cif_cell(c.block, 5, 6, 7, 90, c.beta,
+                                              c.gamma, c.symmetry,
+                                              kFeGeneral));
     INFO("message: " << what);
     if (what.empty()) continue;
     CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
-    CHECK(contains(what, "unique axis b"));
+    CHECK(contains(what, std::string("unique axis ") + c.axis));
     CHECK(mentions_value(what, 110.0));
+  }
+  for (const Case &c :
+       {Case{"P21c_hall_shifted_beta", hall_line("-P 2ybc (x+1/4,y,z)"), 110,
+             90, 'b'},
+        Case{"P21c_loop_shifted_beta", kShiftedP21cLoop, 110, 90, 'b'}}) {
+    INFO(c.block);
+    Read r;
+    if (!accepted(cif_cell(c.block, 5, 6, 7, 90, c.beta, c.gamma, c.symmetry,
+                           kFeGeneral),
+                  r))
+      continue;
+    check_sites(r.st, kFeP21cShifted);
   }
 }
 
@@ -1582,10 +1646,11 @@ TEST_CASE("CIF reader: a monoclinic group in no tabulated setting must fit "
  *   - with the H-M symbol '1003' (a number, which gemmi takes as the CCP4
  *     code of P 1 1 2), 'P 21/c Q', or the Hall symbol '-Q 2ybc': refused,
  *     quoting the symbol, "cannot read".
- * Before the fix: gemmi's own fallback was used, so '1003' gave the 2
- * atoms of P 1 1 2, and 'P 21/c Q' and '-Q 2ybc' the 1 atom of P 1, each
- * with only the WARNING that the loop is incomplete ("accepted: 2 atoms",
- * "accepted: 1 atoms" twice). */
+ * Before the fix: gemmi's own fallback was used, so '1003' was read as
+ * the CCP4 code of P 1 1 2 (unique axis c), which this cell (beta = 110)
+ * does not fit: refused by the monoclinic check, without "cannot read";
+ * 'P 21/c Q' and '-Q 2ybc' gave the 1 atom of P 1, with WARNINGs quoting
+ * gemmi's diagnostics ("accepted: 1 atoms" twice). */
 TEST_CASE("CIF reader: when the operator loop forms no group, the symbols "
           "are read as without a loop",
           "[structure_readers][cif][spacegroup]") {
@@ -1681,12 +1746,14 @@ TEST_CASE("CIF reader: an H-M value that normalises to nothing is refused",
   }
 }
 
-/* Pins: a B-centred short monoclinic symbol means unique axis c (gemmi
- * reads 'B 2/m' as B 1 1 2/m, the PDB convention; B is no cell choice of
- * unique axis b): with gamma = 110, 'B 2/m' gives the 8 atoms of B 1 1 2/m
- * from Fe1 at (0.1,0.2,0.3); with beta = 110 it is refused, naming B 1 1
- * 2/m and unique axis c. (The other short symbols mean unique axis b: the
- * monoclinic tests above.)
+/* Pins: a short monoclinic symbol is read in the setting gemmi gives it,
+ * which is unique axis b except for the B-centred 'B 2', 'B m', 'B b',
+ * 'B 2/m' and 'B 2/b' (unique axis c, the PDB convention): with gamma =
+ * 110, 'B 2/m' gives the 8 atoms of B 1 1 2/m from Fe1 at (0.1,0.2,0.3);
+ * with beta = 110 it is refused, naming B 1 1 2/m and unique axis c.
+ * 'B 21' is read as B 1 21 1, unique axis b: refused with gamma = 110,
+ * naming B 1 21 1 and unique axis b. (The P short symbols: the monoclinic
+ * tests above.)
  * Before the fix: passes as well (a pin of what the docs now say). */
 TEST_CASE("CIF reader: a B-centred short monoclinic symbol means unique "
           "axis c",
@@ -1702,14 +1769,26 @@ TEST_CASE("CIF reader: a B-centred short monoclinic symbol means unique "
       check_sites(r.st, kFeB112m);
     }
   }
-  INFO("'B 2/m' with beta = 110");
+  {
+    INFO("'B 2/m' with beta = 110");
+    const std::string what = refusal(
+        cif_cell("B2m_beta", 5, 6, 7, 90, 110, 90, hm_line("B 2/m"),
+                 kFeGeneral));
+    INFO("message: " << what);
+    if (!what.empty()) {
+      CHECK(contains(what, "B 1 1 2/m"));
+      CHECK(contains(what, "unique axis c"));
+      CHECK(mentions_value(what, 110.0));
+    }
+  }
+  INFO("'B 21' with gamma = 110");
   const std::string what = refusal(
-      cif_cell("B2m_beta", 5, 6, 7, 90, 110, 90, hm_line("B 2/m"),
+      cif_cell("B21_gamma", 5, 6, 7, 90, 90, 110, hm_line("B 21"),
                kFeGeneral));
   INFO("message: " << what);
   if (what.empty()) return;
-  CHECK(contains(what, "B 1 1 2/m"));
-  CHECK(contains(what, "unique axis c"));
+  CHECK(contains(what, "B 1 21 1"));
+  CHECK(contains(what, "unique axis b"));
   CHECK(mentions_value(what, 110.0));
 }
 
@@ -1756,5 +1835,88 @@ TEST_CASE("CIF reader: a refusal from a record read first says so",
     CHECK(contains(what, std::string("CIF text (data_") + c.block + "): "));
     CHECK(contains(what, c.record));
     CHECK(contains(what, "read before"));
+  }
+}
+
+// ================================================ review round 6 ====
+
+/* Pins: a symbol that names no origin choice gets origin choice 2 also in
+ * its current spelling: C c c a (68) is written 'C c c e' since ITA 2002
+ * (spglib and pymatgen write 'Ccce'), and A b a a and B b c b likewise
+ * 'A e a a' and 'B b e b'. In a 6 x 7 x 8 A cell with Fe1 at the origin,
+ * 'Ccce', 'C c c e' and 'C c c a' (each with the number 68) and the number
+ * 68 alone all give the 8 atoms of origin choice 2, the origin's images
+ * under -x+1/2,-y,z; -x,y,-z+1/2 and the C centring: every point with
+ * coordinates 0 or 1/2. 'C c c e:1' gives origin choice 1, 4 atoms:
+ * (0,0,0), (0,1/2,1/2), (1/2,0,1/2), (1/2,1/2,0).
+ * Before the fix: gemmi's name lookup applies its origin preference only
+ * to the main table, and finds 'C c c e' among the other names, origin
+ * choice 1: 'Ccce' and 'C c c e' gave the 4 atoms of origin choice 1, a
+ * different crystal, without a message (check_sites fails twice). */
+TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
+          "choice 2 as well",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  std::vector<Site> origin2;
+  for (double x : {0.0, 0.5})
+    for (double y : {0.0, 0.5})
+      for (double z : {0.0, 0.5}) origin2.push_back({"Fe", {x, y, z}});
+  const std::vector<Site> origin1 = {{"Fe", {0.0, 0.0, 0.0}},
+                                     {"Fe", {0.0, 0.5, 0.5}},
+                                     {"Fe", {0.5, 0.0, 0.5}},
+                                     {"Fe", {0.5, 0.5, 0.0}}};
+  struct Case {
+    std::string symmetry;
+    const std::vector<Site> *sites;
+  };
+  const std::vector<Case> cases = {
+      {hm_line("Ccce") + number_line("68"), &origin2},
+      {hm_line("C c c e") + number_line("68"), &origin2},
+      {hm_line("C c c a") + number_line("68"), &origin2},
+      {number_line("68"), &origin2},
+      {hm_line("C c c e:1"), &origin1}};
+  for (const Case &c : cases) {
+    INFO(c.symmetry);
+    Read r;
+    if (!accepted(cif_cell("Ccce", 6, 7, 8, 90, 90, 90, c.symmetry,
+                           "Fe1 Fe 0 0 0\n"),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, *c.sites);
+  }
+}
+
+/* Pins: a tag whose value is unknown ('?') does not hide the other tag of
+ * its pair: in a bcc cell (a = 2.8665 A) with Fe1 at the origin,
+ *   - _space_group_name_H-M_alt ? with _symmetry_space_group_name_H-M
+ *     'I m -3 m';
+ *   - _space_group_IT_number ? with _symmetry_Int_Tables_number 229;
+ *   - _space_group_name_Hall '-I 4 2 3' with
+ *     _symmetry_space_group_name_Hall ?
+ * each give the 2 atoms of bcc Fe and print nothing.
+ * Before the fix: gemmi takes the first H-M and number tag present, null
+ * or not, and the last Hall tag present, so each CIF was read as P 1, 1
+ * atom, without a message (check_sites fails three times). */
+TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
+          "pair",
+          "[structure_readers][cif][spacegroup]") {
+  PeriodicTable::initialize();
+  for (const std::string &symmetry :
+       {std::string("_space_group_name_H-M_alt ?\n") +
+            "_symmetry_space_group_name_H-M 'I m -3 m'\n",
+        std::string("_space_group_IT_number ?\n") +
+            "_symmetry_Int_Tables_number 229\n",
+        std::string("_space_group_name_Hall '-I 4 2 3'\n") +
+            "_symmetry_space_group_name_Hall ?\n"}) {
+    INFO(symmetry);
+    Read r;
+    if (!accepted(cif_cell("Null_tag", 2.8665, 2.8665, 2.8665, 90, 90, 90,
+                           symmetry, "Fe1 Fe 0 0 0\n"),
+                  r))
+      continue;
+    INFO("printed:\n" << r.log);
+    check_sites(r.st, kFeBcc);
+    CHECK_FALSE(contains(lower(r.log), "warning"));
   }
 }
