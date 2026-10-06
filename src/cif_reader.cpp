@@ -551,35 +551,9 @@ void CifReader::parseCif(const std::string &fileContents,
     }
     return false;
   };
+  // The number, used when there is no symbol: its standard setting
   bool number_has_choice = false;
-  if (!struc.symops.empty()) {
-    bool forms_group = false;
-    try {
-      const gemmi::GroupOps ops = gemmi::split_centering_vectors(
-          gemmi::triplets_to_ops(struc.symops));
-      struc.spacegroup = gemmi::find_spacegroup_by_ops(ops);
-      if (struc.spacegroup) {
-        struc.setup_cell_images();
-        forms_group = true;
-      } else if (ops.order() == static_cast<int>(struc.symops.size()) &&
-                 gemmi::is_complete(ops) && closed(ops)) {
-        // a group in no tabulated setting: its own operators
-        struc.cell.set_cell_images_from_groupops(ops);
-        src.own_ops = ops;
-        forms_group = true;
-      }
-    } catch (const std::exception &) {
-      // an operator gemmi cannot parse: the loop forms no group
-    }
-    if (forms_group) {
-      src.kind = SymmetrySource::Loop;
-      src.record = "the symmetry-operator loop";
-    } else {
-      // gemmi's fallback; the number is not used (see the header)
-      src.note = " (the operator loop forms no group)";
-      from_symbols();
-    }
-  } else if (!from_symbols() && number_given) {
+  const auto from_number = [&]() {
     try {
       struc.spacegroup_number = as_int(as_string(*number_value));
     } catch (const std::exception &) {
@@ -607,6 +581,36 @@ void CifReader::parseCif(const std::string &fileContents,
     struc.setup_cell_images();
     number_has_choice =
         settings_of_the_cell(*struc.spacegroup, struc.cell) > 1;
+  };
+  if (!struc.symops.empty()) {
+    bool forms_group = false;
+    try {
+      const gemmi::GroupOps ops = gemmi::split_centering_vectors(
+          gemmi::triplets_to_ops(struc.symops));
+      struc.spacegroup = gemmi::find_spacegroup_by_ops(ops);
+      if (struc.spacegroup) {
+        struc.setup_cell_images();
+        forms_group = true;
+      } else if (ops.order() == static_cast<int>(struc.symops.size()) &&
+                 gemmi::is_complete(ops) && closed(ops)) {
+        // a group in no tabulated setting: its own operators
+        struc.cell.set_cell_images_from_groupops(ops);
+        src.own_ops = ops;
+        forms_group = true;
+      }
+    } catch (const std::exception &) {
+      // an operator gemmi cannot parse: the loop forms no group
+    }
+    if (forms_group) {
+      src.kind = SymmetrySource::Loop;
+      src.record = "the symmetry-operator loop";
+    } else {
+      // The symbols, then the number, as without a loop
+      src.note = " (the operator loop forms no group)";
+      if (!from_symbols() && number_given) from_number();
+    }
+  } else if (!from_symbols() && number_given) {
+    from_number();
   }
 
   // However the group was given, a monoclinic or R one must fit the cell.
