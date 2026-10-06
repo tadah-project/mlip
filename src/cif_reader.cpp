@@ -149,6 +149,24 @@ bool fits_cell(const gemmi::UnitCell &c, const Axes &a) {
   return true;
 }
 
+// The setting a (normalised) H-M symbol names in cell @p c, or nullptr:
+// gemmi's lookup with origin choice 2 and hexagonal or rhombohedral axes
+// from the cell angles where the symbol names none. gemmi prefers origin
+// choice 2 only for the symbols of its main table; one of its other names
+// ('C c c e', the current symbol of C c c a) gives origin choice 1. Its
+// table lists origin choice 2 right after 1.
+const gemmi::SpaceGroup *lookup_hm(const std::string &hm,
+                                   const gemmi::UnitCell &c) {
+  const gemmi::SpaceGroup *sg =
+      gemmi::find_spacegroup_by_name(hm, c.alpha, c.gamma, "2");
+  const gemmi::SpaceGroup *const end =
+      std::end(gemmi::spacegroup_tables::main);
+  if (sg && hm.find(':') == std::string::npos && sg->ext == '1' &&
+      sg + 1 != end && sg[1].number == sg->number && sg[1].ext == '2')
+    ++sg;
+  return sg;
+}
+
 // The ITA settings of the group of @p sg that cell @p c could be in, @p sg
 // included: another origin choice (the groups with two) or another choice
 // of axes (a permutation, a monoclinic unique axis or cell choice) that
@@ -173,19 +191,30 @@ int settings_of_the_cell(const gemmi::SpaceGroup &sg,
 // The axes of operators in no tabulated setting (an origin moved, an
 // unusual centring), which depend on their rotations and centring alone:
 // those of the tabulated group with their rotations and centring (the
-// translations removed); else, for a centring by thirds (R on hexagonal
-// axes in the reverse setting, which gemmi does not tabulate), hexagonal
-// axes; else those of the tabulated primitive group with their rotations.
+// translations removed); else, for an R or H centring gemmi does not
+// tabulate with these rotations (the reverse setting), hexagonal axes;
+// else those of the tabulated primitive group with their rotations.
 // @p like is set to the tabulated group used, or nullptr.
 Axes axes_of_ops(gemmi::GroupOps ops, const gemmi::SpaceGroup *&like) {
   for (gemmi::Op &op : ops.sym_ops) op.tran = {0, 0, 0};
   if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
-  constexpr int den = gemmi::Op::DEN;
-  for (const gemmi::Op::Tran &t : ops.cen_ops)
-    for (const int k : t) {
-      const int r = ((k % den) + den) % den;
-      if (r == den / 3 || r == 2 * den / 3) return {Axes::Hexagonal, 0};
-    }
+  // The centrings of hexagonal axes: R obverse, R reverse and the H cell
+  // (the translations, in gemmi's units of 1/24, sorted). Other
+  // translations by thirds (a supercell's x+1/3) are no such centring.
+  constexpr int t = gemmi::Op::DEN / 3;
+  using Tran = gemmi::Op::Tran;
+  static const std::vector<std::vector<Tran>> hexagonal = {
+      {{0, 0, 0}, {t, 2 * t, 2 * t}, {2 * t, t, t}},
+      {{0, 0, 0}, {t, 2 * t, t}, {2 * t, t, 2 * t}},
+      {{0, 0, 0}, {t, 2 * t, 0}, {2 * t, t, 0}}};
+  std::vector<Tran> cen;
+  for (Tran v : ops.cen_ops) {
+    for (int &k : v) k = ((k % gemmi::Op::DEN) + gemmi::Op::DEN) % gemmi::Op::DEN;
+    cen.push_back(v);
+  }
+  std::sort(cen.begin(), cen.end());
+  for (const std::vector<Tran> &h : hexagonal)
+    if (cen == h) return {Axes::Hexagonal, 0};
   ops.cen_ops = {gemmi::Op::Tran{0, 0, 0}};
   if ((like = gemmi::find_spacegroup_by_ops(ops))) return axes_of(*like);
   return {};
@@ -401,22 +430,10 @@ void CifReader::parseCif(const std::string &fileContents,
         throw cannot_read("H-M", hm_as_written,
                           "it is a number, not an H-M symbol (the number "
                           "goes in _space_group_IT_number)");
-      struc.spacegroup = gemmi::find_spacegroup_by_name(
-          struc.spacegroup_hm, struc.cell.alpha, struc.cell.gamma, "2");
+      struc.spacegroup = lookup_hm(struc.spacegroup_hm, struc.cell);
       if (!struc.spacegroup)
         throw cannot_read("H-M", hm_as_written,
                           "it names no space group gemmi knows");
-      // gemmi prefers origin choice 2 only for the symbols of its main
-      // table; one of its other names ('C c c e', the current symbol of
-      // C c c a) gives origin choice 1. Its table lists origin choice 2
-      // right after 1.
-      const gemmi::SpaceGroup *const end =
-          std::end(gemmi::spacegroup_tables::main);
-      if (struc.spacegroup_hm.find(':') == std::string::npos &&
-          struc.spacegroup->ext == '1' && struc.spacegroup + 1 != end &&
-          struc.spacegroup[1].number == struc.spacegroup->number &&
-          struc.spacegroup[1].ext == '2')
-        ++struc.spacegroup;
       struc.setup_cell_images();
       return true;
     }
@@ -510,20 +527,37 @@ void CifReader::parseCif(const std::string &fileContents,
         advice = "correct the Hall symbol or the cell (the Hall symbol is "
                  "read before the H-M symbol)";
         break;
-      default:
+      default: {
+        // Another setting can fit the cell only if the cell fits its axes
+        const gemmi::UnitCell &c = struc.cell;
+        const bool monoclinic_fits =
+            fits_cell(c, {Axes::Monoclinic, 'a'}) ||
+            fits_cell(c, {Axes::Monoclinic, 'b'}) ||
+            fits_cell(c, {Axes::Monoclinic, 'c'});
+        const bool other_r_fits =
+            fits_cell(c, {axes.kind == Axes::Hexagonal ? Axes::Rhombohedral
+                                                       : Axes::Hexagonal,
+                          0});
         if (axes.kind == Axes::Monoclinic)
-          advice = "give the full H-M symbol of the setting the cell is in "
-                   "(e.g. 'P 1 1 21/m' for unique axis c), or its "
-                   "symmetry-operator loop";
-        else if (axes_from_cell)
-          advice = "the axes are taken from the cell angles, which fit "
-                   "neither hexagonal (alpha = beta = 90, gamma = 120) nor "
-                   "rhombohedral (alpha = beta = gamma) axes: correct the "
-                   "cell, or give the symmetry-operator loop";
+          advice = monoclinic_fits
+                       ? "give the full H-M symbol of the setting the cell "
+                         "is in (e.g. 'P 1 1 21/m' for unique axis c), or "
+                         "its symmetry-operator loop"
+                       : "the cell angles fit no monoclinic setting (two of "
+                         "alpha, beta and gamma are 90): correct the cell";
+        else if (axes_from_cell || !other_r_fits)
+          advice = std::string(axes_from_cell
+                                   ? "the axes are taken from the cell "
+                                     "angles, which"
+                                   : "the cell angles") +
+                   " fit neither hexagonal (alpha = beta = 90, gamma = 120) "
+                   "nor rhombohedral (alpha = beta = gamma) axes: correct "
+                   "the cell";
         else
           advice = "give the H-M symbol without its axes (e.g. 'R -3 m', "
                    "which takes them from the cell), or the "
                    "symmetry-operator loop";
+      }
     }
     require_cell_fits(struc.cell, axes, what, advice, source);
   }
@@ -582,30 +616,41 @@ void CifReader::parseCif(const std::string &fileContents,
                     "') is not an integer\n";
     }
   }
-  // gemmi's check takes an H-M symbol that is a number as a CCP4 code:
-  // report it as a number instead.
-  if (!struc.spacegroup_hm.empty() &&
-      std::isdigit(static_cast<unsigned char>(struc.spacegroup_hm[0]))) {
-    diagnostic += "H-M symbol (" + hm_as_written +
-                  ") is a number, not an H-M symbol\n";
+  // gemmi's check, but for the H-M symbol, which it compares by its
+  // string without the setting (and takes as a CCP4 code when it is a
+  // number): the reader compares it by the operations it names.
+  {
     const std::string hm = struc.spacegroup_hm;
     struc.spacegroup_hm.clear();
     diagnostic += struc.check_spacegroup();
     struc.spacegroup_hm = hm;
-  } else {
-    diagnostic += struc.check_spacegroup();
   }
-  // gemmi compares the H-M symbol without its setting: one that names a
-  // setting (':1', ':2', ':H', ':R', ICSD's ' S' or ' Z') other than the
-  // one the cell is built with, in the same group, is reported too.
-  if (struc.spacegroup && src.kind != SymmetrySource::HM &&
-      struc.spacegroup_hm.find(':') != std::string::npos) {
-    const gemmi::SpaceGroup *named = gemmi::find_spacegroup_by_name(
-        struc.spacegroup_hm, struc.cell.alpha, struc.cell.gamma, "2");
-    if (named && named != struc.spacegroup &&
-        std::strcmp(named->hm, struc.spacegroup->hm) == 0)
-      diagnostic += "H-M symbol (" + hm_as_written + ") names " +
-                    named->xhm() + ", not " + struc.spacegroup->xhm() + "\n";
+  if (!struc.spacegroup_hm.empty() && src.kind != SymmetrySource::HM) {
+    const gemmi::SpaceGroup *used = struc.spacegroup;
+    const gemmi::SpaceGroup *named =
+        std::isdigit(static_cast<unsigned char>(struc.spacegroup_hm[0]))
+            ? nullptr
+            : lookup_hm(struc.spacegroup_hm, struc.cell);
+    if (std::isdigit(static_cast<unsigned char>(struc.spacegroup_hm[0])))
+      diagnostic += "H-M symbol (" + hm_as_written +
+                    ") is a number, not an H-M symbol\n";
+    else if (!named)
+      diagnostic +=
+          "H-M symbol (" + hm_as_written + ") not found in the table\n";
+    else if (!used)
+      diagnostic += "space group from H-M symbol (" + hm_as_written +
+                    ") differs: " + named->xhm() + "\n";
+    else if (named != used &&
+             !named->operations().is_same_as(used->operations())) {
+      // A symbol that names a setting (':1', ':2', ':H', ':R', ICSD's
+      // suffixes) must name the one used; one that names none, its group.
+      if (struc.spacegroup_hm.find(':') != std::string::npos)
+        diagnostic += "H-M symbol (" + hm_as_written + ") names " +
+                      named->xhm() + ", not " + used->xhm() + "\n";
+      else if (std::strcmp(named->hm, used->hm) != 0)
+        diagnostic += "space group from H-M symbol (" + hm_as_written +
+                      ") differs: " + named->hm + "\n";
+    }
   }
   if (!diagnostic.empty()) {
     std::cerr << "WARNING: " << source
