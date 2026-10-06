@@ -3,6 +3,9 @@
 
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/core_types.h>
+
+#include <string>
+#include <vector>
 namespace tadah {
 namespace mlip {
 
@@ -20,8 +23,34 @@ void require_predicted_forces(const StructureDB &truth,
                               const StructureDB &pred,
                               const char *who);
 
+/** What a force or stress metric measures. */
+enum class MetricQuantity { Forces, Stress };
+
+/** Whether structure @p s counts in the @p q metrics: a structure stored
+ *  with force weight 0 (fweight) has no force data of its own, and one with
+ *  stress weight 0 (sweight) no stress tensor (tadah data convert stores
+ *  them so); the metrics leave them out, as training does. */
+inline bool counts_in_metric(const Structure &s, MetricQuantity q) {
+    return (q == MetricQuantity::Forces ? s.fweight : s.sweight) != 0.0;
+}
+
+/** Refuses a dataset of @p truth in which no structure counts in the @p q
+ *  metrics (every one has that weight 0): its metric would have nothing to
+ *  measure. Throws std::runtime_error, prefixed with @p who, naming the
+ *  first such dataset ("dataset 2 of 3", and its file when
+ *  @p dataset_names has it) and the weight ("force weight 0 (fweight)",
+ *  "stress weight 0 (sweight)"). */
+void require_metric_structures(const StructureDB &truth, MetricQuantity q,
+                               const std::string &who,
+                               const std::vector<std::string> &dataset_names = {});
+
 /** Class for analysing and comparing datasets
  *
+ *  Each metric is per dataset (DBFILE). The force metrics (calc_f_*) leave
+ *  out the structures stored with force weight 0, and the stress metrics
+ *  (calc_s_*) those with stress weight 0 (counts_in_metric()): they have no
+ *  data of their own. A dataset without a structure that counts is refused
+ *  (require_metric_structures()). The energy metrics count every structure.
  */
 class Analytics {
     private:

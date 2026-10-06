@@ -22,6 +22,29 @@ void require_predicted_forces(const StructureDB &truth,
     }
 }
 
+void require_metric_structures(const StructureDB &truth, MetricQuantity q,
+                               const std::string &who,
+                               const std::vector<std::string> &dataset_names)
+{
+    const std::size_t n = truth.dbidx.size() > 1 ? truth.dbidx.size() - 1 : 0;
+    for (std::size_t d = 0; d < n; ++d) {
+        bool any = false;
+        for (std::size_t i = truth.dbidx[d]; i < truth.dbidx[d + 1] && !any; ++i)
+            any = counts_in_metric(truth(i), q);
+        if (any) continue;
+        const bool forces = q == MetricQuantity::Forces;
+        std::string msg = who + ": dataset " + std::to_string(d + 1) + " of "
+            + std::to_string(n);
+        if (d < dataset_names.size()) msg += " (" + dataset_names[d] + ")";
+        msg += std::string(" has no structure with ")
+            + (forces ? "forces" : "a stress tensor") + ": every one has "
+            + (forces ? "force weight 0 (fweight)" : "stress weight 0 (sweight)")
+            + ", so its " + (forces ? "force" : "stress")
+            + " metrics have nothing to measure";
+        throw std::runtime_error(msg);
+    }
+}
+
 Analytics::Analytics(const StructureDB &st, const StructureDB &stp):
     st(st),
     stp(stp)
@@ -52,13 +75,15 @@ tadah::core::t_type Analytics::calc_e_mae() const{
 
 tadah::core::t_type Analytics::calc_f_mae() const{
     require_predicted_forces(st, stp, "Analytics::calc_f_mae");
+    require_metric_structures(st, MetricQuantity::Forces, "Analytics::calc_f_mae");
 
     tadah::core::t_type fmae_vec(st.dbidx.size()-1);
     double fmae=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        for (size_t a=0; a<st(i).natoms(); ++a) {
+        const bool counts = counts_in_metric(st(i), MetricQuantity::Forces);
+        for (size_t a=0; counts && a<st(i).natoms(); ++a) {
             for (size_t k=0; k<3; ++k) {
                 fmae += std::abs(st(i).atoms[a].force(k) - stp(i).atoms[a].force(k));
                 N++;
@@ -76,13 +101,15 @@ tadah::core::t_type Analytics::calc_f_mae() const{
 }
 
 tadah::core::t_type Analytics::calc_s_mae() const {
+    require_metric_structures(st, MetricQuantity::Stress, "Analytics::calc_s_mae");
 
     tadah::core::t_type smae_vec(st.dbidx.size()-1);
     double smae=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        for (size_t x=0; x<3; ++x) {
+        const bool counts = counts_in_metric(st(i), MetricQuantity::Stress);
+        for (size_t x=0; counts && x<3; ++x) {
             for (size_t y=x; y<3; ++y) {
                 smae += std::abs(st(i).stress(x,y) - stp(i).stress(x,y));
                 N++;
@@ -140,13 +167,15 @@ tadah::core::t_type Analytics::calc_e_rmse() const{
 
 tadah::core::t_type Analytics::calc_f_rmse() const{
     require_predicted_forces(st, stp, "Analytics::calc_f_rmse");
+    require_metric_structures(st, MetricQuantity::Forces, "Analytics::calc_f_rmse");
 
     tadah::core::t_type frmse_vec(st.dbidx.size()-1);
     double frmse=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        for (size_t a=0; a<st(i).natoms(); ++a) {
+        const bool counts = counts_in_metric(st(i), MetricQuantity::Forces);
+        for (size_t a=0; counts && a<st(i).natoms(); ++a) {
             for (size_t k=0; k<3; ++k) {
                 frmse += std::pow(st(i).atoms[a].force(k) - stp(i).atoms[a].force(k),2);
                 N++;
@@ -164,13 +193,15 @@ tadah::core::t_type Analytics::calc_f_rmse() const{
 }
 
 tadah::core::t_type Analytics::calc_s_rmse() const {
+    require_metric_structures(st, MetricQuantity::Stress, "Analytics::calc_s_rmse");
 
     tadah::core::t_type srmse_vec(st.dbidx.size()-1);
     double srmse=0;
     size_t dbidx=0;
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
-        for (size_t x=0; x<3; ++x) {
+        const bool counts = counts_in_metric(st(i), MetricQuantity::Stress);
+        for (size_t x=0; counts && x<3; ++x) {
             for (size_t y=x; y<3; ++y) {
                 srmse += std::pow(st(i).stress(x,y) - stp(i).stress(x,y),2);
                 N++;
@@ -213,6 +244,7 @@ tadah::core::t_type Analytics::calc_e_r_sq() const {
 
 tadah::core::t_type Analytics::calc_f_r_sq() const {
     require_predicted_forces(st, stp, "Analytics::calc_f_r_sq");
+    require_metric_structures(st, MetricQuantity::Forces, "Analytics::calc_f_r_sq");
     const auto nseg = st.dbidx.size() - 1;
     tadah::core::t_type f_r_sq_vec(nseg);
 
@@ -221,13 +253,14 @@ tadah::core::t_type Analytics::calc_f_r_sq() const {
         const size_t end   = st.dbidx[dbidx + 1];
         size_t n_atoms = 0;
         for (size_t i = begin; i < end; ++i) {
-            n_atoms += st(i).natoms();
+            if (counts_in_metric(st(i), MetricQuantity::Forces)) n_atoms += st(i).natoms();
         }
         tadah::core::t_type obs(3 * n_atoms);
         tadah::core::t_type pred(3 * n_atoms);
 
         size_t idx = 0;
         for (size_t i = begin; i < end; ++i) {
+            if (!counts_in_metric(st(i), MetricQuantity::Forces)) continue;
             for (size_t a = 0; a < st(i).natoms(); ++a) {
                 for (size_t k = 0; k < 3; ++k) {
                     obs(idx) = st(i).atoms[a].force(k);
@@ -242,18 +275,22 @@ tadah::core::t_type Analytics::calc_f_r_sq() const {
 }
 
 tadah::core::t_type Analytics::calc_s_r_sq() const {
+    require_metric_structures(st, MetricQuantity::Stress, "Analytics::calc_s_r_sq");
     const auto nseg = st.dbidx.size() - 1;
     tadah::core::t_type s_r_sq_vec(nseg);
 
     for (size_t dbidx = 0; dbidx < nseg; ++dbidx) {
         const size_t begin = st.dbidx[dbidx];
         const size_t end   = st.dbidx[dbidx + 1];
-        const size_t n_structs = end - begin;
+        size_t n_structs = 0;
+        for (size_t i = begin; i < end; ++i)
+            if (counts_in_metric(st(i), MetricQuantity::Stress)) ++n_structs;
         tadah::core::t_type obs(6 * n_structs);
         tadah::core::t_type pred(6 * n_structs);
 
         size_t idx = 0;
         for (size_t i = begin; i < end; ++i) {
+            if (!counts_in_metric(st(i), MetricQuantity::Stress)) continue;
             for (size_t x = 0; x < 3; ++x) {
                 for (size_t y = x; y < 3; ++y) {
                     obs(idx) = st(i).stress(x, y);

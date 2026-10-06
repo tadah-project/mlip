@@ -288,6 +288,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
     if (truth.dbidx != pred.dbidx)
         throw std::runtime_error("analytics_grad::frmse: dataset layout mismatch");
     require_predicted_forces(truth, pred, "analytics_grad::frmse");
+    require_metric_structures(truth, MetricQuantity::Forces, "analytics_grad::frmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
@@ -299,6 +300,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         double sumsq = 0.0;
         std::size_t N_F = 0;
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Forces)) continue;
             for (std::size_t a = 0; a < truth(i).natoms(); ++a) {
                 for (std::size_t k = 0; k < 3; ++k) {
                     const double d = truth(i).atoms[a].force(k)
@@ -318,6 +320,7 @@ void frmse_per_dataset(const StructureDB& truth, const StructureDB& pred,
         const std::size_t hi = truth.dbidx[s + 1];
         const std::size_t N_F = N_F_per_seg[s];
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Forces)) continue;
             for (std::size_t a = 0; a < truth(i).natoms(); ++a) {
                 for (std::size_t k = 0; k < 3; ++k) {
                     const double d = truth(i).atoms[a].force(k)
@@ -358,6 +361,7 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
 {
     if (truth.size() != pred.size())
         throw std::runtime_error("analytics_grad::srmse: size mismatch");
+    require_metric_structures(truth, MetricQuantity::Stress, "analytics_grad::srmse");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
@@ -369,6 +373,7 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
         double sumsq = 0.0;
         std::size_t N_S_cells = 0;
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
             for (std::size_t x = 0; x < 3; ++x) {
                 for (std::size_t y = x; y < 3; ++y) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
@@ -387,6 +392,7 @@ void srmse(const StructureDB& truth, const StructureDB& pred,
         const std::size_t hi = truth.dbidx[s + 1];
         const std::size_t N_S_cells = N_S_per_seg[s];
         for (std::size_t i = lo; i < hi; ++i) {
+            if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
             std::size_t comp = 0;
             for (std::size_t x = 0; x < 3; ++x) {
                 for (std::size_t y = x; y < 3; ++y) {

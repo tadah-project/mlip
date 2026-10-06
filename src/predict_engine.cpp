@@ -85,6 +85,19 @@ int PredictEngine::run(mlip::Task &task) {
   // training-only knobs (WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP) are no-ops here.
   apply_load_transforms(stdb, potContext);
 
+  // The force and stress metrics leave out structures with force or stress
+  // weight 0; a dataset made only of such structures has none, and is
+  // refused before the prediction (ANALYTICS excludes STRUCTURE, so the
+  // datasets are the DBFILE files).
+  if (taskContext.get<bool>("ANALYTICS")) {
+    std::vector<std::string> files;
+    if (taskContext.contains("DBFILE")) files = taskContext("DBFILE");
+    if (taskContext.get<bool>("FORCE"))
+      require_metric_structures(stdb, MetricQuantity::Forces, "tadah predict -A", files);
+    if (taskContext.get<bool>("STRESS"))
+      require_metric_structures(stdb, MetricQuantity::Stress, "tadah predict -A", files);
+  }
+
   nnf.calc(stdb,potContext);
 
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
