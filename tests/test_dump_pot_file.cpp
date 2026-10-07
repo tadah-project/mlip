@@ -204,3 +204,36 @@ TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
       tadah::mlip::engines::write_hpotarget("a_dir", pot, 5.0),
       Catch::Contains("a_dir"));
 }
+
+/* Pins: dumpPotFile, the writer of tadah train, tadah refit and refit --edit
+ * (whose potential is a copy of its input's context), writes no DBFILE line
+ * for a context with DBFILE db1.tadah db2.tadah (an M_BLR potential written
+ * before the potential-content fix records the DBFILE it was trained on),
+ * and keeps the settings of the fit beside it: ALPHA 0.25, BETA 4 and
+ * WDBFILE 1 0.5 (the per-dataset weights, which a retrain listing the same
+ * datasets in the same order reads as the first fit did).
+ * Before the fix: the DBFILE line was written (`DBFILE db1.tadah
+ * db2.tadah`), so the potential, used as a training configuration with the
+ * DBFILE lines of the retrain added, listed the datasets twice. */
+TEST_CASE("dumpPotFile writes no DBFILE: a potential records no training "
+          "data",
+          "[train][dumpPotFile][potential_content]") {
+  DumpTempDir tmp;
+  Context pot = make_pot();
+  pot.add("DBFILE", "db1.tadah");
+  pot.add("DBFILE", "db2.tadah");
+  pot.add("ALPHA", "0.25");
+  pot.add("BETA", "4");
+  pot.add("WDBFILE", "1");
+  pot.add("WDBFILE", "0.5");
+  dump_capturing("pot.tadah", pot);
+
+  const std::string text = slurp("pot.tadah");
+  INFO(text);
+  CHECK(line_tokens(text, "DBFILE").empty());
+  CHECK(text.find("db1.tadah") == std::string::npos);
+  CHECK(line_tokens(text, "ALPHA") == std::vector<std::string>{"0.25"});
+  CHECK(line_tokens(text, "BETA") == std::vector<std::string>{"4"});
+  CHECK(line_tokens(text, "WDBFILE") ==
+        std::vector<std::string>{"1", "0.5"});
+}

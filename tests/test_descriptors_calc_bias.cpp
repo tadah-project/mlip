@@ -956,10 +956,11 @@ TEST_CASE("BIAS true: the composition check bounds FIXINDEX by the fit's "
 // Before the fix: the check skipped implementation 2 for a non-linear
 // kernel only: Kern_Linear 2 was refused as data that "cannot determine
 // the per-species energy constants" (rank 1), and with FIXINDEX 99 as
-// "FIXINDEX: index 99 is outside 1-5 (the model has 5 weights)" (the
-// count of implementation 1, DSIZE, while implementation 2 has the weights
-// of its 5 basis vectors); Trainer::train (M_KRR::train2, which calls no
-// check) trained with FIXINDEX 1 and 99 alike, the pins ignored.
+// "FIXINDEX: index 99 is outside 1-5 (the model has 5 weights)" (FIXINDEX
+// read, against DSIZE, for a solve that cannot pin weights: it fits the 5
+// basis vectors' coefficients at once); Trainer::train (M_KRR::train2,
+// which calls no check) trained with FIXINDEX 1 and 99 alike, the pins
+// ignored.
 TEST_CASE("BIAS true: M_KRR implementation 2 is not checked, with "
           "Kern_Linear too",
           "[descriptors_calc][bias][composition][fixindex][krr]") {
