@@ -144,6 +144,81 @@ TEST_CASE("Task file: sections keep their keys; blank and comment lines "
   }
 }
 
+/* Pins: a comment on a TASK line is not part of the task name, as on every
+ * key line (CoreUserConfigParser drops the comment and the blanks before
+ * it): "TASK       train          # First task: training" and
+ * "TASK       predict\t# Second task: prediction" are the sections TRAIN
+ * and PREDICT, each with its own keys and the GLOBAL keys merged in; a task
+ * name of two words keeps both ("TASK data convert   # c" is DATA.convert);
+ * "TASK predict# c", without a blank before the '#', is PREDICT; a TASK
+ * line with only a comment after TASK names no task, an error that quotes
+ * the line; and an invalid value after a commented TASK line names its line
+ * of the input.
+ * Before the fix: the words of the comment were joined to the task name, so
+ * every parse stopped with an unknown task section and every assertion
+ * failed: 'Unknown task section "TRAIN.#.first.task:.training"' in the first
+ * section, "DATA.convert.#.c", "PREDICT#.c", "#.no.task.here" (instead of
+ * the 'not followed by any name' error) and "TRAIN.#.first.task" (instead
+ * of the EMBF0 error) in the others. */
+TEST_CASE("Task file: a comment on a TASK line is not part of the task name",
+          "[config][task_file]") {
+  SECTION("after blanks and after a tab") {
+    const std::vector<std::string> lines = {
+        "VERBOSE    2",
+        "TASK       train          # First task: training",
+        "DBFILE     db.train",
+        "TASK       predict\t# Second task: prediction",
+        "POTENTIAL  pot.tadah      # Same as CLI -p/--potential"};
+    std::vector<std::pair<std::string, tadah::core::Context>> sections;
+    REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(lines, true));
+    REQUIRE(sections.size() == 3);
+    CHECK(sections[0].first == "GLOBAL");
+    CHECK(sections[1].first == "TRAIN");
+    CHECK(sections[2].first == "PREDICT");
+    CHECK(sections[1].second.get<std::string>("DBFILE") == "db.train");
+    CHECK(sections[2].second.get<std::string>("POTENTIAL") == "pot.tadah");
+    CHECK(sections[1].second.get<int>("VERBOSE") == 2);
+    CHECK(sections[2].second.get<int>("VERBOSE") == 2);
+  }
+  SECTION("after a task name of two words") {
+    const std::vector<std::string> lines = {"TASK data convert   # c",
+                                            "VERBOSE 0"};
+    std::vector<std::pair<std::string, tadah::core::Context>> sections;
+    REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(lines));
+    REQUIRE(sections.size() == 1);
+    CHECK(sections[0].first == "DATA.convert");
+  }
+  SECTION("without a blank before the '#'") {
+    const std::vector<std::string> lines = {"TASK predict# c",
+                                            "POTENTIAL pot.tadah"};
+    std::vector<std::pair<std::string, tadah::core::Context>> sections;
+    REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(lines));
+    REQUIRE(sections.size() == 1);
+    CHECK(sections[0].first == "PREDICT");
+  }
+  SECTION("a comment alone after TASK names no task") {
+    const std::vector<std::string> lines = {"TASK   # no task here",
+                                            "POTENTIAL pot.tadah"};
+    REQUIRE_THROWS_WITH(
+        MLIPUserConfigParser().parse(lines),
+        Contains("'TASK' keyword not followed by any name") &&
+            Contains("TASK   # no task here"));
+  }
+  SECTION("an invalid value after a commented TASK line names its line") {
+    Quiet q;
+    const TempFile f("sections_task_comment",
+                     "VERBOSE 1\n"                                   // 1
+                     "TASK       train          # First task\n"      // 2
+                     "DBFILE     db.train\n"                         // 3
+                     "TASK       predict\t# Second task\n"           // 4
+                     "POTENTIAL  pot.tadah\n"                        // 5
+                     "EMBF0      frei           # the reference\n"); // 6
+    REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(f.path),
+                        Contains("Invalid value for key EMBF0 on line 6 of " +
+                                 f.path + ": 'frei'"));
+  }
+}
+
 /* An input of blank and comment lines has no section; merging them read
  * the first element of an empty list. */
 TEST_CASE("Task file: an input of comments only has no sections",
