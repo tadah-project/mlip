@@ -839,6 +839,89 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
   }
 }
 
+// Pins: the composition check takes the intercepts from the model's
+// function (Function_Base::intercept_columns) on data whose every structure
+// is 8 Nb + 8 Ta (ATOM Nb Ta, BIAS true, D2_BP 3: DSIZE 5):
+//   - M_BLR BF_Polynomial2 (15 weights, the products (i,ii), i <= ii): its
+//     intercepts are weights 1, (0,0), and 6, (1,1); unpinned the data are
+//     refused, the message naming them ("weights 1 (Nb) and 6 (Ta)"); with
+//     FIXINDEX 2 (the Nb x Ta product, which is 0 for every atom) they are
+//     refused too, weight 2 being no intercept; with FIXINDEX 6 / FIXWEIGHT
+//     -8.9 (the Ta constant pinned) the model trains, weight 6 -8.9;
+//   - M_KRR Kern_Quadratic (SBASIS 6): refused, its intercepts being the
+//     columns of the intercept basis vectors e0 and e1 (a pin: refused
+//     before the fix as well);
+//   - M_KRR Kern_RBF (SBASIS 6): trains, K(b, x) depending on every
+//     component of x (no intercept column, nothing unpenalised to
+//     determine).
+// Before the fix: the check counted ATOM species whatever the function and
+// took FIXINDEX 1 to N for the intercepts: BF_Polynomial2 unpinned was
+// refused naming "weights 1 to 2", with FIXINDEX 2 it passed the check and
+// trained an arbitrary split of the energy between the species, with
+// FIXINDEX 6 it was refused ("rank 1, while 2 intercepts are fitted");
+// Kern_RBF was refused.
+TEST_CASE("BIAS true: the composition check takes the intercepts from the "
+          "function",
+          "[descriptors_calc][bias][composition]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  auto poly2 = [] {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_BLR", "BF_Polynomial2");
+    return c;
+  };
+  SECTION("BF_Polynomial2, no pin") {
+    Context c = poly2();
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+    CHECK(m.find("rank 1") != std::string::npos);
+    CHECK(m.find("weights 1 (Nb) and 6 (Ta)") != std::string::npos);
+  }
+  SECTION("BF_Polynomial2, FIXINDEX 2: no intercept") {
+    Context c = poly2();
+    c.add("FIXINDEX", "2");
+    c.add("FIXWEIGHT", 0.0);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+    CHECK(m.find("rank 1") != std::string::npos);
+  }
+  SECTION("BF_Polynomial2, FIXINDEX 6: the Ta constant") {
+    Context c = poly2();
+    c.add("FIXINDEX", "6");
+    c.add("FIXWEIGHT", -8.9);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    REQUIRE(m == "<no exception>");
+    REQUIRE(tr.model->get_weights().size() == 15);
+    CHECK(tr.model->get_weights()(5) == -8.9);
+  }
+  SECTION("M_KRR Kern_Quadratic (a pin)") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", "Kern_Quadratic");
+    c.add("SBASIS", 6);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+  }
+  SECTION("M_KRR Kern_RBF") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", "Kern_RBF");
+    c.add("SBASIS", 6);
+    c.add("MPARAMS", 1.0);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m == "<no exception>");
+  }
+}
+
 // Pins: the KRR basis of a model with BIAS true starts with one intercept
 // vector per species (ATOM Nb Ta: e0 and e1, then AEDs, each with exactly
 // one intercept entry 1.0), for build_random_basis and prep_basis_for_krr
