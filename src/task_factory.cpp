@@ -134,8 +134,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     if (configVec.empty()) {
       throw std::runtime_error(
           "TaskFactory::createTasksFromInput - the task file '" + taskFile +
-          "' has no TASK section (a line 'TASK <name>' followed by the "
-          "task's keys)");
+          "' has no TASK section (a line 'TASK <name>', with or without key "
+          "lines after it)");
     }
     // baseContext should be empty by now, we can ignore it.
     // iterate configVec and copy the contexts to the tasksResult
