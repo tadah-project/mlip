@@ -4,6 +4,7 @@
 #include <tadah/core/context.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
+#include <tadah/models/functions/function_base.h>
 
 #include <cstddef>
 
@@ -45,14 +46,16 @@ bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
 int krr_implementation(const tadah::core::Context &ctx);
 
 /** The number of model weights K a training of this configuration fits:
- *  the design-matrix width fb.get_phi_cols(ctx), except for a model whose
- *  basis is drawn from the training data (basis_drawn_from_training_data),
- *  whose K is SBASIS, the number of basis vectors training draws (before
- *  training fb has none, and its width is 0). Throws, naming SBASIS, when
- *  such a model has no SBASIS or fewer than its n0 intercept vectors plus
- *  one drawn vector (n0 + 1: the bound of the basis draw,
- *  sbasis_lower_bound_problem; 3 with BIAS true on two species). */
-std::size_t model_weight_count(DM_Function_Base &fb,
+ *  the design-matrix width, f.weights_count(DSIZE) (as
+ *  DM_Function_Base::get_phi_cols(ctx)), except for a model whose basis is
+ *  drawn from the training data (basis_drawn_from_training_data), whose K
+ *  is SBASIS, the number of basis vectors training draws (before training
+ *  f has none, and its width is 0). Throws, naming SBASIS, when such a
+ *  model has no SBASIS or fewer than its n0 intercept vectors plus one
+ *  drawn vector (n0 + 1: the bound of the basis draw,
+ *  sbasis_lower_bound_problem; 3 with BIAS true on two species). @p ctx
+ *  holds DSIZE (DescriptorsCalc sets it). */
+std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx);
 
 /** Classify how the model weights are provisioned for this configuration.

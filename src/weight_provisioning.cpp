@@ -81,9 +81,11 @@ int krr_implementation(const tadah::core::Context &ctx) {
              : 1;
 }
 
-std::size_t model_weight_count(DM_Function_Base &fb,
+std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx) {
-  if (!basis_drawn_from_training_data(ctx)) return fb.get_phi_cols(ctx);
+  // DM_Function_Base::get_phi_cols(ctx), the design-matrix width
+  if (!basis_drawn_from_training_data(ctx))
+    return f.weights_count(ctx.get<std::size_t>("DSIZE"));
   const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1);
   // The bound of the basis draw (Basis::check_sbasis): the intercept
   // vectors e_0 .. e_{n0-1}, then at least one vector drawn from the
