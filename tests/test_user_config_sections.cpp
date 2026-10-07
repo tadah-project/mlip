@@ -376,20 +376,28 @@ TEST_CASE("Task file: an input of comments only has no sections",
 /* A task file runs its TASK sections. One without any -- only blank and
  * comment lines, or only GLOBAL keys -- read the first element of an empty
  * list (a segmentation fault, exit status 139, for the comment-only file)
- * or ran nothing and succeeded (the GLOBAL-only file). */
+ * or ran nothing and succeeded (the GLOBAL-only file).
+ * Pins: the message says what a TASK section is: "the task file '<path>' has
+ * no TASK section (a line 'TASK <name>', with or without key lines after
+ * it)", for both files.
+ * Before the fix (of the message): it said "(a line 'TASK <name>' followed
+ * by the task's keys)", which a TASK line has not needed since a keyless
+ * TASK line is a task. */
 TEST_CASE("Task file: a task file without a TASK section is an error",
           "[config][task_file]") {
+  const std::string what = "' has no TASK section (a line 'TASK <name>', with or "
+                           "without key lines after it)";
   SECTION("blank and comment lines only") {
     const TempFile f("sections_empty", "# nothing to run\n\n");
     REQUIRE_THROWS_WITH(
         tadah::mlip::TaskFactory().createTasksFromInput(TaskFileInput(f.path)),
-        Contains("the task file '" + f.path + "' has no TASK section"));
+        Contains("the task file '" + f.path + what));
   }
   SECTION("GLOBAL keys only") {
     const TempFile f("sections_global_only", "VERBOSE 1\n");
     REQUIRE_THROWS_WITH(
         tadah::mlip::TaskFactory().createTasksFromInput(TaskFileInput(f.path)),
-        Contains("the task file '" + f.path + "' has no TASK section"));
+        Contains("the task file '" + f.path + what));
   }
   SECTION("a TASK section is a task") {
     const TempFile f("sections_one_task",
