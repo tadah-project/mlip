@@ -498,8 +498,10 @@ void CastepCastepReader::parse_data() {
       // 'Total number of ions in cell = <n>'
       std::istringstream iss(line.substr(line.find('=') + 1));
       std::string count, rest;
-      if (!(iss >> count) || (iss >> rest) ||
-          !tadah::core::is_integer_literal(count) || count[0] == '-')
+      // A count: digits, at most 10^12 (an absurd count is not a count).
+      if (!(iss >> count) || (iss >> rest) || count.size() > 13 ||
+          !tadah::core::is_integer_literal(count) || count[0] == '-' ||
+          std::stoull(count) > 1000000000000ULL)
         refuse("cannot read the number of ions from " + quoted());
       natoms = static_cast<size_t>(std::stoull(count));
       if (debug) std::cout << "Total number of ions in cell: " << natoms << std::endl;

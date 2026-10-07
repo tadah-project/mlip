@@ -62,6 +62,17 @@ void VaspOutcarReader::parse_data() {
                              std::to_string(line_no) + ": " + what);
   };
   auto quoted = [&]() { return "'" + tadah::core::trim(line) + "'"; };
+  // A count: the whole token, digits, at most 10^12 (no OUTCAR has more
+  // ions; an absurd count is not a count).
+  auto count_of = [](const std::string &tok, size_t &out) {
+    if (tok.empty() || tok.size() > 13 || !core::is_integer_literal(tok) ||
+        tok[0] == '-')
+      return false;
+    const unsigned long long v = std::stoull(tok);
+    if (v > 1000000000000ULL) return false;
+    out = static_cast<size_t>(v);
+    return true;
+  };
   std::string truncated;  // the block the file ends inside, if any
   bool complete_structure = false;
   bool is_md = false;
@@ -114,12 +125,9 @@ void VaspOutcarReader::parse_data() {
       // '... number of ions     NIONS =     54': the word after 'NIONS ='.
       std::istringstream iss(line.substr(line.find("NIONS")));
       std::string key, eq, value, rest;
-      long long n = 0;
       if (!(iss >> key >> eq >> value) || eq != "=" || (iss >> rest) ||
-          !core::is_integer_literal(value) ||
-          (n = std::stoll(value)) <= 0)
+          !count_of(value, natoms) || natoms == 0)
         refuse("cannot read the number of ions NIONS from " + quoted());
-      natoms = static_cast<size_t>(n);
       have_natoms = true;
     }
 
@@ -134,8 +142,9 @@ void VaspOutcarReader::parse_data() {
       natom_types.clear();
       bool ok = counts.size() == atom_types.size() && !counts.empty();
       for (size_t i = 0; ok && i < counts.size(); ++i) {
-        ok = core::is_integer_literal(counts[i]) && counts[i][0] != '-';
-        if (ok) natom_types.push_back(static_cast<size_t>(std::stoull(counts[i])));
+        size_t n = 0;
+        ok = count_of(counts[i], n);
+        if (ok) natom_types.push_back(n);
       }
       if (!ok)
         refuse("'ions per type' must give one count for each of the " +
