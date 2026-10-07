@@ -6,6 +6,8 @@
 #include <tadah/core/core_types.h>
 #include <tadah/core/periodic_table.h>
 
+#include <array>
+#include <istream>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -318,12 +320,16 @@ struct Structure {
   /** Skip the next structure of a dataset stream without parsing it.
    *
    * Blank lines (whitespace only, '\r' included) before a label are
-   * skipped, and a blank line ends the atoms, as in read().
+   * skipped, and a blank line ends the atoms, as in read(); the cell and
+   * stress blocks are three lines of three fields each, as read() reads
+   * them (detail::read_cell_stress_lines).
    *
    * @return false at the end of the stream, where no label is left;
    *         otherwise true, with @p natoms set to the number of atom lines
    *         of the skipped structure (0 for a structure without atoms,
    *         whose blank line comes straight after the stress lines).
+   * @throws std::runtime_error naming the structure's label when its cell
+   *         or stress block has another layout, or the stream ends in it.
    */
   static bool next_structure(std::ifstream &ifs, size_t &natoms);
 
@@ -397,6 +403,22 @@ void set_coords(const std::vector<Scalar>& x)
   
 
 };
+
+namespace detail {
+
+/** The cell and stress blocks of a dataset structure, read from @p in:
+ *  three cell lines (one lattice vector each), then three stress lines (one
+ *  row of the stress tensor each), exactly three fields on each line (the
+ *  Dataset Format). Returns the 18 fields in that order, unconverted.
+ *  Structure::read, Structure::next_structure and
+ *  StructureDB::find_unique_elements read the blocks with it, so every
+ *  reader of a dataset agrees on where a structure's atoms start.
+ *  @throws std::runtime_error naming the block and the line ('cell line 1,
+ *          '...', has 9 fields: ...') or where the stream ends inside the
+ *          blocks. */
+std::array<std::string, 18> read_cell_stress_lines(std::istream &in);
+
+}  // namespace detail
 } // namespace mlip
 } // namespace tadah
 #endif
