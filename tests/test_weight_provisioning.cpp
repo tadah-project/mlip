@@ -212,3 +212,39 @@ TEST_CASE("provision_fixed_weights: incomplete coverage throws",
   REQUIRE_THROWS_WITH(tr.provision_fixed_weights(),
                       Catch::Contains("not covered by FIXINDEX"));
 }
+
+/* Pins: a Trainer whose configuration carries a SIGMA (that of a potential
+ * used as the configuration, here N = K and K*K values) and that pins every
+ * weight with FIXINDEX/FIXWEIGHT (provision_fixed_weights, no fit) writes
+ * no SIGMA: neither its context nor the potential it writes
+ * (get_param_file) has the key, and the weights are the FIXWEIGHT values.
+ * Before the fix: both kept the configuration's SIGMA, so the potential
+ * (an HPO best_pot.tadah with every weight pinned) paired a covariance of
+ * other weights with the pinned ones. */
+TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
+          "[weight_provisioning][sigma]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  std::size_t K = 0;
+  {
+    Context probe_ctx = make_model_context();
+    Trainer probe(probe_ctx, ws);
+    K = probe.fb->get_phi_cols(probe.context);
+  }
+  REQUIRE(K >= 2);
+  Context ctx = make_model_context();
+  ctx.add("FIXINDEX", "1-" + std::to_string(K));
+  for (std::size_t k = 0; k < K; ++k)
+    ctx.add("FIXWEIGHT", 0.5 + static_cast<double>(k));
+  ctx.add("SIGMA", K);
+  for (std::size_t k = 0; k < K * K; ++k) ctx.add("SIGMA", 0.125);
+
+  Trainer tr(ctx, ws);
+  REQUIRE_NOTHROW(tr.provision_fixed_weights());
+  CHECK_FALSE(tr.context.has_stored("SIGMA"));
+  CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));
+  const auto &w = tr.model->get_weights();
+  REQUIRE(w.size() == K);
+  for (std::size_t k = 0; k < K; ++k)
+    CHECK(w[k] == 0.5 + static_cast<double>(k));
+}
