@@ -123,7 +123,8 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
 /**
  * @brief Splits lines into named sections:
  *        - The first section is "GLOBAL" if it has lines before "TASK..."
- *        - Each "TASK..." line forms a new name like "TASK.TRAIN" or "TASK.DATA.SUMMARY".
+ *        - Each "TASK..." line forms a new name like "TRAIN" or "DATA.convert",
+ *          from the tokens before its in-line comment.
  *
  * Only returns "GLOBAL" if it was non-empty. If no lines for global,
  * we skip it. 
@@ -163,8 +164,10 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
       // finalize the current one if it has lines
       finish();
 
-      // Parse tokens from this line
-      std::istringstream iss(line);
+      // Parse tokens from this line, without its in-line comment: the task
+      // name is the text before the '#', as the value of a key line is
+      // (CoreUserConfigParser drops the comment and the blanks before it).
+      std::istringstream iss(core::trim(line.substr(0, line.find('#'))));
       std::vector<std::string> tokens;
       {
         std::string token;
