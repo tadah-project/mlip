@@ -29,6 +29,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <set>
@@ -737,6 +738,75 @@ TEST_CASE("StructureDB::add(file, first, N) returns the number of structures it 
     StructureDB all;
     CHECK(all.add(path, 0, 5) == 2);
     CHECK(all.size() == 2);
+  }
+}
+
+/* Pins: StructureDB::add(file, first, N) with `first` at or past the end of
+ * the file loads nothing and returns 0, as documented for N past the end: on
+ * the two-structure dataset, add(file, 2, 1) and add(file, 10, 3).
+ * Before the fix: passes as well (a pin: it went on skipping past the end,
+ * one failed read per structure, and then read nothing). */
+TEST_CASE("StructureDB::add(file, first, N) past the end of the file loads nothing",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_add_past_end");
+  const std::string path = tmp.write("two.tadah", dataset_with("-11.4", "-11.4"));
+  for (const std::size_t first : {std::size_t{2}, std::size_t{10}}) {
+    INFO("first " << first);
+    StructureDB db;
+    CHECK(db.add(path, first, 3) == 0);
+    CHECK(db.size() == 0);
+  }
+}
+
+/* Pins: StructureDB::add(file, SIZE_MAX, 1) stops skipping at the end of
+ * the file and returns 0 at once, loading nothing.
+ * Before the fix: it skipped SIZE_MAX structures, one failed read at a time
+ * past the end of the file, which does not end in practice (the test runs
+ * until CTest's timeout); `tadah analysis descriptor -i 0` reached it with
+ * first = 0 - 1 and hung. */
+TEST_CASE("StructureDB::add(file, first, N) stops skipping at the end of the file",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_add_skip_end");
+  const std::string path = tmp.write("two.tadah", dataset_with("-11.4", "-11.4"));
+  StructureDB db;
+  CHECK(db.add(path, std::numeric_limits<std::size_t>::max(), 1) == 0);
+  CHECK(db.size() == 0);
+}
+
+/* Pins: StructureDB::add_selected(file, indices) adds the structures of the
+ * file at the given 0-based indices, in the given order, reading the file
+ * once: on the two-structure dataset, {1, 0} gives S2 then S1 and returns 2,
+ * {1} gives S2; an index past the end ({0, 2}) is refused naming the file
+ * and the number of structures it has, and adds nothing.
+ * Before the fix: does not compile (there was no add_selected; tadah data
+ * print and analysis descriptor called add(file, i) once per index, each
+ * call re-reading the file from its start). */
+TEST_CASE("StructureDB::add_selected(file, indices) adds those structures in order",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_add_selected");
+  const std::string path = tmp.write("two.tadah", dataset_with("-11.4", "-11.4"));
+  {
+    StructureDB db;
+    CHECK(db.add_selected(path, {1, 0}) == 2);
+    REQUIRE(db.size() == 2);
+    CHECK(db(0).label == "S2");
+    CHECK(db(1).label == "S1");
+  }
+  {
+    StructureDB db;
+    CHECK(db.add_selected(path, {1}) == 1);
+    REQUIRE(db.size() == 1);
+    CHECK(db(0).label == "S2");
+  }
+  {
+    StructureDB db;
+    CHECK_THROWS_WITH(db.add_selected(path, {0, 2}),
+                      Contains(path) && Contains("structure 3") &&
+                          Contains("has 2 structures"));
+    CHECK(db.size() == 0);
   }
 }
 
