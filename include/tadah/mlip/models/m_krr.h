@@ -34,25 +34,28 @@ namespace mlip {
  * (one weight per descriptor component, as M_BLR BF_Linear). With a
  * non-linear kernel the atomic energy is
  * \f$ E_i = \sum_{j} w_j K(\mathbf{b}_j, \mathbf{x}_i) \f$ over SBASIS
- * basis vectors \f$ \mathbf{b}_j \f$: column 0 is the bias vector e0 and
- * the other SBASIS-1 are atomic energy descriptors of the training set
- * drawn by a fixed, portable draw (Basis), so training is reproducible.
+ * basis vectors \f$ \mathbf{b}_j \f$: columns 0 .. n0-1 are the
+ * intercept vectors e_0 .. e_{n0-1} (n0 = N, one per ATOM species, with
+ * BIAS true; e0 alone, n0 = 1, otherwise) and the other SBASIS-n0 are
+ * atomic energy descriptors of the training set drawn by a fixed, portable
+ * draw (Basis), so training is reproducible.
  * The design-matrix column j is K(b_j, x) summed over the atoms (and its
  * derivatives for the force and stress rows), and the weights solve the
  * least-squares problem of those columns (OALGO, LAMBDA). The potential
  * records SBASIS and BASIS with the weights.
  *
  * **Implementation 2** fits energies only, by solving
- * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (e0 and the mean
- * descriptors of drawn structures).
+ * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
+ * intercept vectors, with target 0, and the mean descriptors of drawn
+ * structures, with their energies per atom).
  *
  * **Configuration options**:
  * - **MPARAMS**: the kernel's parameters: sigma for Kern_RBF
  *   (\f$ \gamma = 1/\sigma^2 \f$), d gamma c for Kern_Polynomial, gamma c
  *   for Kern_Sigmoid; Kern_Linear, Kern_Quadratic and Kern_LQ take none.
  * - **SBASIS**: the number of basis vectors of a non-linear kernel, at least
- *   2 and at most the number of training AEDs (structures for
- *   implementation 2) plus 1.
+ *   n0 + 1 and at most the number of training AEDs (structures for
+ *   implementation 2) plus n0.
  * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares,
  *   positive values for manual setting, or `-1` for automatic tuning
  *   (OALGO 3). The kernel's intercept columns

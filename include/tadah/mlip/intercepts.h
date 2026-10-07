@@ -44,7 +44,11 @@ void check_bias_constraints(const tadah::core::Context &ctx);
  *  weights are the intercepts (f.intercept_columns: for a linear model
  *  weights 1 to N, and the descriptor weights start at index N + 1; they
  *  started at 2 when BIAS true had one intercept column shared by all
- *  species, before 1.6.0). Empty when it does not apply. */
+ *  species, before 1.6.0). For a model whose basis its fit draws
+ *  (basis_drawn_from_training_data) those of that basis, which starts with
+ *  the intercept vectors e_0 .. e_{N-1}: a dot-product kernel's weights 1
+ *  to N, named by species; Kern_RBF has none. Empty when it does not
+ *  apply. */
 std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
                                        const tadah::models::Function_Base &f);
 
@@ -69,12 +73,24 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  would split the energy between the species arbitrarily (or overflow).
  *  The value of intercept column j for an atom of species s is f's
  *  energy of the unit weight j at the descriptor with intercept component
- *  s alone (@p ctx holds DSIZE). A no-op for BIAS false and for a
- *  function without intercept columns (Kern_RBF; a kernel before its
- *  basis is drawn). An atom of an element not in ATOM is refused
+ *  s alone (@p ctx holds DSIZE).
+ *
+ *  For a model whose basis vectors its fit draws from the training data
+ *  (basis_drawn_from_training_data: MODEL M_KRR with a non-linear kernel)
+ *  the intercepts are those of the basis the fit draws, whatever basis @p f
+ *  holds (none before the fit, or a potential's): every such basis starts
+ *  with the intercept vectors e_0 .. e_{N-1}, so a dot-product kernel's
+ *  intercepts are its weights 1 to N, before the fit as after it; M_KRR
+ *  implementation 2, whose solve (K + LAMBDA I) w = T fits the basis
+ *  vectors' targets, not the structures' energies, is not checked.
+ *
+ *  A no-op for BIAS false and for a function without intercept columns
+ *  (Kern_RBF). An atom of an element not in ATOM is refused
  *  (throw_element_not_in_atom).
  *  @throws std::runtime_error naming the species, the rank found, the
- *          intercept weights and the remedies */
+ *          intercept weights and the remedies
+ *  @throws std::logic_error for a kernel whose basis vectors do not have
+ *          DSIZE values (they would be evaluated past the descriptor) */
 void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
                                    const tadah::models::Function_Base &f);

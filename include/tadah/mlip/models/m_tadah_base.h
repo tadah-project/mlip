@@ -135,7 +135,8 @@ public:
    *  retrain a multi-species BIAS potential trained before 1.6.0 with one
    *  shared intercept column). Every prediction from descriptors calls it
    *  first; training never does (a training configuration may carry stale
-   *  WEIGHTS, which the fit replaces). */
+   *  WEIGHTS, which the fit replaces; Trainer builds the model to be
+   *  fitted without them). */
   void require_weights_fit(const tadah::core::Context &c, std::size_t dsize) const;
 
   // TRAINING

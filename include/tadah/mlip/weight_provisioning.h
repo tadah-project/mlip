@@ -32,9 +32,10 @@ enum class WeightSource {
 
 /** True when the model draws its basis vectors from the training data:
  *  M_KRR with a non-linear kernel (`MODEL M_KRR <kernel>` with a kernel
- *  other than Kern_Linear). Weight k belongs to basis vector k (column 0
- *  the bias vector e0, the others drawn from the training AEDs by the
- *  fixed draw of Basis), so such a model needs its training data even when
+ *  other than Kern_Linear). Weight k belongs to basis vector k (columns 0
+ *  .. n0-1 the intercept vectors, one per ATOM species with BIAS true, e0
+ *  alone otherwise; the others drawn from the training data by the fixed
+ *  draw of Basis), so such a model needs its training data even when
  *  FIXINDEX pins every weight. */
 bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
 
@@ -47,7 +48,9 @@ int krr_implementation(const tadah::core::Context &ctx);
  *  basis is drawn from the training data (basis_drawn_from_training_data),
  *  whose K is SBASIS, the number of basis vectors training draws (before
  *  training fb has none, and its width is 0). Throws, naming SBASIS, when
- *  such a model has no SBASIS or SBASIS < 2. */
+ *  such a model has no SBASIS or fewer than its n0 intercept vectors plus
+ *  one drawn vector (n0 + 1: the bound of the basis draw,
+ *  sbasis_lower_bound_problem; 3 with BIAS true on two species). */
 std::size_t model_weight_count(DM_Function_Base &fb,
                                const tadah::core::Context &ctx);
 
