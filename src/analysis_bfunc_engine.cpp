@@ -2,11 +2,15 @@
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
-#include <tadah/models/dc_selector.h>
+#include <tadah/core/registry.h>
+#include <tadah/models/descriptors/d2/d2_base.h>
+#include <tadah/models/descriptors/dm/dm_base.h>
 #include <tadah/models/descriptors/basis_dispatch.h>
+#include <tadah/models/descriptors/d_mjoin.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <iostream>
+#include <memory>
 #include <optional>
 
 namespace tadah {
@@ -37,7 +41,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     types[1] = "N";
   }
 
-  std::vector<tadah::core::Context> contexts = D_mJoin::parse_context(taskContext, "TYPE"+types[0]);
+  std::vector<tadah::core::Context> contexts = models::D_mJoin::parse_context(taskContext, "TYPE"+types[0]);
 
   std::ostringstream oss;
   for (size_t i=0; i<contexts.size(); ++i) {
@@ -72,15 +76,24 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     models::D_Base::get_grid(singleContext, cgridtype, cgrid);
     models::D_Base::get_grid(singleContext, sgridtype, sgrid);
 
-    models::DC_Selector DCS(singleContext);
-
     // The descriptor reports its own radial basis family; the basis-analysis
     // engine no longer branches on the descriptor NAME string (which forced a
     // code edit here for every new descriptor). A descriptor with no analytic
     // radial basis (tabulated / fixed) returns nullopt and is rejected exactly
-    // as the old "else throw" path did.
-    const std::optional<models::BasisKind> bk =
-        (types[0] == "2B") ? DCS.d2b->basis_kind() : DCS.dmb->basis_kind();
+    // as the old "else throw" path did. Only the descriptor is built: its
+    // radial basis does not depend on the rest of a model's descriptor (the
+    // intercept columns of BIAS true need ATOM, which a training
+    // configuration may leave to its DBFILE).
+    std::optional<models::BasisKind> bk;
+    if (types[0] == "2B") {
+      std::unique_ptr<models::D2_Base> d(
+          core::factory<models::D2_Base, const core::Context&>(dtype, singleContext));
+      bk = d->basis_kind();
+    } else {
+      std::unique_ptr<models::DM_Base> d(
+          core::factory<models::DM_Base, const core::Context&>(dtype, singleContext));
+      bk = d->basis_kind();
+    }
     if (!bk) {
       throw std::runtime_error(
           "Unsupported: " + dtype +
