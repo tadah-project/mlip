@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <algorithm>
 #include <cctype>
 
 namespace tadah {
@@ -96,7 +97,30 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
           "\". Must be defined in blueprint tasks."
         );
       }
-      // If found, we consider it valid. The backend parser will parse the lines themselves.
+      // A group of tasks (a blueprint task with tasks of its own, such as
+      // DATA) has no engine: only its tasks run, as TaskFactory requires of a
+      // command line. Refused here, before any task of the file runs.
+      const std::string prefix = sectionName + ".";
+      std::vector<std::string> subtasks;
+      for (const auto &kv : taskMap) {
+        if (kv.first.compare(0, prefix.size(), prefix) == 0) {
+          std::string sub = kv.first.substr(prefix.size());
+          std::replace(sub.begin(), sub.end(), '.', ' ');
+          subtasks.push_back(sub);
+        }
+      }
+      if (!subtasks.empty()) {
+        std::sort(subtasks.begin(), subtasks.end());
+        std::string line = core::to_lower(sectionName);
+        std::replace(line.begin(), line.end(), '.', ' ');
+        std::string list;
+        for (const auto &sub : subtasks) list += (list.empty() ? "" : ", ") + sub;
+        throw std::runtime_error(
+          "MLIPUserConfigParser::parse: TASK section \"" + sectionName +
+          "\" is a group of tasks, not a task: write 'TASK " + line +
+          " <task>', <task> one of: " + list + ".");
+      }
+      // A task: the backend parser will parse the lines themselves.
     }
 
     // Parse the lines for this section to produce a Context. Its errors
