@@ -2,6 +2,7 @@
 
 #include <tadah/core/number_format.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <limits>
@@ -158,6 +159,22 @@ RefitNumbers read_refit_numbers(const Context &c) {
                              "REFIT_COMPACT_NMAX takes 1 value (all "
                              "functions) or 3 (phi rho F), got " +
                              std::to_string(nmax.size()));
+  }
+  // The compact fit's curve sample grid has at least 4 x NMAX points per
+  // function (REFIT_COMPACT_SAMPLES is raised to that), an int: computed in
+  // 64 bits, the largest NMAX's must fit (4 * NMAX overflowed above
+  // 536870911).
+  {
+    const int nmax_all = std::max({n.nmax[0], n.nmax[1], n.nmax[2]});
+    const long long grid_min = 4LL * nmax_all;
+    if (grid_min > kIntMax)
+      throw std::runtime_error(
+          kWho + "REFIT_COMPACT_NMAX " + std::to_string(nmax_all) +
+          " needs a curve sample grid of 4 x " + std::to_string(nmax_all) +
+          " = " + std::to_string(grid_min) +
+          " points per function (REFIT_COMPACT_SAMPLES is raised to at least "
+          "4 x REFIT_COMPACT_NMAX), above " + std::to_string(kIntMax) +
+          "; lower REFIT_COMPACT_NMAX");
   }
   set(n.samples, integer(c, "REFIT_COMPACT_SAMPLES", 1, kIntMax));
   set(n.opt_every, integer(c, "REFIT_COMPACT_OPT_EVERY", 1, kIntMax));

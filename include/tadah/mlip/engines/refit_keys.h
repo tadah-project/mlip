@@ -36,7 +36,9 @@ struct RefitNumbers {
   // compact mode
   std::array<int, 3> nmax = {40, 40, 40};  ///< REFIT_COMPACT_NMAX [phi, rho,
                                            ///< F], one or three values, each
-                                           ///< 1..INT_MAX
+                                           ///< 1..INT_MAX, the largest's
+                                           ///< 4 x NMAX sample grid an int
+                                           ///< (NMAX <= 536870911)
   int samples = 800;               ///< REFIT_COMPACT_SAMPLES, 1..INT_MAX
   int opt_every = 1;               ///< REFIT_COMPACT_OPT_EVERY, 1..INT_MAX
   std::optional<int> stall;        ///< REFIT_COMPACT_STALL, 1..INT_MAX
