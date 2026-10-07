@@ -26,6 +26,7 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unistd.h>
 #include <vector>
 
@@ -812,4 +813,51 @@ TEST_CASE_METHOD(PTFixture,
     Task task("refit", with(key, {tok}));
     CHECK_NOTHROW(RefitEngine().validate(task));
   }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: an OUTPUT_GRID_SCALE whose refit.eam grid a "
+                 "setfl table cannot have is refused before any fitting",
+                 "[refit][strict_numbers]") {
+  /* Pins: run() builds the refit.eam grid (EAMSetflIO::scaled_grid) right
+   * after it reads the EAM file, before any fitting: an OUTPUT_GRID_SCALE
+   * whose scaled point counts fall below 3 or above 2147483647 throws
+   * naming the key, the token and the counts, and writes nothing (no
+   * pot.tadah, refit.eam or refit_opt.log); a scale that gives 3 points
+   * (400 x 0.00625 = 2.5) writes a 3-point refit.eam.
+   * Before the fix: the grid was built after the fit, when pot.tadah had
+   * been written, so the run fails late with scaled_grid's own message
+   * and leaves pot.tadah (before scaled_grid refused such a scale it
+   * clamped the counts to 2: exit 0 and a 2-point refit.eam). */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);  // nr = nrho = 400
+  const std::string needs =
+      " points (the input table has 400 and 400); a setfl table needs 3 to "
+      "2147483647 points (the spline that LAMMPS and tadah fit through it "
+      "reads its third point)";
+  for (const auto &[tok, shown, counts] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {"0.0001", "0.0001", "nrho = 0 and nr = 0"},
+           {"1e7", "10000000", "nrho = 4000000000 and nr = 4000000000"}}) {
+    INFO("OUTPUT_GRID_SCALE " << tok);
+    for (const char *f : {"pot.tadah", "refit.eam", "refit_opt.log"})
+      fs::remove(f);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.add("OUTPUT_GRID_SCALE", tok);
+    Task task("refit", c);
+    CHECK_THROWS_WITH(RefitEngine().run(task),
+                      "tadah refit: OUTPUT_GRID_SCALE '" + tok +
+                          "' for refit.eam: EAMSetflIO: a grid scale of " +
+                          shown + " gives " + counts + needs);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    CHECK_FALSE(fs::exists("refit.eam"));
+    CHECK_FALSE(fs::exists("refit_opt.log"));
+  }
+  Context c = dense_refit_context("synth_fcc.eam.alloy");
+  c.add("OUTPUT_GRID_SCALE", std::string("0.00625"));
+  (void)run_refit(c);
+  tadah::models::EAMSetflIO setfl;
+  setfl.read_setfl("refit.eam");
+  CHECK(setfl.nr() == 3);
+  CHECK(setfl.nrho() == 3);
 }
