@@ -653,8 +653,8 @@ TEST_CASE_METHOD(PTFixture,
    * from 0 to 4294967295, N2B, NRHO_BASIS and NF_BASIS from 1 to 1024 (the
    * escalation cap), REFIT_MAX_ESCALATIONS from 0, REFIT_COMPACT_NMAX one
    * or three integers from 1; a number below the smallest normal double
-   * says it is too small, and a scalar key takes one value. The values at
-   * the ends of the ranges are accepted.
+   * says it is too small. (A scalar key holds one value: Context::add
+   * overwrites it.) The values at the ends of the ranges are accepted.
    * Before the fix: validate() read none of them (no exception), and run()
    * read them with Context::get (istringstream) unchecked, so the first
    * message checked is not thrown and run() fails reading the absent EAM
@@ -687,8 +687,6 @@ TEST_CASE_METHOD(PTFixture,
        "REFIT_TOL_AMBIENT must be a positive number, got '1e-400'" + tiny},
       {"REFIT_TOL_AMBIENT", {"0x1p-3"},
        "REFIT_TOL_AMBIENT must be a positive number, got '0x1p-3'"},
-      {"REFIT_TOL_AMBIENT", {"1", "2"},
-       "REFIT_TOL_AMBIENT takes one value, got 2"},
       {"REFIT_TOL_COMPRESSED", {"0"},
        "REFIT_TOL_COMPRESSED must be a positive number, got '0'"},
       {"OUTPUT_GRID_SCALE", {"0"},
