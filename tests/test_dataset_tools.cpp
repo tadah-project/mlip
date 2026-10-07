@@ -973,3 +973,119 @@ TEST_CASE("StructureDB/Structure::dump_to_file: a failed write is refused",
   CHECK_THROWS_WITH(db(0).dump_to_file("/dev/full"),
                     Catch::Contains("/dev/full") && Catch::Contains("write"));
 }
+
+namespace {
+
+/* The message f throws, or "no exception". */
+template <class F> std::string thrown(F f) {
+  try {
+    f();
+  } catch (const std::exception &e) {
+    return e.what();
+  }
+  return "no exception";
+}
+
+/* A bcc Ta structure with 2 atoms whose cell and stress blocks are the
+ * lines `blocks` (the format: 3 cell lines, then 3 stress lines). */
+std::string ta_with_blocks(const std::string &label, const std::string &blocks) {
+  return label + "\n1 1 1\n-11.5\n" + blocks +
+         "Ta 0 0 0 0 0 0\nTa 1.65 1.65 1.65 0 0 0\n\n";
+}
+
+const char *const kBlocks33 = "3.3 0 0\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n";
+
+}  // namespace
+
+/* Pins: a dataset's cell and stress are six lines of exactly three
+ * numbers (one lattice vector, then one stress-tensor row, per line, as
+ * the Dataset Format of the docs and Structure::save write them), and every
+ * reader of a dataset reads them so: StructureDB::add(file), count(file),
+ * add(file, first, N) (skipping structures), add_selected and
+ * find_unique_elements refuse a structure whose block has another layout,
+ * naming the file, the structure (1-based, and its label), the block line
+ * and its field count:
+ *  - the cell on one line of 9 numbers ('cell line 1, ..., has 9 fields');
+ *  - a stress line of 4 numbers ('stress line 3, '0 0 0 1', has 4 fields');
+ *  - a blank line inside the cell block ('cell line 2, '', has 0 fields');
+ *  - a file that ends inside the cell block ('the file ends inside the cell
+ *    block, at line 3 of 3').
+ * The 3+3 layout reads, and count() gives what add() reads (3 structures,
+ * 6 atoms).
+ * Before the fix: Structure::read took the 18 numbers whatever their lines
+ * and dropped the rest of the last stress line, while next_structure (count,
+ * add(file, first, N), add_selected) and find_unique_elements skipped 6
+ * lines: no reader refused the three layouts. The one-line cell was read by
+ * add() (3 structures, 6 atoms) but counted as 3 structures and 4 atoms
+ * (S2's two atom lines skipped as stress lines); the 4-number stress line
+ * was read with its 4th number dropped; the blank line inside the cell was
+ * skipped by add() and counted as a cell line by the scanners (S2 counted
+ * with 3 atoms, its last stress line taken for one, and find_unique_elements
+ * refused it as 'Unknown symbol: 0'); the file ending inside the cell block
+ * was refused by add() as "... the file ends inside the cell block" (no
+ * line) and counted as 2 structures. */
+TEST_CASE("StructureDB: the cell and the stress are three lines of three "
+          "numbers, for every reader of a dataset",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_blocks");
+  {
+    const std::string path = tmp.write(
+        "good.tadah", ta_with_blocks("S1", kBlocks33) +
+                          ta_with_blocks("S2", kBlocks33) +
+                          ta_with_blocks("S3", kBlocks33));
+    StructureDB db;
+    db.add(path);
+    CHECK(db.size() == 3);
+    CHECK(db.calc_natoms() == 6);
+    const auto counted = StructureDB::count(path);
+    CHECK(counted.first == 3);
+    CHECK(counted.second == 6);
+  }
+  struct Case {
+    std::string name, blocks, what;
+  };
+  const std::vector<Case> cases = {
+      {"one_line_cell",
+       "3.3 0 0 0 3.3 0 0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n",
+       "cell line 1, '3.3 0 0 0 3.3 0 0 0 3.3', has 9 fields: each cell line "
+       "is one lattice vector, 3 numbers"},
+      {"four_stress",
+       "3.3 0 0\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0 1\n",
+       "stress line 3, '0 0 0 1', has 4 fields: each stress line is one row "
+       "of the stress tensor, 3 numbers"},
+      {"blank_in_cell",
+       "3.3 0 0\n\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n",
+       "cell line 2, '', has 0 fields: each cell line is one lattice vector, "
+       "3 numbers"},
+  };
+  for (const Case &c : cases) {
+    INFO(c.name);
+    const std::string path = tmp.write(
+        c.name + ".tadah", ta_with_blocks("S1", kBlocks33) +
+                               ta_with_blocks("S2", c.blocks) +
+                               ta_with_blocks("S3", kBlocks33));
+    const std::string want = "DBFILE " + path + ": structure 2: structure 'S2': " + c.what;
+    StructureDB all;
+    CHECK(thrown([&] { all.add(path); }) == want);
+    CHECK(thrown([&] { (void)StructureDB::count(path); }) == want);
+    StructureDB third;
+    CHECK(thrown([&] { (void)third.add(path, 2, 1); }) == want);
+    StructureDB selected;
+    CHECK(thrown([&] { (void)selected.add_selected(path, {2}); }) == want);
+    CHECK(thrown([&] { (void)StructureDB::find_unique_elements(path); }) == want);
+  }
+  {
+    const std::string path = tmp.write(
+        "ends.tadah", ta_with_blocks("S1", kBlocks33) +
+                          "S2\n1 1 1\n-11.5\n3.3 0 0\n0 3.3 0\n");
+    const std::string want =
+        "DBFILE " + path +
+        ": structure 2: structure 'S2': the file ends inside the cell block, "
+        "at line 3 of 3";
+    StructureDB all;
+    CHECK(thrown([&] { all.add(path); }) == want);
+    CHECK(thrown([&] { (void)StructureDB::count(path); }) == want);
+    CHECK(thrown([&] { (void)StructureDB::find_unique_elements(path); }) == want);
+  }
+}
