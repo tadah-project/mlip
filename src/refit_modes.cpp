@@ -1,4 +1,5 @@
 #include <tadah/mlip/engines/refit_modes.h>
+#include <tadah/mlip/engines/refit_keys.h>
 
 #include <algorithm>
 #include <cctype>
@@ -290,7 +291,7 @@ int run_refit_edit(Context &c) {
                   "pass -o <name> to choose a different output name");
   TrainEngine::dumpPotFile(out_pot, out);
 
-  const double pct = has(c, "OPTIM_PCT") ? c.get<double>("OPTIM_PCT") : 5.0;
+  const double pct = read_optim_pct(c);
   write_hpotarget(out_hpo, out, pct);
   log_info("tadah refit --edit: wrote pot=" + out_pot +
            " hpotarget=" + out_hpo);
@@ -307,7 +308,7 @@ int run_refit_retarget(Context &c) {
   const bool in_place = has(c, "IN_PLACE") && c.get<bool>("IN_PLACE");
 
   RetargetOptions opts;
-  opts.pct = has(c, "OPTIM_PCT") ? c.get<double>("OPTIM_PCT") : 5.0;
+  opts.pct = read_optim_pct(c);
 
   // --pct tokens: a bare number sets the global percentage, KEY=N one group.
   // Numbers in the hpotarget grammar (core::parse_decimal_normal, the
