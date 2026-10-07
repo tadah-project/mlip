@@ -160,10 +160,10 @@ constexpr ModeKey kModeKeys[] = {
     {"INIT", RefitMode::Compact, true},
     {"EXPLORE", RefitMode::Compact, true},
     {"REFINE", RefitMode::Compact, true},
-    {"FUSE", RefitMode::Compact, true},
-    // the top-level block of the grammar before the stage blocks, which
-    // compact mode refuses with its migration text
-    {"OPTIMIZER", RefitMode::Compact, true}};
+    {"FUSE", RefitMode::Compact, true}};
+// (A top-level OPTIMIZER block, the grammar before the stage blocks, is read
+// by neither mode: check_refit_mode_keys refuses it first, in both, with
+// top_level_optimizer_refusal().)
 
 // Read by REFIT_OBJECTIVE curve only (compact mode). REFIT_CURVE_RELAX and
 // REFIT_CURVE_DERIV_WEIGHT have no effect under energy either, but the
@@ -203,6 +203,17 @@ RefitMode read_refit_mode(const Context &c) {
                            "'dense', got '" + *tok + "'");
 }
 
+std::string top_level_optimizer_refusal() {
+  return kWho +
+         "a top-level OPTIMIZER block is no longer supported. The stage "
+         "pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
+         "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
+         "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO "
+         "in EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; "
+         "JOINT -> FUSE. The Refitting page of the documentation has "
+         "examples (Stage blocks).";
+}
+
 bool read_refit_curve_objective(const Context &c) {
   const std::optional<std::string> tok = single(c, "REFIT_OBJECTIVE");
   const std::string obj = tok ? lower(*tok) : std::string("energy");
@@ -215,6 +226,15 @@ bool read_refit_curve_objective(const Context &c) {
 
 void check_refit_mode_keys(const Context &c, RefitMode mode,
                            const KeyProvenance *provenance) {
+  // neither mode reads a top-level OPTIMIZER block (its stages are the
+  // compact fitter's stage blocks now, which dense mode does not read)
+  if (configured(c, provenance, "OPTIMIZER"))
+    throw std::runtime_error(
+        top_level_optimizer_refusal() +
+        (mode == RefitMode::Dense
+             ? " Under REFIT_MODE dense, which reads no stage block, remove "
+               "the OPTIMIZER block."
+             : ""));
   const RefitMode other =
       mode == RefitMode::Dense ? RefitMode::Compact : RefitMode::Dense;
   const std::string runs = std::string(mode_name(mode)) +

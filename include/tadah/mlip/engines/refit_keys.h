@@ -11,6 +11,7 @@
 
 #include <array>
 #include <optional>
+#include <string>
 
 namespace tadah {
 namespace mlip {
@@ -36,6 +37,15 @@ RefitMode read_refit_mode(const tadah::core::Context &c);
  *     got 'shape'" (the value in lower case). */
 bool read_refit_curve_objective(const tadah::core::Context &c);
 
+/** The refusal of a top-level OPTIMIZER block, the grammar before the
+ *  stage blocks, which neither REFIT_MODE reads: the migration text of
+ *  check_refit_mode_keys (in either mode) and of the compact fitter's
+ *  parser (HPO's RefitParser::parse):
+ *    "tadah refit: a top-level OPTIMIZER block is no longer supported. The
+ *     stage pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, ... The
+ *     Refitting page of the documentation has examples (Stage blocks)." */
+std::string top_level_optimizer_refusal();
+
 /** The mode rule: refuse a key of @p c that the configuration's REFIT_MODE,
  *  @p mode, does not read. Each key's mode is stated once, here (the table
  *  in refit_keys.cpp):
@@ -45,13 +55,16 @@ bool read_refit_curve_objective(const tadah::core::Context &c);
  *   - read by REFIT_MODE compact only (the compact fitter and its stage
  *     pipeline): every REFIT_COMPACT_* key, REFIT_CURVE_WEIGHTING,
  *     REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
- *     REFINE and FUSE blocks and a top-level OPTIMIZER block (which compact
- *     mode refuses as the grammar before the stage blocks), and
- *     REFIT_OBJECTIVE curve (REFIT_OBJECTIVE energy passes in both);
+ *     REFINE and FUSE blocks, and REFIT_OBJECTIVE curve (REFIT_OBJECTIVE
+ *     energy passes in both);
  *   - read by REFIT_OBJECTIVE curve only, in compact mode:
  *     REFIT_CURVE_WEIGHTING. (REFIT_CURVE_RELAX and
  *     REFIT_CURVE_DERIV_WEIGHT have no effect under energy, and pass there:
  *     their values are checked in either objective.)
+ *   - read by neither mode: a top-level OPTIMIZER block, refused first, in
+ *     either mode, with top_level_optimizer_refusal(), to which REFIT_MODE
+ *     dense adds " Under REFIT_MODE dense, which reads no stage block,
+ *     remove the OPTIMIZER block."
  *  The other keys are read in both modes. A key counts when @p c stores it
  *  (Context::has_stored) and @p provenance, when given, does not record it
  *  as a blueprint default that the task factory added (KeyOrigin::Default:
