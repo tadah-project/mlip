@@ -23,8 +23,9 @@ namespace mlip {
  *
  * - If lines appear before the first "TASK", they form a "GLOBAL" section
  *   (returned only if that section has at least one key-value line).
- * - Each discovered "TASK ..." line creates a new named section. If no tokens
- *   follow "TASK", a runtime error is thrown.
+ * - Each discovered "TASK ..." line creates a new named section. An in-line
+ *   comment ('#' to the end of the line) is not part of the name. If no
+ *   tokens follow "TASK", a runtime error is thrown.
  * - A task can exist with zero subsequent lines, meaning an empty Context.
  *
  * Depending on the merge flag, each task section can optionally be merged 
@@ -116,9 +117,11 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    * @brief Splits lines into named sections based on "TASK" delimiter.
    *
    * If lines exist before the first "TASK", they form a (sectionName="GLOBAL", lines).
-   * Each new "TASK some_name" creates a new section named by uppercasing 
-   * subsequent tokens and joining them with '.' (e.g. "TASK data split" -> 
-   * "DATA.SPLIT"). If there are no tokens following "TASK", a runtime_error 
+   * Each new "TASK some_name" creates a new section named by uppercasing
+   * the first token after "TASK", lowercasing the others and joining them
+   * with '.' (e.g. "TASK data split" -> "DATA.split"). The tokens are those
+   * before an in-line comment ("TASK train   # first" -> "TRAIN"), as for
+   * a key line. If there are no tokens following "TASK", a runtime_error
    * is thrown.
    *
    * @param lines The raw config file lines.

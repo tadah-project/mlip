@@ -106,8 +106,8 @@ Context blr_context() {
   return c;
 }
 
-// M_KRR Kern_Linear: D2_LJ (the quickstart pair term) + DM_Blip (4
-// functions).
+// M_KRR Kern_Linear: D2_LJ (the pair term of the Tadah! 1.6.0 docs
+// quickstart potential) + DM_Blip (4 functions).
 Context krr_context() {
   Context c;
   add_common_keys(c);
