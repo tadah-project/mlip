@@ -42,7 +42,9 @@
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/column_block.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
+#include <tadah/mlip/design_matrix/functions/kernels/dm_kern_rbf.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
+#include <tadah/mlip/models/m_krr.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/mlip/st_descriptors.h>
@@ -50,6 +52,9 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/weight_provisioning.h>
+#include <tadah/models/cut_all.h>
+#include <tadah/models/descriptors/d2/d2_blip.h>
+#include <tadah/models/descriptors/dm/dm_dummy.h>
 #include <tadah/models/functions/kernels/kern_base.h>
 
 #include <algorithm>
@@ -1181,6 +1186,145 @@ TEST_CASE("SBASIS below 2 or above the number of AEDs + 1 is refused, "
   }
 }
 
+namespace {
+
+/* MODEL M_KRR Kern_RBF 2: implementation 2, energies only. */
+const ModelSpec kRbf2 = {"M_KRR Kern_RBF 2", {"M_KRR", "Kern_RBF", "2"},
+                         {"1.0"}, true};
+
+/* The mean AED of each structure of the data (implementation 2's
+ * candidates), with the descriptors of the Trainer. */
+std::vector<std::vector<ld>> mean_aeds(Trained &t) {
+  std::vector<std::vector<ld>> out;
+  for (std::size_t s = 0; s < t.db.size(); ++s) {
+    const StDescriptors sd = t.tr->dc.calc(t.db(s));
+    std::vector<ld> m(sd.dim(), 0);
+    for (std::size_t a = 0; a < sd.naed(); ++a)
+      for (std::size_t d = 0; d < sd.dim(); ++d)
+        m[d] += ld(sd.get_aed(a)[d]) / ld(sd.naed());
+    out.push_back(m);
+  }
+  return out;
+}
+
+}  // namespace
+
+/* Pins: implementation 2 (MODEL M_KRR Kern_RBF 2, energies only) with
+ * SBASIS 5 on the six structures: two Trainers on the same data write the
+ * same BASIS and WEIGHTS (17 digits, bit for bit); its basis is the
+ * documented draw: column 0 is e0 = (1, 0, 0) and columns 1 .. 4 are the
+ * mean AEDs of structures 4, 0, 2, 1 (draw_candidates(6, 4): the draw of
+ * the basis test above on 6 candidates, also obtained with an independent
+ * Python implementation of MT19937-64), each component to 1e-14
+ * (relative, or absolute below 1); and the weights solve
+ * (K + LAMBDA I) w = t with K_ij = exp(-|b_i - b_j|^2 / 2) (Kern_RBF, sigma
+ * 1, LAMBDA 0), t_0 = 0 and t_j the energy per atom of the structure of
+ * column j, to 1e-8 relative (the reference: Householder QR in long
+ * double; K full rank, rcond > 1e-9).
+ * Before the fix (the old prep_basis_for_krr restored in a scratch
+ * build): the structures were drawn with std::random_device and
+ * std::shuffle (implementation-defined), so the two Trainers wrote
+ * different BASIS and WEIGHTS lines (unless the draws coincided, 1 in
+ * 360) and the columns were not structures 4, 0, 2, 1, so the weights,
+ * fitted to the structures drawn, missed the reference built on the
+ * documented ones (5e-2 relative in that run). */
+TEST_CASE("Implementation 2 draws its basis by the documented draw and "
+          "solves (K + lambda I) w = t",
+          "[nonlinear][train][basis]") {
+  PeriodicTable::initialize();
+  const std::vector<std::size_t> drawn = documented_draw(6, kSbasis - 1);
+  REQUIRE(drawn == std::vector<std::size_t>{4, 0, 2, 1});
+
+  Trained t1(make_context(kRbf2)), t2(make_context(kRbf2));
+  REQUIRE_NOTHROW(t1.train());
+  REQUIRE_NOTHROW(t2.train());
+  const Context p1 = t1.tr->model->get_param_file();
+  const Context p2 = t2.tr->model->get_param_file();
+  CHECK(p1("MODEL") == std::vector<std::string>{"M_KRR", "Kern_RBF", "2"});
+  CHECK(p1("BASIS") == p2("BASIS"));
+  CHECK(p1("WEIGHTS") == p2("WEIGHTS"));
+
+  const Reference ref = reference_of(*t1.tr, kRbf2);
+  REQUIRE(ref.basis.size() == kSbasis);
+  CHECK(ref.basis[0] == std::vector<ld>{1, 0, 0});
+  const std::vector<std::vector<ld>> means = mean_aeds(t1);
+  REQUIRE(means.size() == 6);
+  for (std::size_t j = 1; j < kSbasis; ++j)
+    for (std::size_t d = 0; d < 3; ++d) {
+      INFO("basis column " << j << " = structure " << drawn[j - 1]
+                           << ", component " << d);
+      CHECK(static_cast<double>(ref.basis[j][d]) ==
+            Approx(static_cast<double>(means[drawn[j - 1]][d]))
+                .epsilon(1e-14)
+                .margin(1e-14));
+    }
+
+  // (K + LAMBDA I) w = t on the read-back basis, LAMBDA 0.
+  Rows K(kSbasis, std::vector<ld>(kSbasis));
+  std::vector<ld> rhs(kSbasis, 0);
+  std::vector<ld> phi;
+  std::vector<std::vector<ld>> dphi;
+  for (std::size_t i = 0; i < kSbasis; ++i) {
+    tadah::core::aed_type bi(3);
+    for (std::size_t d = 0; d < 3; ++d)
+      bi[d] = static_cast<double>(ref.basis[i][d]);
+    ref.eval(bi, phi, dphi);  // phi[j] = K(b_j, b_i)
+    for (std::size_t j = 0; j < kSbasis; ++j) K[i][j] = phi[j];
+  }
+  for (std::size_t j = 1; j < kSbasis; ++j) {
+    const Structure &st = t1.db(drawn[j - 1]);
+    rhs[j] = ld(st.energy) / ld(st.natoms());
+  }
+  const LsSolution sol = least_squares(K, rhs);
+  INFO("reference rcond (min/max |R_kk|) " << static_cast<double>(sol.rcond));
+  REQUIRE(sol.rcond > 1e-9);
+  const t_type w = t1.tr->model->get_weights();
+  INFO("weights   " << to_text(w));
+  INFO("reference " << to_text(sol.w));
+  CHECK(rel_diff(w, sol.w) < 1e-8);
+}
+
+/* Pins: implementation 2 (MODEL M_KRR Kern_RBF 2) with SBASIS 7 (e0 and
+ * all 6 structures) trains, with 7 weights; SBASIS 1, 8 (the 6 structures
+ * allow at most 7) and 0 are refused with a message naming SBASIS and the
+ * limit ("at least 2", "at most 7").
+ * Before the fix (the old prep_basis_for_krr restored in a scratch
+ * build): SBASIS 7 threw "The number of requested basis vectors is larger
+ * than the amount of available AEDs" (the check wanted SBASIS <= 6,
+ * although the draw used only SBASIS - 1 structures); SBASIS 1 trained on
+ * e0 alone (no throw); SBASIS 8 threw that message, which names neither
+ * SBASIS nor the limit; SBASIS 0 wrote b(0,0) into a basis of 0 columns
+ * (SIGSEGV, which ends the run; it is the last section). */
+TEST_CASE("Implementation 2: SBASIS below 2 or above the number of "
+          "structures + 1 is refused, naming SBASIS",
+          "[nonlinear][train][basis]") {
+  PeriodicTable::initialize();
+  SECTION("SBASIS 7") {
+    Context c = make_context(kRbf2);
+    set_key(c, "SBASIS", "7");
+    Trained t(c);
+    REQUIRE_NOTHROW(t.train());
+    CHECK(t.tr->model->get_weights().size() == 7);
+  }
+  for (const char *s : {"1", "8", "0"}) {
+    DYNAMIC_SECTION("SBASIS " << s) {
+      Context c = make_context(kRbf2);
+      set_key(c, "SBASIS", s);
+      Trained t(c);
+      std::string msg;
+      try {
+        t.train();
+      } catch (const std::exception &e) {
+        msg = e.what();
+      }
+      INFO("message: " << msg);
+      CHECK(msg.find(std::string("SBASIS ") + s) != std::string::npos);
+      CHECK(msg.find(std::string(s) == "8" ? "at most 7" : "at least 2") !=
+            std::string::npos);
+    }
+  }
+}
+
 /* Pins: M_KRR with a non-linear kernel refuses train(StDescriptorsDB,
  * StructureDB), the training from precomputed descriptors, which draws no
  * basis: the message names the kernel and says no basis vectors are drawn.
@@ -1246,19 +1390,28 @@ std::string trainer_error(Context c) {
 }  // namespace
 
 /* Pins: a trained M_KRR Kern_RBF potential (get_param_file, DSIZE removed
- * as a file would not have it) loads into a Trainer (DescriptorsCalc first,
- * so DSIZE is known, as in `tadah predict`) and predicts what the trained
- * model predicts (1e-14 relative); a potential with 5 x 3 BASIS values and
- * 5 WEIGHTS loads (a pin of the hand-made potential); with BASIS holding
- * SBASIS (5) vectors of 4 values instead of 3 (the length is a multiple of
- * SBASIS, so the kernel reads it) it is refused with a message naming
- * BASIS, SBASIS and DSIZE ("of 4 values", "has 3 components (DSIZE)");
- * with 4 WEIGHTS for 5 basis vectors it is refused naming WEIGHTS and
- * SBASIS ("4 WEIGHTS", "SBASIS 5").
+ * as a file would not have it) loads into a Trainer (as in `tadah
+ * predict`) and predicts what the trained model predicts (1e-14
+ * relative), and the loaded model writes the potential back with SBASIS 5
+ * and the trained BASIS, value for value; a potential with 5 x 3 BASIS
+ * values and 5 WEIGHTS loads (a pin of the hand-made potential); with BASIS
+ * holding SBASIS (5) vectors of 4 values instead of 3 (the length is a
+ * multiple of SBASIS, so the kernel reads it) it loads, and predicting
+ * with it is refused with a message naming BASIS, SBASIS and DSIZE ("of 4
+ * values", "has 3 components (DSIZE)"): the length is checked where the
+ * descriptors meet the basis; with 4 WEIGHTS for 5 basis vectors it is
+ * refused when loaded, naming WEIGHTS and SBASIS ("4 WEIGHTS", "SBASIS
+ * 5").
  * Before the fix: the training threw (the ColumnLayout check), so the
  * first section failed; the potential with 4-value vectors and the one
  * with 4 WEIGHTS loaded without an error (the first then read past every
- * 3-value descriptor in K(b, x), the second past its weights). */
+ * 3-value descriptor in K(b, x), the second past its weights). After that,
+ * with M_KRR's get_param_file writing M_KRR's own copy of the basis (seen
+ * in a scratch build), the loaded model wrote SBASIS 0 and no BASIS (that
+ * copy is empty in a model loaded from a potential); and with the length
+ * checked when M_KRR was built (the first version of this fix), building
+ * the Trainer on the 4-value potential threw, so its REQUIRE_NOTHROW
+ * failed. */
 TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
           "WEIGHTS",
           "[nonlinear][load]") {
@@ -1278,13 +1431,35 @@ TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
     const StructureDB b = loaded->model->predict(lc, t.db, loaded->dc);
     for (std::size_t s = 0; s < t.db.size(); ++s)
       CHECK(b(s).energy == Approx(a(s).energy).epsilon(1e-14));
+    // The loaded model writes the basis it predicts with.
+    const Context written = loaded->model->get_param_file();
+    REQUIRE(written.contains("SBASIS"));
+    CHECK(written.get<std::size_t>("SBASIS") == kSbasis);
+    REQUIRE(written.contains("BASIS"));
+    REQUIRE(written.size("BASIS") == c.size("BASIS"));
+    REQUIRE(c.size("BASIS") == kSbasis * 3);
+    for (std::size_t v = 0; v < c.size("BASIS"); ++v) {
+      INFO("BASIS value " << v);
+      CHECK(written.get<double>("BASIS", v) == c.get<double>("BASIS", v));
+    }
   }
   SECTION("5 vectors of 3 values and 5 WEIGHTS (a pin)") {
     CHECK(trainer_error(handmade_rbf_potential(kSbasis * 3, kSbasis)) == "");
   }
   SECTION("BASIS vectors one value too long") {
-    const std::string msg =
-        trainer_error(handmade_rbf_potential(kSbasis * 4, kSbasis));
+    Context c = handmade_rbf_potential(kSbasis * 4, kSbasis);
+    MLIPWorkspaceManager ws;
+    std::unique_ptr<Trainer> loaded;
+    REQUIRE_NOTHROW(loaded = std::make_unique<Trainer>(c, ws));
+    StructureDB db = training_db();
+    loaded->nnf.calc(db, loaded->context);
+    std::string msg;
+    try {
+      Context lc = loaded->context;
+      (void)loaded->model->predict(lc, db, loaded->dc);
+    } catch (const std::exception &e) {
+      msg = e.what();
+    }
     INFO("message: " << msg);
     CHECK(msg.find("BASIS") != std::string::npos);
     CHECK(msg.find("of 4 values") != std::string::npos);
@@ -1296,6 +1471,76 @@ TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
     INFO("message: " << msg);
     CHECK(msg.find("4 WEIGHTS") != std::string::npos);
     CHECK(msg.find("SBASIS 5") != std::string::npos);
+  }
+}
+
+/* Pins: an M_KRR<DM_Kern_RBF> built from a trained Kern_RBF potential
+ * before the DescriptorsCalc<D2_Blip, DM_Dummy, Cut_Cos, Cut_Cos> of that
+ * potential, the order of the API example (Tadah.MLIP examples/API/ex_2),
+ * builds (the context has no DSIZE yet) and predicts, through
+ * predict(context, StructureDB, DescriptorsCalc), the energies, forces and
+ * stresses the trained model predicts (1e-14 relative, 1e-14 absolute);
+ * built so from a potential whose BASIS holds SBASIS (5) vectors of 4
+ * values, it builds too, and predicting is refused with the message
+ * naming BASIS and DSIZE ("of 4 values", "has 3 components (DSIZE)").
+ * Before the fix: M_KRR's constructor checked the length of the basis
+ * vectors against DSIZE and threw std::logic_error ("the descriptor size
+ * (DSIZE) is not known ... build the DescriptorsCalc on this context
+ * before the model") in both sections, so both REQUIRE_NOTHROWs failed (on
+ * v1-dev, without that check, the trained potential predicted). */
+TEST_CASE("A non-linear KRR potential built before its DescriptorsCalc "
+          "predicts, and a BASIS of another length is refused when it "
+          "predicts",
+          "[nonlinear][load]") {
+  PeriodicTable::initialize();
+  using Model = tadah::mlip::M_KRR<tadah::mlip::DM_Kern_RBF>;
+  using DC = DescriptorsCalc<tadah::models::D2_Blip, tadah::models::DM_Dummy,
+                             tadah::models::Cut_Cos, tadah::models::Cut_Cos>;
+  SECTION("the potential as trained") {
+    const ModelSpec &m = model_named("M_KRR Kern_RBF");
+    Trained t(make_context(m));
+    REQUIRE_NOTHROW(t.train());
+    Context pc = t.tr->context;
+    const StructureDB a = t.tr->model->predict(pc, t.db, t.tr->dc);
+    Context c = t.tr->model->get_param_file();
+    c.remove("DSIZE");  // as read from a file: DescriptorsCalc sets it
+    std::unique_ptr<Model> model;
+    REQUIRE_NOTHROW(model = std::make_unique<Model>(c));
+    StructureDB db = training_db();
+    NNFinder().calc(db, c);
+    DC dc(c);
+    const StructureDB b = model->predict(c, db, dc);
+    REQUIRE(b.size() == a.size());
+    for (std::size_t s = 0; s < a.size(); ++s) {
+      INFO("structure " << s);
+      CHECK(b(s).energy == Approx(a(s).energy).epsilon(1e-14));
+      for (std::size_t i = 0; i < db(s).natoms(); ++i)
+        for (int k = 0; k < 3; ++k)
+          CHECK(b(s).atoms[i].force[k] ==
+                Approx(a(s).atoms[i].force[k]).epsilon(1e-14).margin(1e-14));
+      for (int x = 0; x < 3; ++x)
+        for (int y = 0; y < 3; ++y)
+          CHECK(b(s).stress(x, y) ==
+                Approx(a(s).stress(x, y)).epsilon(1e-14).margin(1e-14));
+    }
+  }
+  SECTION("BASIS vectors one value too long") {
+    Context c = handmade_rbf_potential(kSbasis * 4, kSbasis);
+    std::unique_ptr<Model> model;
+    REQUIRE_NOTHROW(model = std::make_unique<Model>(c));
+    StructureDB db = training_db();
+    NNFinder().calc(db, c);
+    DC dc(c);
+    std::string msg;
+    try {
+      (void)model->predict(c, db, dc);
+    } catch (const std::exception &e) {
+      msg = e.what();
+    }
+    INFO("message: " << msg);
+    CHECK(msg.find("BASIS") != std::string::npos);
+    CHECK(msg.find("of 4 values") != std::string::npos);
+    CHECK(msg.find("has 3 components (DSIZE)") != std::string::npos);
   }
 }
 
