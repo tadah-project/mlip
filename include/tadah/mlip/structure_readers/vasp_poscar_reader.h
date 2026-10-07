@@ -22,6 +22,12 @@ namespace mlip {
  *      anything else for Direct (fractional)
  *  10+) Atomic coordinates: fractional f give r = f0 a0 + f1 a1 + f2 a2;
  *      Cartesian ones are scaled like the lattice
+ *
+ * Every error of read() is a std::runtime_error naming the file:
+ *
+ *     VaspPoscarReader: POSCAR file <path>: 'Xx' on line 6 is not an element symbol (or a VASP POTCAR name such as Ti_pv or Si/b0d4a2).
+ *
+ * and a refused file leaves the structure of the last successful read.
  */
 class VaspPoscarReader : public IStructureReader {
 public:

@@ -46,6 +46,13 @@ public:
    * message holds no request URL, no header and not the API key (the
    * provider sends the key in a request header). The previous structure is
    * kept.
+   *
+   * A material that cannot be read is refused naming it, the site of an
+   * element Tadah does not know too:
+   *
+   *     MaterialsProjectReader: material 'mp-149': site 2 has element 'Xx', which is not an element symbol Tadah knows (H to Og).
+   *
+   * and the previous structure is kept.
    */
   void read(const std::string &mpID) override;
 

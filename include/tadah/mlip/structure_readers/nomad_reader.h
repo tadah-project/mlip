@@ -43,6 +43,13 @@ public:
    * The reason is the provider's cURL text or the server's body; the
    * message holds no request URL or header. The previous structure is kept.
    *
+   * An entry that cannot be read is refused naming it, the site of a
+   * species Tadah does not know too:
+   *
+   *     NomadReader: entry 'zyXabc123zyXabc123zyXab': site 2 has species 'D', which is not an element symbol Tadah knows (H to Og).
+   *
+   * and the previous structure is kept.
+   *
    * @param entryID  The unique identifier in NOMAD.
    */
   void read(const std::string &entryID) override;
