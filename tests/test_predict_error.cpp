@@ -634,3 +634,78 @@ TEST_CASE("predict --error refuses a covariance that does not fit the "
     }
   }
 }
+
+/* Pins: with two species (Nb, Ta), BIAS true (one intercept column per
+ * species) and NORM true, M_BLR BF_Linear and M_KRR Kern_Linear (OALGO 3,
+ * LAMBDA 0) write the covariance of the raw-descriptor weights: WCOV is
+ * s^2 (Phi^T W Phi)^-1 of the raw rows (both intercept columns and the 3
+ * D2_Blip columns, N = 5; 1e-8 relative), WNOISE E and F are s^2/2 and
+ * s^2/0.5 with s^2 = RSS/(51 - 5), and predict with errors predicts what
+ * predict predicts with sqrt(phi^T WCOV phi + WNOISE_t) for every row
+ * (1e-8). The cells have 1 to 3 Nb atoms, so the energies determine both
+ * intercepts.
+ * Before the fix: no WCOV and no WNOISE (the potentials had SIGMA); the
+ * WEIGHTS were already those of the raw descriptors (the per-species
+ * intercepts of the multi-species BIAS fix), as the case checks first. */
+TEST_CASE("predict --error with two species, BIAS and NORM: the covariance "
+          "of the raw-descriptor weights",
+          "[predict_error][bias]") {
+  PeriodicTable::initialize();
+  for (const auto &mf : kLinearModels) {
+    DYNAMIC_SECTION(mf[0] << " " << mf[1]) {
+      Context c = make_context(mf[0], mf[1], true, "0");
+      set_key(c, "ATOM", "Nb Ta");
+      c.remove("WATOM");
+      c.add("WATOM", "1 1");
+      set_key(c, "TYPE2B", "D2_Blip 3 3 * *");
+      set_key(c, "TYPEMB", "DM_Dummy * *");
+      StructureDB db = training_db();
+      const char *species[6][3] = {{"Nb", "Ta", "Ta"}, {"Nb", "Nb", "Ta"},
+                                   {"Ta", "Nb", "Ta"}, {"Nb", "Nb", "Nb"},
+                                   {"Ta", "Ta", "Nb"}, {"Nb", "Ta", "Nb"}};
+      for (std::size_t s = 0; s < 6; ++s)
+        for (std::size_t a = 0; a < 3; ++a)
+          db(s).atoms[a].Element::operator=(Element(species[s][a]));
+      MLIPWorkspaceManager ws;
+      Trainer tr(c, ws);
+      tr.train(db);
+      const Context pot = tr.get_param_file();
+      const std::vector<Row> rows = raw_rows(db, tr.dc, 2.0, 0.5);
+      const Reference ref = reference_fit(rows, 0.0L);
+      REQUIRE(ref.n_obs == 51);
+      REQUIRE(ref.w.size() == 5);
+      const std::vector<double> w = stored_doubles(pot, "WEIGHTS");
+      REQUIRE(w.size() == 5);
+      for (std::size_t p = 0; p < 5; ++p)
+        CHECK(w[p] == Approx(static_cast<double>(ref.w[p])).epsilon(1e-8));
+      const std::vector<double> wcov = stored_doubles(pot, "WCOV");
+      REQUIRE(wcov.size() == 26);
+      LD dmax = 0, rmax = 0;
+      for (std::size_t q = 0; q < 5; ++q)
+        for (std::size_t p = 0; p < 5; ++p) {
+          dmax = std::max(dmax, std::fabs(wcov[1 + 5 * q + p] - ref.Sigma[p][q]));
+          rmax = std::max(rmax, std::fabs(ref.Sigma[p][q]));
+        }
+      CHECK(static_cast<double>(dmax / rmax) < 1e-8);
+      const double s2 = static_cast<double>(ref.s2);
+      CHECK(wnoise_of(pot, "E") == Approx(s2 / 2.0).epsilon(1e-8));
+      CHECK(wnoise_of(pot, "F") == Approx(s2 / 0.5).epsilon(1e-8));
+
+      LoadedPotential lp(pot);
+      tadah::core::aed_type err;
+      const StructureDB with_err = lp.model->predict(lp.ctx, db, lp.dc, err);
+      const StructureDB plain = lp.model->predict(lp.ctx, db, lp.dc);
+      for (std::size_t s = 0; s < db.size(); ++s)
+        CHECK(with_err(s).energy ==
+              Approx(plain(s).energy).epsilon(1e-10).margin(1e-12));
+      REQUIRE(err.size() >= rows.size());
+      for (std::size_t i = 0; i < rows.size(); ++i) {
+        INFO("row " << i);
+        const double noise = rows[i].type == 0 ? s2 / 2.0 : s2 / 0.5;
+        CHECK(err(i) == Approx(std::sqrt(static_cast<double>(
+                                   quad(ref.Sigma, rows[i].phi)) + noise))
+                            .epsilon(1e-8));
+      }
+    }
+  }
+}
