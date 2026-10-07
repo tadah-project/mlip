@@ -1688,3 +1688,36 @@ TEST_CASE("M_KRR Kern_Linear implementation 2 writes the descriptor weights "
         }
       }
 }
+
+/* Pins: the fit of M_KRR implementation 2 with SBASIS 1 on the six Ta cells
+ * (BIAS true, one intercept vector e0) is refused when it draws its basis
+ * (Basis::check_sbasis), naming "SBASIS 1", "needs at least 2 basis
+ * vectors" and the "training structures", for Kern_Linear and Kern_RBF
+ * alike, without the word "non-linear": implementation 2 draws the basis
+ * for its solve with every kernel, Kern_Linear too.
+ * Before the fix: the refusal said "a non-linear M_KRR model needs at least
+ * 2 basis vectors", for Kern_Linear as well. */
+TEST_CASE("M_KRR implementation 2 refuses SBASIS 1 without calling the "
+          "model non-linear",
+          "[krr][train2][basis]") {
+  PeriodicTable::initialize();
+  const ModelSpec specs[] = {
+      {"M_KRR Kern_Linear 2", {"M_KRR", "Kern_Linear", "2"}, {}, true},
+      {"M_KRR Kern_RBF 2", {"M_KRR", "Kern_RBF", "2"}, {"1.0"}, true}};
+  for (const ModelSpec &spec : specs) DYNAMIC_SECTION(spec.name) {
+    Context c = make_context(spec, /*bias=*/true);
+    set_key(c, "SBASIS", "1");
+    Trained t(c);
+    std::string m = "<no exception>";
+    try {
+      t.train();
+    } catch (const std::exception &e) {
+      m = e.what();
+    }
+    INFO(m);
+    CHECK(m.find("SBASIS 1") != std::string::npos);
+    CHECK(m.find("needs at least 2 basis vectors") != std::string::npos);
+    CHECK(m.find("training structures") != std::string::npos);
+    CHECK(m.find("non-linear") == std::string::npos);
+  }
+}

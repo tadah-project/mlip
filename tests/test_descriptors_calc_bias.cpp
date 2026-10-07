@@ -1519,6 +1519,69 @@ TEST_CASE("model_weight_count: SBASIS of a non-linear kernel needs one "
   }
 }
 
+// Pins: M_KRR Kern_Linear implementation 2 draws SBASIS basis vectors for
+// its solve (the intercept vectors, then mean AEDs of training structures),
+// so its weight count (model_weight_count, which tadah hpo's startup calls)
+// checks SBASIS as a non-linear kernel's does, and is DSIZE, the descriptor
+// weights the solve's coefficients make: with ATOM Ta and BIAS false (DSIZE
+// 3) no SBASIS is refused naming "M_KRR Kern_Linear 2 needs SBASIS" and the
+// "training structures"; SBASIS 1 is refused naming "M_KRR Kern_Linear 2",
+// "SBASIS 1", "at least 2 basis vectors" and "column 0 is the bias vector
+// e0", without the word "non-linear"; SBASIS 2 and 7 give 3. With ATOM Nb Ta
+// and BIAS true (DSIZE 5) SBASIS 2 is refused naming "at least 3 basis
+// vectors" and "the 2 intercept vectors", and SBASIS 3 gives 5. Kern_Linear
+// implementation 1, which draws no basis, gives 3 without SBASIS (a pin).
+// Before the fix: model_weight_count returned DSIZE for Kern_Linear 2
+// before any SBASIS check: no SBASIS and SBASIS 1 gave 3, SBASIS 2 on Nb Ta
+// gave 5, so tadah hpo's startup passed them and every evaluation threw
+// ("Key not found in the Context object: SBASIS"; "SBASIS 1: a non-linear
+// M_KRR model needs at least 2 basis vectors").
+TEST_CASE("model_weight_count: M_KRR Kern_Linear 2 checks SBASIS and has "
+          "DSIZE weights",
+          "[descriptors_calc][bias][basis]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  // The count, or the refusal; sbasis < 0: no SBASIS.
+  auto count = [&](const std::vector<std::string> &atoms, bool bias, int impl,
+                   int sbasis) {
+    Context c = make_context(atoms, bias);
+    set_model(c, "M_KRR", "Kern_Linear");
+    c.add("MODEL", impl);
+    if (sbasis >= 0) c.add("SBASIS", sbasis);
+    Trainer tr(c, ws);
+    std::size_t k = 0;
+    const std::string m = refusal_of(
+        [&] { k = tadah::mlip::model_weight_count(*tr.fb, tr.context); });
+    return m == "<no exception>" ? std::to_string(k) : m;
+  };
+  const std::vector<std::string> ta = {"Ta"};
+  {
+    const std::string m = count(ta, false, 2, -1);
+    INFO(m);
+    CHECK(m.find("M_KRR Kern_Linear 2 needs SBASIS") != std::string::npos);
+    CHECK(m.find("training structures") != std::string::npos);
+  }
+  {
+    const std::string m = count(ta, false, 2, 1);
+    INFO(m);
+    CHECK(m.find("M_KRR Kern_Linear 2") != std::string::npos);
+    CHECK(m.find("SBASIS 1") != std::string::npos);
+    CHECK(m.find("at least 2 basis vectors") != std::string::npos);
+    CHECK(m.find("column 0 is the bias vector e0") != std::string::npos);
+    CHECK(m.find("non-linear") == std::string::npos);
+  }
+  CHECK(count(ta, false, 2, 2) == "3");
+  CHECK(count(ta, false, 2, 7) == "3");
+  {
+    const std::string m = count({"Nb", "Ta"}, true, 2, 2);
+    INFO(m);
+    CHECK(m.find("at least 3 basis vectors") != std::string::npos);
+    CHECK(m.find("the 2 intercept vectors") != std::string::npos);
+  }
+  CHECK(count({"Nb", "Ta"}, true, 2, 3) == "5");
+  CHECK(count(ta, false, 1, -1) == "3");
+}
+
 // Pins: with ATOM Nb Ta and BIAS true the basis draw takes SBASIS from 3
 // (the intercept vectors e_0, e_1 and one drawn vector) to the candidates
 // plus 2: build_random_basis (implementation 1; 8 structures of 16 atoms,
