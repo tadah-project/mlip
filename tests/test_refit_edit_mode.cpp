@@ -812,10 +812,12 @@ TEST_CASE_METHOD(PTFixture,
    * --retarget also HPOFILEOUT, which --edit reads ("... only a refit of an
    * EAM file and --edit read it; remove HPOFILEOUT (the file --retarget
    * writes is -o, OUTFILE)"). Nothing is written (no pot_edited.tadah,
-   * refit_edited.hpotarget or a_edited.hpotarget). NUMERIC, the precision
+   * refit_edited.hpotarget or a_retargeted.hpotarget, the --retarget
+   * default; it was a_edited.hpotarget before --retarget's default name
+   * became <input>_retargeted). NUMERIC, the precision
    * of the potential and dataset files a command writes and no key of the
    * refit, passes under --retarget, which writes neither: validate()
-   * accepts NUMERIC 12 and run() writes a_edited.hpotarget byte-identical
+   * accepts NUMERIC 12 and run() writes a_retargeted.hpotarget byte-identical
    * to the run without it (its bounds are printed %.8e whatever NUMERIC
    * is); --edit reads HPOFILEOUT and NUMERIC (new.hpotarget written). The
    * blueprint defaults the task factory stores for every refit
@@ -827,7 +829,8 @@ TEST_CASE_METHOD(PTFixture,
    * and under --retarget).
    * Before the fix: validate() accepted every key and run() ignored it:
    * --edit wrote pot_edited.tadah and its hpotarget, --retarget wrote
-   * a_edited.hpotarget (with HPOFILEOUT set as well, which it never read);
+   * a_edited.hpotarget, its default then (with HPOFILEOUT set as well,
+   * which it never read);
    * in the defaults section the defaults passed as well (a pin) and the
    * keys written in the file were accepted (no exception, the outputs
    * written). NUMERIC under --retarget passed as well (a pin); the first
@@ -852,7 +855,7 @@ TEST_CASE_METHOD(PTFixture,
     return c;
   };
   const std::vector<std::string> outputs = {
-      "pot_edited.tadah", "refit_edited.hpotarget", "a_edited.hpotarget"};
+      "pot_edited.tadah", "refit_edited.hpotarget", "a_retargeted.hpotarget"};
   const auto check_refused = [&](const Task &task, const std::string &msg) {
     for (const auto &f : outputs) fs::remove(f);
     CHECK_THROWS_WITH(RefitEngine().validate(task), msg);
@@ -906,15 +909,15 @@ TEST_CASE_METHOD(PTFixture,
     for (const auto &f : outputs) fs::remove(f);
     Task plain("refit", retarget());
     REQUIRE(RefitEngine().run(plain) == EXIT_SUCCESS);
-    const std::string without = slurp("a_edited.hpotarget");
+    const std::string without = slurp("a_retargeted.hpotarget");
     REQUIRE_FALSE(without.empty());
-    fs::remove("a_edited.hpotarget");
+    fs::remove("a_retargeted.hpotarget");
     Context n = retarget();
     n.add("NUMERIC", std::string("12"));
     Task numeric("refit", n);
     CHECK_NOTHROW(RefitEngine().validate(numeric));
     CHECK(RefitEngine().run(numeric) == EXIT_SUCCESS);
-    CHECK(slurp("a_edited.hpotarget") == without);
+    CHECK(slurp("a_retargeted.hpotarget") == without);
     // --edit reads both
     Context e = edit();
     e.add("HPOFILEOUT", std::string("new.hpotarget"));
@@ -959,7 +962,7 @@ TEST_CASE_METHOD(PTFixture,
     Task r = task_with(retarget(), true);
     CHECK_NOTHROW(RefitEngine().validate(r));
     CHECK(RefitEngine().run(r) == EXIT_SUCCESS);
-    CHECK(fs::exists("a_edited.hpotarget"));
+    CHECK(fs::exists("a_retargeted.hpotarget"));
     // written in the configuration file, they are refused (the first of
     // the table each mode does not read)
     check_refused(task_with(edit(), false),
@@ -968,4 +971,68 @@ TEST_CASE_METHOD(PTFixture,
                   output_mode_refusal("--retarget", "REFIT_OBJECTIVE",
                                       kFitReads));
   }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit and --retarget write different default "
+                 "hpotargets",
+                 "[refit][edit][retarget][integration]") {
+  /* Pins: the default outputs of --edit and --retarget differ, so neither
+   * overwrites the other's. On a potential pot.tadah and its hpotarget
+   * refit.hpotarget (the names a refit writes), --edit (EDIT pot.tadah,
+   * FUNC phi, ADD 3.6) writes pot_edited.tadah and refit_edited.hpotarget,
+   * and --retarget refit.hpotarget (PCT 10) then writes
+   * refit_retargeted.hpotarget, byte-identical to the file it writes with
+   * -o, and leaves refit_edited.hpotarget byte-identical to what --edit
+   * wrote. The derived name keeps the input's directory and extension
+   * (sub/b.hpo -> sub/b_retargeted.hpo), and --retarget of the --edit
+   * hpotarget writes refit_edited_retargeted.hpotarget.
+   * Before the fix: --retarget's default was <input>_edited<ext>, so
+   * --retarget refit.hpotarget wrote refit_edited.hpotarget over the
+   * --edit file (the bounds around the unedited potential, which has one
+   * pair function fewer) and refit_retargeted.hpotarget does not exist;
+   * sub/b.hpo gave
+   * sub/b_edited.hpo, refit_edited.hpotarget refit_edited_edited.hpotarget. */
+  ScopedTempDir tmp;
+  const auto slurp = [](const std::string &f) {
+    std::ifstream is(f);
+    return std::string((std::istreambuf_iterator<char>(is)),
+                       std::istreambuf_iterator<char>());
+  };
+  TrainEngine::dumpPotFile("pot.tadah", make_knot_pot());
+  tadah::mlip::engines::write_hpotarget("refit.hpotarget", make_knot_pot(),
+                                        5.0);
+  Context e;
+  e.add("EDIT", std::string("pot.tadah"));
+  e.add("FUNC", std::string("phi"));
+  e.add("ADD", 3.6);
+  Task edit("refit", e);
+  REQUIRE(RefitEngine().run(edit) == EXIT_SUCCESS);
+  REQUIRE(fs::exists("pot_edited.tadah"));
+  const std::string edited = slurp("refit_edited.hpotarget");
+  REQUIRE_FALSE(edited.empty());
+
+  const auto retarget = [](const std::string &in, const std::string &out) {
+    Context c;
+    c.add("RETARGET", in);
+    c.add("PCT", std::string("10"));
+    if (!out.empty()) c.add("OUTFILE", out);
+    Task task("refit", c);
+    return RefitEngine().run(task);
+  };
+  REQUIRE(retarget("refit.hpotarget", "") == EXIT_SUCCESS);
+  CHECK(slurp("refit_edited.hpotarget") == edited);
+  CHECK(fs::exists("refit_retargeted.hpotarget"));
+  REQUIRE(retarget("refit.hpotarget", "explicit.hpotarget") == EXIT_SUCCESS);
+  CHECK(slurp("refit_retargeted.hpotarget") == slurp("explicit.hpotarget"));
+  CHECK_FALSE(slurp("explicit.hpotarget").empty());
+
+  fs::create_directories("sub");
+  tadah::mlip::engines::write_hpotarget("sub/b.hpo", make_knot_pot(), 5.0);
+  REQUIRE(retarget("sub/b.hpo", "") == EXIT_SUCCESS);
+  CHECK(fs::exists("sub/b_retargeted.hpo"));
+  CHECK_FALSE(fs::exists("sub/b_edited.hpo"));
+  REQUIRE(retarget("refit_edited.hpotarget", "") == EXIT_SUCCESS);
+  CHECK(fs::exists("refit_edited_retargeted.hpotarget"));
+  CHECK(slurp("refit_edited.hpotarget") == edited);
 }

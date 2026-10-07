@@ -755,6 +755,14 @@ TEST_CASE_METHOD(PTFixture,
     // refuses it under energy, before its value is read)
     if (key.rfind("REFIT_CURVE_", 0) == 0)
       c.add("REFIT_OBJECTIVE", std::string("curve"));
+    // REFIT_COMPACT_OPT_EVERY and REFIT_COMPACT_INSERT_TOPK are read by the
+    // knot families only (the rule refuses them under compact_refit_context's
+    // Blip5, before their value is read; until it did, these cases ran on
+    // Blip5)
+    if (key == "REFIT_COMPACT_OPT_EVERY" || key == "REFIT_COMPACT_INSERT_TOPK") {
+      c.remove("REFIT_BASIS");
+      c.add("REFIT_BASIS", std::string("Knot5"));
+    }
     c.remove(key);
     for (const auto &t : tokens) c.add(key, t);
     return c;
@@ -1163,6 +1171,80 @@ TEST_CASE_METHOD(PTFixture,
          "REFIT_CURVE_DERIV_WEIGHT", "REFIT_OBJECTIVE"}));
     CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
   }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: a key of the knot families is refused under "
+                 "the Blip families",
+                 "[refit][mode_keys]") {
+  /* Pins: under REFIT_MODE compact, RefitEngine::validate() and run()
+   * (before the EAM file is read) refuse each of REFIT_COMPACT_MERGE,
+   * REFIT_COMPACT_OPT_EVERY and REFIT_COMPACT_INSERT_TOPK, which the
+   * compact fitter reads for the one-sided knot families only (the
+   * coalescence guard, the insertion-only rungs, the top-k insertion),
+   * when REFIT_BASIS is a Blip family, in each spelling tadah refit fits as
+   * one (Blip, blip, Blip5, BLIP5, blip5, M6), naming the key and the basis
+   * as written: "tadah refit: REFIT_COMPACT_MERGE has no effect under
+   * REFIT_BASIS Blip5: only the knot families (REFIT_BASIS Knot5, the
+   * compact default, Knot3 or KnotMix) read it; remove REFIT_COMPACT_MERGE,
+   * or set REFIT_BASIS Knot5"; REFIT_COMPACT_MERGE auto written in the file
+   * too. Under a knot family (Knot5, knot5, Knot3, KnotMix, Mixed) and
+   * without REFIT_BASIS (the compact default, Knot5) the three pass the
+   * rule, and this engine, which has no compact fitter, then refuses
+   * REFIT_MODE compact; so does REFIT_COMPACT_MERGE auto as the blueprint
+   * default the task factory stores (KeyProvenance Default) under Blip5.
+   * Before the fix: the three passed the rule under the Blip families too
+   * (the compact fitter read and ignored them), so their refusal is not
+   * thrown and this engine refuses REFIT_MODE compact instead ("tadah
+   * refit: REFIT_MODE compact needs the compact fitter, ..."); the knot
+   * and default cases pass as well (a pin). */
+  ScopedTempDir tmp;
+  const auto refused = [](const std::string &key, const std::string &basis) {
+    return "tadah refit: " + key + " has no effect under REFIT_BASIS " +
+           basis + ": only the knot families (REFIT_BASIS Knot5, the "
+           "compact default, Knot3 or KnotMix) read it; remove " + key +
+           ", or set REFIT_BASIS Knot5";
+  };
+  const std::vector<std::pair<std::string, std::string>> knot_keys = {
+      {"REFIT_COMPACT_MERGE", "true"},
+      {"REFIT_COMPACT_MERGE", "auto"},
+      {"REFIT_COMPACT_OPT_EVERY", "2"},
+      {"REFIT_COMPACT_INSERT_TOPK", "2"}};
+  const auto with_basis = [](const char *basis) {
+    Context c = compact_refit_context("absent.eam.alloy");
+    c.remove("REFIT_BASIS");
+    if (basis) c.add("REFIT_BASIS", std::string(basis));
+    return c;
+  };
+  for (const auto &[key, value] : knot_keys) {
+    for (const char *basis : {"Blip", "blip", "Blip5", "BLIP5", "blip5",
+                              "M6"}) {
+      INFO(key << " " << value << " under REFIT_BASIS " << basis);
+      Context c = with_basis(basis);
+      c.add(key, value);
+      check_refused(c, refused(key, basis));
+    }
+    for (const char *basis : {static_cast<const char *>(nullptr), "Knot5",
+                              "knot5", "Knot3", "KnotMix", "Mixed"}) {
+      INFO(key << " " << value << " under REFIT_BASIS "
+               << (basis ? basis : "(the default)"));
+      Context c = with_basis(basis);
+      c.add(key, value);
+      check_refused(c, no_compact_fitter());
+    }
+  }
+  // the default the task factory stores passes under a Blip family
+  using tadah::mlip::KeyOrigin;
+  using tadah::mlip::KeyProvenance;
+  Context c = with_basis("Blip5");
+  const Context file = c;
+  c.add("REFIT_COMPACT_MERGE", std::string("auto"));
+  Task task("refit", c);
+  task.setKeyProvenance(KeyProvenance(Context(), file, "config.refit",
+                                      KeyOrigin::Kind::ConfigFile,
+                                      {"REFIT_COMPACT_MERGE"}));
+  CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
+  CHECK_THROWS_WITH(RefitEngine().run(task), no_compact_fitter());
 }
 
 TEST_CASE_METHOD(PTFixture,
