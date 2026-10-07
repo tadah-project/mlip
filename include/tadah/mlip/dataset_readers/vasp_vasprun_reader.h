@@ -178,7 +178,7 @@ private:
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
   bool forces_found_ = false; ///< The calculation's forces were read.
   std::size_t ends_inside_ = 0; ///< The calculation the file ends inside (1-based), 0 for a complete file.
-  std::size_t ends_after_ = 0; ///< The last calculation of a file that ends after it, before </modeling> (no calculation open), 0 otherwise.
+  std::size_t ends_after_ = 0; ///< The last calculation of a file that ends after it, without its closing modeling tag (no calculation open), 0 otherwise.
   bool ends_before_first_ = false; ///< The file ends before its first calculation.
   std::vector<tadah::core::Element> elements_; ///< The elements of atom_types.
   std::string filename_; ///< The file read, for messages.
