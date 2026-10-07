@@ -73,19 +73,14 @@ class Trainer {
 
     /** Set the model weights directly from FIXINDEX/FIXWEIGHT without any
      *  training data. Requires FIXINDEX to cover every model weight; see
-     *  weight_provisioning.h for the contract. */
+     *  weight_provisioning.h for the contract. No fit computes a covariance
+     *  of these weights: a SIGMA in the context is removed, as a model fit
+     *  removes it (training_context() leaves none of the configuration's;
+     *  this removes one set in the context since). */
     void provision_fixed_weights() {
+      context.remove("SIGMA");
       tadah::mlip::provision_fixed_weights(*model, context,
                                            fb->get_phi_cols(context));
-    }
-
-    /** Update descriptor parameters in-place from trainer.context.
-     *  Call after modifying context with new HPO parameters.
-     *  Returns true if descriptor size changed — caller must rebuild Trainer. */
-    bool reinit() {
-      if (model) model->reset_trained();
-      dm.refresh_context_scalars(context);
-      return DCS.reinit(context);
     }
 
     tadah::core::Context get_param_file() {

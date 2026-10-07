@@ -900,6 +900,33 @@ TEST_CASE_METHOD(PTFixture,
                     Catch::Contains("--pct token 'SGRID2B=-5'"));
 }
 
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget: the configuration's OPTIM_PCT is a "
+                 "positive number",
+                 "[retarget][strict]") {
+  /* Pins: the OPTIM_PCT of a --retarget configuration is read as the refit
+   * reads it (read_optim_pct: the hpotarget number grammar, > 0), so 0 and
+   * -5 are refused naming the token, as --pct refuses them, and 10 runs.
+   * Before the fix: Context::get<double> read it unchecked, so OPTIM_PCT -5
+   * rewrote the bounds at -5 % (no exception). */
+  ScopedTempDir tmp;
+  write_hpotarget("a.hpotarget", make_blip_pot(), 5.0);
+  auto retarget = [](const std::string &tok) {
+    Context c;
+    c.add("RETARGET", std::string("a.hpotarget"));
+    c.add("OUTFILE", std::string("o.hpotarget"));
+    c.add("OPTIM_PCT", tok);
+    return tadah::mlip::engines::run_refit_retarget(c);
+  };
+  for (const std::string bad : {"-5", "0"}) {
+    INFO("OPTIM_PCT " << bad);
+    CHECK_THROWS_WITH(retarget(bad), "tadah refit: OPTIM_PCT must be a "
+                                     "positive number, got '" + bad + "'");
+  }
+  REQUIRE_FALSE(fs::exists("o.hpotarget"));
+  CHECK(retarget("10") == EXIT_SUCCESS);
+}
+
 // ---------------------------------------------------------------------------
 //  refit --retarget --rhoform (owner decision C7)
 // ---------------------------------------------------------------------------

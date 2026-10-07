@@ -1,11 +1,13 @@
 #include <tadah/mlip/engines/refit_engine.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
+#include <tadah/mlip/engines/refit_keys.h>
 #include <tadah/mlip/engines/refit_log.h>
 #include <tadah/mlip/engines/refit_modes.h>
 #include <tadah/mlip/engines/train_engine.h>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/eam_setfl_io.h>
@@ -21,6 +23,7 @@
 #include <iomanip>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -35,12 +38,7 @@ using tadah::core::Context;
 std::string get_str(const Context &c, const std::string &k, const std::string &def) {
   return c.contains(k) && c.size(k) > 0 ? c.get<std::string>(k) : def;
 }
-int get_int(const Context &c, const std::string &k, int def) {
-  return c.contains(k) && c.size(k) > 0 ? c.get<int>(k) : def;
-}
-double get_dbl(const Context &c, const std::string &k, double def) {
-  return c.contains(k) && c.size(k) > 0 ? c.get<double>(k) : def;
-}
+// The configuration's numbers come from read_refit_numbers (refit_keys.h).
 
 // crystal_epa now lives in MODELS (eam_lattice.h) so the HPO compact engine
 // can share it.
@@ -274,8 +272,10 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
   if (edit || retarget) {
     // CLI needs/excludes only guard flag usage; the config-file path (and
-    // combinations the CLI cannot express) are re-validated here.
+    // combinations the CLI cannot express) are re-validated here, and the
+    // one configuration number of these modes, OPTIM_PCT.
     validate_refit_mode_keys(c);
+    (void)read_optim_pct(c);
     return;
   }
   if (!c.contains("EAM") || c.size("EAM") == 0) {
@@ -288,6 +288,8 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   // The written DM_REAM potential declares its density form, which only the
   // configuration can choose (no default).
   models::require_rhoform(c, kRefitRhoFormWho);
+  // Every configuration number, strictly and with its range.
+  (void)read_refit_numbers(c);
 }
 
 int RefitEngine::run(tadah::mlip::Task &task) {
@@ -303,6 +305,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // Mandatory in the configuration (no default, never inserted); checked
   // before the table is read.
   const models::RhoForm rho_form = models::require_rhoform(c, kRefitRhoFormWho);
+  // The configuration numbers, strictly and with their ranges, before the
+  // table is read (the compact fitter reads them with the same reader).
+  const RefitNumbers nums = read_refit_numbers(c);
 
   const std::string eam_path  = c.get<std::string>("EAM");
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
@@ -320,8 +325,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const bool basis_user_set = !basis.empty();
   if (!basis_user_set)
     basis = (mode == "compact") ? "Knot5" : "Blip";
-  const double optim_pct      = get_dbl(c, "OPTIM_PCT", 5.0);
-  const double grid_scale     = get_dbl(c, "OUTPUT_GRID_SCALE", 1.0);
+  const double optim_pct      = nums.optim_pct;
+  const double grid_scale     = nums.output_grid_scale;
 
   // ---- read the tabulated EAM ----
   models::EAMSetflIO eam;
@@ -340,19 +345,35 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   //      and compact modes (compact_fit runs later).
   models::eam_lattice::require_crystal(eam.lattice_raw(), eam.lattice_param());
 
+  // ---- the refit.eam grid (OUTPUT_GRID_SCALE), before any fitting: a
+  //      scale whose point counts a setfl table cannot have is refused here,
+  //      not after the fit has written pot.tadah ----
+  models::EAMGrid out_grid = eam.input_grid();
+  if (grid_scale != 1.0) {
+    try {
+      out_grid = eam.scaled_grid(grid_scale);
+    } catch (const std::invalid_argument &e) {
+      throw std::runtime_error(
+          "tadah refit: OUTPUT_GRID_SCALE '" +
+          c.stored_value("OUTPUT_GRID_SCALE")
+              .value_or(core::format_roundtrip(grid_scale)) +
+          "' for " + setfl_out + ": " + e.what());
+    }
+  }
+
   eam.build_splines();
 
   // ---- configure + fit ----
   models::EAMRefitConfig cfg;
   cfg.basis = basis;
   apply_level(level, cfg.n2b, cfg.nrho, cfg.nF);
-  cfg.n2b  = get_int(c, "N2B", cfg.n2b);
-  cfg.nrho = get_int(c, "NRHO_BASIS", cfg.nrho);
-  cfg.nF   = get_int(c, "NF_BASIS", cfg.nF);
+  cfg.n2b  = nums.n2b.value_or(cfg.n2b);
+  cfg.nrho = nums.nrho.value_or(cfg.nrho);
+  cfg.nF   = nums.nF.value_or(cfg.nF);
   cfg.placement    = get_str(c, "REFIT_PLACEMENT", cfg.placement);
-  cfg.reach_smin   = get_dbl(c, "REFIT_REACH_SMIN", cfg.reach_smin);
-  cfg.reach_margin = get_dbl(c, "REFIT_REACH_MARGIN", cfg.reach_margin);
-  cfg.r_lo_frac    = get_dbl(c, "REFIT_R_LO_FRAC", cfg.r_lo_frac);
+  cfg.reach_smin   = nums.reach_smin.value_or(cfg.reach_smin);
+  cfg.reach_margin = nums.reach_margin.value_or(cfg.reach_margin);
+  cfg.r_lo_frac    = nums.r_lo_frac.value_or(cfg.r_lo_frac);
   if (c.contains("REFIT_CONSTRAIN_F0") && c.size("REFIT_CONSTRAIN_F0") > 0)
     cfg.constrain_F0 = c.get<bool>("REFIT_CONSTRAIN_F0");
 
@@ -410,10 +431,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // the fit reruns. This adapts the basis to material physics no fixed preset
   // can anticipate (e.g. Ti1's steep F' ~ +15 eV/rho at compressed densities
   // demands drho ~ 1e-5, i.e. far more rho basis than other elements).
-  const double tol_amb = get_dbl(c, "REFIT_TOL_AMBIENT", 0.1);     // meV/atom
-  const double tol_cmp = get_dbl(c, "REFIT_TOL_COMPRESSED", 1.0);  // meV/atom
-  const int    max_esc = get_int(c, "REFIT_MAX_ESCALATIONS", 4);
-  const int    n_cap   = 1024;  // per-function basis-size safety cap
+  const double tol_amb = nums.tol_ambient;     // meV/atom
+  const double tol_cmp = nums.tol_compressed;  // meV/atom
+  const int    max_esc = nums.max_escalations;
+  const int    n_cap   = 1024;  // per-function basis-size safety cap (and
+                                // the range of N2B/NRHO_BASIS/NF_BASIS)
 
   const std::string lat = eam.lattice();
   const double a0 = eam.lattice_param();
@@ -619,9 +641,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   TrainEngine::dumpPotFile(out_pot, pot);
 
   // ---- write the round-trip setfl from the NATIVE fitted functions ----
-  models::EAMGrid grid = (grid_scale == 1.0) ? eam.input_grid()
-                                             : eam.scaled_grid(grid_scale);
-  eam.write_setfl(setfl_out, grid,
+  eam.write_setfl(setfl_out, out_grid,
                   [&](double rho){ return refit.F_setfl(rho); },
                   [&](double r){ return refit.rho_setfl(r); },
                   [&](double r){ return refit.z2_setfl(r); },
