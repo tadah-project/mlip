@@ -107,12 +107,17 @@ enum class RefitOutputMode {
  *     and of REFIT_MODE compact only (check_refit_mode_keys), the stage
  *     blocks among them, and a top-level OPTIMIZER block, which no mode
  *     reads;
- *   - under --retarget also HPOFILEOUT and NUMERIC, which a refit and
- *     --edit read (the potential and the hpotarget they write).
- *  (EAM, and RHOFORM and EMBF0 under --retarget, have their own refusals:
- *  validate_refit_mode_keys, refit_modes.h.) A key counts as in
- *  check_refit_mode_keys (stored and not a blueprint default). The first
- *  key refused throws std::runtime_error naming it and what reads it:
+ *   - under --retarget also HPOFILEOUT, which a refit and --edit read (the
+ *     hpotarget they write).
+ *  NUMERIC, the precision of the files a command writes, is no key of the
+ *  refit and is not refused: --edit reads it for the potential it writes,
+ *  and --retarget writes only an hpotarget, whose bounds are printed %.8e
+ *  whatever NUMERIC is (a task file's NUMERIC above its first TASK line
+ *  applies to every task). (EAM, and RHOFORM and EMBF0 under --retarget,
+ *  have their own refusals: validate_refit_mode_keys, refit_modes.h.) A
+ *  key counts as in check_refit_mode_keys (stored and not a blueprint
+ *  default). The first key refused throws std::runtime_error naming it
+ *  and what reads it:
  *    "tadah refit --edit: N2B has no effect under --edit: only a refit of
  *     an EAM file in REFIT_MODE dense reads it; remove N2B"
  *    "tadah refit --retarget: the REFINE block has no effect under

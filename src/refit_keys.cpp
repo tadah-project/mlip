@@ -174,11 +174,14 @@ constexpr const char *kFitKeys[] = {
     "REFIT_R_LO_FRAC",    "REFIT_OBJECTIVE",      "OUTPUT_GRID_SCALE",
     "SETFL_OUT",          "REFIT_LOG"};
 
-// Read by a refit of an EAM file and by --edit (the potential and the
-// hpotarget they write), not by --retarget: its output is OUTFILE (-o), or
-// its input with --in-place, and the hpotarget writer prints a fixed number
-// of digits.
-constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT", "NUMERIC"};
+// Read by a refit of an EAM file and by --edit (the hpotarget they write),
+// not by --retarget: its output is OUTFILE (-o), or its input with
+// --in-place. (NUMERIC, the precision of the files a command writes, is no
+// key of the refit and is not refused: --retarget writes only an
+// hpotarget, whose bounds every hpotarget writer prints %.8e whatever
+// NUMERIC is, so it has nothing to apply it to; a task file's NUMERIC
+// above its first TASK line applies to every task.)
+constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT"};
 
 // Read by REFIT_OBJECTIVE curve only (compact mode): the compact fitter
 // reads the derivative weight in the curve objective's solve and score and
@@ -322,9 +325,7 @@ void check_refit_output_mode_keys(const Context &c, RefitOutputMode mode,
     for (const char *key : kFitAndEditKeys)
       if (configured(c, provenance, key))
         refuse(key, "only a refit of an EAM file and --edit read it",
-               std::string(key) == "HPOFILEOUT"
-                   ? " (the file --retarget writes is -o, OUTFILE)"
-                   : "");
+               " (the file --retarget writes is -o, OUTFILE)");
 }
 
 RefitNumbers read_refit_numbers(const Context &c) {
