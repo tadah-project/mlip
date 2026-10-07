@@ -110,6 +110,12 @@ namespace mlip {
  * an occupancy above 1 is not valid. An unknown occupancy ('?' or '.') is
  * 1; one that is not a number is refused.
  *
+ * A site of an element Tadah does not know is refused, naming the site:
+ * deuterium, which gemmi reads as an element ("site D1 has element 'D',
+ * which Tadah does not know: its elements are H to Og."), or a type symbol
+ * (or, without the type-symbol column, a label) that gemmi cannot read as
+ * an element ("site Q1: 'Q' is not an element symbol.").
+ *
  * The cell is gemmi's orthogonalisation (a along x, b in the xy plane),
  * whose columns are the lattice vectors; it is stored transposed, so row
  * i of Structure::cell is lattice vector a_i.
