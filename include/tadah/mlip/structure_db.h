@@ -88,15 +88,21 @@ struct StructureDB {
      * The file is read in one pass, up to the largest index: only the
      * selected structures are parsed and kept, each once; the others are
      * skipped without being parsed, as count() skips them. Memory grows
-     * with the number of selected structures, and a structure that is not
-     * valid elsewhere in the file does not stop the read.
+     * with the number of selected structures, and a structure elsewhere in
+     * the file whose values are not valid does not stop the read; its cell
+     * and stress lines are still checked for their layout
+     * (detail::read_cell_stress_lines).
      *
      * Return the number of added structures, indices.size().
      *
      * \throws std::runtime_error naming the file, the structure (1-based)
      *         and the number of structures the file has when an index is
-     *         past its end, or naming the file, the structure and the value
-     *         when a selected structure is not valid; nothing is added then.
+     *         past its end; naming the file, the structure and the value
+     *         when a selected structure is not valid; and naming the file,
+     *         the structure and the line when a structure before the
+     *         largest index has a cell or stress block of another layout
+     *         than three lines of three fields, or the file ends inside
+     *         it. Nothing is added then.
      */
   int add_selected(const std::string fn, const std::vector<size_t> &indices);
 
@@ -179,7 +185,13 @@ struct StructureDB {
   /** Count number of structures and atoms in a single dataset. Blank lines
    * (whitespace only, '\r' included) are read as Structure::read reads
    * them, and a structure without atoms is counted, as add(file) reads it.
-   * The structures are skipped, not parsed (Structure::next_structure). */
+   * The structures are skipped, not parsed (Structure::next_structure),
+   * but their cell and stress lines are checked for their layout.
+   *
+   * \throws std::runtime_error naming the file, the structure and the
+   *         line when a structure's cell or stress block has another
+   *         layout than three lines of three fields, or the file ends
+   *         inside it. */
   static std::pair<int,int> count(const std::string fn);
 
   void clear_nn();
