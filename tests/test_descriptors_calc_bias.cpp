@@ -404,7 +404,7 @@ TEST_CASE("DescriptorsCalc BIAS true: each atom's intercept is the column of "
 // intercept of each atom is the column of its own species (Nb 0, Ta 1)
 // and the BIAS false DIMER descriptor follows bit for bit; with ATOM Ta
 // (Ta2 molecules) one intercept column of 1.0, as before.
-// Before the fix: one intercept column (dim 9 != 8 + 2), 1.0 for every
+// Before the fix: one intercept column (dim 8 != 7 + 2), 1.0 for every
 // atom; the one-species section passes.
 TEST_CASE("DescriptorsCalc BIAS true with DIMER: each atom's intercept is "
           "the column of its own species",
