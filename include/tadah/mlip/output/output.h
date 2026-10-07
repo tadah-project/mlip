@@ -79,6 +79,8 @@ class Output {
       set_numeric(c.get<size_t>("NUMERIC"));
     }
 
+    /** weights.tadah: the index, value and standard deviation of every
+     *  weight (@p unc, the square roots of the diagonal of WCOV). */
     void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
       std::string index_str = "Index";
 
@@ -89,7 +91,7 @@ class Output {
       out_unc << std::scientific << std::setprecision(sigfig);
       out_unc << std::setw(iwe) << index_str
               << std::setw(nw) << "Mean weight"
-              << std::setw(nw) << "Uncertainty" << std::endl;
+              << std::setw(nw) << "Std. dev." << std::endl;
 
       for (size_t i = 0; i < unc.size(); ++i) {
         out_unc << std::setw(iwe) << i

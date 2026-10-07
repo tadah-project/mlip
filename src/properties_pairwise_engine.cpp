@@ -87,45 +87,49 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   bool is_2b = potContext.get<bool>("INIT2B");
   bool is_mb = potContext.get<bool>("INITMB");
 
-  StructureDB stpred;
-  StructureDB stpred_2b;
-  StructureDB stpred_mb;
-  tadah::core::aed_type predicted_error;
-  tadah::core::aed_type predicted_error_2b;
-  tadah::core::aed_type predicted_error_mb;
+  // The two-body and many-body parts of a potential with both: the model
+  // evaluated on the descriptor of one part, the other part's block 0 (the
+  // DescriptorsCalc of a context with INITMB or INIT2B false fills its own
+  // block at the potential's offsets, of the potential's DSIZE). The
+  // potential's model and context predict them (its WEIGHTS, normalisation
+  // and WCOV); each part's DescriptorsCalc gives its descriptors.
   core::Context potContext_2b = potContext;
   core::Context potContext_mb = potContext;
   potContext_2b.remove("INITMB");
   potContext_2b.add("INITMB",false);
   potContext_mb.remove("INIT2B");
   potContext_mb.add("INIT2B",false);
-
   DescriptorsCalc<> dc_2b(potContext_2b,*DCS.d2b,*DCS.dmb,
       *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb_2b = tadah::core::factory<DM_Function_Base,const core::Context&>(
-      potContext_2b.get<std::string>("MODEL",1),potContext_2b);
-  M_Tadah_Base *modelp_2b = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
-      potContext_2b.get<std::string>("MODEL",0),*fb_2b,potContext_2b);
-
   DescriptorsCalc<> dc_mb(potContext_mb,*DCS.d2b,*DCS.dmb,
       *DCS.c2b,*DCS.cmb);
-  DM_Function_Base *fb_mb = tadah::core::factory<DM_Function_Base,const core::Context&>(
-      potContext_mb.get<std::string>("MODEL",1),potContext_mb);
-  M_Tadah_Base *modelp_mb = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
-      potContext_mb.get<std::string>("MODEL",0),*fb_mb,potContext_mb);
 
-  if (taskContext.get<bool>("ERROR")) {
-    stpred = modelp->predict(potContext,stdb,dc,predicted_error);
-    if (is_2b && is_mb) {
-      stpred_2b = modelp_2b->predict(potContext_2b,stdb,dc_2b,predicted_error_2b);
-      stpred_mb = modelp_mb->predict(potContext_mb,stdb,dc_mb,predicted_error_mb);
-    }
+  StructureDB stpred = modelp->predict(potContext,stdb,dc);
+  StructureDB stpred_2b;
+  StructureDB stpred_mb;
+  if (is_2b && is_mb) {
+    stpred_2b = modelp->predict(potContext,stdb,dc_2b);
+    stpred_mb = modelp->predict(potContext,stdb,dc_mb);
   }
-  else {
-    stpred = modelp->predict(potContext,stdb,dc);
+
+  // --error: the standard deviation of each energy (the column is the
+  // energy's; no forces or stresses are needed for it): of the total,
+  // sqrt(phi^T WCOV phi + WNOISE_E), its predictive standard deviation; of
+  // a part, sqrt(phi_p^T WCOV phi_p), the standard deviation of the part's
+  // value alone (a part is not observed, so it has no noise of its own).
+  tadah::core::aed_type predicted_error;
+  tadah::core::aed_type predicted_error_2b;
+  tadah::core::aed_type predicted_error_mb;
+  if (taskContext.get<bool>("ERROR")) {
+    core::Context energyContext = potContext;
+    energyContext.remove("FORCE");
+    energyContext.add("FORCE", false);
+    energyContext.remove("STRESS");
+    energyContext.add("STRESS", false);
+    modelp->predict(energyContext,stdb,dc,predicted_error);
     if (is_2b && is_mb) {
-      stpred_2b = modelp_2b->predict(potContext_2b,stdb,dc_2b);
-      stpred_mb = modelp_mb->predict(potContext_mb,stdb,dc_mb);
+      modelp->predict_value_error(energyContext,stdb,dc_2b,predicted_error_2b);
+      modelp->predict_value_error(energyContext,stdb,dc_mb,predicted_error_mb);
     }
   }
 
@@ -151,17 +155,23 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
   // energy is predicted per structure. Given that we have
   // two atoms, we need to divide by 2 unless user
-  // specifically asked for bond energy
+  // specifically asked for bond energy: every block (the total and the
+  // parts) and every energy error alike (the parts were not divided).
   std::string energyUnit;
-  if (!taskContext.get<bool>("BONDENERGY")) {
+  const bool per_atom = !taskContext.get<bool>("BONDENERGY");
+  if (per_atom) {
     if (stpred.size() != stdb.size())
       throw std::runtime_error("Prediction size mismatch.");
-
-    for (size_t i = 0; i < stpred.size(); ++i) {
-      const auto n = stdb(i).natoms(); // use input natoms to avoid div. by zero
-      if (n == 0) throw std::runtime_error("Input structure has zero atoms.");
-      stpred(i).energy /= static_cast<double>(n);
-    }
+    for (size_t i = 0; i < stdb.size(); ++i)
+      if (stdb(i).natoms() == 0)
+        throw std::runtime_error("Input structure has zero atoms.");
+    for (StructureDB *block : {&stpred, &stpred_2b, &stpred_mb})
+      for (size_t i = 0; i < block->size(); ++i)
+        (*block)(i).energy /= static_cast<double>(stdb(i).natoms());
+    for (tadah::core::aed_type *err :
+         {&predicted_error, &predicted_error_2b, &predicted_error_mb})
+      for (size_t i = 0; i < err->size(); ++i)
+        (*err)(i) /= static_cast<double>(stdb(i).natoms());
     energyUnit = "eV/atom";
   } else {
     energyUnit = "eV/bond";
@@ -192,10 +202,6 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
   delete modelp;
   delete fb;
-  delete modelp_2b;
-  delete fb_2b;
-  delete modelp_mb;
-  delete fb_mb;
 
   return EXIT_SUCCESS;
 }
