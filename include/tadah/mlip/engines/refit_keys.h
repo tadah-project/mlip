@@ -25,7 +25,7 @@ struct RefitNumbers {
   double tol_ambient = 0.1;        ///< REFIT_TOL_AMBIENT, meV/atom, > 0
   double tol_compressed = 1.0;     ///< REFIT_TOL_COMPRESSED, meV/atom, > 0
   // (default: models::EAMRefitConfig's)
-  std::optional<double> reach_smin;    ///< REFIT_REACH_SMIN, in (0, 1]
+  std::optional<double> reach_smin;    ///< REFIT_REACH_SMIN, 0.1 to 1
   std::optional<double> reach_margin;  ///< REFIT_REACH_MARGIN, > 0
   std::optional<double> r_lo_frac;     ///< REFIT_R_LO_FRAC, in (0, 1)
   double output_grid_scale = 1.0;  ///< OUTPUT_GRID_SCALE, > 0

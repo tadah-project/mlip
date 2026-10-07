@@ -54,7 +54,12 @@ std::string too_small_note(const std::string &tok) {
          "2.2250738585072014e-308)";
 }
 
-enum class Range { Positive, NonNegative, UpToOne, OpenUnit };
+// TenthToOne: REFIT_REACH_SMIN. Its compressed lattice a = smin * a0 sets
+// the neighbour lists of the self-test and the E-V scans, whose length grows
+// as smin^-3 (a/a0 0.01 took a minute, 1e-6 did not finish), and the
+// reachability probe (models::EAMRefit) lists neighbours out to rcut / 0.1
+// only, so a compression past a/a0 0.1 is not supported.
+enum class Range { Positive, NonNegative, UpToOne, OpenUnit, TenthToOne };
 
 const char *range_text(Range r) {
   switch (r) {
@@ -62,6 +67,7 @@ const char *range_text(Range r) {
     case Range::NonNegative: return "a number >= 0";
     case Range::UpToOne: return "a number in (0, 1]";
     case Range::OpenUnit: return "a number in (0, 1)";
+    case Range::TenthToOne: return "a number from 0.1 to 1";
   }
   return "";
 }
@@ -72,6 +78,7 @@ bool in_range(double v, Range r) {
     case Range::NonNegative: return v >= 0.0;
     case Range::UpToOne: return v > 0.0 && v <= 1.0;
     case Range::OpenUnit: return v > 0.0 && v < 1.0;
+    case Range::TenthToOne: return v >= 0.1 && v <= 1.0;
   }
   return false;
 }
@@ -124,7 +131,7 @@ RefitNumbers read_refit_numbers(const Context &c) {
   };
   set(n.tol_ambient, real(c, "REFIT_TOL_AMBIENT", Range::Positive));
   set(n.tol_compressed, real(c, "REFIT_TOL_COMPRESSED", Range::Positive));
-  n.reach_smin = real(c, "REFIT_REACH_SMIN", Range::UpToOne);
+  n.reach_smin = real(c, "REFIT_REACH_SMIN", Range::TenthToOne);
   n.reach_margin = real(c, "REFIT_REACH_MARGIN", Range::Positive);
   n.r_lo_frac = real(c, "REFIT_R_LO_FRAC", Range::OpenUnit);
   set(n.output_grid_scale, real(c, "OUTPUT_GRID_SCALE", Range::Positive));
