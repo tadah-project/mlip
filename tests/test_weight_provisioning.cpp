@@ -143,14 +143,18 @@ TEST_CASE("classify_weight_source: illegal combinations", "[weight_provisioning]
  *    with two FIXWEIGHT values is PartialLS and '1 2 3 4 5' without a
  *    DBFILE FixedOnlyNoData, as '2,4' and '1-5' are;
  *  - '2-1' is refused as a descending range, '2,2' as a weight named twice
- *    (two FIXWEIGHT values) or as 2 indices for 1 FIXWEIGHT value, and '0'
- *    as outside 1-5 (the model has 5 weights).
+ *    (with two FIXWEIGHT values or one), and '0' as outside 1-5 (the model
+ *    has 5 weights).
  * Before the fix: the lenient core::parse_indices dropped '2 4' and
  * '1 2 3 4 5' (the values joined into one malformed segment) and expanded
  * '2-1' to nothing: "FIXINDEX names 0 weights but FIXWEIGHT provides 2
  * values"; '2,2' was deduplicated to weight 2, so with one FIXWEIGHT value
  * it was PartialLS and with two "FIXINDEX names 1 weights but FIXWEIGHT
- * provides 2 values"; '0' was "FIXINDEX entry 0 is out of range". */
+ * provides 2 values"; '0' was "FIXINDEX entry 0 is out of range". After
+ * core::parse_fixindex first read FIXINDEX, '2,2' with one value was
+ * refused as "FIXINDEX 2,2 has 2 indices but FIXWEIGHT has 1 value" (this
+ * case pinned that): it compared the count before it looked for a
+ * repeat. */
 TEST_CASE("classify_weight_source: FIXINDEX is read strictly, separate values "
           "as one list",
           "[weight_provisioning][fixindex]") {
@@ -172,8 +176,7 @@ TEST_CASE("classify_weight_source: FIXINDEX is read strictly, separate values "
                       Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
     Context one = ctx_with(true, "2,2", {0.1});
     CHECK_THROWS_WITH(classify_weight_source(one, kNCols),
-                      Catch::Contains("FIXINDEX 2,2 has 2 indices but "
-                                      "FIXWEIGHT has 1 value"));
+                      Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
     Context zero = ctx_with(true, "0", {0.1});
     CHECK_THROWS_WITH(
         classify_weight_source(zero, kNCols),
