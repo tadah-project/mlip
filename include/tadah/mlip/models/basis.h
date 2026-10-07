@@ -18,6 +18,57 @@
 namespace tadah {
 namespace mlip {
 
+/** \brief The number n0 of intercept ("bias") vectors e_0 .. e_{n0-1}
+ *  that the basis of a non-linear M_KRR model of @p ctx starts with: one
+ *  per intercept column (ATOM species) with BIAS true, e_0 alone with BIAS
+ *  false. */
+inline std::size_t n_intercept_basis_vectors(const tadah::core::Context &ctx) {
+  const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
+  return n_int ? n_int : 1;
+}
+
+/** \brief The intercept vectors e_0 .. e_{n0-1} of length @p dim (e_k is 1
+ *  in component k, 0 elsewhere) as the columns of a dim x n0 matrix: the
+ *  first n0 columns of every basis Basis builds. */
+inline tadah::core::Matrix intercept_basis_vectors(std::size_t n0,
+                                                   std::size_t dim) {
+  if (dim < n0)
+    throw std::logic_error(
+        "intercept_basis_vectors: " + std::to_string(n0) + " intercept "
+        "vectors need a descriptor of at least " + std::to_string(n0) +
+        " components, not " + std::to_string(dim));
+  tadah::core::Matrix b(dim, n0);
+  b.set_zero();
+  for (std::size_t k = 0; k < n0; ++k) b(k, k) = 1;
+  return b;
+}
+
+/** \brief What columns 0 .. n0-1 of a basis hold, for messages: "column 0
+ *  is the bias vector e0", or "columns 0 to 1 are the 2 intercept vectors
+ *  e_0 .. e_1, one per ATOM species with BIAS true". */
+inline std::string intercept_basis_vectors_text(std::size_t n0) {
+  return n0 == 1
+      ? "column 0 is the bias vector e0"
+      : "columns 0 to " + std::to_string(n0 - 1) + " are the " +
+            std::to_string(n0) + " intercept vectors e_0 .. e_" +
+            std::to_string(n0 - 1) + ", one per ATOM species with BIAS true";
+}
+
+/** \brief The fewest basis vectors a non-linear M_KRR model takes, n0 + 1
+ *  (the n0 intercept vectors and one drawn from the @p what, e.g. "training
+ *  AEDs"): "" when SBASIS @p s has them, else why not ("SBASIS 2: a
+ *  non-linear M_KRR model needs at least 3 basis vectors (...). Set SBASIS
+ *  to 3 or more."). Basis::check_sbasis and, before training,
+ *  model_weight_count (weight_provisioning.h) refuse it. */
+inline std::string sbasis_lower_bound_problem(std::size_t s, std::size_t n0,
+                                              const std::string &what) {
+  if (s >= n0 + 1) return "";
+  return "SBASIS " + std::to_string(s) + ": a non-linear M_KRR model needs "
+         "at least " + std::to_string(n0 + 1) + " basis vectors (" +
+         intercept_basis_vectors_text(n0) + ", the others are drawn from the " +
+         what + "). Set SBASIS to " + std::to_string(n0 + 1) + " or more.";
+}
+
 /** \brief The basis vectors of a non-linear M_KRR model.
  *
  *  build_random_basis() (MODEL M_KRR <kernel> 1) and prep_basis_for_krr()
@@ -59,8 +110,7 @@ public:
    *  e_{n-1}: one per intercept column (ATOM species) with BIAS true; e_0
    *  with BIAS false, as before per-species intercepts. */
   size_t n_intercept_vectors() const {
-    const size_t n_int = tadah::core::n_intercept_columns(context);
-    return n_int ? n_int : 1;
+    return n_intercept_basis_vectors(context);
   }
 
   /** \brief An integer in [0, n), n >= 1, drawn without bias from the raw
@@ -98,17 +148,9 @@ public:
    *  least one drawn vector) and s - n0 <= n. Throws naming SBASIS. */
   static void check_sbasis(std::size_t s, std::size_t n0, std::size_t n,
                            const std::string &what) {
-    const std::string held = n0 == 1
-        ? "column 0 is the bias vector e0"
-        : "columns 0 to " + std::to_string(n0 - 1) + " are the " +
-          std::to_string(n0) + " intercept vectors e_0 .. e_" +
-          std::to_string(n0 - 1) + ", one per ATOM species with BIAS true";
-    if (s < n0 + 1)
-      throw std::runtime_error(
-          "SBASIS " + std::to_string(s) + ": a non-linear M_KRR model needs "
-          "at least " + std::to_string(n0 + 1) + " basis vectors (" + held +
-          ", the others are drawn from the " + what + "). Set SBASIS to " +
-          std::to_string(n0 + 1) + " or more.");
+    const std::string held = intercept_basis_vectors_text(n0);
+    const std::string too_few = sbasis_lower_bound_problem(s, n0, what);
+    if (!too_few.empty()) throw std::runtime_error(too_few);
     if (s - n0 > n)
       throw std::runtime_error(
           "SBASIS " + std::to_string(s) + " draws " + std::to_string(s - n0) +

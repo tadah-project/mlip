@@ -18,6 +18,18 @@ namespace mlip {
 
 class Trainer {
   public:
+    /** \brief The configuration @p c without what a fit writes: WEIGHTS,
+     *  BASIS (the basis vectors of a non-linear kernel), NMEAN, NSTDEV and
+     *  SIGMA. A training configuration may be a potential (`tadah train -c
+     *  pot.tadah`, a `tadah hpo -c` seed); the fit replaces all of these,
+     *  so a model built for training reads none of them. */
+    static tadah::core::Context training_context(const tadah::core::Context &c) {
+      tadah::core::Context t = c;
+      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA"})
+        if (t.has_stored(key)) t.remove(key);
+      return t;
+    }
+
     tadah::core::Context context;
     tadah::models::DC_Selector DCS; // const
     DescriptorsCalc<> dc; // modifies Context at init only
@@ -34,7 +46,7 @@ class Trainer {
         delete fb;
     }
     Trainer (tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      context(c), // copy
+      context(training_context(c)), // a copy, without the fit's arrays
       DCS(context), // const, initialized with context
       dc(context,*DCS.d2b,*DCS.dmb,
           *DCS.c2b,*DCS.cmb), // modifies context at init only

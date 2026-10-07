@@ -60,7 +60,8 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
   Trainer tr(context, workspaceManager);
   {
-    // which weights are intercepts is the model function's (and needs DSIZE)
+    // which weights are intercepts is the model function's (and needs
+    // DSIZE); a non-linear kernel's, those of the basis its fit draws
     const std::string w = fixindex_intercept_warning(tr.context, *tr.fb);
     if (!w.empty())
       tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
@@ -76,7 +77,9 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   LoadTransformReport report = apply_load_transforms(stdb, tr.context);
   hint_embf0_reference(tr, report);
   // BIAS true: the energy-weighted compositions must determine the
-  // per-species intercepts (refused before the neighbour lists are built).
+  // intercepts the fit has (a non-linear kernel's: those of the intercept
+  // vectors its basis draw starts with), refused before the neighbour lists
+  // are built.
   require_intercepts_determined(stdb, tr.context, *tr.fb);
 
   // Calculate nearest neighbors and provide feedback

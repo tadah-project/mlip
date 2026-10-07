@@ -38,6 +38,10 @@ enum class WeightSource {
  *  FIXINDEX pins every weight. */
 bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
 
+/** The M_KRR implementation of `MODEL M_KRR <kernel> [1|2]`: its third
+ *  token, 1 when there is none (M_KRR::train). */
+int krr_implementation(const tadah::core::Context &ctx);
+
 /** The number of model weights K a training of this configuration fits:
  *  the design-matrix width fb.get_phi_cols(ctx), except for a model whose
  *  basis is drawn from the training data (basis_drawn_from_training_data),

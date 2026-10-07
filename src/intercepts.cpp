@@ -2,13 +2,18 @@
 
 #include <tadah/core/core_types.h>
 #include <tadah/core/intercept_layout.h>
+#include <tadah/core/registry.h>
 #include <tadah/core/utils.h>
+#include <tadah/mlip/design_matrix/functions/dm_function_base.h>
+#include <tadah/mlip/models/basis.h>
+#include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/functions/kernels/kern_base.h>
 #include <tadah/models/functions/weights_fit.h>
 
 #include <cmath>
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -46,6 +51,15 @@ intercept_values(const tadah::core::Context &ctx,
         std::to_string(dsize) + ", fewer than the " +
         std::to_string(n_int) + " intercept columns (DescriptorsCalc sets "
         "DSIZE)");
+  // A kernel evaluates its basis vectors against the descriptor: they must
+  // have its length (a potential's of another descriptor read past it).
+  const std::size_t bvs = f.basis_vector_size();
+  if (bvs != 0 && bvs != dsize)
+    throw std::logic_error(
+        "the intercepts of " + f.get_label() + ": its basis vectors have " +
+        std::to_string(bvs) + " values, but the descriptor has DSIZE " +
+        std::to_string(dsize) + " entries (a kernel's basis vectors have the "
+        "descriptor's length)");
   const std::size_t nw = f.weights_count(dsize);
   std::vector<std::vector<double>> v(n_int,
                                      std::vector<double>(cols.size(), 0.0));
@@ -59,6 +73,47 @@ intercept_values(const tadah::core::Context &ctx,
     }
   }
   return v;
+}
+
+/* The function whose intercept columns a fit of ctx has: f, but for a model
+ * whose basis vectors the fit draws from the training data
+ * (basis_drawn_from_training_data: M_KRR with a non-linear kernel). Every
+ * basis such a fit draws starts with the intercept vectors e_0 .. e_{n0-1}
+ * (Basis), and only columns k < N can be a kernel's intercepts
+ * (Kern_Base::dot_product_intercept_columns), so the fit's intercepts are
+ * those of a kernel built as f is, from ctx (its MPARAMS), with those
+ * vectors alone as its basis, whatever other basis f holds: none before the
+ * fit (a Trainer reads no BASIS), or a potential's of another fit. `hold`
+ * keeps that kernel. */
+const tadah::models::Function_Base &
+fit_function(const tadah::core::Context &ctx,
+             const tadah::models::Function_Base &f,
+             std::unique_ptr<DM_Function_Base> &hold) {
+  if (!basis_drawn_from_training_data(ctx)) return f;
+  const std::size_t n0 = n_intercept_basis_vectors(ctx);
+  const std::size_t dsize = ctx.get<std::size_t>("DSIZE");
+  // A basis of f's that starts with those vectors (as M_KRR's after its
+  // draw) gives the same intercepts: f is that kernel already.
+  if (const auto *kf = dynamic_cast<const tadah::models::Kern_Base *>(&f)) {
+    const tadah::core::Matrix &b = kf->get_basis();
+    bool drawn = b.rows() == dsize && b.cols() >= n0;
+    for (std::size_t k = 0; drawn && k < n0; ++k)
+      for (std::size_t j = 0; drawn && j < dsize; ++j)
+        if (b(j, k) != (j == k ? 1.0 : 0.0)) drawn = false;
+    if (drawn) return f;
+  }
+  tadah::core::Context c = ctx;
+  if (c.has_stored("BASIS")) c.remove("BASIS");   // the kernel would read it
+  hold.reset(tadah::core::factory<DM_Function_Base,
+                                  const tadah::core::Context &>(f.get_label(),
+                                                                c));
+  auto *k = dynamic_cast<tadah::models::Kern_Base *>(hold.get());
+  if (k == nullptr)
+    throw std::logic_error(
+        "the intercepts of a fit of M_KRR " + ctx.get<std::string>("MODEL", 1) +
+        ": the function " + f.get_label() + " is not a kernel");
+  k->set_basis(intercept_basis_vectors(n0, dsize));
+  return *hold;
 }
 
 /* "1 (Nb) and 6 (Ta)": the columns as weights, FIXINDEX numbering, each
@@ -115,7 +170,7 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
 }
 
 std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
-                                       const tadah::models::Function_Base &f) {
+                                       const tadah::models::Function_Base &fn) {
   if (!ctx.has_stored("FIXINDEX")) return "";
   const std::size_t n = tadah::core::n_intercept_columns(ctx);
   if (n < 2) return "";
@@ -124,6 +179,9 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
                            " ATOM species (" + atom_list(ctx) + "): ";
   const std::string before =
       "Before 1.6.0 BIAS true had one intercept shared by all species";
+  // the weights the fit gives the function (a kernel's: of the basis it draws)
+  std::unique_ptr<DM_Function_Base> hold;
+  const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
   if (tadah::models::is_linear_function(f))
     return head + "weights 1 to " + N +
            " are the per-species intercepts, in ATOM order, and the "
@@ -160,7 +218,7 @@ void throw_element_not_in_atom(const tadah::core::Element &e,
 
 void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
-                                   const tadah::models::Function_Base &f) {
+                                   const tadah::models::Function_Base &fn) {
   const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
   if (n_int == 0) return;
   const auto col = tadah::core::intercept_columns_by_Z(ctx);
@@ -188,8 +246,17 @@ void require_intercepts_determined(const StructureDB &stdb,
     ++compositions[counts];
   }
 
-  // The function's intercept columns; those FIXINDEX/FIXWEIGHT pin are not
-  // fitted.
+  // M_KRR implementation 2 solves (K + LAMBDA I) w = T on its basis vectors
+  // (the intercept vectors with the target 0, the structures' mean AEDs with
+  // their energies per atom), not the least squares of the structures'
+  // energies: nothing to refuse.
+  if (basis_drawn_from_training_data(ctx) && krr_implementation(ctx) == 2)
+    return;
+
+  // The intercept columns of the function as the fit has it (fit_function);
+  // those FIXINDEX/FIXWEIGHT pin are not fitted.
+  std::unique_ptr<DM_Function_Base> hold;
+  const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
   const std::vector<std::size_t> cols = f.intercept_columns(ctx);
   if (cols.empty()) return;
   std::vector<bool> pinned_weight;

@@ -1,5 +1,7 @@
 #include <tadah/mlip/weight_provisioning.h>
 
+#include <tadah/mlip/models/basis.h>
+
 #include <tadah/core/core_types.h>
 #include <tadah/core/number_format.h>
 #include <tadah/core/utils.h>
@@ -91,21 +93,31 @@ bool basis_drawn_from_training_data(const tadah::core::Context &ctx) {
          ctx.get<std::string>("MODEL", 1) != "Kern_Linear";
 }
 
+int krr_implementation(const tadah::core::Context &ctx) {
+  return ctx.contains("MODEL") && ctx.size("MODEL") >= 3
+             ? ctx.get<int>("MODEL", 2)
+             : 1;
+}
+
 std::size_t model_weight_count(DM_Function_Base &fb,
                                const tadah::core::Context &ctx) {
   if (!basis_drawn_from_training_data(ctx)) return fb.get_phi_cols(ctx);
   const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1);
+  // The bound of the basis draw (Basis::check_sbasis): the intercept
+  // vectors e_0 .. e_{n0-1}, then at least one vector drawn from the
+  // training AEDs (implementation 2: the structures' mean AEDs).
+  const std::size_t n0 = n_intercept_basis_vectors(ctx);
+  const std::string what = krr_implementation(ctx) == 2
+                               ? "training structures"
+                               : "training AEDs";
   if (!ctx.contains("SBASIS"))
     throw std::runtime_error(
         model + " needs SBASIS, the number of basis vectors training draws "
-        "(column 0 is the bias vector e0, the others are drawn from the "
-        "training AEDs).");
+        "(" + intercept_basis_vectors_text(n0) + ", the others are drawn "
+        "from the " + what + ").");
   const std::size_t s = ctx.get<std::size_t>("SBASIS");
-  if (s < 2)
-    throw std::runtime_error(
-        model + ": SBASIS " + std::to_string(s) + ": a non-linear M_KRR "
-        "model needs at least 2 basis vectors (column 0 is the bias vector "
-        "e0, the others are drawn from the training AEDs).");
+  const std::string too_few = sbasis_lower_bound_problem(s, n0, what);
+  if (!too_few.empty()) throw std::runtime_error(model + ": " + too_few);
   return s;
 }
 
