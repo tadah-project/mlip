@@ -165,10 +165,29 @@ constexpr ModeKey kModeKeys[] = {
 // by neither mode: check_refit_mode_keys refuses it first, in both, with
 // top_level_optimizer_refusal().)
 
-// Read by REFIT_OBJECTIVE curve only (compact mode). REFIT_CURVE_RELAX and
-// REFIT_CURVE_DERIV_WEIGHT have no effect under energy either, but the
-// documentation states them as accepted there, their values checked.
-constexpr const char *kCurveObjectiveKeys[] = {"REFIT_CURVE_WEIGHTING"};
+// Read by a refit of an EAM file in either REFIT_MODE, and by neither
+// --edit nor --retarget (check_refit_output_mode_keys); EAM itself has its
+// own refusal there (validate_refit_mode_keys).
+constexpr const char *kFitKeys[] = {
+    "REFIT_MODE",         "REFIT_BASIS",          "REFIT_TOL_AMBIENT",
+    "REFIT_TOL_COMPRESSED", "REFIT_REACH_SMIN",   "REFIT_REACH_MARGIN",
+    "REFIT_R_LO_FRAC",    "REFIT_OBJECTIVE",      "OUTPUT_GRID_SCALE",
+    "SETFL_OUT",          "REFIT_LOG"};
+
+// Read by a refit of an EAM file and by --edit (the hpotarget they write),
+// not by --retarget: its output is OUTFILE (-o), or its input with
+// --in-place. (NUMERIC, the precision of the files a command writes, is no
+// key of the refit and is not refused: --retarget writes only an
+// hpotarget, whose bounds every hpotarget writer prints %.8e whatever
+// NUMERIC is, so it has nothing to apply it to; a task file's NUMERIC
+// above its first TASK line applies to every task.)
+constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT"};
+
+// Read by REFIT_OBJECTIVE curve only (compact mode): the compact fitter
+// reads the derivative weight in the curve objective's solve and score and
+// the weighting and its floor in the curve weights only.
+constexpr const char *kCurveObjectiveKeys[] = {
+    "REFIT_CURVE_WEIGHTING", "REFIT_CURVE_RELAX", "REFIT_CURVE_DERIV_WEIGHT"};
 
 const char *mode_name(RefitMode m) {
   return m == RefitMode::Dense ? "dense" : "compact";
@@ -254,16 +273,59 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
     if (curve) refuse("REFIT_OBJECTIVE curve");
     return;
   }
-  if (curve) return;
-  const std::string energy =
-      std::string("energy") +
-      (configured(c, provenance, "REFIT_OBJECTIVE") ? "" : " (the default)");
-  for (const char *key : kCurveObjectiveKeys)
+  if (!curve) {
+    const std::string energy =
+        std::string("energy") +
+        (configured(c, provenance, "REFIT_OBJECTIVE") ? "" : " (the default)");
+    for (const char *key : kCurveObjectiveKeys)
+      if (configured(c, provenance, key))
+        throw std::runtime_error(
+            kWho + key + " has no effect under REFIT_OBJECTIVE " + energy +
+            ": only REFIT_OBJECTIVE curve reads it; remove " + key +
+            ", or set REFIT_OBJECTIVE curve");
+    return;
+  }
+  // REFIT_CURVE_RELAX is the floor of the curve weighting, which
+  // REFIT_CURVE_WEIGHTING false switches off (its default is true)
+  const bool weighting = c.has_stored("REFIT_CURVE_WEIGHTING")
+                             ? c.get<bool>("REFIT_CURVE_WEIGHTING")
+                             : true;
+  if (!weighting && configured(c, provenance, "REFIT_CURVE_RELAX"))
+    throw std::runtime_error(
+        kWho +
+        "REFIT_CURVE_RELAX has no effect under REFIT_CURVE_WEIGHTING false: "
+        "only REFIT_CURVE_WEIGHTING true (the default) reads it; remove "
+        "REFIT_CURVE_RELAX, or set REFIT_CURVE_WEIGHTING true");
+}
+
+void check_refit_output_mode_keys(const Context &c, RefitOutputMode mode,
+                                  const KeyProvenance *provenance) {
+  const std::string flag =
+      mode == RefitOutputMode::Edit ? "--edit" : "--retarget";
+  const auto refuse = [&](const std::string &what, const std::string &reader,
+                          const std::string &tail) {
+    throw std::runtime_error("tadah refit " + flag + ": " + what +
+                             " has no effect under " + flag + ": " + reader +
+                             "; remove " + what + tail);
+  };
+  for (const char *key : kFitKeys)
     if (configured(c, provenance, key))
-      throw std::runtime_error(
-          kWho + key + " has no effect under REFIT_OBJECTIVE " + energy +
-          ": only REFIT_OBJECTIVE curve reads it; remove " + key +
-          ", or set REFIT_OBJECTIVE curve");
+      refuse(key, "only a refit of an EAM file reads it", "");
+  for (const ModeKey &k : kModeKeys)
+    if (configured(c, provenance, k.key))
+      refuse(k.block ? std::string("the ") + k.key + " block"
+                     : std::string(k.key),
+             std::string("only a refit of an EAM file in REFIT_MODE ") +
+                 mode_name(k.mode) + " reads it",
+             "");
+  if (configured(c, provenance, "OPTIMIZER"))
+    refuse("the OPTIMIZER block",
+           "no mode of tadah refit reads a top-level OPTIMIZER block", "");
+  if (mode == RefitOutputMode::Retarget)
+    for (const char *key : kFitAndEditKeys)
+      if (configured(c, provenance, key))
+        refuse(key, "only a refit of an EAM file and --edit read it",
+               " (the file --retarget writes is -o, OUTFILE)");
 }
 
 RefitNumbers read_refit_numbers(const Context &c) {

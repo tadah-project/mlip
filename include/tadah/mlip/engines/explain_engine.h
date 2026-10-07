@@ -1,8 +1,12 @@
 #ifndef TADAH_MLIP_ENGINES_EXPLAIN_ENGINE_H
 #define TADAH_MLIP_ENGINES_EXPLAIN_ENGINE_H
 
+#include <tadah/core/blueprint_parser.h>
 #include <tadah/core/context.h>
 #include <tadah/mlip/engines/iengine.h>
+
+#include <string>
+#include <vector>
 
 namespace tadah {
 namespace mlip {
@@ -10,12 +14,53 @@ namespace engines {
 
 /**
  * @brief Command for explaining other commands or options.
+ *
+ * OPTION is `<command>`, `<command>.<option>` or
+ * `<command>.<subcommand>.<option>` (a subcommand is also written
+ * `<command>.<subcommand>`). run() prints the long description of the
+ * command or subcommand it names and the text of the option
+ * (explain_key_text), and throws std::runtime_error, printing nothing, when
+ * the option names neither: "tadah explain: no command 'bogus'", "tadah
+ * explain: data has no subcommand 'nosub'", "tadah explain: refit has no
+ * option 'nosuchkey'", "tadah explain: data has no subcommand or option
+ * 'nosuch'" (a command with subcommands), "tadah explain: 'a.b.c.d' is
+ * not <command>,
+ * <command>.<option> or <command>.<subcommand>.<option>".
  */
 class ExplainEngine: public IEngine {
 public:
   int run(tadah::mlip::Task &task) override;
   void validate(const tadah::mlip::Task &task) override;
 };
+
+/**
+ * @brief The lines of a blueprint long description as `tadah explain`
+ *        prints them.
+ *
+ * The text is RST (the configuration-keys page renders it); the terminal
+ * gets it as text, as the CLI page of the documentation shows it
+ * (generate_cli.py's literal_text_lines): the indentation all its lines
+ * share is removed and the rest kept, so a layout stays nested; the blank
+ * lines around it are left out and those inside it are empty; and the RST
+ * marker of a literal block, '::' closing a paragraph, is shown as RST
+ * shows it: 'text::' as 'text:', 'text ::' as 'text', and a paragraph of
+ * '::' alone, with the blank line after it, not at all. Inside the literal
+ * block it opens (the lines indented more than that paragraph, and blank
+ * lines), and inside a line, '::' is text; other RST markup is printed as
+ * written.
+ */
+std::vector<std::string> explain_text_lines(const std::string &text);
+
+/**
+ * @brief What `tadah explain <command>.<key>` prints for @p key.
+ *
+ * Its long description, or its description when it has none, as
+ * explain_text_lines renders it, one line each; then, when it has
+ * examples, a blank line, "EXAMPLES: " and each line of each example
+ * (an example of several lines is one value per line) indented by two
+ * spaces.
+ */
+std::string explain_key_text(const core::BlueprintKey &key);
 
 } // namespace engines
 } // namespace mlip
