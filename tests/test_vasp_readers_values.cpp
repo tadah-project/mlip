@@ -1099,6 +1099,9 @@ std::string vasprun_refusal(const ScratchDir &tmp, const std::string &name,
  *    give one count for each of the 1 VRHFIN elements, got '<line>'";
  *  - 'ions per type' 53 (line 348): "... line 348: the ions per type add up
  *    to 53, but NIONS is 54";
+ *  - no VRHFIN line (line 41 renamed): "... line 348: 'ions per type' comes
+ *    before any VRHFIN line, which names the elements" (an OUTCAR cut down
+ *    without its POTCAR headers, as ASE's test OUTCAR_example_1);
  *  - no 'ions per type' line: "... line 1960: a TOTAL-FORCE block before the
  *    'ions per type' line";
  *  - lattice vector 1 of step 1 'abc' (line 1891): "... line 1891: lattice
@@ -1111,7 +1114,7 @@ std::string vasprun_refusal(const ScratchDir &tmp, const std::string &name,
  *  - step 1's EKIN_LAT temperature 'abc' (line 2052): "... line 2052:
  *    cannot read the temperature of ionic step 1 from '<line>'";
  *  - a missing file: "VASP OUTCAR <path>: cannot open the file".
- * Before the fix: none named the file: the element was refused as "Unknown
+ * Before the fix (v1-dev): none named the file: the element was refused as "Unknown
  * symbol: Qq"; the free energy as "... ionic step 1 has no 'free  energy
  * TOTEN' line before its EKIN_LAT line"; the missing file as "Could not open
  * the file: <path>"; every other defect was a line on standard error
@@ -1137,6 +1140,9 @@ TEST_CASE("VASP OUTCAR reader: a value it cannot read is refused, naming the "
        "VRHFIN elements, got 'ions per type =              abc'"},
       {"per_type_sum", 348, "54", "53",
        "line 348: the ions per type add up to 53, but NIONS is 54"},
+      {"no_vrhfin", 41, "VRHFIN =Ta:", "XXXXXX =Ta:",
+       "line 348: 'ions per type' comes before any VRHFIN line, which names "
+       "the elements"},
       {"lattice", 1891, "9.027612000  0.000000000", "abc  0.000000000",
        "line 1891: lattice vector 1 of ionic step 1, 'abc  0.000000000  "
        "0.000000000     0.110771265  0.000000000  0.000000000', is not three "
@@ -1224,8 +1230,9 @@ TEST_CASE("VASP OUTCAR reader: a file that ends inside a block warns, naming "
  *    <atominfo>";
  *  - calculation 1's stress varray with a fourth row: "... calculation 1:
  *    the stress varray has 4 rows, not 3";
- *  - a file that is not well-formed XML (cut at line 900): "VASP
- *    vasprun.xml <path>: not well-formed XML (...)";
+ *  - a file that is not well-formed XML (a closing tag '</struct>' for
+ *    '</structure>', line 907): "VASP vasprun.xml <path>: not well-formed
+ *    XML (...)";
  *  - a missing file: "VASP vasprun.xml <path>: cannot open the file".
  * Before the fix: the element was refused as "Unknown symbol: Qq", naming no
  * file; the other defects printed a line on standard error ('Error parsing
@@ -1276,10 +1283,12 @@ TEST_CASE("VASP vasprun.xml reader: a value it cannot read is refused, naming "
               "atoms of <atominfo>");
   }
   {
+    // A mismatched closing tag (a file that ends early is read up to its
+    // last complete calculation instead: see the next test case).
     std::vector<std::string> l = base;
-    l.resize(900);
+    edit_line(l, 907, "</structure>", "</struct>");
     std::string path;
-    const std::string msg = vasprun_refusal(tmp, "vasprun_cut.xml", l, path);
+    const std::string msg = vasprun_refusal(tmp, "vasprun_bad_xml.xml", l, path);
     CHECK_THAT(msg, Catch::StartsWith("VASP vasprun.xml " + path +
                                       ": not well-formed XML ("));
   }
@@ -1362,4 +1371,87 @@ TEST_CASE("VASP vasprun.xml reader: an unreadable stress or force row gives "
       for (int k = 0; k < 3; ++k) CHECK(a.force[k] == 0.0);
     CHECK(db(1).fweight == 1.0);
   }
+}
+
+/* Pins: the EKIN_LAT temperature of an OUTCAR is read where VASP's fixed
+ * width joins it to the word before ('(temperature10147.82 K)', from 10000
+ * K up, as in the 6580 K MD runs of the data store): OUTCAR_1 with step 1's
+ * temperature 10147.82 gives its 3 steps, step 1 with T 10147.82.
+ * Before the fix: refused, "... line 2052: cannot read the temperature of
+ * ionic step 1 from '...'"; v1-dev printed 'Warning: Unexpected end of data
+ * when reading temperature' and did not end the step there, so steps 1 and
+ * 2 were stored as one structure of 108 atoms (2 structures). */
+TEST_CASE("VASP OUTCAR reader: a temperature of 10000 K and more is read",
+          "[vasp][outcar][source]") {
+  ScratchDir tmp("outcar_hot");
+  std::vector<std::string> l = outcar1_three_steps();
+  edit_line(l, 2052, "(temperature  300.00 K)", "(temperature10147.82 K)");
+  const std::string path = tmp.write("OUTCAR_hot", join_lines(l));
+  StructureDB db;
+  parse_outcar_capturing(db, path);
+  REQUIRE(db.size() == 3);
+  CHECK(db(0).T == 10147.82);
+  CHECK(db(0).natoms() == 54);
+  CHECK(db(1).T == 300.04);
+}
+
+/* Pins: a vasprun.xml that ends early (VASP writes it as it runs; a run
+ * stopped, or still running) is read up to its last complete calculation,
+ * and the calculation it ends inside is skipped with one WARNING naming the
+ * file and the calculation: vasprun_2 cut inside calculation 2 (after line
+ * 1100) gives calculation 1 and "WARNING: VASP vasprun.xml <path>: the
+ * file ends inside calculation 2 (a run stopped while writing it), which
+ * was skipped; 1 structure(s) read."; cut inside calculation 1 (after line
+ * 900), no structure and the same warning for calculation 1 with 0; cut
+ * before the first calculation (after line 300), no structure and "...:
+ * the file ends before its first calculation (a run stopped while writing
+ * it); 0 structure(s) read.". The data store's 24 truncated vasprun.xml
+ * files end so.
+ * Before the fix: each was refused, "VASP vasprun.xml <path>: not
+ * well-formed XML (unexpected end of data)"; v1-dev printed 'Error reading
+ * file: unexpected end of data' and 'Root node not found.' and stored
+ * nothing. */
+TEST_CASE("VASP vasprun.xml reader: a file that ends early is read up to its "
+          "last complete calculation",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_cut");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  REQUIRE(base.size() == 1589);
+  REQUIRE(base.at(978).find("</calculation>") != std::string::npos);
+  StructureDB whole = read_vasprun(kVasprunDir + "vasprun_2.xml");
+  REQUIRE(whole.size() == 4);
+  for (const auto &[cut, calc, stored] :
+       {std::tuple<size_t, int, size_t>{1100, 2, 1}, {900, 1, 0}}) {
+    INFO("cut after line " << cut);
+    std::vector<std::string> l = base;
+    l.resize(cut);
+    const std::string path =
+        tmp.write("vasprun_cut_" + std::to_string(cut) + ".xml", join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    REQUIRE(db.size() == stored);
+    if (stored == 1) {
+      CHECK(db(0).energy == whole(0).energy);
+      CHECK(db(0).natoms() == whole(0).natoms());
+      CHECK(db(0).atoms[52].force[2] == whole(0).atoms[52].force[2]);
+      CHECK(db(0).stress(2, 2) == whole(0).stress(2, 2));
+    }
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": the file ends inside calculation " +
+                                 std::to_string(calc) +
+                                 " (a run stopped while writing it), which "
+                                 "was skipped; " + std::to_string(stored) +
+                                 " structure(s) read."));
+  }
+  std::vector<std::string> l = base;
+  l.resize(300);
+  const std::string path = tmp.write("vasprun_cut_300.xml", join_lines(l));
+  StructureDB db;
+  const std::string printed = parse_vasprun_capturing(db, path);
+  CHECK(db.size() == 0);
+  CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                               ": the file ends before its first calculation "
+                               "(a run stopped while writing it); 0 "
+                               "structure(s) read."));
 }
