@@ -224,11 +224,12 @@ public:
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
-   *  and predict(c, st, dc)) comes here: the basis vectors are checked
-   *  against the length of these descriptors first. */
+   *  and predict(c, st, dc)) comes here: the potential's fit to these
+   *  descriptors (WEIGHTS, the basis vectors' length, NMEAN/NSTDEV of a
+   *  non-linear NORM model: models::require_weights_fit) is checked first,
+   *  before they are normalised. */
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
     require_weights_fit(c, std.dim());
-    check_basis_length(std.dim());
     if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
@@ -475,25 +476,6 @@ non linear kernel\n");
   using tadah::models::M_KRR_Train<K>::Sigma;
   using tadah::models::M_KRR_Train<K>::context;
   using tadah::models::M_KRR_Train<K>::kernel;
-
-  /** A potential's basis vectors (BASIS, read by the kernel) must have the
-   *  length of the descriptors they are compared with, @p dsize (DSIZE).
-   *  It is checked where the two meet: here, from predict(c, std, st),
-   *  and in the design matrix (DM_Kern_Base::phi_layout), so a model may
-   *  be built before its DescriptorsCalc. */
-  void check_basis_length(size_t dsize) const {
-    if (kernel.get_label()=="Kern_Linear") return;
-    const auto *kb = dynamic_cast<const tadah::models::Kern_Base*>(&kernel);
-    if (kb == nullptr || kb->get_basis().cols() == 0) return;
-    const size_t len = kb->get_basis().rows();
-    if (len != dsize)
-      throw std::runtime_error(
-          "M_KRR " + kernel.get_label() + ": BASIS holds SBASIS " +
-          std::to_string(kb->get_basis().cols()) + " basis vectors of " +
-          std::to_string(len) + " values each, but the descriptor of the "
-          "potential has " + std::to_string(dsize) + " components (DSIZE): "
-          "BASIS must have SBASIS x " + std::to_string(dsize) + " values.");
-  }
 };
 } // namespace mlip
 } // namespace tadah
