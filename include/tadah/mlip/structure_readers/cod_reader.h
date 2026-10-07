@@ -25,12 +25,38 @@ public:
   CODReader();
 
   /**
+   * @brief A CODReader that fetches through @p provider (a stub in tests);
+   *        a null provider is refused (std::invalid_argument).
+   */
+  explicit CODReader(std::unique_ptr<IMaterialsDataProvider> provider);
+
+  /**
    * @brief Retrieves a CIF resource from the COD database by ID or by a full URL,
    *        then parses it into a Structure.
    *
    * If @p path is recognized as a URL (e.g. starts with "http://" or "https://"),
    * the code attempts to extract the COD material ID. Otherwise, it uses @p path
    * directly as the COD ID. The returned raw content is parsed with CifReader.
+   *
+   * A failed fetch throws std::runtime_error naming the HTTP status (or the
+   * provider's own: 500 for a cURL error such as no network), the COD ID
+   * (without "cod-") and the provider's reason, cut to 300 characters
+   * (failed_fetch_message()):
+   *
+   *     CODReader: HTTP 500 for COD ID '1534932': CODDataProvider: cURL error: ...
+   *
+   * The reason is the provider's cURL text or the server's body; the
+   * message holds no request URL. The previous structure is kept.
+   *
+   * The CIF is read by CifReader::parseCifContents with the origin "COD
+   * entry" and the COD ID: its errors and WARNINGs name the COD entry, not
+   * the CIF data block, and so does the label, which names the space group
+   * the cell is built with (see CifReader):
+   *
+   *     COD entry 1534932: site Fe1 has occupancy 0.5; ...
+   *     COD entry 1534932 | Symmetry: I m -3 m | Volume: 23.553521
+   *
+   * A refused CIF leaves the previous structure as it was.
    *
    * @param path  A COD entry ID (optionally with prepended "cod-")
    * (e.g. "cod-1534932" and "1534932" are both valid)

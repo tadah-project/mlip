@@ -1,4 +1,5 @@
 #include <tadah/mlip/structure_readers/cod_reader.h>
+#include <tadah/mlip/data_providers/fetch_failure.h>
 #include <stdexcept>
 #include <algorithm>
 namespace tadah {
@@ -6,6 +7,12 @@ namespace mlip {
 
 CODReader::CODReader()
   : m_dataProvider(std::make_unique<CODDataProvider>()) {
+}
+
+CODReader::CODReader(std::unique_ptr<IMaterialsDataProvider> provider)
+  : m_dataProvider(std::move(provider)) {
+  if (!m_dataProvider)
+    throw std::invalid_argument("CODReader: the data provider is null.");
 }
 
 bool CODReader::isHttpUrl(const std::string &path) const {
@@ -37,12 +44,9 @@ std::string CODReader::extractCodIdFromUrl(const std::string &url) const {
 
 std::string CODReader::fetchCifById(const std::string &codID) const {
   RawResponse rr = m_dataProvider->QueryByID(codID);
-  if (rr.httpStatus != 200) {
+  if (rr.httpStatus != 200)
     throw std::runtime_error(
-      "CODReader: CODDataProvider returned HTTP " +
-      std::to_string(rr.httpStatus) +
-      " for ID '" + codID + "'.");
-  }
+        failed_fetch_message("CODReader", "COD ID", codID, rr));
   return rr.response; // The raw CIF text
 }
 
@@ -66,13 +70,11 @@ void CODReader::read(const std::string &path) {
   // Fetch raw CIF from COD
   std::string cifData = fetchCifById(codID);
 
-  // Parse CIF data with CifReader
+  // Parse CIF data with CifReader: its errors, WARNINGs and the label
+  // name the COD entry
   CifReader creader;
-  creader.parseCifContents(cifData);
+  creader.parseCifContents(cifData, "COD entry " + codID);
   m_structure = creader.getStructure();
-
-  // Annotate structure label
-  m_structure.label.insert(0, "COD entry: " + path + " | ");
 }
 
 Structure CODReader::getStructure() const {
