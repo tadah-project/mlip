@@ -7,7 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+- **`Trainer::reinit()` and `DesignMatrix::refresh_context_scalars()`** (public API: code that calls them no longer compiles). Their only caller, tadah hpo, now builds a `Trainer` for every evaluation (Tadah.HPO). `reinit()` reset the trained flag, refreshed `EWEIGHT`/`FWEIGHT`/`SWEIGHT` of `Trainer::dm`, a design matrix no training builds (M_BLR and M_KRR train on their own), and re-applied the descriptor parameters (`DC_Selector::reinit`); what the model, its kernel or basis function and its design matrix read when they were built stayed as it was. To retrain a model in place, call `model->reset_trained()` (and, for new descriptor parameters, `DCS.reinit(context)`, which remains), as `test_nonlinear_model_training.cpp` does.
+
+### Changed
+- `DesignMatrix` no longer reads `ESTDEV`, `FSTDEV` and `SSTDEV`: internal keys that no configuration sets and whose values every build replaced (`compute_stdevs`); the `contains()` checks put their defaults into the training context.
+
 ### Fixed
+- **`Trainer::provision_fixed_weights()` removes the `SIGMA` of the configuration**, as a fit does (Tadah.MODELS): the weights are set from `FIXWEIGHT`, and no fit computes their covariance. A potential written so (tadah hpo with every weight pinned and no training data, from an `OALGO 3` `-c` potential) carried the `-c` potential's `SIGMA` beside other weights. Test: `test_weight_provisioning.cpp`; `test_trainer_sigma.cpp` (a potential used as the configuration: one `SIGMA` of the new fit, none from `OALGO 1` or every weight pinned, an M_KRR potential trains).
 - **A comment on a `TASK` line of a task file** (`TASK train   # first task`, `TASK predict<TAB># second`) is not part of the task name: `MLIPUserConfigParser` reads the name from the text before the `#`, as `CoreUserConfigParser` reads a key line. The words of the comment were joined to the name, so `tadah --task` stopped with `Unknown task section "TRAIN.#.first.task"`, and a `TASK` line with only a comment after `TASK` was reported as an unknown section instead of a `TASK` without a name. Test: `test_user_config_sections.cpp`.
 
 ## [1.6.0] — 2026-09-25
