@@ -104,7 +104,7 @@ public:
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
     check_bias_constraints(context);
-    require_intercepts_determined(stdb, context);
+    require_intercepts_determined(stdb, context, bf);
 
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
@@ -116,7 +116,7 @@ public:
 
   void train(const StructureDB &stdb, DC_Base &dc) {
     check_bias_constraints(context);
-    require_intercepts_determined(stdb, context);
+    require_intercepts_determined(stdb, context, bf);
 
     if(context.template get<bool>("NORM")) {
 

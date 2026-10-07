@@ -1,7 +1,10 @@
 #include <tadah/mlip/intercepts.h>
 
+#include <tadah/core/core_types.h>
 #include <tadah/core/intercept_layout.h>
 #include <tadah/core/utils.h>
+#include <tadah/models/functions/kernels/kern_base.h>
+#include <tadah/models/functions/weights_fit.h>
 
 #include <cmath>
 #include <cstddef>
@@ -27,7 +30,64 @@ std::string plural(std::size_t n, const std::string &word) {
   return std::to_string(n) + " " + word + (n == 1 ? "" : "s");
 }
 
+/* The value of each intercept column cols[j] of f for an atom of each
+ * species s, v[s][j]: f's energy of the unit weight cols[j] at the
+ * descriptor whose only non-zero component is intercept component s (an
+ * intercept column depends on an atom only through its species). */
+std::vector<std::vector<double>>
+intercept_values(const tadah::core::Context &ctx,
+                 const tadah::models::Function_Base &f,
+                 const std::vector<std::size_t> &cols) {
+  const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
+  const std::size_t dsize = ctx.get<std::size_t>("DSIZE");
+  if (dsize < n_int)
+    throw std::logic_error(
+        "the intercepts of " + f.get_label() + ": DSIZE is " +
+        std::to_string(dsize) + ", fewer than the " +
+        std::to_string(n_int) + " intercept columns (DescriptorsCalc sets "
+        "DSIZE)");
+  const std::size_t nw = f.weights_count(dsize);
+  std::vector<std::vector<double>> v(n_int,
+                                     std::vector<double>(cols.size(), 0.0));
+  tadah::core::aed_type aed(dsize);
+  tadah::core::t_type w(nw);
+  for (std::size_t s = 0; s < n_int; ++s) {
+    for (std::size_t k = 0; k < dsize; ++k) aed(k) = k == s ? 1.0 : 0.0;
+    for (std::size_t j = 0; j < cols.size(); ++j) {
+      for (std::size_t k = 0; k < nw; ++k) w(k) = k == cols[j] ? 1.0 : 0.0;
+      v[s][j] = f.epredict(w, aed);
+    }
+  }
+  return v;
+}
+
+/* "1 (Nb) and 6 (Ta)": the columns as weights, FIXINDEX numbering, each
+ * labelled with its species when it is non-zero for that species alone. */
+std::string weights_text(const tadah::core::Context &ctx,
+                         const std::vector<std::size_t> &cols,
+                         const std::vector<std::vector<double>> &v) {
+  std::string s;
+  for (std::size_t j = 0; j < cols.size(); ++j) {
+    if (j) s += j + 1 == cols.size() ? " and " : ", ";
+    s += std::to_string(cols[j] + 1);
+    std::size_t nonzero = 0, species = 0;
+    for (std::size_t k = 0; k < v.size(); ++k)
+      if (v[k][j] != 0.0) {
+        ++nonzero;
+        species = k;
+      }
+    if (nonzero == 1) s += " (" + ctx.get<std::string>("ATOM", species) + ")";
+  }
+  return s;
+}
+
 }  // namespace
+
+std::string intercept_weights_text(const tadah::core::Context &ctx,
+                                   const tadah::models::Function_Base &f) {
+  const std::vector<std::size_t> cols = f.intercept_columns(ctx);
+  return weights_text(ctx, cols, intercept_values(ctx, f, cols));
+}
 
 void check_bias_constraints(const tadah::core::Context &ctx) {
   const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
@@ -54,19 +114,36 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
   }
 }
 
-std::string fixindex_intercept_warning(const tadah::core::Context &ctx) {
+std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
+                                       const tadah::models::Function_Base &f) {
   if (!ctx.has_stored("FIXINDEX")) return "";
   const std::size_t n = tadah::core::n_intercept_columns(ctx);
   if (n < 2) return "";
   const std::string N = std::to_string(n);
-  return "FIXINDEX with BIAS true and " + N + " ATOM species (" +
-         atom_list(ctx) + "): weights 1 to " + N +
-         " are the per-species intercepts, in ATOM order, and the descriptor "
-         "weights start at index " + std::to_string(n + 1) +
-         ". Before 1.6.0 BIAS true had one intercept shared by all species "
-         "and the descriptor weights started at index 2: an index written "
-         "for that layout now pins another weight (descriptor weight k moved "
-         "from index k + 1 to k + " + N + ").";
+  const std::string head = "FIXINDEX with BIAS true and " + N +
+                           " ATOM species (" + atom_list(ctx) + "): ";
+  const std::string before =
+      "Before 1.6.0 BIAS true had one intercept shared by all species";
+  if (tadah::models::is_linear_function(f))
+    return head + "weights 1 to " + N +
+           " are the per-species intercepts, in ATOM order, and the "
+           "descriptor weights start at index " + std::to_string(n + 1) +
+           ". " + before + " and the descriptor weights started at index 2: "
+           "an index written for that layout now pins another weight "
+           "(descriptor weight k moved from index k + 1 to k + " + N + ").";
+  std::string intercepts;
+  const std::vector<std::size_t> cols = f.intercept_columns(ctx);
+  if (!cols.empty())
+    intercepts = "; its intercepts are weights " +
+                 weights_text(ctx, cols, intercept_values(ctx, f, cols));
+  else if (dynamic_cast<const tadah::models::Kern_Base *>(&f))
+    intercepts = "; weights 1 to " + N + " belong to its intercept basis "
+                 "vectors e_0 .. e_" + std::to_string(n - 1) +
+                 ", one per species";
+  return head + "the weights of " + f.get_label() + " are laid out for a "
+         "descriptor with one intercept column per species" + intercepts +
+         ". " + before + ": an index written for that layout may now pin "
+         "another weight.";
 }
 
 void throw_element_not_in_atom(const tadah::core::Element &e,
@@ -82,25 +159,14 @@ void throw_element_not_in_atom(const tadah::core::Element &e,
 }
 
 void require_intercepts_determined(const StructureDB &stdb,
-                                   const tadah::core::Context &ctx) {
+                                   const tadah::core::Context &ctx,
+                                   const tadah::models::Function_Base &f) {
   const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
   if (n_int == 0) return;
   const auto col = tadah::core::intercept_columns_by_Z(ctx);
 
-  // Intercepts that FIXINDEX/FIXWEIGHT pin are not fitted.
-  std::vector<bool> pinned(n_int, false);
-  if (ctx.has_stored("FIXINDEX") && ctx.has_stored("FIXWEIGHT")) {
-    std::vector<std::string> fi(ctx.size("FIXINDEX"));
-    ctx.get("FIXINDEX", fi);
-    for (std::size_t i : tadah::core::parse_indices(fi))
-      if (i >= 1 && i <= n_int) pinned[i - 1] = true;
-  }
-  std::vector<std::size_t> fitted;
-  for (std::size_t k = 0; k < n_int; ++k)
-    if (!pinned[k]) fitted.push_back(k);
-  if (fitted.empty()) return;
-
-  // The distinct species-count vectors of the energy-weighted structures.
+  // The distinct species-count vectors of the energy-weighted structures
+  // (an atom of an element not in ATOM is refused).
   const double eweightglob = ctx.get<double>("EWEIGHT");
   std::map<std::vector<std::size_t>, std::size_t> compositions;
   std::size_t n_weighted = 0;
@@ -122,29 +188,52 @@ void require_intercepts_determined(const StructureDB &stdb,
     ++compositions[counts];
   }
 
-  // Rank of the fitted intercepts' columns: Gram-Schmidt (twice) on the
-  // distinct count vectors.
+  // The function's intercept columns; those FIXINDEX/FIXWEIGHT pin are not
+  // fitted.
+  const std::vector<std::size_t> cols = f.intercept_columns(ctx);
+  if (cols.empty()) return;
+  std::vector<bool> pinned_weight;
+  if (ctx.has_stored("FIXINDEX") && ctx.has_stored("FIXWEIGHT")) {
+    std::vector<std::string> fi(ctx.size("FIXINDEX"));
+    ctx.get("FIXINDEX", fi);
+    for (std::size_t i : tadah::core::parse_indices(fi)) {
+      if (i < 1) continue;
+      if (pinned_weight.size() < i) pinned_weight.resize(i, false);
+      pinned_weight[i - 1] = true;
+    }
+  }
+  std::vector<std::size_t> fitted;
+  for (std::size_t c : cols)
+    if (c >= pinned_weight.size() || !pinned_weight[c]) fitted.push_back(c);
+  if (fitted.empty()) return;
+  const std::vector<std::vector<double>> v = intercept_values(ctx, f, fitted);
+
+  // Rank of the energy rows of the fitted intercept columns (the value of
+  // column j of a structure: sum over species of count x v[s][j]):
+  // Gram-Schmidt (twice) on the rows of the distinct compositions.
   std::vector<std::vector<double>> basis;
   for (const auto &kv : compositions) {
     if (basis.size() == fitted.size()) break;
-    std::vector<double> v;
-    for (std::size_t k : fitted) v.push_back(static_cast<double>(kv.first[k]));
+    std::vector<double> row(fitted.size(), 0.0);
+    for (std::size_t j = 0; j < fitted.size(); ++j)
+      for (std::size_t k = 0; k < n_int; ++k)
+        row[j] += static_cast<double>(kv.first[k]) * v[k][j];
     double norm0 = 0.0;
-    for (double x : v) norm0 += x * x;
+    for (double x : row) norm0 += x * x;
     norm0 = std::sqrt(norm0);
     if (norm0 == 0.0) continue;
     for (int pass = 0; pass < 2; ++pass)
       for (const auto &b : basis) {
         double d = 0.0;
-        for (std::size_t i = 0; i < v.size(); ++i) d += v[i] * b[i];
-        for (std::size_t i = 0; i < v.size(); ++i) v[i] -= d * b[i];
+        for (std::size_t i = 0; i < row.size(); ++i) d += row[i] * b[i];
+        for (std::size_t i = 0; i < row.size(); ++i) row[i] -= d * b[i];
       }
     double r = 0.0;
-    for (double x : v) r += x * x;
+    for (double x : row) r += x * x;
     r = std::sqrt(r);
     if (r > 1e-10 * norm0) {
-      for (double &x : v) x /= r;
-      basis.push_back(v);
+      for (double &x : row) x /= r;
+      basis.push_back(row);
     }
   }
   if (basis.size() == fitted.size()) return;
@@ -160,9 +249,9 @@ void require_intercepts_determined(const StructureDB &stdb,
     return s;
   };
   std::string pinned_note;
-  if (fitted.size() < n_int)
+  if (fitted.size() < cols.size())
     pinned_note = " (FIXINDEX pins the other " +
-                  std::to_string(n_int - fitted.size()) + ")";
+                  std::to_string(cols.size() - fitted.size()) + ")";
   const std::string fitted_n =
       plural(fitted.size(), "intercept") +
       (fitted.size() == 1 ? " is fitted" : " are fitted") + pinned_note;
@@ -171,10 +260,10 @@ void require_intercepts_determined(const StructureDB &stdb,
     data = "no training structure has an energy weight (eweight x EWEIGHT > "
            "0), while " + fitted_n;
   } else {
-    data = "the species counts of the " +
-           plural(n_weighted, "energy-weighted structure") +
-           " (eweight x EWEIGHT > 0) have rank " +
-           std::to_string(basis.size()) + ", while " + fitted_n + ": ";
+    data = "over the " + plural(n_weighted, "energy-weighted structure") +
+           " (eweight x EWEIGHT > 0) the fitted intercept columns have "
+           "rank " + std::to_string(basis.size()) + ", while " + fitted_n +
+           ": ";
     if (compositions.size() == 1) {
       data += (n_weighted == 1 ? "its composition is "
                                : "every one of them has the composition ") +
@@ -203,8 +292,9 @@ void require_intercepts_determined(const StructureDB &stdb,
       "remove a per-species reference energy), add energy-weighted "
       "structures of other compositions (for example of the pure elements, "
       "or an isolated atom of each species), or pin intercepts with "
-      "FIXINDEX/FIXWEIGHT (weights 1 to " + std::to_string(n_int) +
-      " are the intercepts of " + atoms + ", in ATOM order).");
+      "FIXINDEX/FIXWEIGHT (the intercepts of " + f.get_label() + " are "
+      "weights " + weights_text(ctx, cols, intercept_values(ctx, f, cols)) +
+      ").");
 }
 
 void require_descriptor_layout(const tadah::models::DC_Selector &dcs,

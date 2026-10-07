@@ -122,7 +122,6 @@ public:
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
     check_bias_constraints(context);
-    require_intercepts_determined(stdb, context);
 
     // Precomputed descriptors: no basis is drawn on this path, so a
     // non-linear kernel would fit no column (or the columns of a basis
@@ -133,6 +132,7 @@ public:
           "descriptors (train(StDescriptorsDB, StructureDB)) draws no basis "
           "vectors; train a non-linear kernel with train(StructureDB, "
           "DescriptorsCalc), which draws them.");
+    require_intercepts_determined(stdb, context, kernel);
 
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
@@ -143,7 +143,6 @@ public:
   }
   void train(const StructureDB &stdb, DC_Base &dc) {
     check_bias_constraints(context);
-    require_intercepts_determined(stdb, context);
     int modelN;
     if (context.size("MODEL")==3) {
       modelN=context.template get<int>("MODEL",2);
@@ -194,6 +193,10 @@ public:
         kernel.set_basis(basis.b);
       }
     }
+    // The kernel's intercept columns (with BIAS true those of the intercept
+    // basis vectors, drawn above, or Kern_Linear's) must be determined by
+    // the energy-weighted compositions.
+    require_intercepts_determined(stdb, context, kernel);
     bool wcopy=false;
     desmat.build(stdb,norm,dc,wcopy);
     train(desmat);

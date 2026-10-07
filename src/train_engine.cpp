@@ -56,14 +56,15 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   StructureDB::check_atom_key(context, unique_elements);
   StructureDB::check_watom_key(context, unique_elements);
   check_bias_constraints(context);
-  {
-    const std::string w = fixindex_intercept_warning(context);
-    if (!w.empty())
-      tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
-  }
 
   tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
   Trainer tr(context, workspaceManager);
+  {
+    // which weights are intercepts is the model function's (and needs DSIZE)
+    const std::string w = fixindex_intercept_warning(tr.context, *tr.fb);
+    if (!w.empty())
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
+  }
 
   // Load structures and provide feedback if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
@@ -76,7 +77,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   hint_embf0_reference(tr, report);
   // BIAS true: the energy-weighted compositions must determine the
   // per-species intercepts (refused before the neighbour lists are built).
-  require_intercepts_determined(stdb, tr.context);
+  require_intercepts_determined(stdb, tr.context, *tr.fb);
 
   // Calculate nearest neighbors and provide feedback
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
