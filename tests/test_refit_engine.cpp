@@ -656,7 +656,10 @@ TEST_CASE_METHOD(PTFixture,
    * 0 to 2147483646, its candidates jitters + 1 an int), REFIT_COMPACT_SEED
    * from 0 to 4294967295, N2B, NRHO_BASIS and NF_BASIS from 1 to 1024 (the
    * escalation cap), REFIT_MAX_ESCALATIONS from 0, REFIT_COMPACT_NMAX one
-   * or three integers from 1; a number below the smallest normal double
+   * or three integers from 1 to 2147483647 whose largest gives a curve
+   * sample grid of 4 x NMAX points per function that fits an int (so at
+   * most 536870911; refused naming the grid, in any REFIT_MODE); a number
+   * below the smallest normal double
    * says it is too small. (A scalar key holds one value: Context::add
    * overwrites it.) The values at the ends of the ranges are accepted.
    * Before the fix: validate() read none of them (no exception), and run()
@@ -664,7 +667,10 @@ TEST_CASE_METHOD(PTFixture,
    * message checked is not thrown and run() fails reading the absent EAM
    * file instead. Before the REFIT_REACH_SMIN floor: its range was (0, 1],
    * so its messages said "a number in (0, 1]" and 0.05 and 1e-6 were
-   * accepted. */
+   * accepted. Before the NMAX grid check moved into the reader: the compact
+   * fit checked the sample grid after the EAM file was read (compact mode
+   * only), so validate() accepted NMAX 536870912 and 2147483647 (an end of
+   * the accepted range here then). */
   const std::string i32 = "2147483647";
   struct Case {
     std::string key;
@@ -674,6 +680,12 @@ TEST_CASE_METHOD(PTFixture,
   const std::string tiny =
       " (too small: its magnitude is below the smallest normal double, "
       "2.2250738585072014e-308)";
+  const auto grid = [](const std::string &nmax, const std::string &points) {
+    return "REFIT_COMPACT_NMAX " + nmax + " needs a curve sample grid of 4 "
+           "x " + nmax + " = " + points + " points per function "
+           "(REFIT_COMPACT_SAMPLES is raised to at least 4 x "
+           "REFIT_COMPACT_NMAX), above 2147483647; lower REFIT_COMPACT_NMAX";
+  };
   const std::vector<Case> cases = {
       {"REFIT_COMPACT_NMAX", {"+3"},
        "REFIT_COMPACT_NMAX must be an integer from 1 to " + i32 + ", got '+3'"},
@@ -685,6 +697,10 @@ TEST_CASE_METHOD(PTFixture,
       {"REFIT_COMPACT_NMAX", {"2147483648"},
        "REFIT_COMPACT_NMAX must be an integer from 1 to " + i32 +
            ", got '2147483648'"},
+      {"REFIT_COMPACT_NMAX", {"536870912"}, grid("536870912", "2147483648")},
+      {"REFIT_COMPACT_NMAX", {"5", "536870912", "5"},
+       grid("536870912", "2147483648")},
+      {"REFIT_COMPACT_NMAX", {i32}, grid(i32, "8589934588")},
       {"REFIT_TOL_AMBIENT", {"0"},
        "REFIT_TOL_AMBIENT must be a positive number, got '0'"},
       {"REFIT_TOL_AMBIENT", {"-0.1"},
@@ -783,7 +799,7 @@ TEST_CASE_METHOD(PTFixture,
            {"REFIT_COMPACT_SEED", "0"},
            {"REFIT_COMPACT_JITTERS", "0"},
            {"REFIT_COMPACT_JITTERS", "2147483646"},
-           {"REFIT_COMPACT_NMAX", i32},
+           {"REFIT_COMPACT_NMAX", "536870911"},
            {"REFIT_MAX_ESCALATIONS", "0"},
            {"REFIT_CURVE_DERIV_WEIGHT", "0"},
            {"REFIT_CURVE_RELAX", "1"},
