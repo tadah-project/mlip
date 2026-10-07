@@ -15,6 +15,8 @@
 #include <tadah/mlip/memory/design_matrix_workspace.h>
 
 #include <stdexcept>
+#include <string>
+#include <utility>
 namespace tadah {
 namespace mlip {
 
@@ -84,10 +86,15 @@ public:
   bool apply_weights = true;
   bool w_copy_=false;  // keep copy of Phi and T witoout weights
 
-  /** \brief Per-block column layout populated at build()-time.
+  /** \brief The design-matrix column layout of the last build():
+   *  f.phi_layout() of the descriptor layout (see column_block.h). For a
+   *  linear function it is the descriptor layout (bias, D2 and DM
+   *  blocks); a non-linear function owns one block over all columns.
    *
-   *  Empty until build() runs at least once. Consumed by Phase 5
-   *  pre-flight audit and Phase 6 per-iter health monitor.
+   *  Set by build(stdb, norm, dc, wcopy): empty when dc reports no
+   *  layout (DC_Base's default). Empty until that build runs; the
+   *  StDescriptorsDB overload leaves it as it is. Read by HPO's
+   *  per-iteration health monitor.
    */
   ColumnLayout layout_;
   const ColumnLayout& layout() const { return layout_; }
@@ -204,24 +211,40 @@ public:
     ws->T.set_zero();
     ws->Tlabels.set_zero();
 
-    // Phase 2: capture per-block column layout and cross-check it
-    // against the canonical column count `cols` (set by calc_mn from
-    // f.get_phi_cols(context)). A disagreement here signals a stale
-    // descriptor / dsize mismatch and the audit pipeline (Phase 5)
-    // would silently flag every block as wrong, so fail loud.
+    // Two checks, each failing loud:
+    //  1. the descriptor layout (bias + D2 + DM blocks) against DSIZE, the
+    //     descriptor size every descriptor vector is built with: a
+    //     disagreement is a stale descriptor / DSIZE;
+    //  2. the function's layout of its design matrix (phi_layout) against
+    //     `cols`, the width calc_mn() took from f.get_phi_cols(context).
+    //     A linear function's columns are the descriptor's; a kernel's are
+    //     its basis vectors, and BF_Polynomial2's the D(D+1)/2 products of
+    //     descriptor components (column_block.h).
+    // (Before, the descriptor layout was compared with `cols`, which only a
+    // linear function's width equals: every non-linear model was refused.)
     //
     // DC_Base's default layout() returns an empty ColumnLayout; in that
-    // case we leave layout_ empty and skip validation (legacy callers
+    // case layout_ stays empty and both checks are skipped (legacy callers
     // stay byte-identical). Concrete DescriptorsCalc<...>::layout()
-    // overrides return a populated layout that validate() must accept.
-    layout_ = dc.layout(context);
-    if (!layout_.blocks.empty()) {
-      const std::string err = layout_.validate(cols);
+    // overrides return a populated layout.
+    layout_ = ColumnLayout{};
+    const ColumnLayout descriptor_layout = dc.layout(context);
+    if (!descriptor_layout.blocks.empty()) {
+      const size_t dsize = context.get<size_t>("DSIZE");
+      std::string err = descriptor_layout.validate(dsize, "DSIZE");
       if (!err.empty()) {
         throw std::runtime_error(
             "DesignMatrix::build: " + err +
-            " — descriptors_calc layout disagrees with materialised matrix width.");
+            " — the descriptor layout disagrees with the descriptor size.");
       }
+      ColumnLayout phi_layout = f.phi_layout(descriptor_layout, context);
+      err = phi_layout.validate(cols);
+      if (!err.empty()) {
+        throw std::runtime_error(
+            "DesignMatrix::build: " + err + " — the column layout of " +
+            f.get_label() + " disagrees with its design-matrix width.");
+      }
+      layout_ = std::move(phi_layout);
     }
 
     compute_stdevs(stdb);

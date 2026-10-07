@@ -22,24 +22,39 @@ namespace mlip {
 
 /**
  * @class M_KRR
- * @brief Kernel Ridge Regression (KRR) with Empirical Kernel Map (EKM).
+ * @brief Kernel Ridge Regression (KRR) on a set of basis vectors.
  *
- * This class performs Kernel Ridge Regression using an Empirical Kernel Map 
- * to efficiently handle high-dimensional data. EKM is used to map objects into a kernel feature space, where linear methods can be applied.
+ * `MODEL M_KRR <kernel> [1|2]`: the third token selects the
+ * implementation (1, the default, or 2).
  *
- * **Empirical Kernel Map (EKM)**:
- * - Maps sample objects into finite-dimensional vectors in the kernel feature space.
- * - Requires a kernel and basis samples to project new samples into the space defined by these bases.
- * - Facilitates the kernelization of algorithms traditionally operating on vectors.
- * - Supports basis sample selection through methods like random sampling or finding linearly independent subsets.
+ * **Implementation 1** fits energies, and forces and stresses when FORCE and
+ * STRESS are true. With Kern_Linear the model is linear in the descriptor
+ * (one weight per descriptor component, as M_BLR BF_Linear). With a
+ * non-linear kernel the atomic energy is
+ * \f$ E_i = \sum_{j} w_j K(\mathbf{b}_j, \mathbf{x}_i) \f$ over SBASIS
+ * basis vectors \f$ \mathbf{b}_j \f$: column 0 is the bias vector e0 and
+ * the other SBASIS-1 are atomic energy descriptors of the training set
+ * drawn by a fixed, portable draw (Basis), so training is reproducible.
+ * The design-matrix column j is K(b_j, x) summed over the atoms (and its
+ * derivatives for the force and stress rows), and the weights solve the
+ * least-squares problem of those columns (OALGO, LAMBDA). The potential
+ * records SBASIS and BASIS with the weights.
  *
- * **Usage**:
- * - **Kernels**: Use kernel functions (e.g., linear, RBF) to transform data for effective modeling in higher-dimensional spaces.
+ * **Implementation 2** fits energies only, by solving
+ * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (e0 and the mean
+ * descriptors of drawn structures).
  *
- * **Contexturation Options**:
- * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares, positive values for manual setting, or `-1` for automatic tuning.
- * - **SBASIS**: Defines the number of basis functions for nonlinear kernels.
- *
+ * **Configuration options**:
+ * - **MPARAMS**: the kernel's parameters: sigma for Kern_RBF
+ *   (\f$ \gamma = 1/\sigma^2 \f$), d gamma c for Kern_Polynomial, gamma c
+ *   for Kern_Sigmoid; Kern_Linear, Kern_Quadratic and Kern_LQ take none.
+ * - **SBASIS**: the number of basis vectors of a non-linear kernel, at least
+ *   2 and at most the number of training AEDs (structures for
+ *   implementation 2) plus 1.
+ * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares,
+ *   positive values for manual setting, or `-1` for automatic tuning
+ *   (OALGO 3). The kernel's intercept columns
+ *   (Function_Base::intercept_columns()) are not penalised.
  *
  * @tparam K DM_Kern_Base child, Kernel function
  */
@@ -105,6 +120,16 @@ public:
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
 
+    // Precomputed descriptors: no basis is drawn on this path, so a
+    // non-linear kernel would fit no column (or the columns of a basis
+    // left over from a potential).
+    if (kernel.get_label()!="Kern_Linear")
+      throw std::runtime_error(
+          "M_KRR " + kernel.get_label() + ": training from precomputed "
+          "descriptors (train(StDescriptorsDB, StructureDB)) draws no basis "
+          "vectors; train a non-linear kernel with train(StructureDB, "
+          "DescriptorsCalc), which draws them.");
+
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
 
@@ -132,7 +157,8 @@ public:
       + std::to_string(modelN)+"\n");
   }
   void train1(const StructureDB &stdb, DC_Base &dc) {
-    // KRR implementation using EKM
+    // KRR on the design matrix: for a non-linear kernel the columns are
+    // its basis vectors, drawn here from the (normalised) training AEDs
     if(context.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
       // either build basis or prep normaliser
       std::string force=context.template get<std::string>("FORCE");
@@ -160,8 +186,6 @@ public:
         basis.build_random_basis(context.template get<size_t>("SBASIS"),st_desc_db_temp);
         desmat.f.set_basis(basis.b);
         kernel.set_basis(basis.b);
-        // to configure ekm, we need basis vectors
-        ekm.configure(basis.b);
       }
     }
     bool wcopy=false;
@@ -193,7 +217,11 @@ public:
     tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
   }
 
+  /** Every prediction from descriptors (also through predict(c, stdb, dc)
+   *  and predict(c, st, dc)) comes here: the basis vectors are checked
+   *  against the length of these descriptors first. */
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
+    check_basis_length(std.dim());
     if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
@@ -245,10 +273,14 @@ tadah::core::Context get_param_file() {
         c.remove("SBASIS");
       if (c.contains("BASIS"))
         c.remove("BASIS");
-      c.add("SBASIS", basis.b.cols());
-      for (size_t i=0;i<basis.b.cols();++i) {
-        for (size_t j=0;j<basis.b.rows();++j) {
-          c.add("BASIS", basis.b(j,i));
+      // The kernel's basis: the one training drew (set_basis) or the one
+      // a potential loaded (BASIS), the vectors the weights belong to.
+      const tadah::core::Matrix &b =
+          dynamic_cast<const tadah::models::Kern_Base&>(kernel).get_basis();
+      c.add("SBASIS", b.cols());
+      for (size_t i=0;i<b.cols();++i) {
+        for (size_t j=0;j<b.rows();++j) {
+          c.add("BASIS", b(j,i));
         }
       }
     }
@@ -414,7 +446,25 @@ non linear kernel\n");
   using tadah::models::M_KRR_Train<K>::Sigma;
   using tadah::models::M_KRR_Train<K>::context;
   using tadah::models::M_KRR_Train<K>::kernel;
-  using tadah::models::M_KRR_Train<K>::ekm;
+
+  /** A potential's basis vectors (BASIS, read by the kernel) must have the
+   *  length of the descriptors they are compared with, @p dsize (DSIZE).
+   *  It is checked where the two meet: here, from predict(c, std, st),
+   *  and in the design matrix (DM_Kern_Base::phi_layout), so a model may
+   *  be built before its DescriptorsCalc. */
+  void check_basis_length(size_t dsize) const {
+    if (kernel.get_label()=="Kern_Linear") return;
+    const auto *kb = dynamic_cast<const tadah::models::Kern_Base*>(&kernel);
+    if (kb == nullptr || kb->get_basis().cols() == 0) return;
+    const size_t len = kb->get_basis().rows();
+    if (len != dsize)
+      throw std::runtime_error(
+          "M_KRR " + kernel.get_label() + ": BASIS holds SBASIS " +
+          std::to_string(kb->get_basis().cols()) + " basis vectors of " +
+          std::to_string(len) + " values each, but the descriptor of the "
+          "potential has " + std::to_string(dsize) + " components (DSIZE): "
+          "BASIS must have SBASIS x " + std::to_string(dsize) + " values.");
+  }
 };
 } // namespace mlip
 } // namespace tadah

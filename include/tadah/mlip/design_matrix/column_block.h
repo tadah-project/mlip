@@ -1,12 +1,25 @@
 #ifndef TADAH_MLIP_DESIGN_MATRIX_COLUMN_BLOCK_H
 #define TADAH_MLIP_DESIGN_MATRIX_COLUMN_BLOCK_H
 
-// ColumnBlock / ColumnLayout — record which design-matrix columns belong
-// to which descriptor. Required by Phase 5 (pre-flight audit) to compute
-// per-block column-norm and rank statistics, and by Phase 6 to slice the
-// trained `weights` vector by descriptor for the per-iter health monitor.
+// ColumnBlock / ColumnLayout — record which columns of a matrix belong to
+// which part of the model. Two layouts describe a design-matrix build:
 //
-// Phase 2 only exposes the layout; Phase 5/6 consume it.
+//  - the descriptor layout (DescriptorsCalc::layout()): the bias column and
+//    the D2 and DM blocks of the descriptor, DSIZE columns in all;
+//  - the design-matrix layout (DM_Function_Base::phi_layout(), which
+//    DesignMatrix::build() stores): for a linear function (BF_Linear,
+//    Kern_Linear) the descriptor layout itself, one column per descriptor
+//    component; for a non-linear function one block that it owns over its
+//    whole width (a kernel's SBASIS basis-vector columns, family "kernel";
+//    BF_Polynomial2's D(D+1)/2 products of descriptor components, family
+//    "BF"), since its columns do not belong to single descriptor blocks.
+//
+// Which columns the regression leaves out of the ridge penalty (the
+// intercepts) is declared by the function, Function_Base::
+// intercept_columns() in MODELS.
+//
+// Phase 6's per-iteration health monitor slices the trained weights by
+// these blocks (it reads HPO's Trainer::dm, which training never builds).
 
 #include <cstddef>
 #include <stdexcept>
@@ -21,8 +34,8 @@ namespace mlip {
  *  to a single descriptor (or to the bias column).
  */
 struct ColumnBlock {
-  std::string descriptor_label{};   ///< e.g. "D2_Blip", "DM_mBlipEnv", "bias"
-  std::string family{};             ///< "D2" | "DM" | "bias"
+  std::string descriptor_label{};   ///< e.g. "D2_Blip", "DM_mBlipEnv", "bias", "Kern_RBF"
+  std::string family{};             ///< "D2" | "DM" | "bias" | "kernel" | "BF"
   std::size_t col_offset{0};
   std::size_t col_count{0};
   /** Optional: per-element-pair sub-blocks. Phase 3 fills this for
@@ -70,13 +83,16 @@ struct ColumnLayout {
     return static_cast<std::size_t>(-1);
   }
 
-  /** Validate basic invariants — used by DesignMatrix at construction
-   *  to fail fast if the layout disagrees with the materialised matrix
-   *  width. Returns an empty string on success, or a diagnostic
+  /** Validate basic invariants — used by DesignMatrix::build() to fail
+   *  fast if the descriptor layout disagrees with DSIZE, or the
+   *  design-matrix layout with the materialised matrix width. `what`
+   *  names the expected width in the message ("DSIZE", "design-matrix
+   *  width"). Returns an empty string on success, or a diagnostic
    *  message on failure (so the caller can format with file:line
    *  context).
    */
-  std::string validate(std::size_t expected_total_cols) const {
+  std::string validate(std::size_t expected_total_cols,
+                       const std::string& what = "design-matrix width") const {
     std::size_t expected = 0;
     for (std::size_t i = 0; i < blocks.size(); ++i) {
       const auto& b = blocks[i];
@@ -90,7 +106,7 @@ struct ColumnLayout {
     }
     if (expected != expected_total_cols) {
       return "ColumnLayout: total_cols=" + std::to_string(expected) +
-             " disagrees with design-matrix width=" +
+             " disagrees with " + what + "=" +
              std::to_string(expected_total_cols);
     }
     return {};

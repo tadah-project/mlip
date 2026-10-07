@@ -71,5 +71,10 @@ void DM_BF_Linear::calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row,
   }
   row += 6;
 }
+ColumnLayout DM_BF_Linear::phi_layout(const ColumnLayout &descriptor_layout,
+                                      const tadah::core::Context &) const
+{
+  return descriptor_layout;
+}
 } // namespace mlip
 } // namespace tadah

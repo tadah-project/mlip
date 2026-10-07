@@ -286,12 +286,13 @@ assemble_dphi_train_energy_rows_dm(const StructureDB&                 stdb,
  *  returns `true` iff at least one term contributed.
  *
  *  Phase 2B (B-HPO) groundwork — this walker is NOT yet consumed by
- *  compute_analytical_gradient_from_trainer because non-linear kernels
- *  always trigger EKM projection in M_KRR_Train::train1, and the
- *  analytical chain through EKM requires dEKM/dtheta (SVD derivative).
- *  Layer-1.5 parity tests exercise it directly against FD on a
- *  hand-crafted Phi/basis. Phase 2C plans to wire it through once the
- *  EKM derivative lands. */
+ *  compute_analytical_gradient_from_trainer, whose analytical chain
+ *  covers BF_Linear and Kern_Linear only. (It used to wait for the
+ *  derivative of the EKM projection of M_KRR_Train, which non-linear
+ *  KRR no longer applies; the basis vectors themselves are drawn from
+ *  descriptors that depend on theta, which the chain would have to
+ *  follow.) Layer-1.5 parity tests exercise it directly against FD on a
+ *  hand-crafted Phi/basis. */
 inline bool
 assemble_dphi_train_energy_rows_d2_kern(
     const StructureDB&                stdb,
