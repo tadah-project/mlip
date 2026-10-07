@@ -85,6 +85,30 @@ std::string format_uncovered(const std::vector<size_t> &indices,
 
 }  // namespace
 
+bool basis_drawn_from_training_data(const tadah::core::Context &ctx) {
+  if (!ctx.contains("MODEL") || ctx.size("MODEL") < 2) return false;
+  return ctx.get<std::string>("MODEL", 0) == "M_KRR" &&
+         ctx.get<std::string>("MODEL", 1) != "Kern_Linear";
+}
+
+std::size_t model_weight_count(DM_Function_Base &fb,
+                               const tadah::core::Context &ctx) {
+  if (!basis_drawn_from_training_data(ctx)) return fb.get_phi_cols(ctx);
+  const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1);
+  if (!ctx.contains("SBASIS"))
+    throw std::runtime_error(
+        model + " needs SBASIS, the number of basis vectors training draws "
+        "(column 0 is the bias vector e0, the others are drawn from the "
+        "training AEDs).");
+  const std::size_t s = ctx.get<std::size_t>("SBASIS");
+  if (s < 2)
+    throw std::runtime_error(
+        model + ": SBASIS " + std::to_string(s) + ": a non-linear M_KRR "
+        "model needs at least 2 basis vectors (column 0 is the bias vector "
+        "e0, the others are drawn from the training AEDs).");
+  return s;
+}
+
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols) {
   const bool has_db = ctx.contains("DBFILE") && ctx.size("DBFILE") > 0;
@@ -93,6 +117,13 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
 
   if (has_fw != has_fi) {
     throw std::runtime_error(kLoneKeyMsg);
+  }
+
+  if (!has_db && basis_drawn_from_training_data(ctx)) {
+    throw std::runtime_error(
+        "No training DBFILE: M_KRR " + ctx.get<std::string>("MODEL", 1) +
+        " draws its SBASIS basis vectors from the training data, and its "
+        "weights belong to them. Provide a training DBFILE.");
   }
 
   if (!has_fw) {
@@ -126,6 +157,13 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
 void provision_fixed_weights(M_Tadah_Base &model,
                              const tadah::core::Context &ctx,
                              std::size_t n_cols) {
+  if (basis_drawn_from_training_data(ctx)) {
+    throw std::runtime_error(
+        "provision_fixed_weights: M_KRR " + ctx.get<std::string>("MODEL", 1) +
+        " has no basis vectors before training (they are drawn from the "
+        "training data), so its weights cannot be set from FIXWEIGHT alone; "
+        "train it (FIXINDEX/FIXWEIGHT then pin weights of the drawn basis).");
+  }
   const bool has_fw = ctx.contains("FIXWEIGHT");
   const bool has_fi = ctx.contains("FIXINDEX");
   if (!has_fw || !has_fi) {
