@@ -18,13 +18,14 @@ namespace engines {
  *
  * OPTION is `<command>`, `<command>.<option>` or
  * `<command>.<subcommand>.<option>` (a subcommand is also written
- * `<command>.<subcommand>`), or `<KEY>`. run() prints the long description
- * of the command or subcommand it names and the text of the option
- * (explain_key_text). A last name that is no command, subcommand or option
- * of its command is looked up among the configuration keys (ALLOWED_KEYS,
- * any letter case), so `tadah explain SETFL` and `tadah explain
- * refit.rhoform` print the text of a key that is no option of a command;
- * a command's own option comes first (its text may differ). It throws
+ * `<command>.<subcommand>`), or `<KEY>`, each name in any letter case.
+ * run() prints the long description of the command or subcommand it names
+ * and the text of the option (explain_key_text). A last name that is no
+ * command, subcommand or option of its command is looked up among the
+ * configuration keys (ALLOWED_KEYS), so `tadah explain SETFL` and `tadah
+ * explain refit.rhoform` print the text of a key that is no option of a
+ * command; a command's own subcommand or option comes first (its text may
+ * differ: data.MERGE is the merge subcommand, not the MERGE key). It throws
  * std::runtime_error, printing nothing, when the option names none of
  * these: "tadah explain: no command or configuration key 'bogus'", "tadah
  * explain: no command 'bogus'" (bogus.key: the first name of a dotted

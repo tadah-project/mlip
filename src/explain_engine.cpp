@@ -8,7 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <boost/algorithm/string.hpp> // for boost::split
+#include <boost/algorithm/string.hpp> // boost::split, iequals
 
 namespace tadah {
 namespace mlip {
@@ -174,16 +174,21 @@ int ExplainEngine::run(mlip::Task &task) {
                              "' is not <command>, <command>.<option> or "
                              "<command>.<subcommand>.<option>");
   const auto &taskMap = core::BlueprintParser::getTasksMapRef();
-  // The blueprint name of the command of the first n tokens (the first in
-  // upper case, as the tasks map has it).
+  // The command or subcommand the first n tokens name, in any letter case
+  // (as an option's name), or taskMap.end(): the tasks map writes a command
+  // in upper case and a subcommand in lower case ("DATA.merge"), and a
+  // subcommand matched in one case only let a configuration key of its name
+  // (MERGE) answer for data.MERGE.
   const auto command = [&](std::size_t n) {
-    std::string name = boost::to_upper_copy(tokens[0]);
+    std::string name = tokens[0];
     for (std::size_t i = 1; i < n; ++i) name += "." + tokens[i];
-    return name;
+    return std::find_if(taskMap.begin(), taskMap.end(), [&](const auto &t) {
+      return boost::iequals(t.first, name);
+    });
   };
   // The command or subcommand all the tokens name, if one.
   bool printed = false;
-  const auto named = taskMap.find(command(tokens.size()));
+  const auto named = command(tokens.size());
   if (named != taskMap.end()) {
     print_text(named->second.longDescription);
     printed = true;
@@ -199,10 +204,10 @@ int ExplainEngine::run(mlip::Task &task) {
                              "key '" + tokens[0] + "'");
   }
   // An option of the command the tokens before the last name.
-  const auto owner = taskMap.find(command(tokens.size() - 1));
+  const auto owner = command(tokens.size() - 1);
   if (owner == taskMap.end()) {
     if (printed) return EXIT_SUCCESS;
-    if (taskMap.find(command(1)) == taskMap.end())
+    if (command(1) == taskMap.end())
       throw std::runtime_error("tadah explain: no command '" + tokens[0] +
                                "'");
     throw std::runtime_error("tadah explain: " + tokens[0] +
