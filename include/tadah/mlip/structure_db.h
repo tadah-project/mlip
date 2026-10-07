@@ -73,23 +73,30 @@ struct StructureDB {
      *
      * In the case of N greater than the number of available 
      * structures, this method will load only the available ones.
-     * Blank lines between structures are not counted. A `first` at or
-     * past the end of the file loads nothing (the file is read up to its
-     * end, not `first` times).
+     * Blank lines between structures are not counted; a structure without
+     * atoms (its blank line straight after the stress lines) is one. A
+     * `first` at or past the end of the file loads nothing (the file is read
+     * up to its end, not `first` times).
      *
      * Return the number of loaded structures.
      */
   int add(const std::string fn, size_t first, int N=1);
 
   /** Add the structures of a file at the given 0-based indices, in the
-     * given order (an index given twice adds the structure twice), reading
-     * the file once, up to the largest index.
+     * given order (an index given twice adds the structure twice).
+     *
+     * The file is read in one pass, up to the largest index: only the
+     * selected structures are parsed and kept, each once; the others are
+     * skipped without being parsed, as count() skips them. Memory grows
+     * with the number of selected structures, and a structure that is not
+     * valid elsewhere in the file does not stop the read.
      *
      * Return the number of added structures, indices.size().
      *
      * \throws std::runtime_error naming the file, the structure (1-based)
      *         and the number of structures the file has when an index is
-     *         past its end; nothing is added then.
+     *         past its end, or naming the file, the structure and the value
+     *         when a selected structure is not valid; nothing is added then.
      */
   int add_selected(const std::string fn, const std::vector<size_t> &indices);
 
@@ -171,7 +178,8 @@ struct StructureDB {
 
   /** Count number of structures and atoms in a single dataset. Blank lines
    * (whitespace only, '\r' included) are read as Structure::read reads
-   * them. */
+   * them, and a structure without atoms is counted, as add(file) reads it.
+   * The structures are skipped, not parsed (Structure::next_structure). */
   static std::pair<int,int> count(const std::string fn);
 
   void clear_nn();
