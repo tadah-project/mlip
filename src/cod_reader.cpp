@@ -70,13 +70,11 @@ void CODReader::read(const std::string &path) {
   // Fetch raw CIF from COD
   std::string cifData = fetchCifById(codID);
 
-  // Parse CIF data with CifReader
+  // Parse CIF data with CifReader: its errors, WARNINGs and the label
+  // name the COD entry
   CifReader creader;
-  creader.parseCifContents(cifData);
+  creader.parseCifContents(cifData, "COD entry " + codID);
   m_structure = creader.getStructure();
-
-  // Annotate structure label
-  m_structure.label.insert(0, "COD entry: " + path + " | ");
 }
 
 Structure CODReader::getStructure() const {

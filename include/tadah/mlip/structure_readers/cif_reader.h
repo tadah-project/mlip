@@ -128,14 +128,31 @@ public:
    */
   void parseCifContents(const std::string &contents);
 
+  /**
+   * @brief Parses CIF text that came from @p origin, e.g. "COD entry
+   *        1534932" (CODReader).
+   *
+   * A non-empty @p origin names the text in every error and WARNING
+   * ("COD entry 1534932: site Fe1 has occupancy 0.5; ...") and starts the
+   * label; the data block is not named. An empty one is the one-argument
+   * form.
+   */
+  void parseCifContents(const std::string &contents,
+                        const std::string &origin);
+
 private:
   Structure m_structure;
 
   /**
-   * @brief Parses CIF text read from @p path (empty when there is no file),
-   *        which warnings and errors name.
+   * @brief Parses CIF text. @p where names it in errors and WARNINGs
+   *        ("CIF file <path>", "CIF text", an origin); with @p name_block
+   *        the data block is added once it is known ("CIF text
+   *        (data_<name>)"). The label starts with @p label_origin, or with
+   *        that name when @p label_origin is empty. m_structure is replaced
+   *        only when the whole structure is built.
    */
-  void parseCif(const std::string &contents, const std::string &path);
+  void parseCif(const std::string &contents, const std::string &where,
+                bool name_block, const std::string &label_origin);
 };
 
 } // namespace mlip
