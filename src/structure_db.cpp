@@ -4,6 +4,8 @@
 #include <tadah/core/utils.h>
 #include <tadah/core/logger.h>
 
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <tadah/core/number_format.h>
@@ -56,9 +58,11 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
-  // move iterator to the first structure we want to read
+  // move iterator to the first structure we want to read; a file with
+  // fewer structures has nothing to load (stop at its end: `first` may be
+  // as large as SIZE_MAX)
   for (size_t i=0; i<first; ++i) {
-    Structure::next_structure(ifs);
+    if (Structure::next_structure(ifs) == 0) return 0;
   }
 
   // N structures, blank lines between them not counted.
@@ -87,6 +91,28 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
   ifs.close();
 
   return static_cast<int>(read);
+}
+
+int StructureDB::add_selected(const std::string fn,
+                              const std::vector<size_t> &indices) {
+  if (indices.empty()) return 0;
+  const size_t last = *std::max_element(indices.begin(), indices.end());
+  // add(fn, first, N) counts in int, as count() does.
+  if (last >= static_cast<size_t>(std::numeric_limits<int>::max()))
+    throw std::runtime_error("DBFILE " + fn + ": structure " +
+                             std::to_string(last + 1) +
+                             " is beyond the number of structures a dataset "
+                             "can hold");
+  // The structures 0 ... last, read once.
+  StructureDB file;
+  const int loaded = file.add(fn, 0, static_cast<int>(last + 1));
+  if (static_cast<size_t>(loaded) <= last)
+    throw std::runtime_error("DBFILE " + fn + ": structure " +
+                             std::to_string(last + 1) +
+                             " is past the end: the file has " +
+                             std::to_string(loaded) + " structures");
+  for (const size_t i : indices) add(file(i));
+  return static_cast<int>(indices.size());
 }
 
 void StructureDB::add(const Structure &s) {

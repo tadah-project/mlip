@@ -73,11 +73,25 @@ struct StructureDB {
      *
      * In the case of N greater than the number of available 
      * structures, this method will load only the available ones.
-     * Blank lines between structures are not counted.
+     * Blank lines between structures are not counted. A `first` at or
+     * past the end of the file loads nothing (the file is read up to its
+     * end, not `first` times).
      *
      * Return the number of loaded structures.
      */
   int add(const std::string fn, size_t first, int N=1);
+
+  /** Add the structures of a file at the given 0-based indices, in the
+     * given order (an index given twice adds the structure twice), reading
+     * the file once, up to the largest index.
+     *
+     * Return the number of added structures, indices.size().
+     *
+     * \throws std::runtime_error naming the file, the structure (1-based)
+     *         and the number of structures the file has when an index is
+     *         past its end; nothing is added then.
+     */
+  int add_selected(const std::string fn, const std::vector<size_t> &indices);
 
   /** Add a single Structure object to this container */
   void add(const Structure &s);

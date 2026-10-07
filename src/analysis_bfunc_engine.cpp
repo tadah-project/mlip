@@ -92,16 +92,12 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     if (singleContext.contains("INDEX")) {
       std::vector<std::string> indicesStrVec(singleContext.size("INDEX"));
       singleContext.get<>("INDEX", indicesStrVec);
-      indices = core::parse_indices(indicesStrVec);
-      // prune indices if too large values are given by the user
-      for (auto it = indices.begin(); it != indices.end(); ) {
-        if (*it > cgrid.size()) { // remember indices start from 1
-          core::Logger::instance().log(tadah::core::LogLevel::WARNING, "Index " + std::to_string(*it) + " is out of range. This index will be removed from the list.");
-          it = indices.erase(it);
-        } else {
-          ++it;
-        }
-      }
+      // 1-based basis-function indices, parsed strictly and checked against
+      // the descriptor's number of functions.
+      indices = core::parse_one_based_indices(
+          indicesStrVec, cgrid.size(), "tadah analysis bfunc",
+          "the " + dtype + " basis has " + std::to_string(cgrid.size()) +
+              " functions");
     }
     else {
       for (size_t j=0; j < cgrid.size(); ++j) {
