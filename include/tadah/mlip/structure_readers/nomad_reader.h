@@ -65,9 +65,16 @@ private:
   void fetchAndParseNomad(const std::string &entryID);
 
   /**
-   * @brief Interprets the raw JSON response to extract cell parameters, positions, etc.
+   * @brief The structure of the raw JSON response of entry @p entryID: cell
+   *        parameters, positions, etc.
+   *
+   * Every error names the entry, "NomadReader: entry '<entryID>': <what>":
+   * a missing field, text that is not JSON, and a site whose species is not
+   * an element symbol Tadah knows ("site 2 has species 'D', which is not an
+   * element symbol Tadah knows (H to Og).").
    */
-  void parseNomadJson(const std::string &jsonContent);
+  static Structure parseNomadJson(const std::string &jsonContent,
+                                  const std::string &entryID);
 
   /**
    * @brief Builds a 3×3 lattice from edges (a,b,c) and angles (α,β,γ) in radians.

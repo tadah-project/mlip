@@ -66,9 +66,16 @@ private:
   void fetchAndParseMP(const std::string &mpID);
 
   /**
-   * @brief Parses MP JSON to retrieve the lattice matrix and atomic positions.
+   * @brief The structure of material @p mpID's MP JSON: the lattice matrix
+   *        and the atomic positions.
+   *
+   * Every error names the material, "MaterialsProjectReader: material
+   * '<mpID>': <what>": a missing field, text that is not JSON, and a site
+   * whose element is not an element symbol Tadah knows ("site 2 has element
+   * 'Xx', which is not an element symbol Tadah knows (H to Og).").
    */
-  void parseMpJson(const std::string &jsonContent);
+  static Structure parseMpJson(const std::string &jsonContent,
+                               const std::string &mpID);
 };
 
 } // namespace mlip

@@ -32,7 +32,9 @@ public:
 
 private:
   Structure m_structure;
-  void parsePoscar(const std::vector<std::string> &lines);
+  /// The structure of a POSCAR's lines, without its label; its errors say
+  /// what is wrong, and read() adds the file.
+  static Structure parsePoscar(const std::vector<std::string> &lines);
 };
 
 } // namespace mlip
