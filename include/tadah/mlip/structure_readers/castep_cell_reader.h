@@ -29,7 +29,12 @@ namespace mlip {
  * is a comment. A file without a lattice block or a positions block, a
  * LATTICE_CART without exactly three vectors, an incomplete LATTICE_ABC,
  * a singular lattice, an unknown unit or a positions block without atoms
- * is refused (std::runtime_error).
+ * is refused (std::runtime_error), and so is a species label that does not
+ * start with an element symbol. Every error of read() names the file:
+ *
+ *     CastepCellReader: CASTEP cell file <path>: CASTEP species label 'Qq:up' does not start with an element symbol
+ *
+ * and a refused file leaves the structure of the last successful read.
  *
  * This parser also extracts atomic species from the first token
  * in POSITIONS_* blocks.
