@@ -55,10 +55,11 @@ struct RefitNumbers {
 /** Read the refit configuration numbers of @p c. A real number takes the
  *  number grammar of the hpotarget file (core::parse_decimal_normal: no hex,
  *  inf, nan or subnormal), an integer decimal digits only, and each must lie
- *  in its range (RefitNumbers). A config file
- *  must also pass CORE's blueprint check of the key's type, which refuses,
- *  for instance, '.5' and '+3'. Otherwise throws std::runtime_error naming
- *  the key and the token as written:
+ *  in its range (RefitNumbers; the largest REFIT_COMPACT_NMAX's curve sample
+ *  grid of 4 x NMAX points must fit an int). A config file must also pass
+ *  CORE's blueprint check of the key's type, which refuses '.5' in every
+ *  number and a sign ('+3') in an integer. Otherwise throws
+ *  std::runtime_error naming the key and the token as written:
  *    "tadah refit: REFIT_TOL_AMBIENT must be a positive number, got '0'"
  *    "tadah refit: REFIT_COMPACT_NMAX must be an integer from 1 to
  *     2147483647, got '+3'"
