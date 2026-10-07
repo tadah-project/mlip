@@ -41,16 +41,21 @@ public:
    * A failed fetch throws std::runtime_error naming the HTTP status (or the
    * provider's own: 500 for a cURL error such as no network), the COD ID
    * (without "cod-") and the provider's reason, cut to 300 characters
-   * (failed_fetch_message(): `CODReader: HTTP 404 for COD ID '1534932':
-   * <the server's page>`). The reason is the provider's cURL text or the
-   * server's body; the message holds no request URL. The previous structure
-   * is kept.
+   * (failed_fetch_message()):
    *
-   * The CIF is read by CifReader::parseCifContents with the origin
-   * "COD entry <id>": its errors and WARNINGs name the COD entry ("COD
-   * entry 1534932: site Fe1 has occupancy 0.5; ..."), not the CIF data
-   * block, and the label is "COD entry <id> | Symmetry: <group> | Volume:
-   * <V>", <group> the space group the cell is built with (see CifReader).
+   *     CODReader: HTTP 500 for COD ID '1534932': CODDataProvider: cURL error: ...
+   *
+   * The reason is the provider's cURL text or the server's body; the
+   * message holds no request URL. The previous structure is kept.
+   *
+   * The CIF is read by CifReader::parseCifContents with the origin "COD
+   * entry" and the COD ID: its errors and WARNINGs name the COD entry, not
+   * the CIF data block, and so does the label, which names the space group
+   * the cell is built with (see CifReader):
+   *
+   *     COD entry 1534932: site Fe1 has occupancy 0.5; ...
+   *     COD entry 1534932 | Symmetry: I m -3 m | Volume: 23.553521
+   *
    * A refused CIF leaves the previous structure as it was.
    *
    * @param path  A COD entry ID (optionally with prepended "cod-")

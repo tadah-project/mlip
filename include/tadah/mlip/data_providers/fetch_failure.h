@@ -14,16 +14,20 @@ constexpr std::size_t kMaxFetchReason = 300;
 
 /**
  * @brief The message of a structure reader whose provider answered a status
- *        other than 200:
- *        `<reader>: HTTP <status> for <id_kind> '<id>': <reason>`.
+ *        other than 200.
+ *
+ * The message names the reader, the status, what the ID is, the ID and
+ * the provider's reason, e.g.
+ *
+ *     CODReader: HTTP 500 for COD ID '1534932': CODDataProvider: cURL error: Could not connect to server
  *
  * The reason is @p rr's response, as the provider gives it: its own text
- * for a cURL error (e.g. `CODDataProvider: cURL error: Could not connect to
- * server`, status 500), else the server's body. A reason longer than
- * kMaxFetchReason characters is cut to its first kMaxFetchReason characters
- * followed by ` ... (<n> characters)` (a body may be a whole HTML page);
- * without a reason the message ends `'<id>'.`. Nothing else is added: no
- * request URL, no header, no API key.
+ * for a cURL error (status 500, as above), else the server's body. A
+ * reason longer than kMaxFetchReason characters is cut to its first
+ * kMaxFetchReason characters followed by " ... (4107 characters)" (the
+ * length of the whole reason; a body may be a whole HTML page). Without a
+ * reason the message ends after the ID with a full stop. Nothing else is
+ * added: no request URL, no header, no API key.
  *
  * Used by AflowReader (`AUID`), CODReader (`COD ID`),
  * MaterialsProjectReader (`material`) and NomadReader (`entry`).

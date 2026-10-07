@@ -114,16 +114,21 @@ namespace mlip {
  * whose columns are the lattice vectors; it is stored transposed, so row
  * i of Structure::cell is lattice vector a_i.
  *
- * The structure's label is "<origin> | Symmetry: <group> | Volume: <V>".
- * <origin> is "CIF file: <path>" (read()), "CIF text (data_<block>)"
- * (parseCifContents(text)) or the origin given to
- * parseCifContents(text, origin) ("COD entry 1534932"). <group> is the
- * space group the unit cell is built with, as the WARNINGs name it: the
- * tabulated setting (gemmi's extended H-M symbol: 'F d -3 m:2', 'R -3 m:H',
- * 'I 1'), "<n> operators of <record>" for a group in no tabulated setting
+ * The structure's label names where the text came from, the space group
+ * the unit cell is built with and the cell volume (cubic angstrom, 6
+ * decimals), e.g. for read(), parseCifContents(text) and
+ * parseCifContents(text, origin) (CODReader's origin):
+ *
+ *     CIF file: si.cif | Symmetry: F d -3 m:2 | Volume: 160.191478
+ *     CIF text (data_Si) | Symmetry: F d -3 m:2 | Volume: 160.191478
+ *     COD entry 1534932 | Symmetry: I m -3 m | Volume: 23.553521
+ *
+ * The group is named as the WARNINGs name it: the tabulated setting
+ * (gemmi's extended H-M symbol: 'F d -3 m:2', 'R -3 m:H', 'I 1'), the
+ * number of operators and the record for a group in no tabulated setting
  * ("2 operators of the symmetry-operator loop"), or 'P 1' without a
  * symmetry record. The H-M symbol as written appears in the WARNINGs,
- * where it differs. V is the cell volume in cubic angstrom (6 decimals).
+ * where it differs.
  *
  * A read replaces the reader's structure only when it succeeds: a CIF that
  * is refused leaves the last structure (cell, atoms and label) as it was.
