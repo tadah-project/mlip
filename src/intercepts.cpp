@@ -247,12 +247,12 @@ void require_intercepts_determined(const StructureDB &stdb,
     ++compositions[counts];
   }
 
-  // M_KRR implementation 2 solves (K + LAMBDA I) w = T on its basis vectors
-  // (the intercept vectors with the target 0, the structures' mean AEDs with
-  // their energies per atom), not the least squares of the structures'
-  // energies: nothing to refuse.
-  if (basis_drawn_from_training_data(ctx) && krr_implementation(ctx) == 2)
-    return;
+  // M_KRR implementation 2, with any kernel (Kern_Linear too), solves
+  // (K + LAMBDA I) w = T on its basis vectors (the intercept vectors with
+  // the target 0, the structures' mean AEDs with their energies per atom),
+  // not the least squares of the structures' energies: nothing to refuse,
+  // and it pins no weight (its solve refuses FIXINDEX).
+  if (is_krr_implementation_2(ctx)) return;
 
   // The intercept columns of the function as the fit has it (fit_function);
   // those FIXINDEX/FIXWEIGHT pin are not fitted.

@@ -5,6 +5,7 @@
 #include <tadah/core/core_types.h>
 #include <tadah/core/number_format.h>
 #include <tadah/core/utils.h>
+#include <tadah/models/m_krr_train.h>
 
 #include <algorithm>
 #include <sstream>
@@ -81,6 +82,12 @@ int krr_implementation(const tadah::core::Context &ctx) {
              : 1;
 }
 
+bool is_krr_implementation_2(const tadah::core::Context &ctx) {
+  return ctx.contains("MODEL") && ctx.size("MODEL") >= 2 &&
+         ctx.get<std::string>("MODEL", 0) == "M_KRR" &&
+         krr_implementation(ctx) == 2;
+}
+
 std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx) {
   // DM_Function_Base::get_phi_cols(ctx), the design-matrix width
@@ -107,6 +114,12 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
 
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols) {
+  // M_KRR implementation 2 pins no weight: its FIXINDEX is refused before
+  // it is read against n_cols, which is not its weight count for
+  // Kern_Linear (DSIZE, while it fits SBASIS basis vectors).
+  if (is_krr_implementation_2(ctx))
+    tadah::models::refuse_fixed_weights_in_train2(
+        ctx, ctx.get<std::string>("MODEL", 1));
   const bool has_db = ctx.contains("DBFILE") && ctx.size("DBFILE") > 0;
   const FixedSpec spec = parse_fixed_spec(ctx, n_cols);
   const bool pinned = !spec.indices.empty();

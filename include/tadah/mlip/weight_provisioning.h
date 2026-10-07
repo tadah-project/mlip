@@ -45,6 +45,12 @@ bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
  *  token, 1 when there is none (M_KRR::train). */
 int krr_implementation(const tadah::core::Context &ctx);
 
+/** True for M_KRR implementation 2, `MODEL M_KRR <kernel> 2` with any
+ *  kernel, Kern_Linear too: its solve (MODELS M_KRR_Train::train2) fits
+ *  the targets of SBASIS basis vectors drawn from the training structures,
+ *  every weight at once, and pins none. */
+bool is_krr_implementation_2(const tadah::core::Context &ctx);
+
 /** The number of model weights K a training of this configuration fits:
  *  the design-matrix width, f.weights_count(DSIZE) (as
  *  DM_Function_Base::get_phi_cols(ctx)), except for a model whose basis is
@@ -61,12 +67,14 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
 /** Classify how the model weights are provisioned for this configuration.
  *
  * Throws std::runtime_error with an actionable message on illegal
- * combinations: what core::parse_fixindex refuses (a lone FIXINDEX or
- * FIXWEIGHT, a malformed or descending entry, an index outside 1..n_cols,
- * a FIXINDEX/FIXWEIGHT count mismatch, a weight named twice), a FIXWEIGHT
- * value that is not a number, no DBFILE without any pinning, a missing
- * DBFILE with incomplete FIXINDEX coverage, or a missing DBFILE for a
- * model whose basis is drawn from the training data.
+ * combinations: FIXINDEX or FIXWEIGHT with M_KRR implementation 2
+ * (is_krr_implementation_2; MODELS refuse_fixed_weights_in_train2's
+ * message, before FIXINDEX is read), what core::parse_fixindex refuses (a
+ * lone FIXINDEX or FIXWEIGHT, a malformed or descending entry, an index
+ * outside 1..n_cols, a FIXINDEX/FIXWEIGHT count mismatch, a weight named
+ * twice), a FIXWEIGHT value that is not a number, no DBFILE without any
+ * pinning, a missing DBFILE with incomplete FIXINDEX coverage, or a
+ * missing DBFILE for a model whose basis is drawn from the training data.
  *
  * @param ctx    training configuration
  * @param n_cols total number of model weights K (model_weight_count())
