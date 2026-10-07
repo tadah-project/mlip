@@ -1,4 +1,5 @@
 #include <tadah/mlip/structure_readers/aflow_reader.h>
+#include <tadah/mlip/data_providers/fetch_failure.h>
 #include <tadah/core/number_format.h>
 #include <nlohmann/json.hpp>
 #include <array>
@@ -270,21 +271,9 @@ Structure AflowReader::getStructure() const {
 
 void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
   RawResponse rr = m_dataProvider->QueryByID(auid);
-  if (rr.httpStatus != 200) {
-    // The provider's reason (its own message, or the server's page, cut
-    // short: it may be a whole HTML page).
-    constexpr std::size_t kMaxReason = 300;
-    std::string reason = rr.response;
-    if (reason.size() > kMaxReason)
-      reason = reason.substr(0, kMaxReason) + " ... (" +
-               std::to_string(rr.response.size()) + " characters)";
-    std::ostringstream oss;
-    oss << "AflowReader: HTTP " << rr.httpStatus
-        << " for AUID '" << auid << "'";
-    if (!reason.empty()) oss << ": " << reason;
-    else oss << ".";
-    throw std::runtime_error(oss.str());
-  }
+  if (rr.httpStatus != 200)
+    throw std::runtime_error(
+        failed_fetch_message("AflowReader", "AUID", auid, rr));
   parseAflowJson(rr.response);
 }
 /*

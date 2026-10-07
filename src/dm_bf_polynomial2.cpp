@@ -97,5 +97,20 @@ void DM_BF_Polynomial2::calc_phi_stress_rows(tadah::core::phi_type &Phi,
   }
   row += 6;
 }
+ColumnLayout DM_BF_Polynomial2::phi_layout(const ColumnLayout &descriptor_layout,
+                                           const tadah::core::Context &) const
+{
+  // Column (i, ii), i <= ii, is aed(i)*aed(ii): the products cross the
+  // descriptor blocks, so the function owns all D(D+1)/2 columns.
+  const size_t d = descriptor_layout.total_cols();
+  ColumnBlock b;
+  b.descriptor_label = get_label();
+  b.family = "BF";
+  b.col_offset = 0;
+  b.col_count = (d*d+d)/2;
+  ColumnLayout L;
+  L.blocks.push_back(b);
+  return L;
+}
 } // namespace mlip
 } // namespace tadah

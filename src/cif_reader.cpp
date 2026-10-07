@@ -43,6 +43,18 @@ std::string symmetry_used(const gemmi::SmallStructure &struc,
   return "no symmetry (P 1, the sites as listed)";
 }
 
+// The same, for the structure's label: the tabulated setting ("F d -3 m:2",
+// "R -3 m:H"), the operators of a group in no tabulated setting ("2
+// operators of the symmetry-operator loop"), or P 1.
+std::string group_label(const gemmi::SmallStructure &struc,
+                        const SymmetrySource &src) {
+  if (struc.spacegroup) return struc.spacegroup->xhm();
+  if (src.own_ops)
+    return std::to_string(src.own_ops->order()) + " operators of " +
+           src.record;
+  return "P 1";
+}
+
 void trim(std::string &s) {
   const std::size_t b = s.find_first_not_of(" \t");
   if (b == std::string::npos) {
@@ -372,27 +384,31 @@ void CifReader::read(const std::string &path) {
     throw std::runtime_error("CifReader::read: Cannot open " + path);
   }
 
-  // Label the source
-  m_structure.label = "CIF file: " + path;
-
   std::ostringstream buffer;
   buffer << ifs.rdbuf();
-  parseCif(buffer.str(), path);
-
+  parseCif(buffer.str(), "CIF file " + path, false, "CIF file: " + path);
 }
 
 Structure CifReader::getStructure() const { return m_structure; }
 
 void CifReader::parseCifContents(const std::string &fileContents) {
-  parseCif(fileContents, "");
+  parseCif(fileContents, "CIF text", true, "");
+}
+
+void CifReader::parseCifContents(const std::string &fileContents,
+                                 const std::string &origin) {
+  if (origin.empty()) {
+    parseCifContents(fileContents);
+    return;
+  }
+  parseCif(fileContents, origin, false, "");
 }
 
 void CifReader::parseCif(const std::string &fileContents,
-                         const std::string &path) {
+                         const std::string &where, bool name_block,
+                         const std::string &label_origin) {
   using namespace gemmi::cif;
 
-  // Errors name the file, or the text and then its data block
-  const std::string where = path.empty() ? "CIF text" : "CIF file " + path;
   // One data block, one structure
   Document doc;
   Block *only = nullptr;
@@ -403,8 +419,10 @@ void CifReader::parseCif(const std::string &fileContents,
     throw std::runtime_error(where + ": " + e.what());
   }
   Block &block = *only;
+  // Errors and WARNINGs name the file or the origin, or the text and its
+  // data block
   const std::string source =
-      path.empty() ? "CIF text (data_" + block.name + ")" : where;
+      name_block ? where + " (data_" + block.name + ")" : where;
 
   // gemmi parses the first number tag present, which must be an integer
   // or unknown; the reader reads the number itself, where it is used, so
@@ -743,6 +761,25 @@ void CifReader::parseCif(const std::string &fileContents,
     }
   }
 
+  // Every site is of an element Tadah knows (H to Og). gemmi also reads
+  // D (deuterium), which Tadah has not, and takes a type symbol (or, without
+  // the type-symbol column, a label) it cannot read as X.
+  for (const gemmi::SmallStructure::Site &site : struc.sites) {
+    if (site.element == gemmi::El::X)
+      throw std::runtime_error(source + ": site " + site.label + ": '" +
+                               site.type_symbol +
+                               "' is not an element symbol.");
+    const std::string symbol = site.element.name();
+    try {
+      tadah::core::PeriodicTable::find_by_symbol(symbol);
+    } catch (const std::runtime_error &) {
+      throw std::runtime_error(source + ": site " + site.label +
+                               " has element '" + symbol +
+                               "', which Tadah does not know: its elements "
+                               "are H to Og.");
+    }
+  }
+
   // A record that contradicts itself (or names nothing gemmi knows) is
   // reported; the structure is built with what gemmi found first.
   std::string diagnostic;
@@ -812,19 +849,22 @@ void CifReader::parseCif(const std::string &fileContents,
 
   auto sites = struc.get_all_unit_cell_sites();
 
-  auto volume = struc.cell.volume;
-  auto symmetry = struc.spacegroup_hm;
-  auto elements = struc.atom_types;
-  m_structure.label += " | Symmetry: " + symmetry;
-  m_structure.label += " | Volume: " + std::to_string(volume);
+  // The whole structure is built here and replaces the previous one only
+  // when it is complete, so a refused CIF leaves it as it was. The label
+  // names the space group the unit cell is built with, as the WARNINGs do
+  // (the H-M text as written is in the WARNINGs, where it differs).
+  Structure out;
+  out.label = (label_origin.empty() ? source : label_origin) +
+              " | Symmetry: " + group_label(struc, src) +
+              " | Volume: " + std::to_string(struc.cell.volume);
 
-  m_structure.atoms.reserve(sites.size());
+  out.atoms.reserve(sites.size());
   for (const auto &site : sites) {
     auto p = struc.cell.orthogonalize(site.fract);
     auto label = site.element.name();
     tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(label);
     Atom a(e, p.x, p.y, p.z, 0, 0, 0);
-    m_structure.atoms.push_back(a);
+    out.atoms.push_back(a);
   }
   // gemmi's orthogonalisation matrix maps fractional to Cartesian
   // coordinates (r = orth * f), so its COLUMNS are the lattice vectors.
@@ -832,9 +872,10 @@ void CifReader::parseCif(const std::string &fileContents,
   auto mat = struc.cell.orth.mat;
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      m_structure.cell(i, j) = mat.a[j][i];
+      out.cell(i, j) = mat.a[j][i];
     }
   }
+  m_structure = std::move(out);
 }
 } // namespace mlip
 } // namespace tadah

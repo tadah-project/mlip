@@ -2,6 +2,9 @@
 #include "tadah/mlip/design_matrix/functions/dm_function_base.h"
 #include "tadah/models/functions/kernels/kern_base.h"
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_base.h>
+
+#include <stdexcept>
+#include <string>
 namespace tadah {
 namespace mlip {
 
@@ -73,6 +76,31 @@ void  DM_Kern_Base::calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row
     }
   }
   row+=6;
+}
+ColumnLayout DM_Kern_Base::phi_layout(const ColumnLayout &descriptor_layout,
+                                      const tadah::core::Context &) const
+{
+  // Column b is K(basis vector b, aed) summed over the atoms: one block of
+  // the kernel's basis vectors, which are compared with the descriptors.
+  if (basis.cols() == 0)
+    throw std::runtime_error(
+        "DesignMatrix: kernel " + get_label() + " has no basis vectors "
+        "(SBASIS/BASIS): a non-linear kernel's design-matrix columns are "
+        "its basis vectors.");
+  if (basis.rows() != descriptor_layout.total_cols())
+    throw std::runtime_error(
+        "DesignMatrix: the basis vectors of kernel " + get_label() +
+        " have " + std::to_string(basis.rows()) + " components but the "
+        "descriptor has " + std::to_string(descriptor_layout.total_cols()) +
+        " (DSIZE): the basis (BASIS) does not belong to these descriptors.");
+  ColumnBlock b;
+  b.descriptor_label = get_label();
+  b.family = "kernel";
+  b.col_offset = 0;
+  b.col_count = basis.cols();
+  ColumnLayout L;
+  L.blocks.push_back(b);
+  return L;
 }
 } // namespace mlip
 } // namespace tadah

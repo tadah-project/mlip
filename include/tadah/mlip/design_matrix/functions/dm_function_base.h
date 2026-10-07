@@ -7,6 +7,7 @@
 #include <tadah/models/functions/function_base.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/st_descriptors.h>
+#include <tadah/mlip/design_matrix/column_block.h>
 
 #include <iomanip>
 #include <iostream>
@@ -26,6 +27,23 @@ struct DM_Function_Base: public virtual tadah::models::Function_Base {
   /** The design-matrix width: weights_count(DSIZE) of the basis function
    *  or kernel (models::Function_Base::weights_count). */
   virtual size_t get_phi_cols(const tadah::core::Context &)=0;
+
+  /** \brief The column layout of this function's design matrix, given the
+   *  layout of the descriptor it is built from (DescriptorsCalc::layout(),
+   *  DSIZE columns).
+   *
+   *  BF_Linear and Kern_Linear (one column per descriptor component)
+   *  return the descriptor layout unchanged. A non-linear function owns
+   *  one block over all of its get_phi_cols() columns: a kernel one
+   *  "kernel" block of its basis vectors (it throws when it has no basis
+   *  vectors, or when their length is not the descriptor's), and
+   *  BF_Polynomial2 one "BF" block of D(D+1)/2 columns. Which columns are
+   *  intercepts the function states with intercept_columns() (MODELS).
+   *
+   *  Pure, so that a new function cannot inherit a layout that is not
+   *  its own. */
+  virtual ColumnLayout phi_layout(const ColumnLayout &descriptor_layout,
+                                  const tadah::core::Context &) const=0;
   virtual void calc_phi_energy_row(tadah::core::phi_type &, size_t &,
                                    const Structure &, const StDescriptors &)=0;
   virtual void calc_phi_force_rows(tadah::core::phi_type &, size_t &,
