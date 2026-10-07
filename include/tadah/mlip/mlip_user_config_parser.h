@@ -33,7 +33,12 @@ namespace mlip {
  * - Every TASK section, with or without key lines, must name a blueprint
  *   task, or a runtime error naming it is thrown ('Unknown task section
  *   "BOGUS"'). "TASK global" is no exception: only the lines before the
- *   first TASK line are the GLOBAL section.
+ *   first TASK line are the GLOBAL section. A section that names a group of
+ *   tasks (a blueprint task with tasks of its own, such as "TASK data") is
+ *   refused too, naming the group's tasks ('TASK section "DATA" is a group
+ *   of tasks, not a task: write 'TASK data <task>', <task> one of: balance,
+ *   convert, ...'). Either error is thrown before any section is returned,
+ *   so a task file with such a section runs none of its tasks.
  *
  * Depending on the merge flag, each task section can optionally be merged 
  * with the global context, if a global context exists, where task keys 
@@ -89,7 +94,8 @@ public:
    * @return A vec of <section-name, Context> for each section discovered.
    *         "GLOBAL" is included only if non-empty.
    * @throws std::runtime_error if parsing fails, if a "TASK" line has no
-   *         name following it, or if a TASK section names no blueprint task.
+   *         name following it, or if a TASK section names no blueprint task
+   *         or a group of tasks.
    */
   std::vector<std::pair<std::string, core::Context>>
   parse(const std::vector<std::string>& lines, bool merge = true) const;
