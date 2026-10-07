@@ -1093,8 +1093,9 @@ std::string vasprun_refusal(const ScratchDir &tmp, const std::string &name,
  * the line and what it reads there, and stores nothing:
  *  - VRHFIN '=Qq:' (line 41): "VASP OUTCAR <path>: line 41: VRHFIN names
  *    'Qq', which is not an element symbol";
- *  - NIONS 'x4' (line 341): "... line 341: cannot read the number of ions
- *    NIONS from '<line>'";
+ *  - NIONS 'x4' or one too large for any count (line 341): "... line 341:
+ *    cannot read the number of ions NIONS from '<line>'", and the same for a
+ *    count of 'ions per type' too large;
  *  - 'ions per type' 'abc' (line 348): "... line 348: 'ions per type' must
  *    give one count for each of the 1 VRHFIN elements, got '<line>'";
  *  - 'ions per type' 53 (line 348): "... line 348: the ions per type add up
@@ -1135,6 +1136,14 @@ TEST_CASE("VASP OUTCAR reader: a value it cannot read is refused, naming the "
       {"nions", 341, "NIONS =     54", "NIONS =     x4",
        "line 341: cannot read the number of ions NIONS from 'number of dos "
        "     NEDOS =    301   number of ions     NIONS =     x4'"},
+      {"nions_huge", 341, "NIONS =     54", "NIONS =     99999999999999999999",
+       "line 341: cannot read the number of ions NIONS from 'number of dos "
+       "     NEDOS =    301   number of ions     NIONS =     "
+       "99999999999999999999'"},
+      {"per_type_huge", 348, "54", "99999999999999999999",
+       "line 348: 'ions per type' must give one count for each of the 1 "
+       "VRHFIN elements, got 'ions per type =              "
+       "99999999999999999999'"},
       {"per_type", 348, "54", "abc",
        "line 348: 'ions per type' must give one count for each of the 1 "
        "VRHFIN elements, got 'ions per type =              abc'"},

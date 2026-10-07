@@ -1959,7 +1959,7 @@ std::vector<std::string> edited(std::vector<std::string> lines, size_t n,
  * the line and what it reads there (geom.castep, and md_stress.castep for
  * the MD lines):
  *  - lattice vector 1 of a Unit Cell block 'abc' (line 271);
- *  - the number of ions 'x' (line 287);
+ *  - the number of ions 'x', or too large for any count (line 287);
  *  - the position of atom 1 'abc' (line 295), and the species 'Zz:1' (line
  *    303, which also names the label);
  *  - 'Final energy, E' and 'Final free energy (E-TS)' 'abc' (lines 393, 394);
@@ -1993,6 +1993,10 @@ TEST_CASE("CASTEP .castep reader: a value it cannot read is refused, naming "
       {"natoms", kGeomCastep, 287, "=   10", "=   x",
        "cannot read the number of ions from 'Total number of ions in cell =   "
        "x'"},
+      {"natoms_huge", kGeomCastep, 287, "=   10",
+       "=   99999999999999999999",
+       "cannot read the number of ions from 'Total number of ions in cell =   "
+       "99999999999999999999'"},
       {"position", kGeomCastep, 295, "-0.000000  -0.000000   0.318951",
        "abc  -0.000000   0.318951",
        "the position of atom 1, 'x  H            1        abc  -0.000000   "
