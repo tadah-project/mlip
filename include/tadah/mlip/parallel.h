@@ -20,8 +20,10 @@
  *     without OpenMP). Standalone MLIP, the `tadah train|predict` CLI, and the
  *     MODELS/MLIP test suites are therefore byte-identical to pre-Stage-2.3.
  *   - BACKEND installed: the application layer (HPO) calls set_parallel_backend()
- *     ONCE at startup with a closure that submits the loop body to its shared
- *     ScriptExecutor pool. parallel_for then routes every loop through that pool.
+ *     at the start of each run (hpo_run) with a closure that submits the loop
+ *     body to the run's ScriptExecutor pool, and clears it (an empty backend)
+ *     when the run ends, however it ends. While it is installed, parallel_for
+ *     routes every loop through that pool.
  *
  * MLIP cannot depend on HPO (HPO -> MLIP -> MODELS -> CORE), so the pool lives in
  * HPO and is injected here as a type-erased backend -- dependency-clean, and the
@@ -37,8 +39,9 @@
  * thread runs an index and WHEN, never a value. (Same invariant that lets the
  * pc_lammps fan-out reorder freely.)
  *
- * Threading of the setter: install the backend once at startup, before any
- * parallel_for runs. It is not meant to be swapped concurrently with kernels.
+ * Threading of the setter: install or clear the backend only while no
+ * parallel_for runs (HPO: when a run starts and when it ends). It is not
+ * meant to be swapped concurrently with kernels.
  */
 #include <cstddef>
 #include <exception>
@@ -54,7 +57,8 @@ using ParallelBackend =
     std::function<void(std::size_t n, const std::function<void(std::size_t)>& body)>;
 
 /* Install (or clear, by passing an empty std::function) the process-wide
- * parallel backend. Call once at startup before any parallel_for runs. */
+ * parallel backend. Call only while no parallel_for runs (HPO installs one
+ * for each run and clears it when the run ends). */
 void set_parallel_backend(ParallelBackend backend);
 
 /* True iff a non-empty backend is installed. */

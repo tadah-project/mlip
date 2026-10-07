@@ -18,8 +18,9 @@
 // intercepts) is declared by the function, Function_Base::
 // intercept_columns() in MODELS.
 //
-// Phase 6's per-iteration health monitor slices the trained weights by
-// these blocks (it reads HPO's Trainer::dm, which training never builds).
+// HPO's per-iteration health monitor (HEALTH_LOG) slices the weights of
+// every evaluation's model by the design-matrix layout, which it computes
+// as build() does: phi_layout() of the descriptor layout.
 
 #include <cstddef>
 #include <stdexcept>
