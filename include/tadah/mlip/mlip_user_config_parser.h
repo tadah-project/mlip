@@ -26,7 +26,19 @@ namespace mlip {
  * - Each discovered "TASK ..." line creates a new named section. An in-line
  *   comment ('#' to the end of the line) is not part of the name. If no
  *   tokens follow "TASK", a runtime error is thrown.
- * - A task can exist with zero subsequent lines, meaning an empty Context.
+ * - A task can exist with zero subsequent key lines (the next line is
+ *   another TASK line or the end of the input, or there are only blank and
+ *   comment lines before it): its own Context is empty, and merged with the
+ *   GLOBAL keys it holds those.
+ * - Every TASK section, with or without key lines, must name a blueprint
+ *   task, or a runtime error naming it is thrown ('Unknown task section
+ *   "BOGUS"'). "TASK global" is no exception: only the lines before the
+ *   first TASK line are the GLOBAL section. A section that names a group of
+ *   tasks (a blueprint task with tasks of its own, such as "TASK data") is
+ *   refused too, naming the group's tasks ('TASK section "DATA" is a group
+ *   of tasks, not a task: write 'TASK data <task>', <task> one of: balance,
+ *   convert, ...'). Either error is thrown before any section is returned,
+ *   so a task file with such a section runs none of its tasks.
  *
  * Depending on the merge flag, each task section can optionally be merged 
  * with the global context, if a global context exists, where task keys 
@@ -81,8 +93,9 @@ public:
    * @param merge Whether to merge each section with the global Context.
    * @return A vec of <section-name, Context> for each section discovered.
    *         "GLOBAL" is included only if non-empty.
-   * @throws std::runtime_error if parsing fails, or if a "TASK" 
-   *         line has no name following it.
+   * @throws std::runtime_error if parsing fails, if a "TASK" line has no
+   *         name following it, or if a TASK section names no blueprint task
+   *         or a group of tasks.
    */
   std::vector<std::pair<std::string, core::Context>>
   parse(const std::vector<std::string>& lines, bool merge = true) const;
@@ -102,6 +115,7 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    */
   struct Section {
     std::string name;
+    bool task = false;                ///< a TASK section (else GLOBAL)
     std::size_t first_line = 1;       ///< 1-based line number of lines[0]
     std::vector<std::string> lines;
   };
@@ -125,9 +139,9 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    * is thrown.
    *
    * @param lines The raw config file lines.
-   * @return The sections that have at least one line other than a blank or
-   *         comment line: a "GLOBAL" section only when such a line comes
-   *         before the first TASK.
+   * @return Every TASK section, with or without key lines, in input
+   *         order, after a "GLOBAL" section when a line other than a blank
+   *         or comment line comes before the first TASK.
    */
   std::vector<Section>
   splitSections(const std::vector<std::string>& lines) const;

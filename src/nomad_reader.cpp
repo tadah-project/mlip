@@ -31,103 +31,119 @@ void NomadReader::fetchAndParseNomad(const std::string &entryID) {
   if (rr.httpStatus != 200)
     throw std::runtime_error(
         failed_fetch_message("NomadReader", "entry", entryID, rr));
-  parseNomadJson(rr.response);
+  // The structure replaces the previous one only when the entry is read.
+  m_structure = parseNomadJson(rr.response, entryID);
 }
 
 /**
  * @brief parseNomadJson() extracts lattice vectors, site positions, etc.
+ *
+ * Every error names the entry: "NomadReader: entry '<entryID>': <what>",
+ * the JSON library's own errors (text that is not JSON, a value of another
+ * type) included.
  */
-void NomadReader::parseNomadJson(const std::string &jsonContent) {
+Structure NomadReader::parseNomadJson(const std::string &jsonContent,
+                                      const std::string &entryID) {
   using json = nlohmann::json;
-  auto root = json::parse(jsonContent);
+  auto fail = [&entryID](const std::string &what) {
+    return std::runtime_error("NomadReader: entry '" + entryID + "': " + what);
+  };
+  Structure st;
+  try {
+    auto root = json::parse(jsonContent);
 
-  if (!root.contains("data") || !root["data"].is_object()) {
-    throw std::runtime_error("NomadReader: 'data' missing or not an object.");
-  }
-  auto dataObj = root["data"];
-
-  if (!dataObj.contains("archive") || !dataObj["archive"].is_object()) {
-    throw std::runtime_error("NomadReader: 'archive' missing or not object.");
-  }
-  auto archive = dataObj["archive"];
-
-  // Additional checks, read synergy, etc. 
-  // ... same parsing logic as before ...
-
-  // Minimal illustration to show that we do the normal JSON parse
-  // to fill m_structure. For brevity, not showing all lines from the original code.
-  if (!archive.contains("results") || !archive["results"].contains("material")) {
-    throw std::runtime_error("NomadReader: no results.material found.");
-  }
-
-  auto material = archive["results"]["material"];
-  std::string spgSymbol = material.value("symmetry", json())
-                                  .value("space_group_symbol", "???");
-
-  auto topologies = material["topology"];
-  if (!topologies.is_array() || topologies.empty()) {
-    throw std::runtime_error("NomadReader: no topology array found.");
-  }
-  auto cellData = topologies[0]["cell"];
-  double volume = cellData.value("volume", 0.0);
-  double density = cellData.value("mass_density", 0.0);
-
-  auto optimade = archive["metadata"].value("optimade", json());
-  auto lattVecs = optimade["lattice_vectors"];
-
-  std::ostringstream labelStream;
-  labelStream << "NOMAD Entry: " << dataObj.value("entry_id", "???")
-              << " | SpaceGroup: " << spgSymbol
-              << " | Vol: " << volume
-              << " | Density: " << density;
-  m_structure.label = labelStream.str();
-
-  // Transfer lattice vectors
-  for (int i = 0; i < 3; ++i) {
-    for (int j = 0; j < 3; ++j) {
-      m_structure.cell(i, j) = lattVecs[i][j].get<double>();
+    if (!root.contains("data") || !root["data"].is_object()) {
+      throw fail("'data' missing or not an object.");
     }
-  }
+    auto dataObj = root["data"];
 
-  // Retrieve cartesian positions and species
-  if (!optimade.contains("cartesian_site_positions") ||
-      !optimade["cartesian_site_positions"].is_array()) {
-    throw std::runtime_error("parseNomadJson: 'cartesian_site_positions' missing/not array.");
-  }
-  auto cartesianSites = optimade["cartesian_site_positions"];
-
-  if (!optimade.contains("species_at_sites") ||
-      !optimade["species_at_sites"].is_array()) {
-    throw std::runtime_error("parseNomadJson: 'species_at_sites' missing/not array.");
-  }
-  auto speciesSites = optimade["species_at_sites"];
-
-  if (cartesianSites.size() != speciesSites.size()) {
-    throw std::runtime_error("parseNomadJson: Position-species array size mismatch.");
-  }
-
-  m_structure.atoms.reserve(cartesianSites.size());
-
-  // Combine site position with species
-  for (size_t i = 0; i < cartesianSites.size(); ++i) {
-    auto &pos = cartesianSites[i];
-    if (!pos.is_array() || pos.size() != 3) {
-      throw std::runtime_error("parseNomadJson: Site position requires 3 coordinates.");
+    if (!dataObj.contains("archive") || !dataObj["archive"].is_object()) {
+      throw fail("'archive' missing or not object.");
     }
-    double x = pos[0].get<double>();
-    double y = pos[1].get<double>();
-    double z = pos[2].get<double>();
+    auto archive = dataObj["archive"];
 
-    Atom atom;
-    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(speciesSites[i].get<std::string>());
-    static_cast<tadah::core::Element &>(atom) = e;
-    atom.position[0] = x;
-    atom.position[1] = y;
-    atom.position[2] = z;
+    if (!archive.contains("results") || !archive["results"].contains("material")) {
+      throw fail("no results.material found.");
+    }
 
-    m_structure.atoms.push_back(atom);
+    auto material = archive["results"]["material"];
+    std::string spgSymbol = material.value("symmetry", json())
+                                    .value("space_group_symbol", "???");
+
+    auto topologies = material["topology"];
+    if (!topologies.is_array() || topologies.empty()) {
+      throw fail("no topology array found.");
+    }
+    auto cellData = topologies[0]["cell"];
+    double volume = cellData.value("volume", 0.0);
+    double density = cellData.value("mass_density", 0.0);
+
+    auto optimade = archive["metadata"].value("optimade", json());
+    auto lattVecs = optimade["lattice_vectors"];
+
+    std::ostringstream labelStream;
+    labelStream << "NOMAD Entry: " << dataObj.value("entry_id", "???")
+                << " | SpaceGroup: " << spgSymbol
+                << " | Vol: " << volume
+                << " | Density: " << density;
+    st.label = labelStream.str();
+
+    // Transfer lattice vectors
+    for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+        st.cell(i, j) = lattVecs[i][j].get<double>();
+      }
+    }
+
+    // Retrieve cartesian positions and species
+    if (!optimade.contains("cartesian_site_positions") ||
+        !optimade["cartesian_site_positions"].is_array()) {
+      throw fail("'cartesian_site_positions' missing/not array.");
+    }
+    auto cartesianSites = optimade["cartesian_site_positions"];
+
+    if (!optimade.contains("species_at_sites") ||
+        !optimade["species_at_sites"].is_array()) {
+      throw fail("'species_at_sites' missing/not array.");
+    }
+    auto speciesSites = optimade["species_at_sites"];
+
+    if (cartesianSites.size() != speciesSites.size()) {
+      throw fail("Position-species array size mismatch.");
+    }
+
+    st.atoms.reserve(cartesianSites.size());
+
+    // Combine site position with species
+    for (size_t i = 0; i < cartesianSites.size(); ++i) {
+      auto &pos = cartesianSites[i];
+      if (!pos.is_array() || pos.size() != 3) {
+        throw fail("Site position requires 3 coordinates.");
+      }
+      double x = pos[0].get<double>();
+      double y = pos[1].get<double>();
+      double z = pos[2].get<double>();
+
+      const std::string species = speciesSites[i].get<std::string>();
+      Atom atom;
+      try {
+        static_cast<tadah::core::Element &>(atom) =
+            tadah::core::PeriodicTable::find_by_symbol(species);
+      } catch (const std::runtime_error &) {
+        throw fail("site " + std::to_string(i + 1) + " has species '" +
+                   species +
+                   "', which is not an element symbol Tadah knows (H to Og).");
+      }
+      atom.position[0] = x;
+      atom.position[1] = y;
+      atom.position[2] = z;
+
+      st.atoms.push_back(atom);
+    }
+  } catch (const json::exception &e) {
+    throw fail(e.what());
   }
-  // Done parsing
+  return st;
 }
 
 void NomadReader::makeCellMatrix(double a, double b, double c,

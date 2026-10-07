@@ -631,18 +631,20 @@ bool Structure::is_the_same(const Structure& st, double thr) const {
 }
 
 /**
- * Moves the file stream to skip over the next structure. 
+ * Moves the file stream to skip over the next structure.
  * Reason: Used to step through multiple structures in a single file.
  *
- * Returns the number of atoms of the skipped structure or 0 if there are no more.
+ * Returns false at the end of the file; otherwise true, with natoms the
+ * number of atoms of the skipped structure (0 for one without atoms, which
+ * is a structure as for read(), not the end of the file).
  */
-int Structure::next_structure(std::ifstream &ifs) {
+bool Structure::next_structure(std::ifstream &ifs, size_t &natoms) {
   std::string line;
   // Skip the structure label line, after any blank lines (a line of only
-  // whitespace, '\r' included, is blank, as in Structure::read); 0 at the
-  // end of the file.
+  // whitespace, '\r' included, is blank, as in Structure::read); false at
+  // the end of the file.
   do {
-    if (!std::getline(ifs, line)) return 0;
+    if (!std::getline(ifs, line)) return false;
   } while (tadah::core::is_blank_line(line));
 
   // Read the second line
@@ -663,12 +665,12 @@ int Structure::next_structure(std::ifstream &ifs) {
   for (size_t i = 0; i < 6; ++i)
     std::getline(ifs, line);
 
-  int natoms = 0;
+  natoms = 0;
   while(std::getline(ifs, line)) {
     if (tadah::core::is_blank_line(line)) break;
     natoms++;
   }
-  return natoms;
+  return true;
 }
 
 void Structure::clear_nn() {

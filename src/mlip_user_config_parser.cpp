@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <algorithm>
 #include <cctype>
 
 namespace tadah {
@@ -56,7 +57,8 @@ MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
 /**
  * @brief Parses a user config from lines, ensuring:
  *        - The first section is "GLOBAL" if it's non-empty (lines before any TASK).
- *        - Subsequent sections must match an entry in the blueprint’s getTasksMapRef().
+ *        - Every TASK section, with or without key lines, must match an
+ *          entry in the blueprint’s getTasksMapRef().
  *        - If mergeFlag is true, merges each section with the global context.
  */
 std::vector<std::pair<std::string, core::Context>>
@@ -84,14 +86,9 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
     const std::string &sectionName = namedSections[i].name;
     const auto &sectionLines       = namedSections[i].lines;
 
-    // If sectionName is not "GLOBAL", confirm it exists in the blueprint tasks
-    if (sectionName != "GLOBAL") {
-      // The blueprint tasks are keyed by the exact string e.g. "TASK.TRAIN", etc.
-      // std::cout << "DEBUG: MLIPUserConfigParser::parse: sectionName=" << sectionName << "\n";
-      // print all taskMap keys
-      // for (const auto &kv : taskMap) {
-      //   std::cout << "DEBUG  " << kv.first << "\n";
-      // }
+    // A TASK section must name a blueprint task, whatever its name ("TASK
+    // global" too: only the lines before the first TASK line are GLOBAL).
+    if (namedSections[i].task) {
       auto found = taskMap.find(sectionName);
       if (found == taskMap.end()) {
         // The user specified a "TASK..." that does not exist in the blueprint
@@ -100,7 +97,30 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
           "\". Must be defined in blueprint tasks."
         );
       }
-      // If found, we consider it valid. The backend parser will parse the lines themselves.
+      // A group of tasks (a blueprint task with tasks of its own, such as
+      // DATA) has no engine: only its tasks run, as TaskFactory requires of a
+      // command line. Refused here, before any task of the file runs.
+      const std::string prefix = sectionName + ".";
+      std::vector<std::string> subtasks;
+      for (const auto &kv : taskMap) {
+        if (kv.first.compare(0, prefix.size(), prefix) == 0) {
+          std::string sub = kv.first.substr(prefix.size());
+          std::replace(sub.begin(), sub.end(), '.', ' ');
+          subtasks.push_back(sub);
+        }
+      }
+      if (!subtasks.empty()) {
+        std::sort(subtasks.begin(), subtasks.end());
+        std::string line = core::to_lower(sectionName);
+        std::replace(line.begin(), line.end(), '.', ' ');
+        std::string list;
+        for (const auto &sub : subtasks) list += (list.empty() ? "" : ", ") + sub;
+        throw std::runtime_error(
+          "MLIPUserConfigParser::parse: TASK section \"" + sectionName +
+          "\" is a group of tasks, not a task: write 'TASK " + line +
+          " <task>', <task> one of: " + list + ".");
+      }
+      // A task: the backend parser will parse the lines themselves.
     }
 
     // Parse the lines for this section to produce a Context. Its errors
@@ -122,12 +142,13 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
 
 /**
  * @brief Splits lines into named sections:
- *        - The first section is "GLOBAL" if it has lines before "TASK..."
+ *        - The first section is "GLOBAL" if it has key lines before "TASK..."
  *        - Each "TASK..." line forms a new name like "TRAIN" or "DATA.convert",
  *          from the tokens before its in-line comment.
  *
- * Only returns "GLOBAL" if it was non-empty. If no lines for global,
- * we skip it. 
+ * Only returns "GLOBAL" if it has a key line. Every TASK section is
+ * returned, with or without key lines: its name is checked by the caller,
+ * and a keyless task runs on the GLOBAL keys.
  */
 std::vector<MLIPUserConfigParser::Section>
 MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
@@ -136,12 +157,13 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
   sections.reserve(8); // optional
 
   // The section being read. Its blank and comment lines are kept, so that
-  // its lines keep the input's line numbers; it is returned only when it
-  // has another line (hasContent).
-  Section current{"GLOBAL", 1, {}};
+  // its lines keep the input's line numbers. A TASK section is always
+  // returned; the GLOBAL section only when it has another line
+  // (hasContent).
+  Section current{"GLOBAL", false, 1, {}};
   bool hasContent = false;
   auto finish = [&]() {
-    if (hasContent) {
+    if (hasContent || current.task) {
       sections.push_back(std::move(current));
     }
   };
@@ -191,7 +213,7 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
 
       // Switch to the new section, which starts on the next line (line n
       // is line n + 1 of the input).
-      current = Section{newSectionName, n + 2, {}};
+      current = Section{newSectionName, true, n + 2, {}};
       hasContent = false;
     }
     else {

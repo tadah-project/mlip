@@ -46,6 +46,13 @@ public:
    * message holds no request URL, no header and not the API key (the
    * provider sends the key in a request header). The previous structure is
    * kept.
+   *
+   * A material that cannot be read is refused naming it, the site of an
+   * element Tadah does not know too:
+   *
+   *     MaterialsProjectReader: material 'mp-149': site 2 has element 'Xx', which is not an element symbol Tadah knows (H to Og).
+   *
+   * and the previous structure is kept.
    */
   void read(const std::string &mpID) override;
 
@@ -66,9 +73,16 @@ private:
   void fetchAndParseMP(const std::string &mpID);
 
   /**
-   * @brief Parses MP JSON to retrieve the lattice matrix and atomic positions.
+   * @brief The structure of material @p mpID's MP JSON: the lattice matrix
+   *        and the atomic positions.
+   *
+   * Every error names the material, "MaterialsProjectReader: material
+   * '<mpID>': <what>": a missing field, text that is not JSON, and a site
+   * whose element is not an element symbol Tadah knows ("site 2 has element
+   * 'Xx', which is not an element symbol Tadah knows (H to Og).").
    */
-  void parseMpJson(const std::string &jsonContent);
+  static Structure parseMpJson(const std::string &jsonContent,
+                               const std::string &mpID);
 };
 
 } // namespace mlip

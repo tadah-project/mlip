@@ -296,7 +296,8 @@ void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
       "positions_fractional" is refused.
 
   These are refused with a std::runtime_error naming the entry's auid and
-  the field: a field in neither form, a geometry of other than six numbers,
+  the field: a species that is not an element symbol Tadah knows (H to Og),
+  a field in neither form, a geometry of other than six numbers,
   a site of other than three, a composition count that is not a whole
   number 0 or more, and an entry whose species, composition counts and
   positions do not match. On any refusal the reader's structure is left as
@@ -366,6 +367,16 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
                              "' has no \"species\".");
   }
   const std::vector<std::string> speciesList = read_species(*species, auid);
+  // Every species is an element Tadah knows.
+  std::vector<tadah::core::Element> elements;
+  for (const std::string &symbol : speciesList) {
+    try {
+      elements.push_back(tadah::core::PeriodicTable::find_by_symbol(symbol));
+    } catch (const std::runtime_error &) {
+      refuse(auid, "species '" + symbol +
+                       "' is not an element symbol Tadah knows (H to Og).");
+    }
+  }
 
   const json *composition = field(root, "composition");
   if (!composition) {
@@ -417,7 +428,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   st.atoms.reserve(positions.size());
   size_t idxPos = 0;
   for (size_t iSpec = 0; iSpec < speciesList.size(); ++iSpec) {
-    tadah::core::Element e = tadah::core::PeriodicTable().find_by_symbol(speciesList[iSpec]);
+    const tadah::core::Element &e = elements[iSpec];
     const size_t count = static_cast<size_t>(stoichCount[iSpec]);
     for (size_t rep = 0; rep < count; ++rep) {
       Atom atom;

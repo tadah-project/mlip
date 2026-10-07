@@ -1764,6 +1764,73 @@ TEST_CASE("CASTEP readers: a tagged label with an unknown element is refused by 
   }
 }
 
+// Pins: an error of the CASTEP .cell reader names the file, as
+//   CastepCellReader: CASTEP cell file <path>: <what>
+// for a species label that is no element ('Qq:up', the second atom: exactly
+// "... <path>: CASTEP species label 'Qq:up' does not start with an element
+// symbol"), a file without a positions block and an unknown length unit
+// ('furlong'). A reader that read a good .cell (2 Ta atoms in a 3.3 A cube)
+// keeps its structure (label, cell and atoms) after each refused file, and
+// reading the good file again gives its 2 atoms, not 4.
+// Before the fix: the messages began "CastepCellReader: " or "CASTEP species
+// label" and named no file; the file refused at its second atom had already
+// replaced the reader's cell (4 A) and appended its first atom (3 atoms), so
+// the structure checks of every later refused file failed too, and reading
+// the good file again appended its atoms (5).
+TEST_CASE("CASTEP .cell reader: an error names the file, and a refused file "
+          "leaves the structure",
+          "[castep_readers][cell][species]") {
+  PeriodicTable::initialize();
+  const std::string cube4 =
+      "%BLOCK LATTICE_CART\nANG\n4.0 0 0\n0 4.0 0\n0 0 4.0\n%ENDBLOCK LATTICE_CART\n";
+  TempFile good("tmp_castep_rv_source_good.cell");
+  good.write_text(
+      "%BLOCK LATTICE_CART\nANG\n3.3 0 0\n0 3.3 0\n0 0 3.3\n%ENDBLOCK LATTICE_CART\n"
+      "%BLOCK POSITIONS_FRAC\nTa 0.0 0.0 0.0\nTa 0.5 0.5 0.5\n"
+      "%ENDBLOCK POSITIONS_FRAC\n");
+  struct Bad {
+    std::string name, body, what;
+  };
+  const std::vector<Bad> bad = {
+      {"tmp_castep_rv_source_species.cell",
+       cube4 + "%BLOCK POSITIONS_FRAC\nTa 0.0 0.0 0.0\nQq:up 0.5 0.5 0.5\n"
+               "%ENDBLOCK POSITIONS_FRAC\n",
+       "CASTEP species label 'Qq:up' does not start with an element symbol"},
+      {"tmp_castep_rv_source_nopos.cell", cube4, "no positions block"},
+      {"tmp_castep_rv_source_unit.cell",
+       "%BLOCK LATTICE_CART\nfurlong\n4.0 0 0\n0 4.0 0\n0 0 4.0\n"
+       "%ENDBLOCK LATTICE_CART\n%BLOCK POSITIONS_FRAC\nTa 0.0 0.0 0.0\n"
+       "%ENDBLOCK POSITIONS_FRAC\n",
+       "unknown length unit 'furlong'"}};
+  CastepCellReader reader;
+  REQUIRE_NOTHROW(reader.read(good.path));
+  const Structure before = reader.getStructure();
+  REQUIRE(before.natoms() == 2);
+  for (const auto &b : bad) {
+    TempFile tmp(b.name);
+    tmp.write_text(b.body);
+    INFO(b.name << ":\n" << b.body);
+    std::string msg;
+    try {
+      reader.read(tmp.path);
+    } catch (const std::runtime_error &e) {
+      msg = e.what();
+    }
+    INFO("message: '" << msg << "'");
+    const std::string head = "CastepCellReader: CASTEP cell file " + tmp.path + ": ";
+    CHECK(msg.rfind(head, 0) == 0);
+    CHECK_THAT(msg, Catch::Contains(b.what));
+    if (b.name == "tmp_castep_rv_source_species.cell") CHECK(msg == head + b.what);
+    const Structure after = reader.getStructure();
+    CHECK(after.label == before.label);
+    CHECK(after.natoms() == 2);
+    for (int i = 0; i < 3; ++i)
+      for (int k = 0; k < 3; ++k) CHECK(after.cell(i, k) == before.cell(i, k));
+  }
+  REQUIRE_NOTHROW(reader.read(good.path));
+  CHECK(reader.getStructure().natoms() == 2);
+}
+
 // --------------------------------------------------------------------
 // CASTEP cell writer (report_readers.md D5)
 // --------------------------------------------------------------------

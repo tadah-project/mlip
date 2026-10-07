@@ -18,7 +18,12 @@
  * stand-ins of the shape each service answers with (JSON, or an HTML page
  * for COD), not captured answers. Each reader is built on the stub with
  * R(std::unique_ptr<IMaterialsDataProvider>), as AflowReader is; the
- * constructor is detected, so that the file compiles before it exists. */
+ * constructor is detected, so that the file compiles before it exists.
+ *
+ * An entry the service does return is parsed; NomadReader and
+ * MaterialsProjectReader name the entry or material (the ID given to
+ * read()) and the site when a site's element is one Tadah does not know,
+ * and a refused entry leaves the reader's structure as it was. */
 #include "catch2/catch.hpp"
 
 #include <tadah/core/periodic_table.h>
@@ -378,4 +383,145 @@ TEST_CASE("COD reader: a site whose element Tadah does not know is refused, "
         "know: its elements are H to Og.");
   CHECK(got[1].st.label == got[0].st.label);
   CHECK(got[1].st.natoms() == 2);
+}
+
+namespace {
+
+/* A NOMAD entry as the archive query answers it, cut to the fields
+ * NomadReader reads: bcc Fe, a = 2.8665 A, two sites whose species are
+ * `first` and `second`. */
+std::string nomad_fe(const std::string &entry_id, const std::string &first,
+                     const std::string &second) {
+  return R"({"data":{"entry_id":")" + entry_id +
+         R"(","archive":{"results":{"material":{"symmetry":)"
+         R"({"space_group_symbol":"Im-3m"},"topology":[{"cell":)"
+         R"({"volume":2.355e-29,"mass_density":7874.0}}]}},)"
+         R"("metadata":{"optimade":{"lattice_vectors":)"
+         R"([[2.8665,0,0],[0,2.8665,0],[0,0,2.8665]],)"
+         R"("cartesian_site_positions":[[0,0,0],[1.43325,1.43325,1.43325]],)"
+         R"("species_at_sites":[")" +
+         first + R"(",")" + second + R"("]}}}}})";
+}
+
+/* A Materials Project "materials/core" answer, cut to the fields
+ * MaterialsProjectReader reads: bcc Fe, a = 2.8665 A, two sites whose
+ * element (and label) are `first` and `second`. */
+std::string mp_fe(const std::string &material_id, const std::string &first,
+                  const std::string &second) {
+  auto site = [](const std::string &el, const std::string &abc) {
+    return R"({"species":[{"element":")" + el + R"(","occu":1}],"abc":)" +
+           abc + R"(,"label":")" + el + R"("})";
+  };
+  return R"({"data":[{"material_id":")" + material_id +
+         R"(","symmetry":{"symbol":"Im-3m"},"volume":23.553521,)"
+         R"("density":7.87,"elements":["Fe"],"structure":{"lattice":)"
+         R"({"matrix":[[2.8665,0,0],[0,2.8665,0],[0,0,2.8665]]},"sites":[)" +
+         site(first, "[0,0,0]") + "," + site(second, "[0.5,0.5,0.5]") +
+         "]}}]}";
+}
+
+}  // namespace
+
+/* Pins: NomadReader names the entry, as the ID given to read(), in its
+ * errors: through a stub provider,
+ *   - read("zyXFe") of bcc Fe gives 2 atoms; reading it again gives 2 atoms
+ *     (the structure is replaced, not added to);
+ *   - read("zyXD") of an entry whose second site has species 'D'
+ *     (deuterium, which Tadah has not) throws exactly
+ *       NomadReader: entry 'zyXD': site 2 has species 'D', which is not an
+ *       element symbol Tadah knows (H to Og).
+ *     and keeps the previous structure (label and 2 atoms);
+ *   - read("zyXbad") of a body that is not JSON throws a std::runtime_error
+ *     that starts "NomadReader: entry 'zyXbad': ".
+ * Before the fix: the periodic table's error escaped, 'Unknown symbol: D',
+ * naming neither the entry nor the site; the second read of bcc Fe appended
+ * its atoms to the first ones (4 atoms), the refused entry had set its label
+ * and appended its first atom (5), and the JSON parser's own
+ * exception (nlohmann::json::parse_error, not a std::runtime_error) escaped
+ * read_through, naming no entry. */
+TEST_CASE("NOMAD reader: a site whose element Tadah does not know is "
+          "refused, naming the entry and the site",
+          "[nomad][structure_readers][data_providers]") {
+  tadah::core::PeriodicTable::initialize();
+  CHECK(takes_provider<NomadReader>);
+  const auto script =
+      script_of({{200, nomad_fe("zyXFe", "Fe", "Fe")},
+                 {200, nomad_fe("zyXFe", "Fe", "Fe")},
+                 {200, nomad_fe("zyXD", "Fe", "D")}});
+  std::vector<Outcome> got;
+  REQUIRE_NOTHROW(got = read_through<NomadReader>(
+                      script, {"zyXFe", "zyXFe", "zyXD"}));
+  REQUIRE(got.size() == 3);
+  INFO("first read: " << got[0].error);
+  CHECK_FALSE(got[0].threw);
+  CHECK(got[0].st.natoms() == 2);
+  INFO("second read: " << got[1].error);
+  CHECK_FALSE(got[1].threw);
+  CHECK(got[1].st.natoms() == 2);
+  INFO("third read: " << got[2].error);
+  CHECK(got[2].threw);
+  CHECK(got[2].error ==
+        "NomadReader: entry 'zyXD': site 2 has species 'D', which is not an "
+        "element symbol Tadah knows (H to Og).");
+  CHECK(got[2].st.label == got[0].st.label);
+  CHECK(got[2].st.natoms() == 2);
+  // A body that is not JSON: the parser's error, named by the reader.
+  const auto bad_script = script_of({{200, "<html>not JSON</html>"}});
+  std::vector<Outcome> bad;
+  REQUIRE_NOTHROW(bad = read_through<NomadReader>(bad_script, {"zyXbad"}));
+  REQUIRE(bad.size() == 1);
+  INFO("not JSON: " << bad[0].error);
+  CHECK(bad[0].threw);
+  CHECK(bad[0].error.rfind("NomadReader: entry 'zyXbad': ", 0) == 0);
+}
+
+/* Pins: MaterialsProjectReader names the material, as the ID given to
+ * read(), in its errors: through a stub provider,
+ *   - read("mp-13") of bcc Fe gives 2 atoms; reading it again gives 2
+ *     atoms;
+ *   - read("mp-xx") of a material whose second site has element 'Xx'
+ *     throws exactly
+ *       MaterialsProjectReader: material 'mp-xx': site 2 has element 'Xx',
+ *       which is not an element symbol Tadah knows (H to Og).
+ *     and keeps the previous structure (label and 2 atoms);
+ *   - read("mp-bad") of a body that is not JSON throws a std::runtime_error
+ *     that starts "MaterialsProjectReader: material 'mp-bad': ".
+ * Before the fix: 'Unknown symbol: Xx' escaped, naming neither the material
+ * nor the site; the second read of bcc Fe appended its atoms (4 atoms), the
+ * refused material had set its label and appended its first atom (5), and
+ * the JSON parser's own exception (nlohmann::json::parse_error, not a
+ * std::runtime_error) escaped read_through, naming no material. */
+TEST_CASE("Materials Project reader: a site whose element Tadah does not "
+          "know is refused, naming the material and the site",
+          "[materials_project][structure_readers][data_providers]") {
+  tadah::core::PeriodicTable::initialize();
+  CHECK(takes_provider<MaterialsProjectReader>);
+  const auto script = script_of({{200, mp_fe("mp-13", "Fe", "Fe")},
+                                 {200, mp_fe("mp-13", "Fe", "Fe")},
+                                 {200, mp_fe("mp-xx", "Fe", "Xx")}});
+  std::vector<Outcome> got;
+  REQUIRE_NOTHROW(got = read_through<MaterialsProjectReader>(
+                      script, {"mp-13", "mp-13", "mp-xx"}));
+  REQUIRE(got.size() == 3);
+  INFO("first read: " << got[0].error);
+  CHECK_FALSE(got[0].threw);
+  CHECK(got[0].st.natoms() == 2);
+  INFO("second read: " << got[1].error);
+  CHECK_FALSE(got[1].threw);
+  CHECK(got[1].st.natoms() == 2);
+  INFO("third read: " << got[2].error);
+  CHECK(got[2].threw);
+  CHECK(got[2].error ==
+        "MaterialsProjectReader: material 'mp-xx': site 2 has element 'Xx', "
+        "which is not an element symbol Tadah knows (H to Og).");
+  CHECK(got[2].st.label == got[0].st.label);
+  CHECK(got[2].st.natoms() == 2);
+  // A body that is not JSON: the parser's error, named by the reader.
+  const auto bad_script = script_of({{200, "<html>not JSON</html>"}});
+  std::vector<Outcome> bad;
+  REQUIRE_NOTHROW(bad = read_through<MaterialsProjectReader>(bad_script, {"mp-bad"}));
+  REQUIRE(bad.size() == 1);
+  INFO("not JSON: " << bad[0].error);
+  CHECK(bad[0].threw);
+  CHECK(bad[0].error.rfind("MaterialsProjectReader: material 'mp-bad': ", 0) == 0);
 }
