@@ -1196,3 +1196,71 @@ TEST_CASE_METHOD(PTFixture,
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+//  refit_range_report.dat describes the fit that ran
+// ---------------------------------------------------------------------------
+namespace {
+// One function row of refit_range_report.dat ("F   lo hi wlo whi  # note").
+struct RangeRow {
+  double full_lo = 0, full_hi = 0, win_lo = 0, win_hi = 0;
+  std::string note;  ///< the text after "# "
+};
+RangeRow range_row(const std::string &function) {
+  std::istringstream in(slurp("refit_range_report.dat"));
+  for (std::string line; std::getline(in, line);) {
+    std::istringstream ls(line);
+    std::string name;
+    if (!(ls >> name) || name != function) continue;
+    RangeRow row;
+    ls >> row.full_lo >> row.full_hi >> row.win_lo >> row.win_hi;
+    const auto hash = line.find("# ");
+    if (hash != std::string::npos) row.note = line.substr(hash + 2);
+    return row;
+  }
+  FAIL("refit_range_report.dat has no " << function << " row");
+  return {};
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit dense: refit_range_report.dat's F row describes "
+                 "the dense fit's basis placement",
+                 "[refit][engine][integration]") {
+  /* Pins: after a dense fit with REFIT_PLACEMENT window (the default) the F
+   * row of refit_range_report.dat has the fit window [0, rho_reach], below
+   * the table's rhomax (60), and the note "tail keeps a small uniform
+   * basis; control: REFIT_REACH_MARGIN"; with REFIT_PLACEMENT uniform (one
+   * uniform basis over the table, no reachable window) its window is the
+   * full range [0, 60] and its note "one uniform basis fitted on the full
+   * range (REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT", and the
+   * report names no tail basis.
+   * Before the fix: the window case passes as well (a pin); under uniform
+   * the note was the window placement's "tail keeps a small uniform basis;
+   * control: REFIT_REACH_MARGIN", a tail the uniform basis does not have. */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  {
+    (void)run_refit(dense_refit_context("synth_fcc.eam.alloy"));
+    const RangeRow F = range_row("F");
+    CHECK(F.full_lo == 0.0);
+    CHECK(F.full_hi == Approx(60.0));
+    CHECK(F.win_lo == 0.0);
+    CHECK(F.win_hi > 0.0);
+    CHECK(F.win_hi < 0.999 * F.full_hi);
+    CHECK(F.note == "tail keeps a small uniform basis; control: "
+                    "REFIT_REACH_MARGIN");
+  }
+  {
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.add("REFIT_PLACEMENT", std::string("uniform"));
+    (void)run_refit(c);
+    const RangeRow F = range_row("F");
+    CHECK(F.win_lo == 0.0);
+    CHECK(F.win_hi == F.full_hi);
+    CHECK(F.note == "one uniform basis fitted on the full range "
+                    "(REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT");
+    CHECK(slurp("refit_range_report.dat").find("small uniform basis") ==
+          std::string::npos);
+  }
+}
