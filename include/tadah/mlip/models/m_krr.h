@@ -14,6 +14,7 @@
 #include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
+#include <tadah/mlip/training_datasets.h>
 
 #include <limits>
 #include <stdexcept>
@@ -47,7 +48,11 @@ namespace mlip {
  * **Implementation 2** fits energies only, by solving
  * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
  * intercept vectors, with target 0, and the mean descriptors of drawn
- * structures, with their energies per atom).
+ * structures, with their energies per atom). A non-linear kernel's weights
+ * are w, and its potential records SBASIS and BASIS. Kern_Linear's are the
+ * descriptor weights of its basis vectors, \f$ \sum_j w_j \mathbf{b}_j \f$
+ * (converted to the raw descriptors with NORM, as implementation 1's): its
+ * potential has DSIZE WEIGHTS and no BASIS, as implementation 1's.
  *
  * **Configuration options**:
  * - **MPARAMS**: the kernel's parameters: sigma for Kern_RBF
@@ -225,8 +230,19 @@ public:
     context.add("FORCE", force);
     context.add("STRESS", stress);
     basis.prep_basis_for_krr(st_desc_db_temp,stdb);
-    kernel.set_basis(basis.b);
+    // A non-linear kernel predicts with the basis vectors; Kern_Linear's
+    // weights are the descriptor weights they make (M_KRR_Train::train2),
+    // so it keeps no basis.
+    if (kernel.get_label()!="Kern_Linear")
+      kernel.set_basis(basis.b);
     tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
+    // With NORM the basis vectors are normalised descriptors: Kern_Linear's
+    // weights go to the raw descriptors, as implementation 1's do
+    // (train(desmat)), since its prediction does not normalise.
+    if (context.template get<bool>("NORM") &&
+      kernel.get_label()=="Kern_Linear") {
+      weights = convert_to_nweights(weights);
+    }
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
@@ -257,11 +273,12 @@ tadah::core::Context get_param_file() {
     // context without it throws (the DM_REAM ctor refused it already).
     tadah::models::normalise_embf0_key(c);
     tadah::models::normalise_rhoform_key(c);
-    c.remove("ALPHA");
-    c.remove("BETA");
-    c.remove("DBFILE");
-    // FORCE and STRESS stay, as in M_BLR: the potential records what its
-    // fit used (tadah predict's -F/-S and pair_style tadah do not read them).
+    // The model's settings and its fit, not the training data, as M_BLR's:
+    // no DBFILE; ALPHA and BETA (the evidence approximation's starting
+    // guesses, or the values a LAMBDA -1 fit found) stay, and so do FORCE
+    // and STRESS: the potential records what its fit used (tadah predict's
+    // -F/-S and pair_style tadah do not read them).
+    remove_training_datasets(c);
 
     c.remove("MODEL");
     c.add("MODEL", label);

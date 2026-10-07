@@ -56,7 +56,10 @@ bool is_krr_implementation_2(const tadah::core::Context &ctx);
  *  DM_Function_Base::get_phi_cols(ctx)), except for a model whose basis is
  *  drawn from the training data (basis_drawn_from_training_data), whose K
  *  is SBASIS, the number of basis vectors training draws (before training
- *  f has none, and its width is 0). Throws, naming SBASIS, when such a
+ *  f has none, and its width is 0). M_KRR Kern_Linear implementation 2 has
+ *  DSIZE: its solve finds the coefficients of SBASIS basis vectors, and its
+ *  weights are the descriptor weights they make (MODELS
+ *  M_KRR_Train::train2). Throws, naming SBASIS, when such a
  *  model has no SBASIS or fewer than its n0 intercept vectors plus one
  *  drawn vector (n0 + 1: the bound of the basis draw,
  *  sbasis_lower_bound_problem; 3 with BIAS true on two species). @p ctx

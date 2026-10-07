@@ -13,6 +13,7 @@
 #include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
+#include <tadah/mlip/training_datasets.h>
 
 #include <limits>
 #include <stdexcept>
@@ -170,11 +171,9 @@ public:
     // context without it throws (the DM_REAM ctor refused it already).
     tadah::models::normalise_embf0_key(c);
     tadah::models::normalise_rhoform_key(c);
-    //c.remove("ALPHA");
-    //c.remove("BETA");
-    // c.remove("DBFILE");
-    // c.remove("FORCE");
-    // c.remove("STRESS");
+    // The model's settings and its fit, not the training data: no DBFILE
+    // (as M_KRR's); ALPHA, BETA, FORCE and STRESS stay.
+    remove_training_datasets(c);
 
     c.remove("MODEL");
     c.add("MODEL", label);

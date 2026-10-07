@@ -115,8 +115,9 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols) {
   // M_KRR implementation 2 pins no weight: its FIXINDEX is refused before
-  // it is read against n_cols, which is not its weight count for
-  // Kern_Linear (DSIZE, while it fits SBASIS basis vectors).
+  // it is read against n_cols (its solve fits the coefficients of SBASIS
+  // basis vectors at once; with Kern_Linear they make its DSIZE
+  // descriptor weights).
   if (is_krr_implementation_2(ctx))
     tadah::models::refuse_fixed_weights_in_train2(
         ctx, ctx.get<std::string>("MODEL", 1));

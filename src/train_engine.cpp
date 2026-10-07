@@ -18,6 +18,7 @@
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/mlip/training_datasets.h>
 
 namespace tadah {
 namespace mlip {
@@ -47,6 +48,9 @@ void hint_embf0_reference(const Trainer &tr,
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
+  // One dataset listed twice would be fitted twice: refused before any
+  // file is read.
+  require_distinct_training_datasets(context);
   models::D_mJoin::expand_grids(context);
   // Knot-family refit configs: RCUT2B/RCUTMB are derived from the largest
   // knot — a hand-tweaked/stale stated value is warned about and corrected
@@ -162,6 +166,10 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // error during pair_coeff and a downstream null-deref in calc_rho.
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
+  // A potential records no training data (a refit --edit potential is a
+  // copy of its input's context, which may be an M_BLR potential written
+  // with its DBFILE).
+  remove_training_datasets(modContext);
   tadah::models::normalise_embf0_key(modContext);
   // A DM_REAM potential must declare its density form (absent -> throws
   // before the file is opened, so nothing is written); the key is
