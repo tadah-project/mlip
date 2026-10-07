@@ -712,10 +712,21 @@ int RefitEngine::run(tadah::mlip::Task &task) {
             "(offset-matched); control: REFIT_R_LO_FRAC, REFIT_REACH_SMIN\n";
       os << "rho " << refit.r_lo() << " " << rc << " " << rwin << " " << rc
          << "  # same conventions as phi\n";
+      // The F note describes the fit that ran: the compact fit covers
+      // [0, rho_reach] and refit.eam joins the table above it
+      // (EAMRefit::set_rho_join); the dense fit's windowed placement keeps a
+      // small uniform basis on the tail above it, and REFIT_PLACEMENT
+      // uniform fits one uniform basis on the whole range (rho_reach 0).
       os << "F   " << 0.0 << " " << eam.rhomax() << " " << 0.0 << " "
          << (refit.rho_reach() > 0 ? refit.rho_reach() : eam.rhomax())
-         << "  # tail keeps a small uniform basis; control: "
-            "REFIT_REACH_MARGIN\n";
+         << (fitted ? "  # above fit_window_hi the setfl carries the ORIGINAL "
+                      "table (offset-matched); control: REFIT_REACH_SMIN, "
+                      "REFIT_REACH_MARGIN\n"
+             : cfg.placement == "uniform"
+                 ? "  # one uniform basis fitted on the full range "
+                   "(REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT\n"
+                 : "  # tail keeps a small uniform basis; control: "
+                   "REFIT_REACH_MARGIN\n");
       os << "# reachability: r_1nn-compressed=" << refit.r_reach()
          << " A  rho_max-reachable=" << refit.rho_reach()
          << " (lattice " << (refit.lattice_known() ? lat : lat + "?")
