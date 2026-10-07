@@ -500,3 +500,43 @@ TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
                         "[\"\"]."));
   }
 }
+
+// Pins: a species Tadah does not know is refused in either form with a
+// std::runtime_error naming the entry and the symbol: rock-salt NaCl with
+// its species "D,Na" / ["D","Na"] (deuterium, which Tadah has not) or
+// "Xx,Na" / ["Xx","Na"] throws exactly
+//   AflowReader: entry 'aflow:0000000000000003': species 'D' is not an
+//   element symbol Tadah knows (H to Og).
+// and a reader that read bcc Ta before keeps that structure (label and
+// atom).
+// Before the fix: the periodic table's own error escaped, 'Unknown symbol:
+// D' (resp. 'Xx'), naming neither the entry nor the field.
+TEST_CASE("AFLOW reader: a species Tadah does not know is refused, naming "
+          "the entry",
+          "[structure_readers][aflow][aflow_typed]") {
+  PeriodicTable::initialize();
+  const Entry ta = entries()[0];
+  const Entry nacl = entries()[2];
+  for (const std::string symbol : {"D", "Xx"}) {
+    for (const Form base : {Form::String, Form::Typed}) {
+      const std::string value = base == Form::String
+                                    ? q(symbol + ",Na")
+                                    : "[" + q(symbol) + "," + q("Na") + "]";
+      const std::string json = entry_json(nacl, base, {}, "species", value);
+      INFO((base == Form::String ? "string form: " : "typed form: ") << json);
+      AflowReader reader;
+      REQUIRE_NOTHROW(reader.parseAflowJson(entry_json(ta, base)));
+      const Structure before = reader.getStructure();
+      std::string what;
+      try {
+        reader.parseAflowJson(json);
+      } catch (const std::runtime_error &e) {
+        what = e.what();
+      }
+      CHECK(what == "AflowReader: entry '" + nacl.auid + "': species '" +
+                        symbol +
+                        "' is not an element symbol Tadah knows (H to Og).");
+      check_same(reader.getStructure(), before);
+    }
+  }
+}

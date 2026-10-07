@@ -4,6 +4,7 @@
 #include <tadah/core/utils.h>
 #include <tadah/core/logger.h>
 
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <tadah/core/number_format.h>
@@ -11,6 +12,29 @@
 #include <cctype>   // For std::isspace
 namespace tadah {
 namespace mlip {
+
+namespace {
+/* Reads the next structure of `ifs` into `s`, after any blank lines (one
+ * without atoms is a structure): false at the end of the file, where none is
+ * left. Errors name the file `fn` and the structure, `position` + 1. */
+bool read_next_structure(std::ifstream &ifs, const std::string &fn,
+                         size_t position, Structure &s) {
+  while (!ifs.eof()) {
+    if (ifs.fail())
+      throw std::runtime_error("DBFILE " + fn + ": cannot read on after structure " +
+                               std::to_string(position));
+    int t;
+    try {
+      t = s.read(ifs);
+    } catch (const std::exception &e) {
+      throw std::runtime_error("DBFILE " + fn + ": structure " +
+                               std::to_string(position + 1) + ": " + e.what());
+    }
+    if (t == 0) return true;  // t == 1: a blank line
+  }
+  return false;
+}
+}  // namespace
 
 StructureDB::StructureDB() {
   tadah::core::PeriodicTable::initialize();
@@ -56,37 +80,57 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
-  // move iterator to the first structure we want to read
+  // move iterator to the first structure we want to read; a file with
+  // fewer structures has nothing to load (stop at its end: `first` may be
+  // as large as SIZE_MAX). A structure without atoms is skipped as one.
+  size_t natoms;
   for (size_t i=0; i<first; ++i) {
-    Structure::next_structure(ifs);
+    if (!Structure::next_structure(ifs, natoms)) return 0;
   }
 
   // N structures, blank lines between them not counted.
   size_t read = 0;
   while (N > 0 && read < static_cast<size_t>(N)) {
-    structures.push_back(Structure());
-    int t;
-    try {
-      t = structures.back().read(ifs);
-    } catch (const std::exception &e) {
-      structures.pop_back();
-      throw std::runtime_error("DBFILE " + fn + ": structure " +
-                               std::to_string(first + read + 1) + ": " + e.what());
-    }
-
-    // did we read structure successfully?
-    // if not remove last object from the list
-    if (t==1) structures.pop_back();
-    else ++read;
-
-    if (ifs.eof()) break;
-    if (ifs.fail())
-      throw std::runtime_error("DBFILE " + fn + ": cannot read on after structure " +
-                               std::to_string(first + read));
+    Structure s;
+    if (!read_next_structure(ifs, fn, first + read, s)) break;
+    structures.push_back(std::move(s));
+    ++read;
   }
   ifs.close();
 
   return static_cast<int>(read);
+}
+
+int StructureDB::add_selected(const std::string fn,
+                              const std::vector<size_t> &indices) {
+  if (indices.empty()) return 0;
+  std::ifstream ifs(fn);
+  if (!ifs.is_open()) {
+    throw std::runtime_error("DBFILE does not exist: "+fn);
+  }
+  // One pass through the file: each selected structure is read once, in
+  // file order, and kept; the others are skipped without being parsed, as
+  // count() does. Memory grows with the number of selected structures.
+  std::map<size_t, Structure> selected;
+  for (const size_t i : indices) selected.emplace(i, Structure());
+  const size_t last = selected.rbegin()->first;
+  auto past_end = [&](size_t in_file) {
+    return std::runtime_error("DBFILE " + fn + ": structure " +
+                              std::to_string(last + 1) +
+                              " is past the end: the file has " +
+                              std::to_string(in_file) + " structures");
+  };
+  size_t position = 0;
+  for (auto &entry : selected) {
+    size_t natoms;
+    for (; position < entry.first; ++position)
+      if (!Structure::next_structure(ifs, natoms)) throw past_end(position);
+    if (!read_next_structure(ifs, fn, position, entry.second))
+      throw past_end(position);
+    ++position;
+  }
+  for (const size_t i : indices) add(selected.at(i));
+  return static_cast<int>(indices.size());
 }
 
 void StructureDB::add(const Structure &s) {
@@ -217,10 +261,11 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   if (!ifs.is_open()) {
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
-  int natoms = Structure::next_structure(ifs);
-  while(natoms) {
-    natoms_tot += natoms;
-    natoms = Structure::next_structure(ifs);
+  // A structure without atoms counts as one (StructureDB::add(file) reads
+  // it); only the end of the file ends the count.
+  size_t natoms;
+  while (Structure::next_structure(ifs, natoms)) {
+    natoms_tot += static_cast<int>(natoms);
     nstruc++;
   }
 

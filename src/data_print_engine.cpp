@@ -32,21 +32,17 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
     return EXIT_SUCCESS;
   }
   if(has_dbfile && taskContext.contains("INDEX")) {
-    std::vector<std::string> indicesStrVec;
-    indicesStrVec.resize(taskContext.size("INDEX")); // required for DBFILE
+    const std::string dbFile = taskContext.get<std::string>("DBFILE");
+    std::vector<std::string> indicesStrVec(taskContext.size("INDEX"));
     taskContext.get<>("INDEX", indicesStrVec);
-    std::vector<size_t> indices =  core::parse_indices(indicesStrVec);
-    // if indices contain 0, we throw as min index is 1
-    if (std::find(indices.begin(), indices.end(), 0) != indices.end()) {
-      throw std::runtime_error("Indices start from 1, not 0.");
-    }
-    std::string dbFile = taskContext.get<std::string>("DBFILE");
-    for (auto i :indices) {
-      stdb.add(dbFile,i-1);
-    }
-    if (stdb.size() == 0) {
-      throw std::runtime_error("No structures found in the database with the given indices.");
-    }
+    // 1-based, parsed strictly and checked against the number of structures
+    // before any is read; the file is then read once, and the structures
+    // are printed in the given order.
+    const size_t total = static_cast<size_t>(StructureDB::count(dbFile).first);
+    std::vector<size_t> indices =
+        core::parse_dataset_indices(indicesStrVec, total, "tadah data print");
+    for (auto &i : indices) --i;
+    stdb.add_selected(dbFile, indices);
   }
   if(taskContext.contains("STRUCTURE")) {
     std::vector<std::string> structures(taskContext.size("STRUCTURE"));

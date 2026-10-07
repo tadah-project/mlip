@@ -31,19 +31,16 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
     if (taskContext.contains("INDEX")) {
       // assume single DBFILE, guaranteed by validate()
       stdbs.resize(1);
-      std::vector<size_t> indices;
-      std::vector<std::string> indicesStr;
-      indicesStr.resize(taskContext.size("INDEX"));
+      const std::string dbFile = taskContext.get<std::string>("DBFILE", 0);
+      std::vector<std::string> indicesStr(taskContext.size("INDEX"));
       taskContext.get<>("INDEX", indicesStr);
-      indices = core::parse_indices(indicesStr);
-      size_t maxIndex = *std::max_element(indices.begin(), indices.end());
-      if (maxIndex > taskContext.size("DBFILE")) {  // INDEX starts from 1
-        throw std::runtime_error("Index out of bounds for DBFILE.");
-      }
-      StructureDB &stdb = stdbs[0];
-      for (const auto idx : indices) {
-        stdb.add(taskContext.get<std::string>("DBFILE", 0), idx-1);
-      }
+      // 1-based structure indices, parsed strictly and checked against the
+      // number of structures of the DBFILE before any is read.
+      const size_t total = static_cast<size_t>(StructureDB::count(dbFile).first);
+      std::vector<size_t> indices = core::parse_dataset_indices(
+          indicesStr, total, "tadah analysis descriptor");
+      for (auto &i : indices) --i;
+      stdbs[0].add_selected(dbFile, indices);
     } else {
       size_t numFiles = taskContext.size("DBFILE");
       stdbs.resize(numFiles);

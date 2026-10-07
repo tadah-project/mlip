@@ -902,3 +902,139 @@ TEST_CASE("VASP POSCAR reader: a line-6 token that is no element is refused, "
     CHECK(names_line(*msg, 6));
   }
 }
+
+/* Pins: an error of the POSCAR reader names the file, as
+ *   VaspPoscarReader: POSCAR file <path>: <what>
+ * for a line-6 token that is no element ('Xx': exactly "... <path>: 'Xx'
+ * on line 6 is not an element symbol (or a VASP POTCAR name such as Ti_pv
+ * or Si/b0d4a2)."), a scaling factor 0, an atom count 'two' on line 7
+ * ("... the atom count 'two' on line 7 is not a whole number"), and a file
+ * of 5 lines. A reader that read a good POSCAR (2 Ta atoms) keeps its
+ * structure (cell and atoms) after each refused file, and reading the good
+ * file again gives its 2 atoms, not 4.
+ * Before the fix: the messages began "VaspPoscarReader: " or
+ * "VaspPoscarReader::read: " and named no file, and the count was refused
+ * by std::stoi ('stoi', a std::invalid_argument, which ends the case); the
+ * file refused on line 6 had already replaced the reader's cell (4 A), so
+ * every later cell check failed too. */
+TEST_CASE("VASP POSCAR reader: an error names the file, and a refused file "
+          "leaves the structure",
+          "[vasp][poscar][species]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("poscar_source");
+  const std::string good = tmp.write(
+      "POSCAR_good", "bcc Ta\n3.3\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+                     "Ta\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n");
+  struct Bad {
+    std::string name, body, what;
+  };
+  const std::vector<Bad> bad = {
+      {"POSCAR_Xx",
+       "unknown element\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Xx\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "'Xx' on line 6 is not an element symbol (or a VASP POTCAR name such "
+       "as Ti_pv or Si/b0d4a2)."},
+      {"POSCAR_scale0",
+       "zero scale\n0.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Ta\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "scaling factor on line 2"},
+      {"POSCAR_count",
+       "bad count\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Ta\ntwo\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "the atom count 'two' on line 7 is not a whole number"},
+      {"POSCAR_short", "short\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n",
+       "not enough lines"}};
+  auto reader = StructureReaderSelector::getReader(good);
+  REQUIRE(dynamic_cast<VaspPoscarReader *>(reader.get()) != nullptr);
+  REQUIRE_NOTHROW(reader->read(good));
+  const Structure before = reader->getStructure();
+  REQUIRE(before.natoms() == 2);
+  for (const auto &b : bad) {
+    const std::string path = tmp.write(b.name, b.body);
+    INFO(b.name << ":\n" << b.body);
+    const auto msg = runtime_error_of([&] { reader->read(path); });
+    REQUIRE(msg);
+    INFO("message: " << *msg);
+    const std::string head = "VaspPoscarReader: POSCAR file " + path + ": ";
+    CHECK(msg->rfind(head, 0) == 0);
+    CHECK_THAT(*msg, Contains(b.what));
+    if (b.name == "POSCAR_Xx") CHECK(*msg == head + b.what);
+    const Structure after = reader->getStructure();
+    CHECK(after.label == before.label);
+    CHECK(after.natoms() == 2);
+    for (int i = 0; i < 3; ++i)
+      for (int k = 0; k < 3; ++k) CHECK(after.cell(i, k) == before.cell(i, k));
+  }
+  REQUIRE_NOTHROW(reader->read(good));
+  CHECK(reader->getStructure().natoms() == 2);
+}
+
+/* Pins: a POSCAR atom count is a whole number written with digits, after at
+ * most one '+' (as VASP's integer read, ASE and pymatgen accept it):
+ *  - "+2" on line 7 (after the element line "Ta") reads 2 Ta atoms, and
+ *    "+1 +1" after "Ta W" one of each;
+ *  - "+2" on line 6, where the element symbols belong, is taken for the
+ *    counts of the VASP 4 layout and refused as such ("line 6 holds the atom
+ *    counts, not the element symbols (the VASP 4 layout)"), as "2" is;
+ *  - "-2", "+", "++2", "+-2" and "2.0" on line 7 are refused, "the atom
+ *    count '<token>' on line 7 is not a whole number", and "4294967296" as
+ *    "the atom count '4294967296' on line 7 is too large".
+ * Before the fix: std::from_chars took no '+', so "+2" and "+1 +1" were
+ * refused ("the atom count '+2' on line 7 is not a whole number": std::stoi
+ * read them in the released code); "+2" on line 6 was taken for the element
+ * symbols, so "Direct" on line 7 was read as the counts ("the atom count
+ * 'Direct' on line 7 is not a whole number"; std::stoi's 'stoi' in the
+ * released code); "4294967296" was "not a whole number". */
+TEST_CASE("VASP POSCAR reader: an atom count may carry a '+' sign",
+          "[vasp][poscar]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("poscar_plus_count");
+  const std::string cell = "4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n";
+  const std::string coords = "Direct\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n";
+  SECTION("+2 after Ta") {
+    const std::string path = tmp.write("POSCAR_plus", "plus\n" + cell + "Ta\n+2\n" + coords);
+    VaspPoscarReader reader;
+    REQUIRE_NOTHROW(reader.read(path));
+    const Structure st = reader.getStructure();
+    REQUIRE(st.natoms() == 2);
+    CHECK(st.atoms[0].symbol == "Ta");
+    CHECK(st.atoms[1].symbol == "Ta");
+  }
+  SECTION("+1 +1 after Ta W") {
+    const std::string path =
+        tmp.write("POSCAR_plus_two", "plus two\n" + cell + "Ta W\n+1 +1\n" + coords);
+    VaspPoscarReader reader;
+    REQUIRE_NOTHROW(reader.read(path));
+    const Structure st = reader.getStructure();
+    REQUIRE(st.natoms() == 2);
+    CHECK(st.atoms[0].symbol == "Ta");
+    CHECK(st.atoms[1].symbol == "W");
+  }
+  SECTION("counts on line 6") {
+    for (const std::string counts : {"2", "+2"}) {
+      INFO("line 6: " << counts);
+      const std::string path =
+          tmp.write("POSCAR_vasp4", "vasp 4\n" + cell + counts + "\n" + coords);
+      VaspPoscarReader reader;
+      const auto msg = runtime_error_of([&] { reader.read(path); });
+      REQUIRE(msg);
+      CHECK_THAT(*msg, Contains("line 6 holds the atom counts, not the element symbols (the "
+                                "VASP 4 layout)"));
+    }
+  }
+  SECTION("counts refused on line 7") {
+    const std::vector<std::pair<std::string, std::string>> refused = {
+        {"-2", "is not a whole number"},  {"+", "is not a whole number"},
+        {"++2", "is not a whole number"}, {"+-2", "is not a whole number"},
+        {"2.0", "is not a whole number"}, {"4294967296", "is too large"}};
+    for (const auto &r : refused) {
+      INFO("line 7: " << r.first);
+      const std::string path =
+          tmp.write("POSCAR_count", "count\n" + cell + "Ta\n" + r.first + "\n" + coords);
+      VaspPoscarReader reader;
+      const auto msg = runtime_error_of([&] { reader.read(path); });
+      REQUIRE(msg);
+      CHECK_THAT(*msg, Contains("the atom count '" + r.first + "' on line 7 " + r.second));
+    }
+  }
+}
