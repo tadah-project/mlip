@@ -28,3 +28,9 @@ if(TADAH_ENABLE_OPENMP)
         LABELS "mlip"
         TIMEOUT 120)
 endif()
+
+# tadah.mlip_headers (ctest -L headers): every header of include/
+# compiles on its own and twice in a row (cmake-tools'
+# tadah_add_header_check). Before the fix: passes as well (a pin: no MLIP
+# header failed when the check was added).
+tadah_add_header_check(tadah.mlip)
