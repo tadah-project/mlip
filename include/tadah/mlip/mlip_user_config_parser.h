@@ -102,6 +102,7 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    */
   struct Section {
     std::string name;
+    bool task = false;                ///< a TASK section (else GLOBAL)
     std::size_t first_line = 1;       ///< 1-based line number of lines[0]
     std::vector<std::string> lines;
   };
