@@ -843,6 +843,49 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
   }
 }
 
+// Pins: the composition check reads FIXINDEX as the trainer does
+// (core::parse_fixindex): on data whose every structure is 8 Nb + 8 Ta
+// (ATOM Nb Ta, BIAS true), FIXINDEX given as separate values, '1 3' with
+// FIXWEIGHT -7.6 0.0, pins the Nb intercept and the model trains (weight 1
+// -7.6, weight 3 0.0); FIXINDEX '2-1' (with two FIXWEIGHT values) is refused
+// as a descending range, not as data that cannot determine the intercepts.
+// Before the fix: the check read FIXINDEX with the lenient
+// core::parse_indices, which dropped '1 3' (the values joined into one
+// malformed segment) and expanded '2-1' to nothing, so both were refused
+// with "cannot determine the per-species intercepts" (rank 1).
+TEST_CASE("BIAS true: the composition check reads FIXINDEX as the trainer "
+          "does",
+          "[descriptors_calc][bias][composition][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  SECTION("separate values pin the Nb intercept") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", "1 3");
+    c.add("FIXWEIGHT", -7.6);
+    c.add("FIXWEIGHT", 0.0);
+    REQUIRE(c.size("FIXINDEX") == 2);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    REQUIRE(m == "<no exception>");
+    CHECK(tr.model->get_weights()(0) == -7.6);
+    CHECK(tr.model->get_weights()(2) == 0.0);
+  }
+  SECTION("a descending range is refused as such") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", "2-1");
+    c.add("FIXWEIGHT", -7.6);
+    c.add("FIXWEIGHT", -8.9);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("FIXINDEX: index '2-1' is a descending range") !=
+          std::string::npos);
+    CHECK(m.find("cannot determine") == std::string::npos);
+  }
+}
+
 // Pins: the composition check takes the intercepts from the model's
 // function (Function_Base::intercept_columns) on data whose every structure
 // is 8 Nb + 8 Ta (ATOM Nb Ta, BIAS true, D2_BP 3: DSIZE 5):
