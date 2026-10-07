@@ -34,6 +34,15 @@ public:
 
   /**
    * @brief Reads structural data for e.g. "mp-149".
+   *
+   * A failed fetch throws std::runtime_error naming the HTTP status (or the
+   * provider's own: 500 for a cURL error such as no network), the material
+   * ID and the provider's reason, cut to 300 characters
+   * (failed_fetch_message(): `MaterialsProjectReader: HTTP 401 for material
+   * 'mp-149': <the server's body>`). The reason is the provider's cURL text
+   * or the server's body; the message holds no request URL, no header and
+   * not the API key (the provider sends the key in a request header). The
+   * previous structure is kept.
    */
   void read(const std::string &mpID) override;
 

@@ -38,6 +38,14 @@ public:
    * the code attempts to extract the COD material ID. Otherwise, it uses @p path
    * directly as the COD ID. The returned raw content is parsed with CifReader.
    *
+   * A failed fetch throws std::runtime_error naming the HTTP status (or the
+   * provider's own: 500 for a cURL error such as no network), the COD ID
+   * (without "cod-") and the provider's reason, cut to 300 characters
+   * (failed_fetch_message(): `CODReader: HTTP 404 for COD ID '1534932':
+   * <the server's page>`). The reason is the provider's cURL text or the
+   * server's body; the message holds no request URL. The previous structure
+   * is kept.
+   *
    * @param path  A COD entry ID (optionally with prepended "cod-")
    * (e.g. "cod-1534932" and "1534932" are both valid)
    * or a fully qualified URL (e.g. "https://www.crystallography.net/cod/1534932.cif").

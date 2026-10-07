@@ -34,6 +34,14 @@ public:
   /**
    * @brief Reads structural data for the NOMAD entry ID. Example: "zyXabc123..."
    *
+   * A failed fetch throws std::runtime_error naming the HTTP status (or the
+   * provider's own: 500 for a cURL error such as no network), the entry ID
+   * and the provider's reason, cut to 300 characters
+   * (failed_fetch_message(): `NomadReader: HTTP 500 for entry '<id>':
+   * NomadDataProvider::httpPost cURL error: ...`). The reason is the
+   * provider's cURL text or the server's body; the message holds no request
+   * URL or header. The previous structure is kept.
+   *
    * @param entryID  The unique identifier in NOMAD.
    */
   void read(const std::string &entryID) override;
