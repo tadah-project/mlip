@@ -37,6 +37,17 @@ RefitMode read_refit_mode(const tadah::core::Context &c);
  *     got 'shape'" (the value in lower case). */
 bool read_refit_curve_objective(const tadah::core::Context &c);
 
+/** The REFIT_BASIS spellings tadah refit fits, one family each (another
+ *  spelling is no family of the compact fitter; RefitEngine refuses it in
+ *  REFIT_MODE compact and fits it dense as given, e.g. Gaussian):
+ *   - the one-sided knot families: Knot5, KNOT5, knot5, Knot3, KNOT3,
+ *     knot3, KnotMix, KNOTMIX, knotmix, Mixed, MIXED;
+ *   - Blip: Blip, blip;
+ *   - Blip5: Blip5, BLIP5, blip5, M6. */
+bool refit_basis_is_knot_family(const std::string &basis);
+bool refit_basis_is_blip(const std::string &basis);   ///< see above
+bool refit_basis_is_blip5(const std::string &basis);  ///< see above
+
 /** The refusal of a top-level OPTIMIZER block, the grammar before the
  *  stage blocks, which neither REFIT_MODE reads: the migration text of
  *  check_refit_mode_keys (in either mode) and of the compact fitter's
@@ -57,6 +68,10 @@ std::string top_level_optimizer_refusal();
  *     REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
  *     REFINE and FUSE blocks, and REFIT_OBJECTIVE curve (REFIT_OBJECTIVE
  *     energy passes in both);
+ *   - read by the knot families only, in compact mode (the compact fitter
+ *     applies them to the one-sided knot kinds): REFIT_COMPACT_MERGE,
+ *     REFIT_COMPACT_OPT_EVERY and REFIT_COMPACT_INSERT_TOPK, refused when
+ *     REFIT_BASIS is a Blip family (refit_basis_is_blip, _blip5);
  *   - read by REFIT_OBJECTIVE curve only, in compact mode: every curve
  *     knob, REFIT_CURVE_WEIGHTING, REFIT_CURVE_RELAX and
  *     REFIT_CURVE_DERIV_WEIGHT; and REFIT_CURVE_RELAX, the floor of the
@@ -78,6 +93,10 @@ std::string top_level_optimizer_refusal();
  *    "tadah refit: the REFINE block has no effect under REFIT_MODE dense:
  *     only REFIT_MODE compact reads it; remove the REFINE block, or set
  *     REFIT_MODE compact"
+ *    "tadah refit: REFIT_COMPACT_MERGE has no effect under REFIT_BASIS
+ *     Blip5: only the knot families (REFIT_BASIS Knot5, the compact
+ *     default, Knot3 or KnotMix) read it; remove REFIT_COMPACT_MERGE, or
+ *     set REFIT_BASIS Knot5" (REFIT_BASIS as written)
  *    "tadah refit: REFIT_CURVE_WEIGHTING has no effect under
  *     REFIT_OBJECTIVE energy (the default): only REFIT_OBJECTIVE curve
  *     reads it; remove REFIT_CURVE_WEIGHTING, or set REFIT_OBJECTIVE curve"

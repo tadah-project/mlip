@@ -13,19 +13,28 @@ namespace mlip {
 namespace engines {
 
 /**
- * @brief Command for explaining other commands or options.
+ * @brief Command for explaining other commands, options and configuration
+ *        keys.
  *
  * OPTION is `<command>`, `<command>.<option>` or
  * `<command>.<subcommand>.<option>` (a subcommand is also written
- * `<command>.<subcommand>`). run() prints the long description of the
- * command or subcommand it names and the text of the option
- * (explain_key_text), and throws std::runtime_error, printing nothing, when
- * the option names neither: "tadah explain: no command 'bogus'", "tadah
- * explain: data has no subcommand 'nosub'", "tadah explain: refit has no
- * option 'nosuchkey'", "tadah explain: data has no subcommand or option
- * 'nosuch'" (a command with subcommands), "tadah explain: 'a.b.c.d' is
- * not <command>,
- * <command>.<option> or <command>.<subcommand>.<option>".
+ * `<command>.<subcommand>`), or `<KEY>`, each name in any letter case.
+ * run() prints the long description of the command or subcommand it names
+ * and the text of the option (explain_key_text). A last name that is no
+ * command, subcommand or option of its command is looked up among the
+ * configuration keys (ALLOWED_KEYS), so `tadah explain SETFL` and `tadah
+ * explain refit.rhoform` print the text of a key that is no option of a
+ * command; a command's own subcommand or option comes first (its text may
+ * differ: data.MERGE is the merge subcommand, not the MERGE key). It throws
+ * std::runtime_error, printing nothing, when the option names none of
+ * these: "tadah explain: no command or configuration key 'bogus'", "tadah
+ * explain: no command 'bogus'" (bogus.key: the first name of a dotted
+ * option is a command), "tadah explain: data has no subcommand 'nosub'",
+ * "tadah explain: refit has no option 'nosuchkey', and it is no
+ * configuration key", "tadah explain: data has no subcommand or option
+ * 'nosuch', and it is no configuration key" (a command with subcommands),
+ * "tadah explain: 'a.b.c.d' is not <command>, <command>.<option> or
+ * <command>.<subcommand>.<option>".
  */
 class ExplainEngine: public IEngine {
 public:
@@ -52,7 +61,8 @@ public:
 std::vector<std::string> explain_text_lines(const std::string &text);
 
 /**
- * @brief What `tadah explain <command>.<key>` prints for @p key.
+ * @brief What `tadah explain <command>.<key>` (or `<KEY>`) prints for
+ *        @p key.
  *
  * Its long description, or its description when it has none, as
  * explain_text_lines renders it, one line each; then, when it has

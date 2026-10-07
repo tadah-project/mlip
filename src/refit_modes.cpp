@@ -400,9 +400,13 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
           "exclusive.");
     out = in;
   } else {
+    // <input>_retargeted<ext>: never a default name of --edit
+    // (pot_edited.tadah, refit_edited.hpotarget) or of a refit, so neither
+    // overwrites the other's output (with `_edited`, the default for
+    // refit.hpotarget was the --edit hpotarget, refit_edited.hpotarget)
     const fs::path p(in);
     const std::string derived =
-        (p.parent_path() / (p.stem().string() + "_edited")).string() +
+        (p.parent_path() / (p.stem().string() + "_retargeted")).string() +
         p.extension().string();
     out = pick_output(c, "OUTFILE", "pot.tadah", derived);
     guard_not_input(out, in,

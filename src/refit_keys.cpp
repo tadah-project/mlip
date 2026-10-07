@@ -183,6 +183,15 @@ constexpr const char *kFitKeys[] = {
 // above its first TASK line applies to every task.)
 constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT"};
 
+// Read by the knot families only (compact mode): the compact fitter applies
+// the coalescence guard (CompactBlipFitter::merge_close_knots and the
+// anti-coalescence factor), the insertion-only rungs and the top-k
+// insertion to the one-sided knot kinds only; for the Blip families it
+// takes no guard, every rung optimised and one insertion site.
+constexpr const char *kKnotFamilyKeys[] = {
+    "REFIT_COMPACT_MERGE", "REFIT_COMPACT_OPT_EVERY",
+    "REFIT_COMPACT_INSERT_TOPK"};
+
 // Read by REFIT_OBJECTIVE curve only (compact mode): the compact fitter
 // reads the derivative weight in the curve objective's solve and score and
 // the weighting and its floor in the curve weights only.
@@ -210,6 +219,20 @@ bool configured(const Context &c, const KeyProvenance *provenance,
 }
 
 }  // namespace
+
+bool refit_basis_is_knot_family(const std::string &b) {
+  return b == "Knot5" || b == "KNOT5" || b == "knot5" || b == "Knot3" ||
+         b == "KNOT3" || b == "knot3" || b == "KnotMix" || b == "KNOTMIX" ||
+         b == "knotmix" || b == "Mixed" || b == "MIXED";
+}
+
+bool refit_basis_is_blip(const std::string &b) {
+  return b == "Blip" || b == "blip";
+}
+
+bool refit_basis_is_blip5(const std::string &b) {
+  return b == "Blip5" || b == "BLIP5" || b == "blip5" || b == "M6";
+}
 
 RefitMode read_refit_mode(const Context &c) {
   const std::optional<std::string> tok = single(c, "REFIT_MODE");
@@ -273,6 +296,17 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
     if (curve) refuse("REFIT_OBJECTIVE curve");
     return;
   }
+  // the knot-family keys under a Blip family (REFIT_BASIS as written; no
+  // REFIT_BASIS is the compact default, Knot5)
+  if (const std::optional<std::string> basis = single(c, "REFIT_BASIS");
+      basis && (refit_basis_is_blip(*basis) || refit_basis_is_blip5(*basis)))
+    for (const char *key : kKnotFamilyKeys)
+      if (configured(c, provenance, key))
+        throw std::runtime_error(
+            kWho + key + " has no effect under REFIT_BASIS " + *basis +
+            ": only the knot families (REFIT_BASIS Knot5, the compact "
+            "default, Knot3 or KnotMix) read it; remove " + key +
+            ", or set REFIT_BASIS Knot5");
   if (!curve) {
     const std::string energy =
         std::string("energy") +
