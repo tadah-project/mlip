@@ -2104,3 +2104,74 @@ TEST_CASE("CASTEP .castep reader: an unreadable forces or stress line gives "
     CHECK_THAT(printed, !Catch::Contains("Truncated file"));
   }
 }
+
+/* Pins: a .castep file that ends inside a step outside its blocks (a run
+ * stopped during the step's SCF, or between its blocks) keeps the steps
+ * before and skips that step with one WARNING naming the file, the line,
+ * the step and the line it starts at:
+ *  - md_stress.castep cut after line 900 (MD step 2's forces and stress
+ *    read, before its MD Data): steps 0 and 1 and "WARNING: CASTEP .castep
+ *    <path>: the file ends at line 900 inside MD step 2, which starts at
+ *    line 725 and was skipped; 2 structure(s) read."; cut after line 520
+ *    (MD step 1 just started), step 0 and the warning for MD step 1 at line
+ *    517;
+ *  - geom.castep cut after line 700 (inside LBFGS iteration 1): iteration 0
+ *    and the warning for "geometry optimisation iteration 1, which starts
+ *    at line 495"; cut after line 440 (inside iteration 0, the finite basis
+ *    set correction's SCFs): nothing and the warning for "geometry
+ *    optimisation iteration 0, which starts at line 371";
+ *  - Gd0.castep cut after line 5000 (its SCF energy read, before its
+ *    forces): nothing and the warning for "the band-structure calculation,
+ *    which starts at line 117".
+ * A cut after a step's last line (md_stress after line 921, after
+ * '... finished MD iteration 2'; geom after line 720, after 'finished
+ * iteration 1') keeps the steps up to it without a warning, as the whole
+ * files do. (Pins as well.)
+ * Before the fix: the same structures, and no warning for any cut. */
+TEST_CASE("CASTEP .castep reader: a file that ends inside a step outside its "
+          "blocks warns, naming the file and the step",
+          "[castep_readers][source][truncated]") {
+  PeriodicTable::initialize();
+  const std::string kGd0 = "./tests_data/valid_castep_castep/Gd0.castep";
+  struct Cut {
+    std::string file;
+    size_t after;  // the last line kept, 0 for the whole file
+    size_t stored;
+    std::string step;  // the step warned about, empty for none
+  };
+  const Cut cuts[] = {
+      {kMdStressCastep, 900, 2, "MD step 2, which starts at line 725"},
+      {kMdStressCastep, 520, 1, "MD step 1, which starts at line 517"},
+      {kMdStressCastep, 921, 3, ""},
+      {kMdStressCastep, 0, 4, ""},
+      {kGeomCastep, 700, 1,
+       "geometry optimisation iteration 1, which starts at line 495"},
+      {kGeomCastep, 440, 0,
+       "geometry optimisation iteration 0, which starts at line 371"},
+      {kGeomCastep, 720, 2, ""},
+      {kGd0, 5000, 0,
+       "the band-structure calculation, which starts at line 117"}};
+  for (const Cut &c : cuts) {
+    INFO(c.file << " cut after line " << c.after);
+    std::vector<std::string> l = read_lines(c.file);
+    if (c.after > 0) l.resize(c.after);
+    TempFile tmp("tmp_castep_ends_step_" + std::to_string(c.after) + ".castep");
+    tmp.write_lines(l);
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    INFO("printed: '" << printed << "'");
+    CHECK(db.size() == c.stored);
+    if (c.step.empty()) {
+      CHECK(count_ci(printed, "warning") == 0);
+    } else {
+      CHECK(count_ci(printed, "warning") == 1);
+      CHECK_THAT(printed,
+                 Catch::Contains("WARNING: CASTEP .castep " + tmp.path +
+                                 ": the file ends at line " +
+                                 std::to_string(c.after) + " inside " + c.step +
+                                 " and was skipped; " +
+                                 std::to_string(c.stored) +
+                                 " structure(s) read."));
+    }
+  }
+}

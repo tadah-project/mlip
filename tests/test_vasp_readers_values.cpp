@@ -1226,6 +1226,64 @@ TEST_CASE("VASP OUTCAR reader: a file that ends inside a block warns, naming "
   }
 }
 
+/* Pins: an OUTCAR that ends inside an ionic step outside its blocks (a run
+ * stopped during the step's SCF iterations, or between its blocks) keeps
+ * the steps before and skips that step with one WARNING naming the file,
+ * the step and the line: the three-step OUTCAR_1 cut after line 2930 (step
+ * 2's stress, lattice and TOTAL-FORCE block read, before its free energy)
+ * gives step 1 and "WARNING: VASP OUTCAR <path>: the file ends inside ionic
+ * step 2 (line 2930), which was skipped (it has no 'free  energy   TOTEN'
+ * line); 1 structure(s) read."; cut after line 3100 (inside step 3's SCF
+ * iterations) it gives steps 1 and 2 and the warning for step 3 at line
+ * 3100; as a relaxation, cut after its line 2928 (OUTCAR_1's 2930), step 1
+ * and the warning for step 2. A cut after a step's last lines (after line
+ * 2975: step 2's EKIN_LAT, before step 3's first SCF iteration) gives steps
+ * 1 and 2 and no warning, as the whole three-step file and its relaxation
+ * give their 3 steps without one. (Pins as well.)
+ * Before the fix: the same structures, and no warning for any cut. */
+TEST_CASE("VASP OUTCAR reader: a file that ends inside a step outside its "
+          "blocks warns, naming the file and the step",
+          "[vasp][outcar][truncated]") {
+  ScratchDir tmp("outcar_ends_step");
+  const std::vector<std::string> md = outcar1_three_steps();
+  const std::vector<std::string> relax = as_relaxation(md);
+  struct Cut {
+    bool relaxation;
+    size_t after;  // the last line kept
+    size_t stored;
+    int step;      // the step warned about, 0 for none
+  };
+  for (const Cut &c : {Cut{false, 2930, 1, 2}, Cut{false, 3100, 2, 3},
+                       Cut{true, 2928, 1, 2}, Cut{false, 2975, 2, 0},
+                       Cut{false, md.size(), 3, 0},
+                       Cut{true, relax.size(), 3, 0}}) {
+    INFO((c.relaxation ? "relaxation" : "MD") << " cut after line " << c.after);
+    std::vector<std::string> l = c.relaxation ? relax : md;
+    l.resize(c.after);
+    const std::string path = tmp.write(
+        std::string("OUTCAR_") + (c.relaxation ? "relax_" : "md_") +
+            std::to_string(c.after),
+        join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_outcar_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    CHECK(db.size() == c.stored);
+    if (c.step == 0) {
+      CHECK(count_word(printed, "WARNING") == 0);
+    } else {
+      CHECK(count_word(printed, "WARNING") == 1);
+      CHECK_THAT(printed,
+                 Contains("WARNING: VASP OUTCAR " + path +
+                          ": the file ends inside ionic step " +
+                          std::to_string(c.step) + " (line " +
+                          std::to_string(c.after) +
+                          "), which was skipped (it has no 'free  energy   "
+                          "TOTEN' line); " + std::to_string(c.stored) +
+                          " structure(s) read."));
+    }
+  }
+}
+
 /* Pins: the vasprun.xml reader refuses what it cannot read, naming the file
  * (and the calculation, the varray and the row):
  *  - atom 1 of <atominfo> 'Qq' (line 483): "VASP vasprun.xml <path>: atom 1
@@ -1402,6 +1460,61 @@ TEST_CASE("VASP OUTCAR reader: a temperature of 10000 K and more is read",
   CHECK(db(0).T == 10147.82);
   CHECK(db(0).natoms() == 54);
   CHECK(db(1).T == 300.04);
+}
+
+/* Pins: a vasprun.xml that ends after its last complete calculation,
+ * without its closing </modeling> tag (a run stopped, or still running,
+ * after it), is read whole, and one WARNING says that nothing was skipped:
+ * vasprun_2 without its last line, and the same with the start of a
+ * trailing <structure name="finalpos"> (VASP writes it after the last
+ * calculation), give its 4 structures (the energies, forces and stress of
+ * the whole file) and "WARNING: VASP vasprun.xml <path>: the file ends
+ * after calculation 4, without its closing </modeling> tag (a run stopped,
+ * or still running); no calculation was skipped: 4 structure(s) read.".
+ * Before the fix: the same structures with "WARNING: ...: the file ends
+ * inside calculation 5 (a run stopped while writing it), which was skipped;
+ * 4 structure(s) read." (the file has no calculation 5). */
+TEST_CASE("VASP vasprun.xml reader: a file that ends after its last "
+          "calculation says that nothing was skipped",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_after_last");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  REQUIRE(base.size() == 1589);
+  REQUIRE(base.at(1587).find("</calculation>") != std::string::npos);
+  REQUIRE(base.at(1588).find("</modeling>") != std::string::npos);
+  StructureDB whole = read_vasprun(kVasprunDir + "vasprun_2.xml");
+  REQUIRE(whole.size() == 4);
+  std::vector<std::string> nomodeling = base;
+  nomodeling.resize(1588);
+  std::vector<std::string> finalpos = nomodeling;
+  for (const char *l : {" <structure name=\"finalpos\" >", "  <crystal>",
+                        "   <varray name=\"basis\" >"})
+    finalpos.push_back(l);
+  for (const auto &[name, lines] :
+       {std::pair<std::string, std::vector<std::string>>{"nomodeling",
+                                                          nomodeling},
+        {"finalpos", finalpos}}) {
+    INFO(name);
+    const std::string path =
+        tmp.write("vasprun_" + name + ".xml", join_lines(lines));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    REQUIRE(db.size() == 4);
+    for (size_t k = 0; k < 4; ++k) {
+      CHECK(db(k).energy == whole(k).energy);
+      CHECK(db(k).natoms() == whole(k).natoms());
+      CHECK(db(k).atoms[52].force[2] == whole(k).atoms[52].force[2]);
+      CHECK(db(k).stress(2, 2) == whole(k).stress(2, 2));
+    }
+    CHECK(count_word(printed, "WARNING") == 1);
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": the file ends after calculation 4, "
+                                 "without its closing </modeling> tag (a run "
+                                 "stopped, or still running); no calculation "
+                                 "was skipped: 4 structure(s) read."));
+  }
 }
 
 /* Pins: a vasprun.xml that ends early (VASP writes it as it runs; a run
