@@ -7,6 +7,7 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/eam_setfl_io.h>
@@ -22,6 +23,7 @@
 #include <iomanip>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -343,6 +345,22 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   //      and compact modes (compact_fit runs later).
   models::eam_lattice::require_crystal(eam.lattice_raw(), eam.lattice_param());
 
+  // ---- the refit.eam grid (OUTPUT_GRID_SCALE), before any fitting: a
+  //      scale whose point counts a setfl table cannot have is refused here,
+  //      not after the fit has written pot.tadah ----
+  models::EAMGrid out_grid = eam.input_grid();
+  if (grid_scale != 1.0) {
+    try {
+      out_grid = eam.scaled_grid(grid_scale);
+    } catch (const std::invalid_argument &e) {
+      throw std::runtime_error(
+          "tadah refit: OUTPUT_GRID_SCALE '" +
+          c.stored_value("OUTPUT_GRID_SCALE")
+              .value_or(core::format_roundtrip(grid_scale)) +
+          "' for " + setfl_out + ": " + e.what());
+    }
+  }
+
   eam.build_splines();
 
   // ---- configure + fit ----
@@ -623,9 +641,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   TrainEngine::dumpPotFile(out_pot, pot);
 
   // ---- write the round-trip setfl from the NATIVE fitted functions ----
-  models::EAMGrid grid = (grid_scale == 1.0) ? eam.input_grid()
-                                             : eam.scaled_grid(grid_scale);
-  eam.write_setfl(setfl_out, grid,
+  eam.write_setfl(setfl_out, out_grid,
                   [&](double rho){ return refit.F_setfl(rho); },
                   [&](double r){ return refit.rho_setfl(r); },
                   [&](double r){ return refit.z2_setfl(r); },
