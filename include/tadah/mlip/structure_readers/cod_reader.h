@@ -25,6 +25,12 @@ public:
   CODReader();
 
   /**
+   * @brief A CODReader that fetches through @p provider (a stub in tests);
+   *        a null provider is refused (std::invalid_argument).
+   */
+  explicit CODReader(std::unique_ptr<IMaterialsDataProvider> provider);
+
+  /**
    * @brief Retrieves a CIF resource from the COD database by ID or by a full URL,
    *        then parses it into a Structure.
    *

@@ -1,4 +1,5 @@
 #include <tadah/mlip/structure_readers/materials_project_reader.h>
+#include <tadah/mlip/data_providers/fetch_failure.h>
 #include <tadah/mlip/structure.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -12,9 +13,16 @@ static tadah::core::Element parse_element_mp(const std::string &elemName) {
 }
 
 MaterialsProjectReader::MaterialsProjectReader(const std::string &apiKey)
-  : m_apiKey(apiKey),
-    m_dataProvider(std::make_unique<MaterialsProjectDataProvider>(apiKey))
+  : m_dataProvider(std::make_unique<MaterialsProjectDataProvider>(apiKey))
 {
+}
+
+MaterialsProjectReader::MaterialsProjectReader(
+    std::unique_ptr<IMaterialsDataProvider> provider)
+  : m_dataProvider(std::move(provider)) {
+  if (!m_dataProvider)
+    throw std::invalid_argument(
+        "MaterialsProjectReader: the data provider is null.");
 }
 
 void MaterialsProjectReader::read(const std::string &mpID) {
@@ -27,12 +35,9 @@ Structure MaterialsProjectReader::getStructure() const {
 
 void MaterialsProjectReader::fetchAndParseMP(const std::string &mpID) {
   RawResponse rr = m_dataProvider->QueryByID(mpID);
-  if (rr.httpStatus != 200) {
-    std::ostringstream oss;
-    oss << "MaterialsProjectReader: HTTP " << rr.httpStatus
-        << " retrieving '" << mpID << "'.";
-    throw std::runtime_error(oss.str());
-  }
+  if (rr.httpStatus != 200)
+    throw std::runtime_error(failed_fetch_message("MaterialsProjectReader",
+                                                  "material", mpID, rr));
   parseMpJson(rr.response);
 }
 

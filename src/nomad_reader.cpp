@@ -1,4 +1,5 @@
 #include <tadah/mlip/structure_readers/nomad_reader.h>
+#include <tadah/mlip/data_providers/fetch_failure.h>
 #include <tadah/mlip/structure.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -11,6 +12,12 @@ NomadReader::NomadReader()
   : m_dataProvider(std::make_unique<NomadDataProvider>()) {
 }
 
+NomadReader::NomadReader(std::unique_ptr<IMaterialsDataProvider> provider)
+  : m_dataProvider(std::move(provider)) {
+  if (!m_dataProvider)
+    throw std::invalid_argument("NomadReader: the data provider is null.");
+}
+
 void NomadReader::read(const std::string &entryID) {
   fetchAndParseNomad(entryID);
 }
@@ -21,12 +28,9 @@ Structure NomadReader::getStructure() const {
 
 void NomadReader::fetchAndParseNomad(const std::string &entryID) {
   RawResponse rr = m_dataProvider->QueryByID(entryID);
-  if (rr.httpStatus != 200) {
-    std::ostringstream oss;
-    oss << "NomadReader: HTTP " << rr.httpStatus
-        << " fetching entry '" << entryID << "'.";
-    throw std::runtime_error(oss.str());
-  }
+  if (rr.httpStatus != 200)
+    throw std::runtime_error(
+        failed_fetch_message("NomadReader", "entry", entryID, rr));
   parseNomadJson(rr.response);
 }
 

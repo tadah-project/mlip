@@ -26,6 +26,13 @@ public:
   explicit MaterialsProjectReader(const std::string &apiKey);
 
   /**
+   * @brief A MaterialsProjectReader that fetches through @p provider (a stub
+   *        in tests); a null provider is refused (std::invalid_argument).
+   */
+  explicit MaterialsProjectReader(
+      std::unique_ptr<IMaterialsDataProvider> provider);
+
+  /**
    * @brief Reads structural data for e.g. "mp-149".
    */
   void read(const std::string &mpID) override;
@@ -36,8 +43,6 @@ public:
   Structure getStructure() const override;
 
 private:
-  /// The user-provided key for Materials Project.
-  std::string m_apiKey;
   /// The final parsed structure after reading from MP.
   Structure m_structure;
   /// The data provider that fetches raw JSON from MP.

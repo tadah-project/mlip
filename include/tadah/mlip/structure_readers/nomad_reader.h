@@ -26,6 +26,12 @@ public:
   NomadReader();
 
   /**
+   * @brief A NomadReader that fetches through @p provider (a stub in tests);
+   *        a null provider is refused (std::invalid_argument).
+   */
+  explicit NomadReader(std::unique_ptr<IMaterialsDataProvider> provider);
+
+  /**
    * @brief Reads structural data for the NOMAD entry ID. Example: "zyXabc123..."
    *
    * @param entryID  The unique identifier in NOMAD.
