@@ -83,7 +83,6 @@ public:
     desmat(kernel,c)
   {
     norm = Normaliser(c);
-    check_basis_length();
   }
 
   /** 
@@ -98,7 +97,6 @@ public:
     desmat(kernel,c)
   {
     norm = Normaliser(c);
-    check_basis_length();
   }
 
   M_KRR(K &kernel, tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
@@ -107,7 +105,6 @@ public:
     desmat(kernel,c)
   {
     norm = Normaliser(c);
-    check_basis_length();
   }
   double epredict(const tadah::core::aed_type &aed) const {
     return kernel.epredict(weights,aed);
@@ -220,7 +217,11 @@ public:
     tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
   }
 
+  /** Every prediction from descriptors (also through predict(c, stdb, dc)
+   *  and predict(c, st, dc)) comes here: the basis vectors are checked
+   *  against the length of these descriptors first. */
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
+    check_basis_length(std.dim());
     if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
@@ -447,23 +448,15 @@ non linear kernel\n");
   using tadah::models::M_KRR_Train<K>::kernel;
 
   /** A potential's basis vectors (BASIS, read by the kernel) must have the
-   *  length of the descriptor they are compared with. The descriptor size
-   *  is DSIZE, which DescriptorsCalc adds to the context when it is built;
-   *  every MLIP command (train, predict, hpo, the analysis tools) builds
-   *  it on the context before the model. A model with basis vectors built
-   *  on a context without DSIZE is refused: its basis cannot be checked. */
-  void check_basis_length() const {
+   *  length of the descriptors they are compared with, @p dsize (DSIZE).
+   *  It is checked where the two meet: here, from predict(c, std, st),
+   *  and in the design matrix (DM_Kern_Base::phi_layout), so a model may
+   *  be built before its DescriptorsCalc. */
+  void check_basis_length(size_t dsize) const {
     if (kernel.get_label()=="Kern_Linear") return;
     const auto *kb = dynamic_cast<const tadah::models::Kern_Base*>(&kernel);
     if (kb == nullptr || kb->get_basis().cols() == 0) return;
     const size_t len = kb->get_basis().rows();
-    const size_t dsize = context.template get<size_t>("DSIZE");
-    if (dsize == 0)
-      throw std::logic_error(
-          "M_KRR " + kernel.get_label() + ": the descriptor size (DSIZE) is "
-          "not known, so the length of the basis vectors (BASIS) cannot be "
-          "checked: build the DescriptorsCalc on this context before the "
-          "model.");
     if (len != dsize)
       throw std::runtime_error(
           "M_KRR " + kernel.get_label() + ": BASIS holds SBASIS " +
