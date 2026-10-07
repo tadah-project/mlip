@@ -38,8 +38,11 @@ namespace mlip {
  *
  *  WCOV and WNOISE are read from @p c and checked first
  *  (read_weight_covariance: N against the WEIGHTS, the counts), and a
- *  force or stress prediction (FORCE / STRESS true in @p c) that WNOISE
- *  has no noise of is refused (require_noise_of).
+ *  prediction of a row type WNOISE has no noise of is refused
+ *  (require_noise_of): every prediction of a potential fitted without
+ *  energies (no E: EWEIGHT 0), and a force or stress prediction (FORCE /
+ *  STRESS true in @p c) of one fitted without them. With @p with_noise
+ *  false too: the parts of tadah properties pairwise go with the total.
  *
  *  With @p with_noise false each error is sqrt(phi_i^T WCOV phi_i), the
  *  standard deviation of the predicted value alone: for a part of a

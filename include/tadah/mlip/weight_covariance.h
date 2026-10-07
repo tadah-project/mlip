@@ -53,20 +53,35 @@ void write_weight_covariance(tadah::core::Context &c,
                              const tadah::core::Matrix &cov,
                              const PerRowType &noise);
 
-/** Reads WCOV and WNOISE of a potential with @p n_weights WEIGHTS.
- *  @throws std::runtime_error, naming the keys and how to get them (retrain
- *  with OALGO 3), when either is absent; when WCOV's N is not
- *  @p n_weights, or WCOV does not hold N*N+1 values (checked before its
- *  values are read); when WNOISE is not pairs of a row type E, F or S, each
- *  at most once, and a variance >= 0. */
+/** Reads WCOV and WNOISE of a potential with @p n_weights WEIGHTS. WNOISE
+ *  lists the row types its fit had (a fit without energies has no E: see
+ *  require_noise_of()).
+ *  @throws std::runtime_error, naming the keys, when either is absent,
+ *  with why the potential of @p c has none and what to do: another OALGO
+ *  than 3 (retrain with OALGO 3), M_KRR implementation 2
+ *  (is_krr_implementation_2(): MODEL M_KRR <kernel> 1), or, for an OALGO 3
+ *  potential, a potential of an earlier version (SIGMA), a fit with no
+ *  more observations than effective weights, or weights set from
+ *  FIXWEIGHT without a fit; when WCOV's N is not @p n_weights, or WCOV does
+ *  not hold N*N+1 values (checked before its values are read); when WNOISE
+ *  is not pairs of a row type E, F or S, each at most once, and a
+ *  variance >= 0. */
 WeightCovariance read_weight_covariance(const tadah::core::Context &c,
                                         std::size_t n_weights);
 
 /** Refuses a prediction with errors of a row type WNOISE does not list:
- *  forces (@p force) or stresses (@p stress) of a potential whose fit had
- *  no rows of that type with a non-zero weight.
- *  @throws std::runtime_error naming the quantity, WNOISE and the remedy. */
+ *  energies, which every prediction has, of a potential whose fit had no
+ *  energies with a non-zero weight (EWEIGHT 0, or every structure's
+ *  eweight 0); forces (@p force) or stresses (@p stress) of a potential
+ *  whose fit had no rows of that type with a non-zero weight.
+ *  @throws std::runtime_error naming the quantity, WNOISE, the cause and
+ *  the remedy. */
 void require_noise_of(const WeightCovariance &wc, bool force, bool stress);
+
+/** Whether @p c configures M_KRR implementation 2 (MODEL M_KRR <kernel>
+ *  2: krr_implementation()), whose fit computes no weight covariance
+ *  (models::krr_implementation2_without_covariance()). */
+bool is_krr_implementation_2(const tadah::core::Context &c);
 
 /** True for a model whose WEIGHTS act on the raw descriptors although it
  *  was fitted to normalised ones: NORM true and a linear function

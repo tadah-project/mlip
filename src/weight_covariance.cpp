@@ -1,7 +1,9 @@
 #include <tadah/mlip/weight_covariance.h>
 
 #include <tadah/mlip/normaliser.h>
+#include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/functions/weights_fit.h>
+#include <tadah/models/m_krr_core.h>
 
 #include <limits>
 #include <stdexcept>
@@ -15,11 +17,41 @@ namespace {
 
 const char *const kTypeLetter[3] = {"E", "F", "S"};
 
-const std::string kRetrain =
-    "`tadah train` writes WCOV and WNOISE for a fit with OALGO 3; retrain "
-    "the potential with OALGO 3";
+const std::string kNoCovariance =
+    "The potential has no weight covariance (WCOV and WNOISE), which --error "
+    "needs";
+
+/* Why the potential of @p c has no WCOV and WNOISE, and what to do: its
+ * configuration (another OALGO than 3, M_KRR implementation 2), or else
+ * the ways an OALGO 3 potential has none. */
+std::string why_no_covariance(const tadah::core::Context &c) {
+  const int oalgo = c.get<int>("OALGO");
+  if (oalgo != 3)
+    return kNoCovariance + ": its fit, OALGO " + std::to_string(oalgo) +
+           ", computes none (only OALGO 3, the SVD solve, does); retrain the "
+           "potential with OALGO 3.";
+  if (is_krr_implementation_2(c))
+    return kNoCovariance + ": " +
+           tadah::models::krr_implementation2_without_covariance() +
+           ", and retrain the potential.";
+  return kNoCovariance + ". An OALGO 3 fit writes them, so the potential is "
+         "one of these: a potential of Tadah! 1.0.0 to 1.5.0 or a 1.6.0 "
+         "development build, whose SIGMA is ignored (it was computed with a "
+         "transposed formula): retrain it; the potential of a fit with no "
+         "more observations (rows with a non-zero weight) than effective "
+         "weights, whose noise variance is undefined (`tadah train` warned "
+         "'no weight covariance'): add data with a non-zero weight and "
+         "retrain it; or weights set from FIXWEIGHT without a fit (tadah hpo "
+         "with every weight pinned and no training data), which have no "
+         "covariance.";
+}
 
 }  // namespace
+
+bool is_krr_implementation_2(const tadah::core::Context &c) {
+  return c.contains("MODEL") && c.get<std::string>("MODEL", 0) == "M_KRR" &&
+         krr_implementation(c) == 2;
+}
 
 void remove_weight_covariance(tadah::core::Context &c) {
   for (const char *key : {"SIGMA", "WCOV", "WNOISE"})
@@ -48,24 +80,22 @@ void write_weight_covariance(tadah::core::Context &c,
 WeightCovariance read_weight_covariance(const tadah::core::Context &c,
                                         std::size_t n_weights) {
   if (!c.has_stored("WCOV") || !c.has_stored("WNOISE"))
-    throw std::runtime_error(
-        "The potential has no weight covariance (WCOV and WNOISE), which "
-        "--error needs. " + kRetrain + " (a potential written by Tadah! 1.0.0 "
-        "to 1.5.0 or a 1.6.0 development build has a SIGMA instead, which "
-        "is ignored: it was computed "
-        "with a transposed formula).");
+    throw std::runtime_error(why_no_covariance(c));
+  const std::string retrain =
+      "`tadah train` writes WCOV and WNOISE of its own fit: retrain the "
+      "potential";
   const std::size_t stored = c.size("WCOV");
   const std::size_t N = c.get<std::size_t>("WCOV");
   if (N != n_weights)
     throw std::runtime_error(
         "WCOV: N = " + std::to_string(N) + ", but the potential has " +
         std::to_string(n_weights) + " WEIGHTS: the covariance is not of "
-        "these weights. " + kRetrain + ".");
+        "these weights. " + retrain + ".");
   if (stored != N * N + 1)
     throw std::runtime_error(
         "WCOV: N = " + std::to_string(N) + " needs N*N+1 = " +
         std::to_string(N * N + 1) + " values (N and the N x N matrix), but "
-        "WCOV has " + std::to_string(stored) + ". " + kRetrain + ".");
+        "WCOV has " + std::to_string(stored) + ". " + retrain + ".");
   WeightCovariance wc;
   wc.cov = tadah::core::Matrix(N, N);
   for (std::size_t col = 0; col < N; ++col)
@@ -95,14 +125,19 @@ WeightCovariance read_weight_covariance(const tadah::core::Context &c,
     wc.noise.value[k] = v;
     wc.noise.set[k] = true;
   }
-  if (!wc.noise.set[kEnergyRow])
-    throw std::runtime_error(
-        "WNOISE lists no E (energies): every prediction has an energy. " +
-        kRetrain + ".");
   return wc;
 }
 
 void require_noise_of(const WeightCovariance &wc, bool force, bool stress) {
+  // Every prediction has the energy of each structure.
+  if (!wc.noise.set[kEnergyRow])
+    throw std::runtime_error(
+        "--error: every prediction has an energy, but the potential's WNOISE "
+        "lists no E: its fit had no energies with a non-zero weight (EWEIGHT "
+        "0, or every structure's eweight 0), so it has no noise variance of "
+        "them, and no energy has a predictive standard deviation. Predict "
+        "without --error, or retrain the potential with energies of a "
+        "non-zero weight.");
   struct Ask {
     bool asked;
     RowType type;

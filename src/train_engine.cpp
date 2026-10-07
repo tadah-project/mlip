@@ -18,6 +18,8 @@
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/mlip/weight_covariance.h>
+#include <tadah/models/m_krr_core.h>
 
 namespace tadah {
 namespace mlip {
@@ -42,6 +44,23 @@ void hint_embf0_reference(const Trainer &tr,
       "(disables EAMFAST; its intercept columns, one per ATOM species, "
       "precede the descriptor weights, so FIXINDEX/FIXWEIGHT indices "
       "shift).");
+}
+// A WNOISE without E (a fit without energies of a non-zero weight): every
+// --error prediction has an energy, so predict --error refuses the
+// potential; said when it is written.
+void warn_noise_without_energies(const core::Context &param_file) {
+  if (!param_file.has_stored("WCOV") || !param_file.has_stored("WNOISE"))
+    return;
+  const WeightCovariance wc =
+      read_weight_covariance(param_file, param_file.size("WEIGHTS"));
+  if (wc.noise.set[kEnergyRow]) return;
+  core::Logger::instance().log(
+      core::LogLevel::WARNING,
+      "tadah train: the fit has no energies with a non-zero weight (EWEIGHT "
+      "0, or every structure's eweight 0), so the potential's WNOISE has no "
+      "E: `tadah predict --error` and `tadah properties pairwise --error` "
+      "refuse it (every prediction has an energy). Its WCOV, and the "
+      "standard deviations of --uncertainty, are those of the fit.");
 }
 }  // namespace
 
@@ -120,17 +139,19 @@ int TrainEngine::run(tadah::mlip::Task &task) {
 
   // --uncertainty lists the weights with their standard deviations: a fit
   // that computed no covariance (its noise variance undefined) is refused
-  // before the potential is written (owner decision D8).
+  // before the potential is written (owner decision D8), with the reason
+  // the model gives and what to change.
   const bool uncertainty = context.get<bool>("UNCERTAINTY");
   if (uncertainty && !tr.model->has_covariance())
     throw std::runtime_error(
         "tadah train --uncertainty: no weight covariance: " +
         tr.model->covariance_unavailable() +
-        ". No potential was written. Add observations (data with a non-zero "
-        "weight), or train without --uncertainty.");
+        ". No potential was written (train without --uncertainty to write "
+        "it, without the weights' standard deviations).");
 
   tadah::core::Context param_file = tr.model->get_param_file();
   stamp_into_param_file(param_file, report);
+  warn_noise_without_energies(param_file);
   dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
   // The weights and their standard deviations (weights.tadah)
@@ -149,14 +170,20 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
     throw std::runtime_error(
         "TrainEngine requires INIT2B or/and INITMB parameters to be set");
   }
-  // Only the SVD fit computes the weight covariance: refused before any
-  // training or output.
+  // Only the SVD fit computes the weight covariance, and M_KRR
+  // implementation 2 none: refused before any training or output.
   if (context.get<bool>("UNCERTAINTY") && context.get<int>("OALGO") != 3)
     throw std::runtime_error(
         "tadah train --uncertainty needs OALGO 3: only the SVD fit (OALGO 3) "
         "computes the weight covariance; the configuration has OALGO " +
         std::to_string(context.get<int>("OALGO")) + ".");
+  if (context.get<bool>("UNCERTAINTY") && is_krr_implementation_2(context))
+    throw std::runtime_error(
+        "tadah train --uncertainty: " +
+        tadah::models::krr_implementation2_without_covariance() +
+        ", or train without --uncertainty.");
 }
+
 
 // helper function to dump the potential file
 void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &context) {
