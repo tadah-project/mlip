@@ -810,6 +810,138 @@ TEST_CASE("StructureDB::add_selected(file, indices) adds those structures in ord
   }
 }
 
+/* A dataset entry labelled `label` with `natoms` Ta atoms (none: its blank
+ * line comes straight after the stress lines), in a 3.3 A cubic cell. */
+std::string ta_entry(const std::string &label, int natoms) {
+  std::string e = label + "\n1 1 1\n-11.5\n3.3 0 0\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n";
+  for (int k = 0; k < natoms; ++k)
+    e += "Ta " + std::to_string(1.5 * k) + " 0 0 0 0 0\n";
+  return e + "\n";
+}
+
+/* Pins: a structure without atoms (its blank line straight after the stress
+ * lines) is one structure for the scanners that skip structures, as it is
+ * for StructureDB::add(file):
+ *  - S1 (2 atoms), E2 (no atoms), S3 (2 atoms): count gives 3 structures and
+ *    4 atoms, add(file, 2, 1) returns 1 with S3, add(file, 1, 1) returns 1
+ *    with E2, which has no atoms;
+ *  - E1, S2 (2 atoms): count gives 2 structures and 2 atoms, add(file, 1, 1)
+ *    returns 1 with S2;
+ *  - S1, S2, E3 (2, 2 and no atoms), E3 ending the file without a blank
+ *    line: count gives 3 structures and 4 atoms;
+ *  in each, add(file) reads as many structures as count gives.
+ * Before the fix: Structure::next_structure returned 0 both at the end of the
+ * file and for a structure without atoms, so count stopped at the first
+ * structure without atoms (1 structure and 2 atoms, 0 and 0, 2 and 4), and
+ * add(file, 2, 1) on S1, E2, S3 and add(file, 1, 1) on E1, S2 stopped
+ * skipping there and returned 0. */
+TEST_CASE("StructureDB::count and add(file, first, N) count a structure without atoms",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_no_atoms");
+  SECTION("S1, E2, S3") {
+    const std::string path = tmp.write(
+        "middle.tadah", ta_entry("S1", 2) + ta_entry("E2", 0) + ta_entry("S3", 2));
+    const auto counted = StructureDB::count(path);
+    CHECK(counted.first == 3);
+    CHECK(counted.second == 4);
+    StructureDB third;
+    CHECK(third.add(path, 2, 1) == 1);
+    REQUIRE(third.size() == 1);
+    CHECK(third(0).label == "S3");
+    StructureDB second;
+    CHECK(second.add(path, 1, 1) == 1);
+    REQUIRE(second.size() == 1);
+    CHECK(second(0).label == "E2");
+    CHECK(second(0).natoms() == 0);
+    StructureDB all;
+    all.add(path);
+    CHECK(all.size() == 3);
+  }
+  SECTION("E1, S2") {
+    const std::string path = tmp.write("first.tadah", ta_entry("E1", 0) + ta_entry("S2", 2));
+    const auto counted = StructureDB::count(path);
+    CHECK(counted.first == 2);
+    CHECK(counted.second == 2);
+    StructureDB second;
+    CHECK(second.add(path, 1, 1) == 1);
+    REQUIRE(second.size() == 1);
+    CHECK(second(0).label == "S2");
+    StructureDB all;
+    all.add(path);
+    CHECK(all.size() == 2);
+  }
+  SECTION("S1, S2, E3 ending the file") {
+    std::string body = ta_entry("S1", 2) + ta_entry("S2", 2) + ta_entry("E3", 0);
+    body.pop_back();  // E3 ends the file: no blank line after its stress lines
+    const std::string path = tmp.write("last.tadah", body);
+    const auto counted = StructureDB::count(path);
+    CHECK(counted.first == 3);
+    CHECK(counted.second == 4);
+    StructureDB all;
+    all.add(path);
+    CHECK(all.size() == 3);
+  }
+}
+
+/* Pins: StructureDB::add_selected(file, indices) reads only the structures it
+ * adds and skips the others, as count does:
+ *  - with S1's atom line 'Ta 0 0 0 abc 0 0' (not a number), {1} adds S2;
+ *  - with S3's so (after the largest index), {1, 0} adds S2 and S1;
+ *  - a selected structure that is not valid is refused naming the file, the
+ *    structure (1-based) and the value: {0} on the first file, adding
+ *    nothing;
+ *  - S1, E2 (no atoms), S3: {2, 1} adds S3, then E2 with no atoms; {3} is
+ *    refused as past the end of a file of 3 structures.
+ * Before the fix: it read every structure from the first to the largest
+ * index, keeping them all until it returned, so {1} was refused for S1's
+ * 'abc' ("DBFILE ...: structure 1: ... 'abc' is not a finite number"). */
+TEST_CASE("StructureDB::add_selected(file, indices) reads only the selected structures",
+          "[dataset_tools][structure_db]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("db_add_selected_only");
+  const std::string bad =
+      "S1\n1 1 1\n-11.5\n3.3 0 0\n0 3.3 0\n0 0 3.3\n0 0 0\n0 0 0\n0 0 0\n"
+      "Ta 0 0 0 abc 0 0\n\n";
+  SECTION("S1 not valid") {
+    const std::string path = tmp.write("bad_first.tadah", bad + ta_entry("S2", 2));
+    StructureDB db;
+    CHECK(db.add_selected(path, {1}) == 1);
+    REQUIRE(db.size() == 1);
+    CHECK(db(0).label == "S2");
+    StructureDB refused;
+    CHECK_THROWS_WITH(refused.add_selected(path, {0}),
+                      Contains(path) && Contains("structure 1") && Contains("'abc'"));
+    CHECK(refused.size() == 0);
+  }
+  SECTION("S3 not valid") {
+    std::string third = bad;
+    third.replace(0, 2, "S3");
+    const std::string path =
+        tmp.write("bad_last.tadah", ta_entry("S1", 2) + ta_entry("S2", 2) + third);
+    StructureDB db;
+    CHECK(db.add_selected(path, {1, 0}) == 2);
+    REQUIRE(db.size() == 2);
+    CHECK(db(0).label == "S2");
+    CHECK(db(1).label == "S1");
+  }
+  SECTION("S1, E2, S3") {
+    const std::string path = tmp.write(
+        "no_atoms.tadah", ta_entry("S1", 2) + ta_entry("E2", 0) + ta_entry("S3", 2));
+    StructureDB db;
+    CHECK(db.add_selected(path, {2, 1}) == 2);
+    REQUIRE(db.size() == 2);
+    CHECK(db(0).label == "S3");
+    CHECK(db(1).label == "E2");
+    CHECK(db(1).natoms() == 0);
+    StructureDB past;
+    CHECK_THROWS_WITH(past.add_selected(path, {3}),
+                      Contains(path) && Contains("structure 4") &&
+                          Contains("has 3 structures"));
+    CHECK(past.size() == 0);
+  }
+}
+
 /* Pins: StructureDB::find_unique_elements (what tadah train and tadah hpo
  * read first) takes the whole first field of an atom line as the symbol, as
  * Structure::read does: a dataset with the atom line 'Tab 0 0 0 0.1 0 0' is
