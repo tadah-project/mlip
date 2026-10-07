@@ -342,3 +342,40 @@ TEST_CASE("COD reader: errors and the label name the COD entry",
   CHECK(got[1].st.label == got[0].st.label);
   CHECK(got[1].st.natoms() == 2);
 }
+
+/* Pins: CODReader names the COD entry and the site when the CIF has a site
+ * whose element Tadah does not know (deuterium, D, common in COD's
+ * neutron-diffraction entries): read("cod-1534932") of a P 1 CIF in a
+ * block 'data_1534932' with sites Fe1 (Fe) and D1 (D) throws exactly
+ *   "COD entry 1534932: site D1 has element 'D', which Tadah does not
+ *    know: its elements are H to Og."
+ * and keeps the previous structure (bcc Fe, 2 atoms).
+ * Before the fix: the periodic table's own error escaped, "Unknown symbol:
+ * D", naming neither the COD entry nor the site. */
+TEST_CASE("COD reader: a site whose element Tadah does not know is refused, "
+          "naming the COD entry and the site",
+          "[cod][structure_readers][cif]") {
+  tadah::core::PeriodicTable::initialize();
+  CHECK(takes_provider<CODReader>);
+  const std::string deuterium =
+      "data_1534932\n_cell_length_a 3.0\n_cell_length_b 3.0\n"
+      "_cell_length_c 3.0\n_cell_angle_alpha 90\n_cell_angle_beta 90\n"
+      "_cell_angle_gamma 90\n_symmetry_space_group_name_H-M 'P 1'\n"
+      "loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+      "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+      "Fe1 Fe 0 0 0\nD1 D 0.5 0.5 0.5\n";
+  const auto script = script_of(
+      {{200, cod_fe_cif("1534932", "1.0")}, {200, deuterium}});
+  const std::vector<Outcome> got =
+      read_through<CODReader>(script, {"cod-1534932", "cod-1534932"});
+  REQUIRE(got.size() == 2);
+  CHECK(script->asked == std::vector<std::string>{"1534932", "1534932"});
+  CHECK_FALSE(got[0].threw);
+  INFO("second read: " << got[1].error);
+  CHECK(got[1].threw);
+  CHECK(got[1].error ==
+        "COD entry 1534932: site D1 has element 'D', which Tadah does not "
+        "know: its elements are H to Og.");
+  CHECK(got[1].st.label == got[0].st.label);
+  CHECK(got[1].st.natoms() == 2);
+}

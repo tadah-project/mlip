@@ -1,0 +1,20 @@
+# Fe and deuterium in a cubic cell (P 1). Fixture for
+# test_cif_reader_symmetry.cpp: site D1 has the type symbol D, deuterium,
+# which gemmi reads as an element and Tadah does not have (its elements are
+# H to Og), as in COD's neutron-diffraction entries.
+data_FeD_deuterium_site
+_cell_length_a 3.0
+_cell_length_b 3.0
+_cell_length_c 3.0
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P 1'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Fe1 Fe 0 0 0
+D1 D 0.5 0.5 0.5

@@ -3301,3 +3301,50 @@ TEST_CASE("CIF reader: a reused reader keeps one structure, and a refused "
     same(reader.getStructure(), first);
   }
 }
+
+// ============================================ an element Tadah lacks ====
+
+/* Pins: a site whose element Tadah does not know is refused, naming the
+ * source and the site, through every route and with an origin:
+ *   - fed_deuterium_site.cif, site D1 of type symbol D (deuterium, which
+ *     gemmi reads as an element; Tadah's elements are H to Og):
+ *       "<source>: site D1 has element 'D', which Tadah does not know: its
+ *        elements are H to Og."
+ *   - feq_unknown_symbol_site.cif, site Q1 of type symbol Q (gemmi reads
+ *     it as X, unknown):
+ *       "<source>: site Q1: 'Q' is not an element symbol."
+ * <source> is "CIF file <path>" (CifReader::read, -s x.cif), "CIF text
+ * (data_<block>)" (parseCifContents) or the origin given to
+ * parseCifContents ("COD entry 1534932", the CODReader path).
+ * Before the fix: the periodic table's own error escaped, naming neither
+ * the site nor the source: "Unknown symbol: D" and "Unknown symbol: X". */
+TEST_CASE("CIF reader: a site whose element Tadah does not know is refused, "
+          "naming the site and the source",
+          "[structure_readers][cif][element]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string file, block, message;
+  };
+  const std::vector<Case> cases = {
+      {"fed_deuterium_site.cif", "FeD_deuterium_site",
+       "site D1 has element 'D', which Tadah does not know: its elements "
+       "are H to Og."},
+      {"feq_unknown_symbol_site.cif", "FeQ_unknown_symbol_site",
+       "site Q1: 'Q' is not an element symbol."}};
+  for (const Case &c : cases) {
+    const std::string path = kCifDir + c.file;
+    for (const Route route : kRoutes) {
+      INFO(c.file << " via " << route_name(route));
+      try {
+        const Read r = read_cif(path, route);
+        FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+      } catch (const std::runtime_error &e) {
+        CHECK(std::string(e.what()) ==
+              source_of(path, route, c.block) + ": " + c.message);
+      }
+    }
+    INFO(c.file << " via parseCifContents(text, \"COD entry 1534932\")");
+    CHECK(refusal_with_origin(slurp(path), "COD entry 1534932") ==
+          "COD entry 1534932: " + c.message);
+  }
+}
