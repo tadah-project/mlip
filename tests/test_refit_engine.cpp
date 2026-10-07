@@ -646,8 +646,12 @@ TEST_CASE_METHOD(PTFixture,
    * hpotarget file (core::parse_decimal_normal) or as decimal digits, and
    * refuse one out of its range naming the key and the token as written:
    * the tolerances, REFIT_COMPACT_SHARE, OUTPUT_GRID_SCALE, OPTIM_PCT and
-   * REFIT_REACH_MARGIN > 0, REFIT_REACH_SMIN and REFIT_CURVE_RELAX in
-   * (0, 1] (in either REFIT_OBJECTIVE), REFIT_R_LO_FRAC in (0, 1),
+   * REFIT_REACH_MARGIN > 0, REFIT_REACH_SMIN from 0.1 to 1 (below 0.1 the
+   * compressed-lattice neighbour lists of the self-test and the E-V scans
+   * grow as smin^-3: a/a0 0.01 took a minute, 1e-6 did not finish; the
+   * reachability probe lists neighbours out to rcut/0.1 only; it was
+   * (0, 1], the range of the first fix), REFIT_CURVE_RELAX in (0, 1] (in
+   * either REFIT_OBJECTIVE), REFIT_R_LO_FRAC in (0, 1),
    * REFIT_CURVE_DERIV_WEIGHT >= 0, the compact counts from 1 (JITTERS from
    * 0 to 2147483646, its candidates jitters + 1 an int), REFIT_COMPACT_SEED
    * from 0 to 4294967295, N2B, NRHO_BASIS and NF_BASIS from 1 to 1024 (the
@@ -658,7 +662,9 @@ TEST_CASE_METHOD(PTFixture,
    * Before the fix: validate() read none of them (no exception), and run()
    * read them with Context::get (istringstream) unchecked, so the first
    * message checked is not thrown and run() fails reading the absent EAM
-   * file instead. */
+   * file instead. Before the REFIT_REACH_SMIN floor: its range was (0, 1],
+   * so its messages said "a number in (0, 1]" and 0.05 and 1e-6 were
+   * accepted. */
   const std::string i32 = "2147483647";
   struct Case {
     std::string key;
@@ -693,9 +699,13 @@ TEST_CASE_METHOD(PTFixture,
        "OUTPUT_GRID_SCALE must be a positive number, got '0'"},
       {"OPTIM_PCT", {"-5"}, "OPTIM_PCT must be a positive number, got '-5'"},
       {"REFIT_REACH_SMIN", {"2"},
-       "REFIT_REACH_SMIN must be a number in (0, 1], got '2'"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '2'"},
       {"REFIT_REACH_SMIN", {"-1"},
-       "REFIT_REACH_SMIN must be a number in (0, 1], got '-1'"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '-1'"},
+      {"REFIT_REACH_SMIN", {"0.05"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '0.05'"},
+      {"REFIT_REACH_SMIN", {"1e-6"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '1e-6'"},
       {"REFIT_REACH_MARGIN", {"0"},
        "REFIT_REACH_MARGIN must be a positive number, got '0'"},
       {"REFIT_R_LO_FRAC", {"2"},
@@ -778,6 +788,7 @@ TEST_CASE_METHOD(PTFixture,
            {"REFIT_CURVE_DERIV_WEIGHT", "0"},
            {"REFIT_CURVE_RELAX", "1"},
            {"REFIT_REACH_SMIN", "1"},
+           {"REFIT_REACH_SMIN", "0.1"},
            {"N2B", "1024"},
            {"REFIT_TOL_AMBIENT", ".5"},
            {"REFIT_R_LO_FRAC", "0.15"}}) {
