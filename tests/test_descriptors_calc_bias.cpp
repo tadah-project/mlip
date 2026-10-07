@@ -886,6 +886,62 @@ TEST_CASE("BIAS true: the composition check reads FIXINDEX as the trainer "
   }
 }
 
+// Pins: the composition check bounds FIXINDEX by the weight count of the
+// fit (model_weight_count) and refuses an index past it with the fit's own
+// message, before the fit, on data whose every structure is 8 Nb + 8 Ta
+// (ATOM Nb Ta, BIAS true, D2_BP 3):
+//   - M_BLR BF_Linear (5 weights): FIXINDEX 18446744073709551615, 6 and 0
+//     (FIXWEIGHT 0.05) are refused as "FIXINDEX: index <i> is outside 1-5
+//     (the model has 5 weights)", by Trainer::train (M_BLR::train) and by
+//     require_intercepts_determined called as tadah train calls it (the
+//     Trainer's context and function, before the fit);
+//   - M_KRR Kern_Quadratic (SBASIS 6, its weights those of the basis the
+//     fit draws): FIXINDEX 7 as "outside 1-6 (the model has 6 weights)".
+// Before the fix: the check read FIXINDEX without the weight count and
+// sized a vector<bool> by the largest index (pinned_weight.resize(i)):
+// 18446744073709551615 threw std::length_error "vector<bool>::_M_fill_insert"
+// (100000000000 asked for 12.5 GB), 6 and 7 passed it and the data were
+// refused as "cannot determine the per-species energy constants (the
+// intercepts)" (rank 1), so the fit's bound was never reached, and 0 was
+// "FIXINDEX: index 0 is not a model weight (the weights are numbered from
+// 1)", where the trainer and BIAS false say "outside 1-5".
+TEST_CASE("BIAS true: the composition check bounds FIXINDEX by the fit's "
+          "weight count",
+          "[descriptors_calc][bias][composition][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  for (const char *fi : {"18446744073709551615", "6", "0"}) DYNAMIC_SECTION(
+      "M_BLR BF_Linear, FIXINDEX " << fi) {
+    const std::string expected = std::string("FIXINDEX: index ") + fi +
+                                 " is outside 1-5 (the model has 5 weights)";
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", fi);
+    c.add("FIXWEIGHT", 0.05);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m == expected);
+    Trainer te(c, ws);
+    const std::string me = refusal_of([&] {
+      tadah::mlip::require_intercepts_determined(fixed, te.context, *te.fb);
+    });
+    INFO(me);
+    CHECK(me == expected);
+  }
+  SECTION("M_KRR Kern_Quadratic, FIXINDEX 7") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", "Kern_Quadratic");
+    c.add("SBASIS", 6);
+    c.add("FIXINDEX", "7");
+    c.add("FIXWEIGHT", 0.05);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m == "FIXINDEX: index 7 is outside 1-6 (the model has 6 weights)");
+  }
+}
+
 // Pins: the composition check takes the intercepts from the model's
 // function (Function_Base::intercept_columns) on data whose every structure
 // is 8 Nb + 8 Ta (ATOM Nb Ta, BIAS true, D2_BP 3: DSIZE 5):
