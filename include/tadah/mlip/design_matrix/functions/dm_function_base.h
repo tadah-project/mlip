@@ -23,6 +23,8 @@ struct DM_Function_Base: public virtual tadah::models::Function_Base {
   DM_Function_Base(const tadah::core::Context &c);
   virtual ~DM_Function_Base();
 
+  /** The design-matrix width: weights_count(DSIZE) of the basis function
+   *  or kernel (models::Function_Base::weights_count). */
   virtual size_t get_phi_cols(const tadah::core::Context &)=0;
   virtual void calc_phi_energy_row(tadah::core::phi_type &, size_t &,
                                    const Structure &, const StDescriptors &)=0;

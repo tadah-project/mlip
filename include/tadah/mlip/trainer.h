@@ -1,6 +1,7 @@
 #ifndef TADAH_MLIP_TRAINER_H
 #define TADAH_MLIP_TRAINER_H
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/models/m_tadah_base.h>
@@ -43,7 +44,11 @@ class Trainer {
           (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFIES CONTEXT ON TRAINING
       dm(*fb, context, workspaceManager), // does not modify context
       workspaceManager_(&workspaceManager)
-  {  }
+  {
+    // The descriptor of training (dc, DSIZE) is the descriptor of
+    // pair_style tadah (DC_Selector): the trained weights fit both.
+    require_descriptor_layout(DCS, context, "Trainer");
+  }
 
     void train(StructureDB &stdb) {
       nnf.calc(stdb, context);

@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/detail/nn_guard.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/parallel.h>
+#include <tadah/core/intercept_layout.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/models/descriptors/dimer_element_pairs.h>
 
@@ -24,9 +26,8 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T
   if (context.get<size_t>("DSIZE")==0)
     common_constructor();
   else {
-    size_t bias=0;
-    if (context.get<bool>("BIAS"))
-      bias++;
+    // one intercept column per ATOM species (BIAS true), as DC_Selector
+    const size_t bias = tadah::core::n_intercept_columns(context);
     if (context.get<bool>("INIT2B")) {
       d2.set_fidx(bias);
     }
@@ -34,7 +35,8 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &t1, T
       dm.set_fidx(bias+d2.size());
     }
   }
-  // calc_dimer evaluates every atom as Z=1
+  init_intercepts();
+  // calc_dimer evaluates every atom's descriptors as Z=1
   tadah::models::require_dimer_element_pairs(context, d2, dm);
 }
 template <typename D2, typename DM, typename C2, typename CM>
@@ -93,7 +95,8 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T
 
   if (context.get<size_t>("DSIZE")==0)
     common_constructor();
-  // calc_dimer evaluates every atom as Z=1
+  init_intercepts();
+  // calc_dimer evaluates every atom's descriptors as Z=1
   tadah::models::require_dimer_element_pairs(context, d2, dm);
 }
 template <typename D2, typename DM, typename C2, typename CM>
@@ -102,10 +105,9 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
 
   // Calculate total size of the descriptor.
   // Add relevant keys to the context.
-  // Set first indices for all types
-  size_t bias=0;
-  if (context.get<bool>("BIAS"))
-    bias++;
+  // Set first indices for all types: one intercept column per ATOM species
+  // (BIAS true), then the two-body and the many-body descriptors.
+  const size_t bias = tadah::core::n_intercept_columns(context);
   if (context.get<bool>("INIT2B")) {
     if (!context.contains("TYPE2B"))
       context.add("TYPE2B",d2.label());
@@ -123,10 +125,30 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   if (!dsize)
     throw std::runtime_error("The descriptor size is 0, check your config.");
 
-  if (context.get<bool>("BIAS"))
-    dsize++;
+  dsize += bias;
 
   context.addInternal("DSIZE",dsize);
+}
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::init_intercepts() {
+  n_intercept_ = tadah::core::n_intercept_columns(context);
+  intercept_col_.fill(-1);
+  if (n_intercept_)   // the ATOM symbols are looked up in the PeriodicTable
+    intercept_col_ = tadah::core::intercept_columns_by_Z(context);
+}
+template <typename D2, typename DM, typename C2, typename CM>
+size_t DescriptorsCalc<D2,DM,C2,CM>::intercept_column(const Atom &a,
+                                                     const std::string &where) const {
+  const int c = a.Z >= 0 && a.Z < static_cast<int>(intercept_col_.size())
+                    ? intercept_col_[a.Z] : -1;
+  if (c < 0) throw_element_not_in_atom(a, context, where);
+  return static_cast<size_t>(c);
+}
+template <typename D2, typename DM, typename C2, typename CM>
+void DescriptorsCalc<D2,DM,C2,CM>::require_intercept_columns(const Structure &st,
+                                                            const std::string &where) const {
+  if (!n_intercept_) return;
+  for (const Atom &a : st.atoms) (void)intercept_column(a, where);
 }
 template <typename D2, typename DM, typename C2, typename CM>
 double DescriptorsCalc<D2,DM,C2,CM>::neighbour_cutoff() const {
@@ -173,6 +195,9 @@ template <typename D2, typename DM, typename C2, typename CM>
 void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d) const {
 
   detail::require_nn_cutoff(st, neighbour_cutoff(), "DescriptorsCalc");
+  if (n_intercept_)
+    require_intercept_columns(st, st.label.empty() ? std::string("a structure")
+                                                   : "structure '" + st.label + "'");
 
   bool init2b = context.get<bool>("INIT2B");
   bool initmb = context.get<bool>("INITMB");
@@ -186,10 +211,6 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
   init2b = init2b && size2b;
   initmb = initmb && sizemb;
 
-  size_t bias=0;
-  if (context.get<bool>("BIAS"))
-    bias++;
-
   if (initmb)
     calc_rho(st,st_d);
 
@@ -200,11 +221,13 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
   if (init2b) rcut_2b_sq = pow(d2.get_rcut(),2);
   if (initmb) rcut_mb_sq = pow(dm.get_rcut(),2);
 
-  // zero all aeds and set bias
+  // zero all aeds and set each atom's intercept: 1.0 in the column of its
+  // species (BIAS true)
   for (size_t i=0; i<st.natoms(); ++i) {
     tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
-    aed(0)=static_cast<double>(bias);   // set bias
+    if (n_intercept_)
+      aed(intercept_column(st(i), "a structure")) = 1.0;
   }
 
   // calculate many-body energy
@@ -220,6 +243,8 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
 
   bool use_force = context.get<bool>("FORCE");
   bool use_stress = context.get<bool>("STRESS");
+  // the two-body rows of the force descriptors: after the intercept columns
+  const size_t fidx2b = d2.get_fidx();
 
   tadah::core::Vec3d delij;
   for (size_t i=0; i<st.natoms(); ++i) {
@@ -250,7 +275,7 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc(const Structure &st, StDescriptors &st_d
           // Two-body descriptor calculates x-direction only - fd_ij(n,0)
           // so we have to copy x-dir to y- and z-dir
           // and scale them by the unit directional vector delij/rij.
-          for (size_t n=bias; n<size2b+bias; ++n) {
+          for (size_t n=fidx2b; n<fidx2b+size2b; ++n) {
             fd_ij(n,0) *= rij_inv;
             fd_ij(n,1) = fd_ij(n,0)*delij[1];
             fd_ij(n,2) = fd_ij(n,0)*delij[2];
@@ -315,13 +340,12 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
   double r[6];
 
   const std::vector<Atom> &atoms = st.atoms;
+  if (n_intercept_)
+    require_intercept_columns(st, st.label.empty() ? std::string("a structure")
+                                                   : "structure '" + st.label + "'");
 
-  size_t bias=0;
-  if (context.get<bool>("BIAS"))
-    bias++;
-
-  // TODO weighting factors
-  // For now assume all are the same type
+  // The descriptors evaluate every atom as Z=1 (require_dimer_element_pairs);
+  // the intercept is that of each atom's own species, as in compute_dimers.
   int Zi = 1;
   int Zj = 1;
 
@@ -335,11 +359,12 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
   idx[4] = std::make_pair(0,1);
   idx[5] = std::make_pair(2,3);
 
-  // zero all aeds+rho and set bias
+  // zero all aeds+rho and set each atom's intercept (BIAS true)
   for (size_t i=0; i<4; ++i) {
     tadah::core::aed_type &aed = st_d.get_aed(i);
     aed.set_zero();
-    aed(0)=static_cast<double>(bias);   // set bias
+    if (n_intercept_)
+      aed(intercept_column(atoms[i], "a structure")) = 1.0;
   }
   if (initmb) {
     size_t s = dm.rhoi_size()+dm.rhoip_size();
@@ -390,13 +415,6 @@ void DescriptorsCalc<D2,DM,C2,CM>::calc_dimer(const Structure &st, StDescriptors
     }
   }
 
-  //if (init2b) {
-  //    for (size_t n=0; n<st.natoms(); ++n) {
-  //        for(size_t s=bias; s<bias+d2.size(); ++s) {
-  //            aeds[n](s) *= 0.5;
-  //        }
-  //    }
-  //}
 }
 
 template <typename D2, typename DM, typename C2, typename CM>
@@ -413,13 +431,19 @@ template <typename D2, typename DM, typename C2, typename CM>
 StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) const {
   StDescriptorsDB st_desc_db(stdb, context);
 
-  // Refuse a missing or short neighbour list before the parallel loop, so
-  // the error names the first such structure whatever the thread order.
+  // Refuse a missing or short neighbour list, and an atom without an
+  // intercept column, before the parallel loop, so the error names the first
+  // such structure whatever the thread order.
   if (!context.get<bool>("DIMER",0)) {
     const double rc = neighbour_cutoff();
     for (size_t i = 0; i < stdb.size(); ++i)
       detail::require_nn_cutoff(stdb(i), rc, "DescriptorsCalc");
   }
+  if (n_intercept_)
+    for (size_t i = 0; i < stdb.size(); ++i)
+      require_intercept_columns(stdb(i), "structure " + std::to_string(i + 1) +
+                                             (stdb(i).label.empty() ? std::string()
+                                              : " ('" + stdb(i).label + "')"));
 
   // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
   // Each i writes a disjoint st_desc_db(i) => order-independent.
@@ -435,14 +459,15 @@ template <typename D2, typename DM, typename C2, typename CM>
 ColumnLayout DescriptorsCalc<D2,DM,C2,CM>::layout(const tadah::core::Context &c) const {
   ColumnLayout L;
   std::size_t offset = 0;
-  if (c.get<bool>("BIAS")) {
+  const std::size_t n_int = tadah::core::n_intercept_columns(c);
+  if (n_int) {
     ColumnBlock b;
     b.descriptor_label = "bias";
     b.family           = "bias";
     b.col_offset       = offset;
-    b.col_count        = 1;
+    b.col_count        = n_int;   // one intercept column per ATOM species
     L.blocks.push_back(b);
-    offset += 1;
+    offset += n_int;
   }
   if (c.get<bool>("INIT2B") && d2.size() > 0) {
     ColumnBlock b;

@@ -1,7 +1,17 @@
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/parallel.h>
+#include <tadah/models/functions/weights_fit.h>
 namespace tadah {
 namespace mlip {
+
+void M_Tadah_Base::
+require_weights_fit(const tadah::core::Context &c, std::size_t dsize) const
+{
+  tadah::models::require_weights_fit(
+      c, dsize, function(),
+      tadah::models::TrainedSizes{weights.size(), norm.mean.size(),
+                                  norm.std_dev.size()});
+}
 
 void M_Tadah_Base::
 fpredict(const size_t a, tadah::core::force_type &v,
@@ -39,6 +49,7 @@ epredict(const StDescriptors &std)
 Structure M_Tadah_Base::
 predict(const tadah::core::Context &c, StDescriptors &std, const Structure &stOrig)
 {
+  require_weights_fit(c, std.dim());
 
   if(c.get<bool>("NORM") && !std.normalised
     && c("MODEL")[1].find("Linear") == std::string::npos)

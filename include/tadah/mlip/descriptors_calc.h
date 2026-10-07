@@ -12,6 +12,10 @@
 #include <tadah/models/descriptors/dm/dm_base.h>
 #include <tadah/models/cutoffs.h>
 
+#include <array>
+#include <cstddef>
+#include <string>
+
 namespace tadah {
 namespace mlip {
 /** \brief Descriptors calculator
@@ -34,6 +38,14 @@ namespace mlip {
  *  to the provided tadah::core::Context object:
  *
  *  \ref SIZE2B,\ref SIZE3B,\ref SIZEMB,\ref DSIZE
+ *
+ *  Descriptor layout of an atom: with \ref BIAS true, N = size(\ref ATOM)
+ *  one-hot intercept columns in ATOM order (1.0 in the column of the
+ *  atom's species, 0 in the others; core::intercept_columns_by_Z), then
+ *  the two-body and the many-body descriptors. It is the layout of
+ *  models::DC_Selector (pair_style tadah), so DSIZE equals its
+ *  descriptor_size(). With BIAS true an atom of an element ATOM does not
+ *  list is refused (std::runtime_error).
  *
  *  Required keys:
  *  \ref INIT2B,\ref INIT3B,\ref INITMB,
@@ -118,11 +130,13 @@ class DescriptorsCalc: public DC_Base {
         /** \brief Compute the design-matrix column layout for the
          *  descriptors held by this calculator.
          *
-         *  Reads BIAS / INIT2B / INITMB from the supplied context and
-         *  reports per-block label, family, offset, and count in the
+         *  Reads BIAS / ATOM / INIT2B / INITMB from the supplied context
+         *  and reports per-block label, family, offset, and count in the
          *  same order they are placed in the design matrix:
          *
-         *    [bias]  if BIAS=true            -> "bias", family "bias"
+         *    [bias]  if BIAS=true            -> "bias", family "bias",
+         *                                       N = size(ATOM) columns, one
+         *                                       intercept per species
          *    [d2]    if INIT2B and d2.size>0 -> d2.label(), family "D2"
          *    [dm]    if INITMB and dm.size>0 -> dm.label(), family "DM"
          *
@@ -143,6 +157,18 @@ class DescriptorsCalc: public DC_Base {
         void calc(const Structure &st, StDescriptors &std) const;
         void calc_dimer(const Structure &st, StDescriptors &std) const;
         void common_constructor();
+
+        /* BIAS true: the number of intercept columns (N = size(ATOM)) and
+         * the intercept column of each Z; set by every constructor. */
+        std::size_t n_intercept_ = 0;
+        std::array<int, 119> intercept_col_{};
+        void init_intercepts();
+        /* The intercept column of atom a (BIAS true); throws for an element
+         * ATOM does not list, naming `where`. */
+        std::size_t intercept_column(const Atom &a, const std::string &where) const;
+        /* Refuses a structure with an atom of an element ATOM does not list
+         * (BIAS true), naming `where`. */
+        void require_intercept_columns(const Structure &st, const std::string &where) const;
 };
 } // namespace mlip
 } // namespace tadah

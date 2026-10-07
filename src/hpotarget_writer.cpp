@@ -204,8 +204,9 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
     os << "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no\n"
        << "# per-atom energy constant. For absolute reference energies (e.g.\n"
        << "# DFT totals) add ESHIFT_ATOM, ESHIFT_DBATOM or ESHIFT to <config>.\n"
-       << "# (Not BIAS true: its intercept column precedes the weights that\n"
-       << "# FIXINDEX/FIXWEIGHT and the OPTIM FIXWEIGHT lines below index.)\n";
+       << "# (Not BIAS true: its intercept columns, one per ATOM species,\n"
+       << "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM\n"
+       << "# FIXWEIGHT lines below index.)\n";
   if (form && tadah::models::rhoform_is_positive(*form))
     os << rhoform_bounds_line(*form) << "\n";
   os << "#\n"

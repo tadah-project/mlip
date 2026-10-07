@@ -14,8 +14,7 @@ DM_Kern_Linear::DM_Kern_Linear (const tadah::core::Context &c):
 {}
 size_t DM_Kern_Linear::get_phi_cols(const tadah::core::Context &context)
 {
-  size_t cols = context.get<size_t>("DSIZE");
-  return cols;
+  return weights_count(context.get<size_t>("DSIZE"));
 }
 void DM_Kern_Linear::calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row,
                                          const Structure &, const StDescriptors &st_d)

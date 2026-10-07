@@ -11,9 +11,9 @@ DM_Kern_Base::DM_Kern_Base(const tadah::core::Context &c):
   tadah::models::Function_Base(c), 
   tadah::models::Kern_Base(c), 
   DM_Function_Base(c) {}
-size_t DM_Kern_Base::get_phi_cols(const tadah::core::Context &)
+size_t DM_Kern_Base::get_phi_cols(const tadah::core::Context &context)
 {
-  return basis.cols();
+  return weights_count(context.get<size_t>("DSIZE"));   // basis.cols()
 }
 void  DM_Kern_Base::calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row,
                                         const Structure &, const StDescriptors &st_d)
