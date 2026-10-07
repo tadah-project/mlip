@@ -26,6 +26,7 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unistd.h>
 #include <vector>
 
@@ -635,4 +636,228 @@ TEST_CASE_METHOD(PTFixture,
           std::string::npos);
     CHECK(logged.find("HINT: RHOFORM NONNEG") == std::string::npos);
   }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: the configuration numbers are read strictly, "
+                 "with their ranges",
+                 "[refit][strict_numbers]") {
+  /* Pins: RefitEngine::validate(), and run() before it reads the EAM file,
+   * read every refit configuration number with the number grammar of the
+   * hpotarget file (core::parse_decimal_normal) or as decimal digits, and
+   * refuse one out of its range naming the key and the token as written:
+   * the tolerances, REFIT_COMPACT_SHARE, OUTPUT_GRID_SCALE, OPTIM_PCT and
+   * REFIT_REACH_MARGIN > 0, REFIT_REACH_SMIN from 0.1 to 1 (below 0.1 the
+   * compressed-lattice neighbour lists of the self-test and the E-V scans
+   * grow as smin^-3: a/a0 0.01 took a minute, 1e-6 did not finish; the
+   * reachability probe lists neighbours out to rcut/0.1 only; it was
+   * (0, 1], the range of the first fix), REFIT_CURVE_RELAX in (0, 1] (in
+   * either REFIT_OBJECTIVE), REFIT_R_LO_FRAC in (0, 1),
+   * REFIT_CURVE_DERIV_WEIGHT >= 0, the compact counts from 1 (JITTERS from
+   * 0 to 2147483646, its candidates jitters + 1 an int), REFIT_COMPACT_SEED
+   * from 0 to 4294967295, N2B, NRHO_BASIS and NF_BASIS from 1 to 1024 (the
+   * escalation cap), REFIT_MAX_ESCALATIONS from 0, REFIT_COMPACT_NMAX one
+   * or three integers from 1 to 2147483647 whose largest gives a curve
+   * sample grid of 4 x NMAX points per function that fits an int (so at
+   * most 536870911; refused naming the grid, in any REFIT_MODE); a number
+   * below the smallest normal double
+   * says it is too small. (A scalar key holds one value: Context::add
+   * overwrites it.) The values at the ends of the ranges are accepted.
+   * Before the fix: validate() read none of them (no exception), and run()
+   * read them with Context::get (istringstream) unchecked, so the first
+   * message checked is not thrown and run() fails reading the absent EAM
+   * file instead. Before the REFIT_REACH_SMIN floor: its range was (0, 1],
+   * so its messages said "a number in (0, 1]" and 0.05 and 1e-6 were
+   * accepted. Before the NMAX grid check moved into the reader: the compact
+   * fit checked the sample grid after the EAM file was read (compact mode
+   * only), so validate() accepted NMAX 536870912 and 2147483647 (an end of
+   * the accepted range here then). */
+  const std::string i32 = "2147483647";
+  struct Case {
+    std::string key;
+    std::vector<std::string> tokens;
+    std::string message;
+  };
+  const std::string tiny =
+      " (too small: its magnitude is below the smallest normal double, "
+      "2.2250738585072014e-308)";
+  const auto grid = [](const std::string &nmax, const std::string &points) {
+    return "REFIT_COMPACT_NMAX " + nmax + " needs a curve sample grid of 4 "
+           "x " + nmax + " = " + points + " points per function "
+           "(REFIT_COMPACT_SAMPLES is raised to at least 4 x "
+           "REFIT_COMPACT_NMAX), above 2147483647; lower REFIT_COMPACT_NMAX";
+  };
+  const std::vector<Case> cases = {
+      {"REFIT_COMPACT_NMAX", {"+3"},
+       "REFIT_COMPACT_NMAX must be an integer from 1 to " + i32 + ", got '+3'"},
+      {"REFIT_COMPACT_NMAX", {"5", "0", "5"},
+       "REFIT_COMPACT_NMAX must be an integer from 1 to " + i32 + ", got '0'"},
+      {"REFIT_COMPACT_NMAX", {"5", "6"},
+       "REFIT_COMPACT_NMAX takes 1 value (all functions) or 3 (phi rho F), "
+       "got 2"},
+      {"REFIT_COMPACT_NMAX", {"2147483648"},
+       "REFIT_COMPACT_NMAX must be an integer from 1 to " + i32 +
+           ", got '2147483648'"},
+      {"REFIT_COMPACT_NMAX", {"536870912"}, grid("536870912", "2147483648")},
+      {"REFIT_COMPACT_NMAX", {"5", "536870912", "5"},
+       grid("536870912", "2147483648")},
+      {"REFIT_COMPACT_NMAX", {i32}, grid(i32, "8589934588")},
+      {"REFIT_TOL_AMBIENT", {"0"},
+       "REFIT_TOL_AMBIENT must be a positive number, got '0'"},
+      {"REFIT_TOL_AMBIENT", {"-0.1"},
+       "REFIT_TOL_AMBIENT must be a positive number, got '-0.1'"},
+      {"REFIT_TOL_AMBIENT", {"1e-400"},
+       "REFIT_TOL_AMBIENT must be a positive number, got '1e-400'" + tiny},
+      {"REFIT_TOL_AMBIENT", {"0x1p-3"},
+       "REFIT_TOL_AMBIENT must be a positive number, got '0x1p-3'"},
+      {"REFIT_TOL_COMPRESSED", {"0"},
+       "REFIT_TOL_COMPRESSED must be a positive number, got '0'"},
+      {"OUTPUT_GRID_SCALE", {"0"},
+       "OUTPUT_GRID_SCALE must be a positive number, got '0'"},
+      {"OPTIM_PCT", {"-5"}, "OPTIM_PCT must be a positive number, got '-5'"},
+      {"REFIT_REACH_SMIN", {"2"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '2'"},
+      {"REFIT_REACH_SMIN", {"-1"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '-1'"},
+      {"REFIT_REACH_SMIN", {"0.05"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '0.05'"},
+      {"REFIT_REACH_SMIN", {"1e-6"},
+       "REFIT_REACH_SMIN must be a number from 0.1 to 1, got '1e-6'"},
+      {"REFIT_REACH_MARGIN", {"0"},
+       "REFIT_REACH_MARGIN must be a positive number, got '0'"},
+      {"REFIT_R_LO_FRAC", {"2"},
+       "REFIT_R_LO_FRAC must be a number in (0, 1), got '2'"},
+      {"REFIT_R_LO_FRAC", {"1"},
+       "REFIT_R_LO_FRAC must be a number in (0, 1), got '1'"},
+      {"REFIT_COMPACT_STALL", {"0"},
+       "REFIT_COMPACT_STALL must be an integer from 1 to " + i32 +
+           ", got '0'"},
+      {"REFIT_COMPACT_OPT_EVERY", {"0"},
+       "REFIT_COMPACT_OPT_EVERY must be an integer from 1 to " + i32 +
+           ", got '0'"},
+      {"REFIT_COMPACT_INSERT_TOPK", {"0"},
+       "REFIT_COMPACT_INSERT_TOPK must be an integer from 1 to " + i32 +
+           ", got '0'"},
+      {"REFIT_COMPACT_SAMPLES", {"0"},
+       "REFIT_COMPACT_SAMPLES must be an integer from 1 to " + i32 +
+           ", got '0'"},
+      {"REFIT_COMPACT_JITTERS", {"2147483647"},
+       "REFIT_COMPACT_JITTERS must be an integer from 0 to 2147483646, got "
+       "'2147483647'"},
+      {"REFIT_COMPACT_JITTERS", {"-1"},
+       "REFIT_COMPACT_JITTERS must be an integer from 0 to 2147483646, got "
+       "'-1'"},
+      {"REFIT_COMPACT_SEED", {"4294967296"},
+       "REFIT_COMPACT_SEED must be an integer from 0 to 4294967295, got "
+       "'4294967296'"},
+      {"REFIT_COMPACT_SHARE", {"-1"},
+       "REFIT_COMPACT_SHARE must be a positive number, got '-1'"},
+      {"REFIT_CURVE_RELAX", {"0"},
+       "REFIT_CURVE_RELAX must be a number in (0, 1], got '0'"},
+      {"REFIT_CURVE_DERIV_WEIGHT", {"-1"},
+       "REFIT_CURVE_DERIV_WEIGHT must be a number >= 0, got '-1'"},
+      {"N2B", {"0"}, "N2B must be an integer from 1 to 1024, got '0'"},
+      {"NRHO_BASIS", {"1025"},
+       "NRHO_BASIS must be an integer from 1 to 1024, got '1025'"},
+      {"NF_BASIS", {"5x"}, "NF_BASIS must be an integer from 1 to 1024, got "
+                           "'5x'"},
+      {"REFIT_MAX_ESCALATIONS", {"-1"},
+       "REFIT_MAX_ESCALATIONS must be an integer from 0 to " + i32 +
+           ", got '-1'"}};
+  const auto with = [](const std::string &key,
+                       const std::vector<std::string> &tokens) {
+    Context c = dense_refit_context("absent.eam.alloy");
+    c.remove(key);
+    for (const auto &t : tokens) c.add(key, t);
+    return c;
+  };
+  ScopedTempDir tmp;
+  for (const auto &cs : cases) {
+    INFO(cs.key << " " << cs.tokens.front()
+                << (cs.tokens.size() > 1 ? " ..." : ""));
+    const Context c = with(cs.key, cs.tokens);
+    Task task("refit", c);
+    RefitEngine engine;
+    CHECK_THROWS_WITH(engine.validate(task), "tadah refit: " + cs.message);
+    // run() refuses it before it reads the (absent) EAM file
+    CHECK_THROWS_WITH(engine.run(task), "tadah refit: " + cs.message);
+  }
+  // REFIT_CURVE_RELAX under REFIT_OBJECTIVE energy too (it was checked in
+  // curve mode only)
+  {
+    Context c = with("REFIT_CURVE_RELAX", {"1.5"});
+    c.add("REFIT_OBJECTIVE", std::string("energy"));
+    Task task("refit", c);
+    CHECK_THROWS_WITH(RefitEngine().validate(task),
+                      "tadah refit: REFIT_CURVE_RELAX must be a number in "
+                      "(0, 1], got '1.5'");
+  }
+  // The ends of the ranges are accepted.
+  for (const auto &[key, tok] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"REFIT_COMPACT_SEED", "3000000000"},
+           {"REFIT_COMPACT_SEED", "4294967295"},
+           {"REFIT_COMPACT_SEED", "0"},
+           {"REFIT_COMPACT_JITTERS", "0"},
+           {"REFIT_COMPACT_JITTERS", "2147483646"},
+           {"REFIT_COMPACT_NMAX", "536870911"},
+           {"REFIT_MAX_ESCALATIONS", "0"},
+           {"REFIT_CURVE_DERIV_WEIGHT", "0"},
+           {"REFIT_CURVE_RELAX", "1"},
+           {"REFIT_REACH_SMIN", "1"},
+           {"REFIT_REACH_SMIN", "0.1"},
+           {"N2B", "1024"},
+           {"REFIT_TOL_AMBIENT", ".5"},
+           {"REFIT_R_LO_FRAC", "0.15"}}) {
+    INFO(key << " " << tok);
+    Task task("refit", with(key, {tok}));
+    CHECK_NOTHROW(RefitEngine().validate(task));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: an OUTPUT_GRID_SCALE whose refit.eam grid a "
+                 "setfl table cannot have is refused before any fitting",
+                 "[refit][strict_numbers]") {
+  /* Pins: run() builds the refit.eam grid (EAMSetflIO::scaled_grid) right
+   * after it reads the EAM file, before any fitting: an OUTPUT_GRID_SCALE
+   * whose scaled point counts fall below 3 or above 2147483647 throws
+   * naming the key, the token and the counts, and writes nothing (no
+   * pot.tadah, refit.eam or refit_opt.log); a scale that gives 3 points
+   * (400 x 0.00625 = 2.5) writes a 3-point refit.eam.
+   * Before the fix: the grid was built after the fit, when pot.tadah had
+   * been written, so the run fails late with scaled_grid's own message
+   * and leaves pot.tadah (before scaled_grid refused such a scale it
+   * clamped the counts to 2: exit 0 and a 2-point refit.eam). */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);  // nr = nrho = 400
+  const std::string needs =
+      " points (the input table has 400 and 400); a setfl table needs 3 to "
+      "2147483647 points (the spline that LAMMPS and tadah fit through it "
+      "reads its third point)";
+  for (const auto &[tok, shown, counts] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {"0.0001", "0.0001", "nrho = 0 and nr = 0"},
+           {"1e7", "10000000", "nrho = 4000000000 and nr = 4000000000"}}) {
+    INFO("OUTPUT_GRID_SCALE " << tok);
+    for (const char *f : {"pot.tadah", "refit.eam", "refit_opt.log"})
+      fs::remove(f);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.add("OUTPUT_GRID_SCALE", tok);
+    Task task("refit", c);
+    CHECK_THROWS_WITH(RefitEngine().run(task),
+                      "tadah refit: OUTPUT_GRID_SCALE '" + tok +
+                          "' for refit.eam: EAMSetflIO: a grid scale of " +
+                          shown + " gives " + counts + needs);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    CHECK_FALSE(fs::exists("refit.eam"));
+    CHECK_FALSE(fs::exists("refit_opt.log"));
+  }
+  Context c = dense_refit_context("synth_fcc.eam.alloy");
+  c.add("OUTPUT_GRID_SCALE", std::string("0.00625"));
+  (void)run_refit(c);
+  tadah::models::EAMSetflIO setfl;
+  setfl.read_setfl("refit.eam");
+  CHECK(setfl.nr() == 3);
+  CHECK(setfl.nrho() == 3);
 }

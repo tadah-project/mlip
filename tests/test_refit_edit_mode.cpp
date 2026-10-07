@@ -422,6 +422,45 @@ TEST_CASE_METHOD(PTFixture, "refit --edit: output naming and clobber guard",
   }
 }
 
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit: OPTIM_PCT is read strictly before anything is "
+                 "written",
+                 "[refit][edit][strict_numbers]") {
+  /* Pins: refit --edit reads OPTIM_PCT as tadah refit and --retarget read
+   * it (a positive number in the hpotarget grammar) in validate() and,
+   * in run(), before it writes a file: OPTIM_PCT 0 or -5 throws naming the
+   * key and the token, and neither the edited potential nor its hpotarget
+   * is written; OPTIM_PCT 7.5 writes both.
+   * Before the fix: validate() did not read it, and run() wrote the edited
+   * potential before it read OPTIM_PCT, so after the error
+   * pot_edited.tadah exists (a partial result without its hpotarget). */
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  const auto edit = [](const std::string &pct) {
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("phi"));
+    c.add("ADD", 3.6);
+    c.add("OPTIM_PCT", pct);
+    return c;
+  };
+  for (const std::string pct : {"0", "-5"}) {
+    INFO("OPTIM_PCT " << pct);
+    const std::string msg =
+        "tadah refit: OPTIM_PCT must be a positive number, got '" + pct + "'";
+    Task task("refit", edit(pct));
+    CHECK_THROWS_WITH(RefitEngine().validate(task), msg);
+    CHECK_THROWS_WITH(RefitEngine().run(task), msg);
+    CHECK_FALSE(fs::exists("pot_edited.tadah"));
+    CHECK_FALSE(fs::exists("refit_edited.hpotarget"));
+  }
+  Task task("refit", edit("7.5"));
+  REQUIRE_NOTHROW(RefitEngine().validate(task));
+  REQUIRE(RefitEngine().run(task) == EXIT_SUCCESS);
+  CHECK(fs::exists("pot_edited.tadah"));
+  CHECK(fs::exists("refit_edited.hpotarget"));
+}
+
 TEST_CASE_METHOD(PTFixture, "refit mode-key validation (config-file path)",
                  "[refit][edit]") {
   auto ctx_with = [](std::initializer_list<std::pair<const char *, double>>

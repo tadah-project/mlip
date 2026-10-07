@@ -8,6 +8,23 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+namespace {
+// A key's explanation: its long description, or the description of a key
+// that has none (the text its command's --help gives it, where a
+// configuration key states its range), then its examples.
+void print_key(const core::BlueprintKey &key) {
+  std::cout << (key.longDescription.empty() ? key.description
+                                            : key.longDescription)
+            << std::endl;
+  if (!key.examples.empty()) {
+    std::cout << "\nEXAMPLES: " << std::endl;
+    for (const auto &example : key.examples) {
+      std::cout << "  " << example << std::endl;
+    }
+  }
+}
+}  // namespace
+
 int ExplainEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
   std::string option = taskContext.get<std::string>("OPTION", 0);
@@ -30,13 +47,7 @@ int ExplainEngine::run(mlip::Task &task) {
         std::vector<std::string> tokens2;
         boost::split(tokens2, key.keyName, boost::is_any_of("."));
         if (tokens2.back() == tokens[1]) {
-          std::cout << key.longDescription << std::endl;
-          if (!key.examples.empty()) {
-            std::cout << "\nEXAMPLES: " << std::endl;
-            for (const auto &example : key.examples) {
-              std::cout << "  " << example << std::endl;
-            }
-          }
+          print_key(key);
           return EXIT_SUCCESS;
         }
       }
@@ -47,13 +58,7 @@ int ExplainEngine::run(mlip::Task &task) {
           std::vector<std::string> tokens3;
           boost::split(tokens3, key.keyName, boost::is_any_of("."));
           if (tokens3.back() == tokens[1]) {
-            std::cout << key.longDescription << std::endl;
-            if (!key.examples.empty()) {
-              std::cout << "\nEXAMPLES: " << std::endl;
-              for (const auto &example : key.examples) {
-                std::cout << "  " << example << std::endl;
-              }
-            }
+            print_key(key);
             return EXIT_SUCCESS;
           }
         }
@@ -64,13 +69,7 @@ int ExplainEngine::run(mlip::Task &task) {
         std::vector<std::string> tokens2;
         boost::split(tokens2, key.keyName, boost::is_any_of("."));
         if (tokens2.back() == tokens[2]) {
-          std::cout << key.longDescription << std::endl;
-          if (!key.examples.empty()) {
-            std::cout << "\nEXAMPLES: " << std::endl;
-            for (const auto &example : key.examples) {
-              std::cout << "  " << example << std::endl;
-            }
-          }
+          print_key(key);
           return EXIT_SUCCESS;
         }
       }
@@ -81,13 +80,7 @@ int ExplainEngine::run(mlip::Task &task) {
           std::vector<std::string> tokens3;
           boost::split(tokens3, key.keyName, boost::is_any_of("."));
           if (tokens3.back() == tokens[2]) {
-            std::cout << key.longDescription << std::endl;
-            if (!key.examples.empty()) {
-              std::cout << "\nEXAMPLES: " << std::endl;
-              for (const auto &example : key.examples) {
-                std::cout << "  " << example << std::endl;
-              }
-            }
+            print_key(key);
             return EXIT_SUCCESS;
           }
         }
