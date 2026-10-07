@@ -330,6 +330,31 @@ TEST_CASE("provision_fixed_weights: incomplete coverage throws",
                       Catch::Contains("not covered by FIXINDEX"));
 }
 
+/* Pins: provision_fixed_weights on a configuration with neither FIXINDEX
+ * nor FIXWEIGHT names every weight as uncovered ("provision_fixed_weights:
+ * every model weight must be pinned. Weights 1-K are not covered by
+ * FIXINDEX."), not the lone-key message: neither key is lone.
+ * Before the fix: it threw the lone-key message ("FIXINDEX requires
+ * FIXWEIGHT (and vice versa). ...") when either key was missing, so also
+ * when both were. */
+TEST_CASE("provision_fixed_weights without FIXINDEX and FIXWEIGHT names the "
+          "uncovered weights",
+          "[weight_provisioning][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Context ctx = make_model_context();
+  REQUIRE_FALSE(ctx.has_stored("FIXINDEX"));
+  REQUIRE_FALSE(ctx.has_stored("FIXWEIGHT"));
+  Trainer tr(ctx, ws);
+  const std::size_t K = tr.fb->get_phi_cols(tr.context);
+  REQUIRE(K >= 2);
+  REQUIRE_THROWS_WITH(
+      tr.provision_fixed_weights(),
+      "provision_fixed_weights: every model weight must be pinned. Weights "
+      "1-" + std::to_string(K) + " are not covered by FIXINDEX.");
+  CHECK_FALSE(tr.model->is_trained());
+}
+
 /* Pins: a Trainer whose configuration carries a SIGMA (that of a potential
  * used as the configuration, here N = K and K*K values) holds none of it
  * once built (Trainer::training_context: neither its context nor the
