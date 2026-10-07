@@ -809,20 +809,33 @@ TEST_CASE_METHOD(PTFixture,
    * SETFL_OUT, REFIT_LOG); a top-level OPTIMIZER block: "the OPTIMIZER
    * block has no effect under --edit: no mode of tadah refit reads a
    * top-level OPTIMIZER block; remove the OPTIMIZER block"; under
-   * --retarget also HPOFILEOUT ("... only a refit of an EAM file and --edit
-   * read it; remove HPOFILEOUT (the file --retarget writes is -o,
-   * OUTFILE)") and NUMERIC, which --edit reads. Nothing is written (no
-   * pot_edited.tadah, refit_edited.hpotarget or a_edited.hpotarget). The
+   * --retarget also HPOFILEOUT, which --edit reads ("... only a refit of an
+   * EAM file and --edit read it; remove HPOFILEOUT (the file --retarget
+   * writes is -o, OUTFILE)"). Nothing is written (no pot_edited.tadah,
+   * refit_edited.hpotarget or a_edited.hpotarget). NUMERIC, the precision
+   * of the potential and dataset files a command writes and no key of the
+   * refit, passes under --retarget, which writes neither: validate()
+   * accepts NUMERIC 12 and run() writes a_edited.hpotarget byte-identical
+   * to the run without it (its bounds are printed %.8e whatever NUMERIC
+   * is); --edit reads HPOFILEOUT and NUMERIC (new.hpotarget written). The
    * blueprint defaults the task factory stores for every refit
    * (KeyProvenance Default: HPOFILEOUT refit.hpotarget, OUTFILE pot.tadah,
    * REFIT_OBJECTIVE energy, REFIT_CURVE_*, REFIT_COMPACT_MERGE auto,
    * REFIT_CONSTRAIN_F0 true, IN_PLACE false, VERBOSE 1) pass and both
-   * modes run; the same keys from the configuration file are refused
-   * (REFIT_OBJECTIVE energy under --edit, HPOFILEOUT under --retarget).
+   * modes run; the same keys written in the configuration file are refused
+   * (REFIT_OBJECTIVE energy, the first of them in the table, under --edit
+   * and under --retarget).
    * Before the fix: validate() accepted every key and run() ignored it:
    * --edit wrote pot_edited.tadah and its hpotarget, --retarget wrote
-   * a_edited.hpotarget (with HPOFILEOUT set as well, which it never read).
-   * The defaults section passes as well (a pin). */
+   * a_edited.hpotarget (with HPOFILEOUT set as well, which it never read);
+   * in the defaults section the defaults passed as well (a pin) and the
+   * keys written in the file were accepted (no exception, the outputs
+   * written). NUMERIC under --retarget passed as well (a pin); the first
+   * version of the rule refused it ("tadah refit --retarget: NUMERIC has
+   * no effect under --retarget: only a refit of an EAM file and --edit
+   * read it; remove NUMERIC"), which stopped every --retarget TASK of a
+   * task file that sets NUMERIC above its first TASK line, for every
+   * task. */
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
   tadah::mlip::engines::write_hpotarget("a.hpotarget", make_knot_pot(), 5.0);
@@ -872,7 +885,8 @@ TEST_CASE_METHOD(PTFixture,
                                         kOptimizerUnread));
     }
   }
-  SECTION("--retarget refuses HPOFILEOUT and NUMERIC, which --edit reads") {
+  SECTION("--retarget refuses HPOFILEOUT, which --edit reads, and passes "
+          "NUMERIC") {
     Context c = retarget();
     c.add("HPOFILEOUT", std::string("new.hpotarget"));
     check_refused(Task("refit", c),
@@ -881,10 +895,26 @@ TEST_CASE_METHOD(PTFixture,
                                       " (the file --retarget writes is -o, "
                                       "OUTFILE)"));
     CHECK_FALSE(fs::exists("new.hpotarget"));
+    // NUMERIC is the precision of a written potential or dataset, which
+    // --retarget does not write: it passes, and the hpotarget is the one
+    // written without it
+    const auto slurp = [](const std::string &f) {
+      std::ifstream is(f);
+      return std::string((std::istreambuf_iterator<char>(is)),
+                         std::istreambuf_iterator<char>());
+    };
+    for (const auto &f : outputs) fs::remove(f);
+    Task plain("refit", retarget());
+    REQUIRE(RefitEngine().run(plain) == EXIT_SUCCESS);
+    const std::string without = slurp("a_edited.hpotarget");
+    REQUIRE_FALSE(without.empty());
+    fs::remove("a_edited.hpotarget");
     Context n = retarget();
     n.add("NUMERIC", std::string("12"));
-    check_refused(Task("refit", n),
-                  output_mode_refusal("--retarget", "NUMERIC", kFitEditReads));
+    Task numeric("refit", n);
+    CHECK_NOTHROW(RefitEngine().validate(numeric));
+    CHECK(RefitEngine().run(numeric) == EXIT_SUCCESS);
+    CHECK(slurp("a_edited.hpotarget") == without);
     // --edit reads both
     Context e = edit();
     e.add("HPOFILEOUT", std::string("new.hpotarget"));
