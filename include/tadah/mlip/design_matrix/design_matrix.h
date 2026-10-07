@@ -1,6 +1,7 @@
 #ifndef DESIGN_MATRIX_H
 #define DESIGN_MATRIX_H
 
+#include <array>
 #include <cmath>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
@@ -84,7 +85,29 @@ public:
    *  (a fit); false builds the rows as they are, for a prediction
    *  (M_BLR/M_KRR predict with error estimates). */
   bool apply_weights = true;
+  /** Whether build() appends the ridge-augmentation rows, one per column
+   *  after the rows of the structures (zero; LinearRegressor writes the
+   *  LAMBDA ridge of OALGO 1 and 2 into them): a fit. false builds the
+   *  rows of the structures only, for a prediction (M_BLR/M_KRR predict
+   *  with errors). */
+  bool augment = true;
+  /** Whether build(stdb, norm, dc, wcopy) normalises the descriptors with
+   *  @p norm when NORM is true: a fit, and the prediction of a model whose
+   *  weights act on normalised descriptors. false for the prediction of a
+   *  linear NORM model, whose weights act on the raw descriptors
+   *  (weights_on_raw_descriptors). */
+  bool normalise_descriptors = true;
   bool w_copy_=false;  // keep copy of Phi and T witoout weights
+
+  /** The observations of the last build: the rows of the structures with a
+   *  non-zero weight (sqrt(weight x EWEIGHT/FWEIGHT/SWEIGHT) > 0), without
+   *  the augmentation rows; every row of the structures when apply_weights
+   *  is false. The number of observations an OALGO 3 fit estimates its
+   *  noise variance with (LinearRegressor::train). */
+  size_t n_observations() const { return n_obs_; }
+  /** Whether the last build had rows of each type (E, F, S: Tlabels 0, 1,
+   *  2) with a non-zero weight: the types the fit was fitted to. */
+  const std::array<bool, 3> &fitted_types() const { return fitted_types_; }
 
   /** \brief The design-matrix column layout of the last build():
    *  f.phi_layout() of the descriptor layout (see column_block.h). For a
@@ -253,10 +276,11 @@ public:
     }
     // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
     // Each s writes a disjoint Phi row-block (rows[s]) => order-independent.
+    const bool normalise_rows = normalise_descriptors && context.get<bool>("NORM");
     parallel_for(stdb.size(), [&](size_t s) {
       StDescriptors st_d = dc.calc(stdb(s));
 
-      if(context.get<bool>("NORM"))  // TODO move to scale()
+      if (normalise_rows)  // TODO move to scale()
         norm.normalise(st_d);
 
       build(rows[s], stdb(s), st_d);
@@ -322,25 +346,38 @@ public:
     ws->Tlabels.set_zero();
   }
   void compute_wfactors(const StructureDB &stdb) {
+    n_obs_ = 0;
+    fitted_types_ = {false, false, false};
     if (!apply_weights) {  // a prediction: the rows as they are
       for (std::size_t i = 0; i < ws->wfactors.size(); ++i) ws->wfactors(i) = 1.0;
+      n_obs_ = rows - (augment ? cols : 0);
+      fitted_types_ = {n_obs_ > 0, force && n_obs_ > 0, stress && n_obs_ > 0};
       return;
     }
     size_t j=0;
+    // One row of type `type` and factor `w`; the observations are the rows
+    // of non-zero weight (a weight-0 row is a zero row of the fit).
+    auto row = [&](double w, size_t type) {
+      ws->wfactors(j++) = w;
+      if (w > 0.0) {
+        ++n_obs_;
+        fitted_types_[type] = true;
+      }
+    };
     for (size_t s=0; s<stdb.size(); ++s) {
-      ws->wfactors(j++) = std::sqrt(stdb(s).eweight*eweightglob);
+      row(std::sqrt(stdb(s).eweight*eweightglob), 0);
       if (force) {
         double fscale = std::sqrt(stdb(s).fweight*fweightglob);
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          ws->wfactors(j++) = fscale;
-          ws->wfactors(j++) = fscale;
-          ws->wfactors(j++) = fscale;
+          row(fscale, 1);
+          row(fscale, 1);
+          row(fscale, 1);
         }
       }
       if (stress) {
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            ws->wfactors(j++) = std::sqrt(stdb(s).sweight*sweightglob);
+            row(std::sqrt(stdb(s).sweight*sweightglob), 2);
           }
         }
       }
@@ -358,6 +395,8 @@ private:
   double eweightglob;
   double fweightglob;
   double sweightglob;
+  size_t n_obs_ = 0;
+  std::array<bool, 3> fitted_types_{{false, false, false}};
 
   // resize Phi and T and set all elements to zero
   void calc_mn(const StructureDB &stdb) {
@@ -373,10 +412,11 @@ private:
 
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
 
-    // Add space for augmented matrix
-    rows += cols;
-
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix (including augmented matrix): rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
+    // Add space for augmented matrix (a fit)
+    if (augment) {
+      rows += cols;
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix (including augmented matrix): rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
+    }
   }
 
   void compute_stdevs(const StructureDB &stdb) {

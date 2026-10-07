@@ -2,6 +2,8 @@
 #define M_KRR_H
 
 #include <tadah/mlip/models/m_tadah_base.h>
+#include <tadah/mlip/models/predict_with_error.h>
+#include <tadah/mlip/weight_covariance.h>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
@@ -236,7 +238,8 @@ public:
    *  before they are normalised. */
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
     require_weights_fit(c, std.dim());
-    if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
+    if(context.template get<bool>("NORM") && !std.normalised &&
+       !weights_on_raw_descriptors(context, kernel))
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
   }
@@ -306,54 +309,28 @@ tadah::core::Context get_param_file() {
         }
       }
     }
+    // The weight covariance of this fit only (WCOV and WNOISE, OALGO 3),
+    // none of another fit or of a potential used as the configuration.
+    remove_weight_covariance(c);
+    if (this->has_covariance())
+      write_weight_covariance(c, Sigma, noise_by_type);
     return c;
   }
+  /** The values predicted for @p stdb with their predictive standard
+   *  deviations (predict_with_error: WCOV and WNOISE of @p context_pred;
+   *  for a non-linear kernel the design-matrix columns are its basis
+   *  vectors, as its WEIGHTS). */
   StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
-
     require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
-    tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
-    DesignMatrix<K> dm(kernel,context_pred);
-    dm.apply_weights = false;  // predict the values, not the weighted rows
-    bool wcopy=false;
-    dm.build(stdb,norm,dc,wcopy);
-
-    // compute error
-    predicted_error = T_MDMT_diag(dm.getPhi(), Sigma);
-    double pmean = sqrt(predicted_error.mean());
-
-    // compute energy, forces and stresses
-    tadah::core::aed_type Tpred = T_dgemv(dm.getPhi(), weights);
-
-    // Construct StructureDB object with predicted values
-    StructureDB stdb_;
-    stdb_.structures.resize(stdb.size());
-    size_t i=0;
-    for (size_t s=0; s<stdb.size(); ++s) {
-      stdb_(s).atoms.resize(stdb(s).natoms());
-
-      predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-      stdb_(s).energy = Tpred(i++);
-      if (context_pred.get<bool>("FORCE")) {
-        for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          for (size_t k=0; k<3; ++k) {
-            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-            stdb_(s).atoms[a].force[k] = Tpred(i++);
-          }
-        }
-      }
-      if (context_pred.get<bool>("STRESS")) {
-        for (size_t x=0; x<3; ++x) {
-          for (size_t y=x; y<3; ++y) {
-            predicted_error(i) = (sqrt(predicted_error(i))-pmean);
-            stdb_(s).stress(x,y) = Tpred(i++);
-            if (x!=y)
-              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-          }
-        }
-      }
-    }
-    return stdb_;
+    return predict_with_error<K>(context_pred, kernel, weights, norm, stdb, dc,
+                              predicted_error);
+  }
+  StructureDB predict_value_error(tadah::core::Context context_pred, StructureDB &stdb,
+                                  DC_Base &dc, tadah::core::aed_type &value_error) {
+    require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
+    return predict_with_error<K>(context_pred, kernel, weights, norm, stdb, dc,
+                              value_error, false);
   }
   StructureDB predict(StructureDB &stdb) {
     if(!trained) throw std::runtime_error("This object is not trained!\n\
@@ -403,74 +380,23 @@ private:
   Basis<K> basis;
   DesignMatrix<K> desmat;
 
-  // Convert weights from normalised feature space to the equivalent weights
-  // for raw (unnormalised) descriptors, as M_BLR does: the constant the
-  // normalisation introduces (-sum mean[i] kw[i]) goes into the intercept
-  // columns, one per ATOM species (each atom has 1.0 in exactly one of
-  // them, so the same correction lands on every species' intercept).
-  // Requires BIAS true: there is no other column to absorb it.
-  tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
-    if(kernel.get_label()!="Kern_Linear") {
-      throw std::runtime_error("Cannot convert weights to nweights for\n\
-non linear kernel\n");
-    }
-    const size_t nb = tadah::core::n_intercept_columns(context);
-    if (nb == 0)
-      throw std::runtime_error("NORM true with Kern_Linear requires BIAS true: "
-          "the mean correction of the normalised weights goes into the "
-          "intercept columns");
-    // normalise weights such that when predict is called
-    // we can supply it with a non-normalised descriptor
-    tadah::core::t_type kw(weights.rows());
-    for (size_t b=0; b<nb; ++b) kw(b) = weights(b);
-    for (size_t i=nb; i<weights.size(); ++i) {
-
-      if (norm.std_dev[i] > std::numeric_limits<double>::min())
-        kw(i) = weights(i) / norm.std_dev[i];
-      else
-        kw(i) = weights(i);
-
-      for (size_t b=0; b<nb; ++b) kw(b) -= norm.mean[i]*kw(i);
-
-    }
-    return kw;
-  }
-  // The opposite of convert_to_nweights()
-  tadah::core::t_type convert_to_weights(const tadah::core::t_type &kw) const {
-    if(kernel.get_label()!="Kern_Linear") {
-      throw std::runtime_error("Cannot convert nweights to weights for\n\
-non linear kernel\n");
-    }
-    const size_t nb = tadah::core::n_intercept_columns(context);
-    if (nb == 0)
-      throw std::runtime_error("NORM true with Kern_Linear requires BIAS true: "
-          "the mean correction of the normalised weights goes into the "
-          "intercept columns");
-    // convert normalised weights back to "normal"
-    tadah::core::t_type w(kw.rows());
-    for (size_t b=0; b<nb; ++b) w(b) = kw(b);
-    for (size_t i=nb; i<kw.size(); ++i) {
-      if (norm.std_dev[i] > std::numeric_limits<double>::min())
-        w(i) = kw(i) * norm.std_dev[i];
-      else
-        w(i) = kw(i);
-
-      for (size_t b=0; b<nb; ++b) w(b) += kw(i)*norm.mean[i];
-    }
-    return w;
-  }
+  /** The noise variance of each row type of the last fit (WNOISE). */
+  PerRowType noise_by_type;
 
   template <typename D>
   void train(D &desmat) {
     // TODO see comments in M_BLR
     tadah::core::phi_type Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
-    tadah::models::M_KRR_Train<K>::train(Phi,T);
+    noise_by_type = PerRowType();
+    tadah::models::M_KRR_Train<K>::train(Phi, T, desmat.n_observations());
 
-    if (context.template get<bool>("NORM") &&
-      kernel.get_label()=="Kern_Linear") {
-      weights = convert_to_nweights(weights);
-    }
+    if (weights_on_raw_descriptors(context, kernel))
+      to_raw_descriptors(*this, norm,
+                         tadah::core::n_intercept_columns(context));
+    if (this->has_covariance())
+      noise_by_type = noise_of_fitted_types(context, desmat.fitted_types(),
+                                            this->noise_variance);
   }
 
   // Do we want to confuse user with those and make them public?

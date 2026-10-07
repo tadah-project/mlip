@@ -11,6 +11,7 @@
 #include <string>
 
 #include <tadah/core/core_user_config_parser.h>
+#include <tadah/mlip/weight_covariance.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/number_format.h>
 #include <tadah/mlip/engines/hpotarget_retarget.h>
@@ -290,6 +291,9 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   }
 
   Context out = potedit::rebuild_pot_context(view);
+  // The edited weights were not fitted: no weight covariance (an input's
+  // WCOV and WNOISE are of its own weights).
+  remove_weight_covariance(out);
 
   const std::string out_pot =
       pick_output(c, "OUTFILE", "pot.tadah", "pot_edited.tadah");
