@@ -41,13 +41,14 @@ struct PTFixture { PTFixture() { tadah::core::PeriodicTable::initialize(); } };
 
 // A smooth, physically-sane single-element setfl: rho(r)=(1-r/rcut)^2,
 // phi(r)=3(1-r/rcut)^3 (stored as z2r=phi*r), F(rho)=-2*sqrt(rho)+0.05*rho
-// (+ F_shift: a constant that moves the table's F(0) off zero; rho_fn, when
-// given, replaces the density table).
+// (+ F_shift: a constant that moves the table's F(0) off zero; rho_fn and
+// phi_fn, when given, replace the density and the pair function).
 // rhomax is generous so the crystal stays in range even under compression.
 void write_synth_eam(const std::string &path, const std::string &lat,
                      double a0, int nr = 400, int nrho = 400,
                      double F_shift = 0.0,
-                     const std::function<double(double)> &rho_fn = nullptr) {
+                     const std::function<double(double)> &rho_fn = nullptr,
+                     const std::function<double(double)> &phi_fn = nullptr) {
   const double rcut = 5.0;
   const double dr = rcut / (nr - 1);
   const double rhomax = 60.0;
@@ -73,7 +74,7 @@ void write_synth_eam(const std::string &path, const std::string &lat,
   os << "\n";
   for (int i = 0; i < nr; ++i) {
     const double r = i * dr, x = 1.0 - r / rcut;
-    const double phi = x > 0 ? 3.0 * x * x * x : 0.0;
+    const double phi = phi_fn ? phi_fn(r) : x > 0 ? 3.0 * x * x * x : 0.0;
     os << (phi * r) << ((i % 5 == 4) ? "\n" : " ");
   }
   os << "\n";
@@ -616,8 +617,8 @@ TEST_CASE_METHOD(PTFixture,
    * compressed-lattice neighbour lists of the self-test and the E-V scans
    * grow as smin^-3: a/a0 0.01 took a minute, 1e-6 did not finish; the
    * reachability probe lists neighbours out to rcut/0.1 only; it was
-   * (0, 1], the range of the first fix), REFIT_CURVE_RELAX in (0, 1] (in
-   * either REFIT_OBJECTIVE), REFIT_R_LO_FRAC in (0, 1),
+   * (0, 1], the range of the first fix), REFIT_CURVE_RELAX in (0, 1],
+   * REFIT_R_LO_FRAC in (0, 1),
    * REFIT_CURVE_DERIV_WEIGHT >= 0, the compact counts from 1 (JITTERS from
    * 0 to 2147483646, its candidates jitters + 1 an int), REFIT_COMPACT_SEED
    * from 0 to 4294967295, N2B, NRHO_BASIS and NF_BASIS from 1 to 1024 (the
@@ -629,9 +630,11 @@ TEST_CASE_METHOD(PTFixture,
    * Context::add overwrites it.) The values at the ends of the ranges are
    * accepted. A key that only REFIT_MODE compact reads (REFIT_COMPACT_*,
    * REFIT_CURVE_*) is set in a REFIT_MODE compact configuration, since
-   * REFIT_MODE dense refuses it (the mode rule, before the numbers); once
-   * its numbers pass, this engine, which has no compact fitter, refuses
-   * REFIT_MODE compact.
+   * REFIT_MODE dense refuses it (the mode rule, before the numbers), a
+   * REFIT_CURVE_* key under REFIT_OBJECTIVE curve, since energy refuses it;
+   * once its numbers pass, this engine, which has no compact fitter,
+   * refuses REFIT_MODE compact. Under REFIT_OBJECTIVE energy REFIT_CURVE_RELAX
+   * 1.5 is refused by the rule, before its value is read.
    * Before the fix: validate() read none of them (no exception), and run()
    * read them with Context::get (istringstream) unchecked, so the first
    * message checked is not thrown and run() fails reading the absent EAM
@@ -748,6 +751,10 @@ TEST_CASE_METHOD(PTFixture,
                         const std::vector<std::string> &tokens) {
     Context c = compact_key(key) ? compact_refit_context("absent.eam.alloy")
                                  : dense_refit_context("absent.eam.alloy");
+    // a curve knob is read under REFIT_OBJECTIVE curve only (the rule
+    // refuses it under energy, before its value is read)
+    if (key.rfind("REFIT_CURVE_", 0) == 0)
+      c.add("REFIT_OBJECTIVE", std::string("curve"));
     c.remove(key);
     for (const auto &t : tokens) c.add(key, t);
     return c;
@@ -763,15 +770,21 @@ TEST_CASE_METHOD(PTFixture,
     // run() refuses it before it reads the (absent) EAM file
     CHECK_THROWS_WITH(engine.run(task), "tadah refit: " + cs.message);
   }
-  // REFIT_CURVE_RELAX under REFIT_OBJECTIVE energy too (it was checked in
-  // curve mode only)
+  // REFIT_CURVE_RELAX under REFIT_OBJECTIVE energy: the rule refuses it
+  // before its value is read (an earlier fix checked its value there, as it
+  // was read in curve mode only; until the curve knobs were refused under
+  // energy this case expected "tadah refit: REFIT_CURVE_RELAX must be a
+  // number in (0, 1], got '1.5'")
   {
     Context c = with("REFIT_CURVE_RELAX", {"1.5"});
+    c.remove("REFIT_OBJECTIVE");
     c.add("REFIT_OBJECTIVE", std::string("energy"));
     Task task("refit", c);
     CHECK_THROWS_WITH(RefitEngine().validate(task),
-                      "tadah refit: REFIT_CURVE_RELAX must be a number in "
-                      "(0, 1], got '1.5'");
+                      "tadah refit: REFIT_CURVE_RELAX has no effect under "
+                      "REFIT_OBJECTIVE energy: only REFIT_OBJECTIVE curve "
+                      "reads it; remove REFIT_CURVE_RELAX, or set "
+                      "REFIT_OBJECTIVE curve");
   }
   // The ends of the ranges are accepted.
   for (const auto &[key, tok] :
@@ -934,10 +947,10 @@ TEST_CASE_METHOD(PTFixture,
    *  - REFIT_MODE compact under REFIT_OBJECTIVE energy (explicit or the
    *    default): REFIT_CURVE_WEIGHTING ("... has no effect under
    *    REFIT_OBJECTIVE energy (the default): only REFIT_OBJECTIVE curve
-   *    reads it; ..."); under curve it passes the rule, and so do
-   *    REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT under energy (no
-   *    effect there, their values checked), after which this engine, which
-   *    has no compact fitter, refuses REFIT_MODE compact;
+   *    reads it; ..."); under curve it passes the rule, after which this
+   *    engine, which has no compact fitter, refuses REFIT_MODE compact
+   *    (REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT: the test case
+   *    "every curve knob is refused under REFIT_OBJECTIVE energy");
    *  - a key the task factory stored as its blueprint default
    *    (KeyProvenance: Default; REFIT_COMPACT_MERGE, REFIT_CURVE_*,
    *    REFIT_OBJECTIVE energy under dense, REFIT_CONSTRAIN_F0 under
@@ -1009,12 +1022,6 @@ TEST_CASE_METHOD(PTFixture,
       c.add("REFIT_OBJECTIVE", std::string("curve"));
       check_refused(c, no_compact_fitter());
     }
-    // REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT have no effect under
-    // energy, their values checked: they pass the rule
-    Context c = compact_refit_context("absent.eam.alloy");
-    c.add("REFIT_CURVE_RELAX", std::string("0.1"));
-    c.add("REFIT_CURVE_DERIV_WEIGHT", std::string("0.1"));
-    check_refused(c, no_compact_fitter());
   }
   SECTION("a blueprint default the task factory stored is not refused") {
     using tadah::mlip::KeyOrigin;
@@ -1059,6 +1066,102 @@ TEST_CASE_METHOD(PTFixture,
         task_with(compact_refit_context("absent.eam.alloy"), false);
     CHECK_THROWS_WITH(RefitEngine().validate(compact_file),
                       no_effect_in_mode("REFIT_CONSTRAIN_F0", "compact"));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: every curve knob is refused under "
+                 "REFIT_OBJECTIVE energy, and REFIT_CURVE_RELAX under "
+                 "REFIT_CURVE_WEIGHTING false",
+                 "[refit][mode_keys]") {
+  /* Pins: under REFIT_MODE compact, RefitEngine::validate() and run()
+   * (before the EAM file is read) refuse each of REFIT_CURVE_WEIGHTING,
+   * REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT under REFIT_OBJECTIVE
+   * energy, written or the default ("tadah refit: REFIT_CURVE_RELAX has no
+   * effect under REFIT_OBJECTIVE energy (the default): only REFIT_OBJECTIVE
+   * curve reads it; remove REFIT_CURVE_RELAX, or set REFIT_OBJECTIVE
+   * curve"), before its value is read (REFIT_CURVE_RELAX 1.5, out of its
+   * range, gets this refusal too); under curve the three pass the rule
+   * (this engine, which has no compact fitter, then refuses REFIT_MODE
+   * compact), except REFIT_CURVE_RELAX with REFIT_CURVE_WEIGHTING false,
+   * the floor of a weighting that is off: "tadah refit: REFIT_CURVE_RELAX
+   * has no effect under REFIT_CURVE_WEIGHTING false: only
+   * REFIT_CURVE_WEIGHTING true (the default) reads it; remove
+   * REFIT_CURVE_RELAX, or set REFIT_CURVE_WEIGHTING true"
+   * (REFIT_CURVE_DERIV_WEIGHT passes there, and REFIT_CURVE_RELAX with
+   * REFIT_CURVE_WEIGHTING true). The blueprint defaults of the three
+   * (KeyProvenance Default) pass under energy.
+   * Before the fix: REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT passed
+   * the rule under energy (no effect there, their values checked: the
+   * earlier test case pinned this), so their refusal is not thrown and this
+   * engine refuses REFIT_MODE compact instead ("tadah refit: REFIT_MODE
+   * compact needs the compact fitter, ..."; REFIT_CURVE_RELAX 1.5: "tadah
+   * refit: REFIT_CURVE_RELAX must be a number in (0, 1], got '1.5'"), and
+   * REFIT_CURVE_RELAX passed under REFIT_CURVE_WEIGHTING false; the
+   * REFIT_CURVE_WEIGHTING cases and the curve cases pass as well (a pin). */
+  ScopedTempDir tmp;
+  const auto refused_under_energy = [](const std::string &key,
+                                       bool defaulted) {
+    return "tadah refit: " + key + " has no effect under REFIT_OBJECTIVE "
+           "energy" + (defaulted ? " (the default)" : "") +
+           ": only REFIT_OBJECTIVE curve reads it; remove " + key +
+           ", or set REFIT_OBJECTIVE curve";
+  };
+  for (const auto &[key, value] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"REFIT_CURVE_WEIGHTING", "false"},
+           {"REFIT_CURVE_RELAX", "0.1"},
+           {"REFIT_CURVE_RELAX", "1.5"},
+           {"REFIT_CURVE_DERIV_WEIGHT", "0.1"}}) {
+    for (const bool defaulted : {true, false}) {
+      INFO(key << " " << value
+               << (defaulted ? "" : " (REFIT_OBJECTIVE energy)"));
+      Context c = compact_refit_context("absent.eam.alloy");
+      c.add(key, value);
+      if (!defaulted) c.add("REFIT_OBJECTIVE", std::string("energy"));
+      check_refused(c, refused_under_energy(key, defaulted));
+    }
+  }
+  const std::string relax_unweighted =
+      "tadah refit: REFIT_CURVE_RELAX has no effect under "
+      "REFIT_CURVE_WEIGHTING false: only REFIT_CURVE_WEIGHTING true (the "
+      "default) reads it; remove REFIT_CURVE_RELAX, or set "
+      "REFIT_CURVE_WEIGHTING true";
+  {
+    Context c = compact_refit_context("absent.eam.alloy");
+    c.add("REFIT_OBJECTIVE", std::string("curve"));
+    c.add("REFIT_CURVE_WEIGHTING", std::string("false"));
+    c.add("REFIT_CURVE_RELAX", std::string("0.1"));
+    check_refused(c, relax_unweighted);
+    c.remove("REFIT_CURVE_RELAX");
+    c.add("REFIT_CURVE_DERIV_WEIGHT", std::string("0.1"));
+    check_refused(c, no_compact_fitter());
+  }
+  for (const char *weighting : {static_cast<const char *>(nullptr), "true"}) {
+    INFO("REFIT_CURVE_WEIGHTING " << (weighting ? weighting : "(default)"));
+    Context c = compact_refit_context("absent.eam.alloy");
+    c.add("REFIT_OBJECTIVE", std::string("curve"));
+    if (weighting) c.add("REFIT_CURVE_WEIGHTING", std::string(weighting));
+    c.add("REFIT_CURVE_RELAX", std::string("0.1"));
+    c.add("REFIT_CURVE_DERIV_WEIGHT", std::string("0.1"));
+    check_refused(c, no_compact_fitter());
+  }
+  {
+    // the blueprint defaults the task factory stores pass under energy
+    using tadah::mlip::KeyOrigin;
+    using tadah::mlip::KeyProvenance;
+    Context c = compact_refit_context("absent.eam.alloy");
+    const Context file = c;
+    c.add("REFIT_CURVE_WEIGHTING", std::string("true"));
+    c.add("REFIT_CURVE_RELAX", std::string("0.05"));
+    c.add("REFIT_CURVE_DERIV_WEIGHT", std::string("0.0"));
+    c.add("REFIT_OBJECTIVE", std::string("energy"));
+    Task task("refit", c);
+    task.setKeyProvenance(KeyProvenance(
+        Context(), file, "config.refit", KeyOrigin::Kind::ConfigFile,
+        {"REFIT_CURVE_WEIGHTING", "REFIT_CURVE_RELAX",
+         "REFIT_CURVE_DERIV_WEIGHT", "REFIT_OBJECTIVE"}));
+    CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
   }
 }
 
@@ -1262,5 +1365,111 @@ TEST_CASE_METHOD(PTFixture,
                     "(REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT");
     CHECK(slurp("refit_range_report.dat").find("small uniform basis") ==
           std::string::npos);
+  }
+}
+
+namespace {
+// The rows of a refit_curve_<fn>.dat file: x and its in_window flag.
+std::vector<std::pair<double, int>> curve_window_flags(const std::string &f) {
+  std::vector<std::pair<double, int>> rows;
+  std::istringstream in(slurp(f));
+  for (std::string line; std::getline(in, line);) {
+    if (line.empty() || line[0] == '#') continue;
+    std::istringstream ls(line);
+    std::vector<double> cols;
+    for (double v; ls >> v;) cols.push_back(v);
+    REQUIRE(cols.size() == 9);
+    rows.emplace_back(cols[0], static_cast<int>(cols[8]));
+  }
+  return rows;
+}
+
+// Every row of refit_curve_<fn>.dat is flagged in_window exactly when its x
+// lies in [lo, hi] (a row within 1e-9 of an edge is not judged).
+void check_curve_window(const std::string &f, double lo, double hi) {
+  const auto rows = curve_window_flags(f);
+  REQUIRE(rows.size() > 100);
+  int wrong = 0;
+  double first_wrong = 0.0;
+  for (const auto &[x, flag] : rows) {
+    if (std::fabs(x - lo) < 1e-9 || std::fabs(x - hi) < 1e-9) continue;
+    const int want = (x >= lo && x <= hi) ? 1 : 0;
+    if (flag != want && wrong++ == 0) first_wrong = x;
+  }
+  INFO(f << ": window [" << lo << ", " << hi << "], first wrong flag at x = "
+         << first_wrong);
+  CHECK(wrong == 0);
+}
+
+// The value after `mark` in refit_range_report.dat ("r_1nn-compressed=").
+double report_value(const std::string &mark) {
+  const std::string report = slurp("refit_range_report.dat");
+  const auto at = report.find(mark);
+  REQUIRE(at != std::string::npos);
+  return std::stod(report.substr(at + mark.size()));
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit dense: refit_range_report.dat and the curve "
+                 "files give the window the dense fit used",
+                 "[refit][engine][integration]") {
+  /* Pins: after a dense fit (REFIT_PLACEMENT window) the phi and rho rows
+   * of refit_range_report.dat have fit_window_lo = the lower edge of the
+   * radial window EAMRefit::fit fitted on, min(max(r_lo, r_K), 0.8 r_reach)
+   * and never below r_lo (where its samples start), and fit_window_hi =
+   * rcut; refit_curve_phi.dat and refit_curve_rho.dat flag in_window
+   * exactly the x in [fit_window_lo, rcut], refit_curve_F.dat the rho in
+   * [0, F's fit_window_hi]. The synthetic fcc table (a0 3.6 A, rcut 5 A,
+   * r_reach = 0.75 a0/sqrt 2 = 1.909 A, its reachability line):
+   *  - as written (no wall): fit_window_lo = r_lo = 0.2 rcut = 1 A, the
+   *    row's full_lo;
+   *  - with a steep pair wall, phi + 100 exp(-(r - 1.6)/0.05), above 30
+   *    times its reachable scale up to r = 1.67 A > 0.8 r_reach: 0.8 r_reach
+   *    (1.527 A);
+   *  - with REFIT_R_LO_FRAC 0.35 (r_lo 1.75 A above 0.8 r_reach): r_lo.
+   * Before the fix: fit_window_lo was 0.9 r_reach = 1.718 A in all three
+   * (below the row's full_lo of 1.75 A with REFIT_R_LO_FRAC 0.35), and the
+   * curve files flagged in_window from 0.9 r_reach, so x in [1, 1.718) is
+   * flagged 0 in the first case and [1.527, 1.718) in the second. */
+  ScopedTempDir tmp;
+  const double rcut = 5.0;
+  const double r_reach = 0.75 * 3.6 / std::sqrt(2.0);
+  struct Case {
+    std::string name;
+    std::function<double(double)> phi;
+    const char *r_lo_frac;
+    double window_lo;
+  };
+  const std::vector<Case> cases = {
+      {"no wall", nullptr, nullptr, 1.0},
+      {"a steep pair wall",
+       [](double r) {
+         const double x = 1.0 - r / 5.0;
+         return (x > 0 ? 3.0 * x * x * x : 0.0) +
+                100.0 * std::exp(-(r - 1.6) / 0.05);
+       },
+       nullptr, 0.8 * r_reach},
+      {"REFIT_R_LO_FRAC 0.35", nullptr, "0.35", 1.75}};
+  for (const Case &cs : cases) {
+    INFO(cs.name);
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6, 400, 400, 0.0, nullptr,
+                    cs.phi);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    if (cs.r_lo_frac) c.add("REFIT_R_LO_FRAC", std::string(cs.r_lo_frac));
+    (void)run_refit(c);
+    CHECK(report_value("r_1nn-compressed=") == Approx(r_reach));
+    for (const char *fn : {"phi", "rho"}) {
+      INFO(fn);
+      const RangeRow row = range_row(fn);
+      CHECK(row.full_hi == Approx(rcut));
+      CHECK(row.win_lo == Approx(cs.window_lo));
+      CHECK(row.win_lo >= row.full_lo);
+      CHECK(row.win_hi == Approx(rcut));
+      check_curve_window(std::string("refit_curve_") + fn + ".dat",
+                         cs.window_lo, rcut);
+    }
+    const RangeRow F = range_row("F");
+    check_curve_window("refit_curve_F.dat", 0.0, F.win_hi);
   }
 }
