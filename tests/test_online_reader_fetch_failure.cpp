@@ -284,3 +284,61 @@ TEST_CASE("NOMAD, Materials Project and COD readers: a null provider is "
   check_null_provider_refused<MaterialsProjectReader>("MaterialsProjectReader");
   check_null_provider_refused<CODReader>("CODReader");
 }
+
+namespace {
+
+/* bcc Fe as COD serves a CIF: a block named after the COD ID, a = 2.8665 A,
+ * H-M 'I m -3 m', Fe on 2a; `occupancy` the site's occupancy column. */
+std::string cod_fe_cif(const std::string &block, const std::string &occupancy) {
+  return "data_" + block +
+         "\n_cell_length_a 2.8665\n_cell_length_b 2.8665\n"
+         "_cell_length_c 2.8665\n_cell_angle_alpha 90\n_cell_angle_beta 90\n"
+         "_cell_angle_gamma 90\n_symmetry_space_group_name_H-M 'I m -3 m'\n"
+         "loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+         "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+         "_atom_site_occupancy\nFe1 Fe 0 0 0 " +
+         occupancy + "\n";
+}
+
+}  // namespace
+
+/* Pins: CODReader names the COD entry, not the CIF data block, in its
+ * errors and its label. Through a stub provider:
+ *   - read("cod-1534932") of a CIF whose block is 'data_global' and whose
+ *     site Fe1 has occupancy 0.5 throws "COD entry 1534932: site Fe1 has
+ *     occupancy 0.5; ..." (no "CIF text", no "data_global"), and keeps
+ *     the previous structure;
+ *   - read("cod-1534932") of bcc Fe in a block 'data_1534932' gives the
+ *     label "COD entry 1534932 | Symmetry: I m -3 m | Volume: 23.553521"
+ *     (the volume 2.8665^3 as std::to_string writes it) and 2 atoms.
+ * Before the fix (with the provider constructor already in place): the
+ * label was "COD entry: cod-1534932 |  | Symmetry: I m -3 m | Volume:
+ * 23.553521" (the read() argument, and an empty field) and the error
+ * named the block, "CIF text (data_global): site Fe1 has occupancy 0.5;
+ * ...". */
+TEST_CASE("COD reader: errors and the label name the COD entry",
+          "[cod][structure_readers][cif]") {
+  tadah::core::PeriodicTable::initialize();
+  CHECK(takes_provider<CODReader>);
+  const auto script = script_of(
+      {{200, cod_fe_cif("1534932", "1.0")}, {200, cod_fe_cif("global", "0.5")}});
+  const std::vector<Outcome> got =
+      read_through<CODReader>(script, {"cod-1534932", "cod-1534932"});
+  REQUIRE(got.size() == 2);
+  CHECK(script->asked == std::vector<std::string>{"1534932", "1534932"});
+
+  INFO("first read: " << got[0].error);
+  CHECK_FALSE(got[0].threw);
+  CHECK(got[0].st.label ==
+        "COD entry 1534932 | Symmetry: I m -3 m | Volume: 23.553521");
+  CHECK(got[0].st.natoms() == 2);
+
+  INFO("second read: " << got[1].error);
+  CHECK(got[1].threw);
+  CHECK_THAT(got[1].error,
+             Catch::Contains("COD entry 1534932: site Fe1 has occupancy 0.5"));
+  CHECK_THAT(got[1].error, !Catch::Contains("CIF text"));
+  CHECK_THAT(got[1].error, !Catch::Contains("data_global"));
+  CHECK(got[1].st.label == got[0].st.label);
+  CHECK(got[1].st.natoms() == 2);
+}

@@ -96,6 +96,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 using tadah::core::LogLevel;
@@ -3055,5 +3057,247 @@ TEST_CASE("CIF reader: the notes and suffixes of an H-M symbol name its "
     if (!accepted(c.text, r)) continue;
     INFO("printed:\n" << r.log);
     check_sites(r.st, c.sites);
+  }
+}
+
+// ================================== the origin and the label (COD) ====
+
+namespace {
+
+// Whether CifReader has parseCifContents(text, origin), detected so that
+// the file compiles before the overload exists.
+template <class R, class = void>
+struct has_origin_overload : std::false_type {};
+template <class R>
+struct has_origin_overload<
+    R, std::void_t<decltype(std::declval<R &>().parseCifContents(
+           std::declval<const std::string &>(),
+           std::declval<const std::string &>()))>> : std::true_type {};
+
+// parseCifContents(text, origin) on a fresh reader, with the output
+// captured; the structure stays empty when the overload does not exist.
+template <class R = CifReader>
+Read parse_with_origin(const std::string &text, const std::string &origin) {
+  Read r;
+  r.log = capture_output([&] {
+    R reader;
+    if constexpr (has_origin_overload<R>::value) {
+      reader.parseCifContents(text, origin);
+      r.st = reader.getStructure();
+    }
+  });
+  return r;
+}
+
+// The refusal of parse_with_origin, or "" (after a failed check) when the
+// text was accepted.
+std::string refusal_with_origin(const std::string &text,
+                                const std::string &origin) {
+  try {
+    const Read r = parse_with_origin(text, origin);
+    FAIL_CHECK("accepted: " << r.st.natoms() << " atoms");
+  } catch (const std::runtime_error &e) {
+    return e.what();
+  }
+  return "";
+}
+
+bool starts_with(const std::string &s, const std::string &prefix) {
+  return s.compare(0, prefix.size(), prefix) == 0;
+}
+
+}  // namespace
+
+/* Pins: parseCifContents(text, "COD entry 1534932") names that origin, not
+ * the data block, in every error and WARNING and in the label:
+ *   - a site of occupancy 0.5 in a block 'data_global' is refused with
+ *     "COD entry 1534932: site Fe1 has occupancy 0.5; ..." (no "CIF text",
+ *     no "data_global");
+ *   - a syntax error before any block (an unterminated quote) is refused
+ *     with a message that starts "COD entry 1534932: ";
+ *   - fe_bcc_mismatch.cif (an H-M symbol that the loop contradicts) prints
+ *     "WARNING: COD entry 1534932: the symmetry record is inconsistent";
+ *   - its label is "COD entry 1534932 | Symmetry: I 1 | Volume: 23.553521".
+ * The one-argument form keeps naming the text and its block.
+ * Before the fix: there was no overload taking an origin
+ * (has_origin_overload is false), so nothing was parsed: the refusals
+ * were not raised and the WARNING and the label were missing. The COD
+ * reader's text named only the CIF block ("CIF text (data_global)"). */
+TEST_CASE("CIF reader: parseCifContents with an origin names it in errors, "
+          "WARNINGs and the label",
+          "[structure_readers][cif][cod]") {
+  PeriodicTable::initialize();
+  CHECK(has_origin_overload<CifReader>::value);
+  const std::string origin = "COD entry 1534932";
+
+  const std::string occupancy =
+      cif_with_occupancy("global", 2.8665, "I m -3 m", "Fe1 Fe 0 0 0 0.5\n");
+  const std::string occ = refusal_with_origin(occupancy, origin);
+  INFO("occupancy refusal: " << occ);
+  CHECK(contains(occ, "COD entry 1534932: site Fe1 has occupancy 0.5"));
+  CHECK_FALSE(contains(occ, "CIF text"));
+  CHECK_FALSE(contains(occ, "data_global"));
+  // the one-argument form still names the block
+  try {
+    parse_cif_text(occupancy);
+    FAIL_CHECK("accepted");
+  } catch (const std::runtime_error &e) {
+    CHECK(contains(e.what(), "CIF text (data_global): site Fe1"));
+  }
+
+  const std::string syntax =
+      refusal_with_origin("data_x\n_cell_length_a 'unterminated\n", origin);
+  INFO("syntax refusal: " << syntax);
+  CHECK(starts_with(syntax, "COD entry 1534932: "));
+  CHECK_FALSE(contains(syntax, "CIF text"));
+
+  const Read mismatch =
+      parse_with_origin(slurp(kCifDir + "fe_bcc_mismatch.cif"), origin);
+  INFO("fe_bcc_mismatch.cif printed:\n" << mismatch.log);
+  CHECK(contains(mismatch.log,
+                 "WARNING: COD entry 1534932: the symmetry record is "
+                 "inconsistent"));
+  CHECK_FALSE(contains(mismatch.log, "CIF text"));
+  CHECK(mismatch.st.natoms() == 2);
+  CHECK(mismatch.st.label ==
+        "COD entry 1534932 | Symmetry: I 1 | Volume: 23.553521");
+}
+
+/* Pins: the label of a CIF structure is
+ *   "<origin> | Symmetry: <group> | Volume: <V>"
+ * with <origin> "CIF file: <path>" (CifReader::read and -s x.cif) or
+ * "CIF text (data_<block>)" (parseCifContents), and <group> the space group
+ * the unit cell is built with, as the WARNINGs name it: the tabulated
+ * setting (gemmi's xhm()), "<n> operators of <record>" for a group in no
+ * tabulated setting, "P 1" without a symmetry record. Expected (the label
+ * before the fix in parentheses):
+ *   fe_bcc_hall_only, fe_bcc_number_only  I m -3 m    (empty)
+ *   fe_bcc_none                           P 1         (empty)
+ *   fe_bcc_mismatch                       I 1         (P m -3 m, the H-M text)
+ *   si_diamond_number_only                F d -3 m:2  (empty)
+ *   si_diamond_icsd_s_loop                F d -3 m:2  (F d -3 m:1)
+ *   bi_hex_number_only                    R -3 m:H    (empty)
+ *   p2_shifted_origin_loop                2 operators of the
+ *                                         symmetry-operator loop (empty)
+ *   fe_bcc_full_loop                      I m -3 m    (I m -3 m, a control)
+ *   an inline Si text with only the H-M symbol 'F d -3 m'
+ *                                         F d -3 m:2  (F d -3 m)
+ * No field is empty.
+ * Before the fix: the label showed the normalised H-M text as written,
+ * empty without an H-M symbol, and parseCifContents' label had no origin
+ * (it began " | Symmetry: "); every row but the control fails. */
+TEST_CASE("CIF reader: the label names the space group the cell is built "
+          "with",
+          "[structure_readers][cif][label]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string file, block, group;
+  };
+  const std::vector<Case> cases = {
+      {"fe_bcc_hall_only.cif", "Fe_bcc_hall_only", "I m -3 m"},
+      {"fe_bcc_number_only.cif", "Fe_bcc_number_only", "I m -3 m"},
+      {"fe_bcc_none.cif", "Fe_bcc_none", "P 1"},
+      {"fe_bcc_mismatch.cif", "Fe_bcc_mismatch", "I 1"},
+      {"si_diamond_number_only.cif", "Si_diamond_number_only",
+       "F d -3 m:2"},
+      {"si_diamond_icsd_s_loop.cif", "Si_diamond_icsd_s_loop", "F d -3 m:2"},
+      {"bi_hex_number_only.cif", "Bi_hex_number_only", "R -3 m:H"},
+      {"p2_shifted_origin_loop.cif", "P2_shifted_origin_loop",
+       "2 operators of the symmetry-operator loop"},
+      {"fe_bcc_full_loop.cif", "Fe_bcc_full_loop", "I m -3 m"}};
+  for (const Case &c : cases) {
+    for (const Route route : kRoutes) {
+      INFO(c.file << " via " << route_name(route));
+      const std::string path = kCifDir + c.file;
+      const Read r = read_cif(path, route);
+      const std::string origin = route == Route::Contents
+                                     ? "CIF text (data_" + c.block + ")"
+                                     : "CIF file: " + path;
+      INFO("label: " << r.st.label);
+      CHECK(starts_with(r.st.label,
+                        origin + " | Symmetry: " + c.group + " | Volume: "));
+      CHECK(count_of(r.st.label, " | ") == 2);
+      CHECK_FALSE(contains(r.st.label, " |  | "));
+    }
+  }
+  // An H-M symbol without its origin choice: origin choice 2
+  const Read si = parse_cif_text(
+      cif_cell("Si_hm_noset", 5.431, 5.431, 5.431, 90, 90, 90,
+               hm_line("F d -3 m"), "Si1 Si 0.125 0.125 0.125\n"));
+  INFO("label: " << si.st.label);
+  CHECK(si.st.natoms() == 8);
+  CHECK(starts_with(si.st.label,
+                    "CIF text (data_Si_hm_noset) | Symmetry: F d -3 m:2 | "
+                    "Volume: "));
+}
+
+/* Pins: a CifReader used again holds the last structure only:
+ *   - read() of fe_bcc_hm_only.cif twice gives 2 atoms and the same label
+ *     both times;
+ *   - parseCifContents of its text twice gives 2 atoms and one
+ *     " | Symmetry: " field;
+ *   - a refused CIF (feni_disordered.cif, a site of occupancy 0.5) read
+ *     after it leaves the structure as it was (label, cell and atoms), by
+ *     read() and by parseCifContents.
+ * Before the fix: the atoms were appended to the previous ones (4 atoms
+ * after two reads, two coincident pairs), parseCifContents appended a
+ * second " | Symmetry: ... | Volume: ..." to the label, and read() set the
+ * new label ("CIF file: <path>") before parsing, so a refused CIF changed
+ * it (parseCifContents refused it before touching the label: that part
+ * passes as well). */
+TEST_CASE("CIF reader: a reused reader keeps one structure, and a refused "
+          "CIF leaves it as it was",
+          "[structure_readers][cif][label]") {
+  PeriodicTable::initialize();
+  const std::string good = kCifDir + "fe_bcc_hm_only.cif";
+  const std::string bad = kCifDir + "feni_disordered.cif";
+  const auto same = [](const Structure &a, const Structure &b) {
+    CHECK(a.label == b.label);
+    CHECK(a.natoms() == b.natoms());
+    if (a.natoms() != b.natoms()) return;
+    for (int i = 0; i < 3; ++i)
+      for (int k = 0; k < 3; ++k) CHECK(a.cell(i, k) == b.cell(i, k));
+    for (size_t n = 0; n < a.natoms(); ++n)
+      for (int k = 0; k < 3; ++k)
+        CHECK(a.atoms[n].position[k] == b.atoms[n].position[k]);
+  };
+  const std::string text = slurp(good);
+  {
+    INFO("CifReader::read twice");
+    CifReader reader;
+    capture_output([&] { reader.read(good); });
+    const Structure first = reader.getStructure();
+    CHECK(first.natoms() == 2);
+    capture_output([&] { reader.read(good); });
+    same(reader.getStructure(), first);
+  }
+  {
+    INFO("CifReader::parseCifContents twice");
+    CifReader reader;
+    capture_output([&] { reader.parseCifContents(text); });
+    const Structure first = reader.getStructure();
+    CHECK(first.natoms() == 2);
+    capture_output([&] { reader.parseCifContents(text); });
+    CHECK(count_of(reader.getStructure().label, " | Symmetry: ") == 1);
+    same(reader.getStructure(), first);
+  }
+  {
+    INFO("CifReader::read of a refused CIF after a good one");
+    CifReader reader;
+    capture_output([&] { reader.read(good); });
+    const Structure first = reader.getStructure();
+    CHECK_THROWS_AS(capture_output([&] { reader.read(bad); }),
+                    std::runtime_error);
+    same(reader.getStructure(), first);
+  }
+  {
+    INFO("CifReader::parseCifContents of a refused CIF after a good one");
+    CifReader reader;
+    capture_output([&] { reader.parseCifContents(text); });
+    const Structure first = reader.getStructure();
+    CHECK_THROWS_AS(
+        capture_output([&] { reader.parseCifContents(slurp(bad)); }),
+        std::runtime_error);
+    same(reader.getStructure(), first);
   }
 }
