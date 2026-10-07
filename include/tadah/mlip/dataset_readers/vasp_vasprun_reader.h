@@ -169,8 +169,15 @@ protected:
   StructureDB& stdb; ///< Reference to the StructureDB for storing data.
 
 private:
+  /// "VASP vasprun.xml <file>: ", the start of every message.
+  std::string where() const;
+  /// where() and "calculation <n>: ".
+  std::string where_calculation() const;
+
   Structure _s; ///< Internal structure representation.
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
+  bool forces_found_ = false; ///< The calculation's forces were read.
+  std::vector<tadah::core::Element> elements_; ///< The elements of atom_types.
   std::string filename_; ///< The file read, for messages.
   size_t calculation_ = 0; ///< The calculation being read, 1-based, for messages.
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3

@@ -1,5 +1,6 @@
 #include "tadah/core/element.h"
 #include "tadah/core/utils.h"
+#include <tadah/core/number_format.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -23,7 +24,7 @@ CastepCastepReader::CastepCastepReader(StructureDB& db, const std::string& filen
 void CastepCastepReader::read_data(const std::string& filename) {
   std::ifstream file(filename);
   if (!file.is_open()) {
-    throw std::runtime_error("Could not open the file: " + filename);
+    throw std::runtime_error("CASTEP .castep " + filename + ": cannot open the file");
   }
 
   std::string line;
@@ -242,14 +243,49 @@ void CastepCastepReader::parse_data() {
   };
 
   std::string line;
-  auto jumpNLines = [&](std::istringstream& stream, int n) {
+  // Errors name the file and the line. A value that cannot be read refuses
+  // the file; a forces or stress line that cannot be read (a value CASTEP
+  // could not print, '*****') is no forces or stress for that structure,
+  // with a warning; a block the file ends inside (a run stopped while
+  // writing it) warns once.
+  auto refuse = [&](const std::string &what) {
+    throw std::runtime_error("CASTEP .castep " + simLabel.filename + ": line " +
+                             std::to_string(line_counter) + ": " + what);
+  };
+  auto quoted = [&]() { return "'" + tadah::core::trim(line) + "'"; };
+  auto warn = [&](const std::string &what) {
+    std::cerr << "WARNING: CASTEP .castep " << simLabel.filename << ": line "
+              << line_counter << ": " << what << std::endl;
+  };
+  bool ended_inside = false;  // the file ends inside a block (warned)
+  auto ends_inside = [&](const std::string &block) {
+    if (!ended_inside)
+      std::cerr << "WARNING: CASTEP .castep " << simLabel.filename
+                << ": the file ends inside the " << block << " block at line "
+                << line_counter << std::endl;
+    ended_inside = true;
+  };
+  // An iteration or step number: the whole token, an integer.
+  auto step_number = [&](const std::string &token) -> std::size_t {
+    if (!tadah::core::is_integer_literal(token) || token[0] == '-')
+      refuse("cannot read the iteration number from " + quoted());
+    try {
+      return static_cast<std::size_t>(std::stoull(token));
+    } catch (const std::exception &) {
+      refuse("cannot read the iteration number from " + quoted());
+    }
+    return 0;
+  };
+  auto jumpNLines = [&](std::istringstream& stream, int n,
+                        const std::string &block) {
     for (int i = 0; i < n; ++i) {
       if (!std::getline(stream, line)) {
-        std::cerr << "Warning: Unexpected end of file while skipping lines" << std::endl;
-        break;
+        ends_inside(block);
+        return false;
       }
       ++line_counter;
     }
+    return true;
   };
 
   // Internal helper to finalize a structure's data:
@@ -393,7 +429,7 @@ void CastepCastepReader::parse_data() {
     // Get GO algorithm name at step zero
     if (line.find("Geometry Optimization Parameters") != std::string::npos) {
       std::string ignore, algo;
-      jumpNLines(stream, 2);
+      if (!jumpNLines(stream, 2, "Geometry Optimization Parameters")) break;
       std::istringstream iss(line);
       iss >> ignore >> ignore >> ignore >> algo;
       simLabel.algo = algo;
@@ -403,7 +439,7 @@ void CastepCastepReader::parse_data() {
     // Get MD ensemble name at step zero
     if (line.find("Molecular Dynamics Parameters") != std::string::npos) {
       reset_flags(CalcState::MolecularDynamics);
-      jumpNLines(stream, 2);
+      if (!jumpNLines(stream, 2, "Molecular Dynamics Parameters")) break;
       std::istringstream iss(line);
       std::string ignore, ensemble;
       iss >> ignore >> ignore >> ensemble;
@@ -435,24 +471,23 @@ void CastepCastepReader::parse_data() {
       // Finalize any incomplete data set if logic demands it, but not strictly necessary here
       if (debug) std::cout << "Reading 3 lines of Unit Cell" << std::endl;
       
-      jumpNLines(stream, 2);
+      if (!jumpNLines(stream, 2, "Unit Cell")) break;
 
       // Read the 3 lattice vectors. Each row of the .castep file is a lattice
       // vector a_i; store as row i of cell.
       for (int i = 0; i < 3; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Unexpected end of file while reading lattice vectors at row "
-                    << i << " (line: " << line_counter << ")." << std::endl;
+          ends_inside("Unit Cell");
           break;
         }
         ++line_counter;
         std::istringstream iss(line);
-        if (!(iss >> s.cell(i, 0) >> s.cell(i, 1) >> s.cell(i, 2))) {
-          std::cerr << "Warning: Failed to parse lattice vector at row "
-                    << i << " (line: " << line_counter << ")." << std::endl;
-          break;
-        }
+        if (!(iss >> s.cell(i, 0) >> s.cell(i, 1) >> s.cell(i, 2)))
+          refuse("lattice vector " + std::to_string(i + 1) +
+                 " of the Unit Cell block, " + quoted() +
+                 ", is not three numbers");
       }
+      if (ended_inside) break;
       geometry_printed = true;
       continue;
     }
@@ -460,18 +495,13 @@ void CastepCastepReader::parse_data() {
     // Detect total number of ions 
     if (line.find("Total number of ions in cell") != std::string::npos) {
       // Parse the integer natoms from this line
-      std::istringstream iss(line);
-      std::string tmp;
-      int word_count = 0;
-      while (iss >> tmp) {
-        ++word_count;
-        if (word_count == 7) {
-          if (!(iss >> natoms)) {
-            std::cerr << "Warning: Could not parse number of atoms in line: " << line_counter << std::endl;
-          }
-          break;
-        }
-      }
+      // 'Total number of ions in cell = <n>'
+      std::istringstream iss(line.substr(line.find('=') + 1));
+      std::string count, rest;
+      if (!(iss >> count) || (iss >> rest) ||
+          !tadah::core::is_integer_literal(count) || count[0] == '-')
+        refuse("cannot read the number of ions from " + quoted());
+      natoms = static_cast<size_t>(std::stoull(count));
       if (debug) std::cout << "Total number of ions in cell: " << natoms << std::endl;
       continue;
     }
@@ -489,7 +519,7 @@ void CastepCastepReader::parse_data() {
       simLabel.simType = "CASTEP GO";
       simLabel.startLine = line_counter;
       simLabel.algo = algo;
-      simLabel.stepNumber = std::stoi(step_str);
+      simLabel.stepNumber = step_number(step_str);
       simLabel.calcState = CalcState::GeometryOptimization;
       if (debug) std::cout << "Starting" +algo+ " iteration " << step_str << std::endl;
     }
@@ -502,7 +532,7 @@ void CastepCastepReader::parse_data() {
       iss >> ignore >> ignore >> ignore >> step;
       simLabel.simType = "CASTEP MD";
       simLabel.startLine = line_counter;
-      simLabel.stepNumber = std::stoi(step);
+      simLabel.stepNumber = step_number(step);
       simLabel.calcState = CalcState::MolecularDynamics;
       if (debug) std::cout << "Starting MD iteration " << step << std::endl;
       continue;
@@ -511,14 +541,13 @@ void CastepCastepReader::parse_data() {
     // Detect fractional coordinates block
     if (line.find("Fractional coordinates of atoms") != std::string::npos) {
       if (debug) std::cout << "Fractional coordinates of atoms" << std::endl;
-      jumpNLines(stream, 2);
+      if (!jumpNLines(stream, 2, "fractional coordinates")) break;
       atoms.clear(); // Clear old atoms or partial data
       atoms.reserve(natoms);
       simLabel.positionsStartLine = line_counter + 1;
       for (size_t i = 0; i < natoms; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Truncated file reading fractional coords at row " << i 
-                    << " (line: " << line_counter << ")." << std::endl;
+          ends_inside("fractional coordinates");
           break;
         }
         ++line_counter;
@@ -527,15 +556,20 @@ void CastepCastepReader::parse_data() {
         std::istringstream iss(line);
         std::string discard, species;
         double px, py, pz;
-        if (!(iss >> discard >> species >> discard >> px >> py >> pz)) {
-          std::cerr << "Warning: Unexpected parse error reading fractional coords (line: "
-                    << line_counter << ")." << std::endl;
-          break;
-        }
+        if (!(iss >> discard >> species >> discard >> px >> py >> pz))
+          refuse("the position of atom " + std::to_string(i + 1) + ", " +
+                 quoted() + ", is not 'x <species> <number> u v w x'");
         // Create Atom, convert fractional to absolute using s.cell
-        Atom a(castep_species_element(species), px, py, pz, 0.0, 0.0, 0.0);
+        tadah::core::Element element;
+        try {
+          element = castep_species_element(species);
+        } catch (const std::exception &e) {
+          refuse(e.what());
+        }
+        Atom a(element, px, py, pz, 0.0, 0.0, 0.0);
         atoms.push_back(a); // keep it fractional for now
       }
+      if (ended_inside) break;
       simLabel.positionsStopLine = line_counter;
       geometry_printed = true;
     }
@@ -565,13 +599,12 @@ void CastepCastepReader::parse_data() {
       if (debug) std::cout << "Reading forces..." << std::endl;
       take_result_geometry();
       // Usually there are three lines of header/blank text before actual force lines
-      jumpNLines(stream, 3);
+      if (!jumpNLines(stream, 3, "forces")) break;
       // Read force for each atom
       simLabel.forcesStartLine = line_counter+1;
       for (size_t i = 0; i < natoms; ++i) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Truncated file reading forces at row " << i
-                    << " (line: " << line_counter << ")." << std::endl;
+          ends_inside("forces");
           break;
         }
         ++line_counter;
@@ -580,8 +613,9 @@ void CastepCastepReader::parse_data() {
         std::string tmp;
         double fx, fy, fz;
         if (!(iss >> tmp >> tmp >> tmp >> fx >> fy >> fz)) {
-          std::cerr << "Warning: Could not parse atomic forces (line: " 
-                    << line_counter << ")." << std::endl;
+          warn("the forces line of atom " + std::to_string(i + 1) + ", " +
+               quoted() + ", cannot be read; the structure is stored without "
+               "forces");
           break;
         }
         if (i < result_atoms.size()) {
@@ -628,13 +662,12 @@ void CastepCastepReader::parse_data() {
         physical_stress) {
       if (debug) std::cout << "Reading stress..." << std::endl;
       take_result_geometry();
-      jumpNLines(stream, 3);
+      if (!jumpNLines(stream, 3, "stress")) break;
       // A 3x3 matrix is expected
       simLabel.stressStartLine = line_counter + 1;
       for (int row = 0; row < 3; ++row) {
         if (!std::getline(stream, line)) {
-          std::cerr << "Warning: Truncated file reading stress row " << row 
-                    << " (line: " << line_counter << ")." << std::endl;
+          ends_inside("stress");
           break;
         }
         ++line_counter;
@@ -642,8 +675,8 @@ void CastepCastepReader::parse_data() {
         std::string ignore;
         double v1, v2, v3;
         if (!(iss >> ignore >> ignore >> v1 >> v2 >> v3)) {
-          std::cerr << "Warning: Could not parse stress row (line: " 
-                    << line_counter << ")." << std::endl;
+          warn("the stress line " + std::to_string(row + 1) + ", " + quoted() +
+               ", cannot be read; the structure is stored without stress");
           break;
         }
         s.stress(row, 0) = v1;
@@ -705,12 +738,9 @@ void CastepCastepReader::parse_data() {
       std::istringstream iss(line);
       std::string ignore;
       double v;
-      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> v)) {
-        std::cerr << "Warning: Could not parse final free energy (line: "
-          << line_counter << ")." << std::endl;
-      } else {
-        e_free = v;
-      }
+      if (!(iss >> ignore >> ignore >> ignore >> ignore >> ignore >> v))
+        refuse("cannot read the energy from " + quoted());
+      e_free = v;
       simLabel.energyLine = line_counter;
     }
 
@@ -739,13 +769,10 @@ void CastepCastepReader::parse_data() {
         take_result_geometry();
         std::istringstream iss(line.substr(line.find('=') + 1));
         double v;
-        if (line.find('=') == std::string::npos || !(iss >> v)) {
-          std::cerr << "Warning: Could not parse the energy (line: "
-            << line_counter << ")." << std::endl;
-        } else {
-          *target = v;
-          if (target != &e_smeared) simLabel.energyLine = line_counter;
-        }
+        if (line.find('=') == std::string::npos || !(iss >> v))
+          refuse("cannot read the energy from " + quoted());
+        *target = v;
+        if (target != &e_smeared) simLabel.energyLine = line_counter;
       }
     }
 
@@ -761,11 +788,9 @@ void CastepCastepReader::parse_data() {
       // This indicates a converged or final iteration of geometry optimization
       std::istringstream iss(line);
       std::string ignore, step;
-      if (!(iss >> ignore >> ignore >> ignore>> step >> ignore >> ignore >> ignore)) {
-        std::cerr << "Warning: Could not parse GO termination line (line: "
-                  << line_counter << ")." << std::endl;
-      }
-      simLabel.stepNumber = std::stoi(step);
+      if (!(iss >> ignore >> ignore >> ignore>> step >> ignore >> ignore >> ignore))
+        refuse("cannot read the iteration number from " + quoted());
+      simLabel.stepNumber = step_number(step);
       simLabel.stopLine = line_counter;
       data_block_complete = true;
     }
@@ -777,12 +802,9 @@ void CastepCastepReader::parse_data() {
       std::istringstream iss(line);
       std::string ignore;
       double v;
-      if (!(iss >> ignore >> ignore >> ignore >> v)) {
-        std::cerr << "Warning: Could not parse potential energy in MD (line: " 
-                  << line_counter << ")." << std::endl;
-      } else {
-        e_md = v;
-      }
+      if (!(iss >> ignore >> ignore >> ignore >> v))
+        refuse("cannot read the potential energy from " + quoted());
+      e_md = v;
       simLabel.energyLine = line_counter;
     }
 
@@ -791,10 +813,8 @@ void CastepCastepReader::parse_data() {
       if (debug) std::cout << "Temperature:" << std::endl;
       std::istringstream iss(line);
       std::string ignore;
-      if (!(iss >> ignore >> ignore >> s.T)) {
-        std::cerr << "Warning: Could not parse temperature in MD (line: " 
-                  << line_counter << ")." << std::endl;
-      }
+      if (!(iss >> ignore >> ignore >> s.T))
+        refuse("cannot read the temperature from " + quoted());
       simLabel.T = s.T;
       simLabel.stopLine = line_counter;
       md_step_ready = true;
