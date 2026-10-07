@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <tadah/core/number_format.h>
 #include <tadah/mlip/structure_readers/vasp_poscar_reader.h>
 #include <vector>
@@ -15,6 +16,19 @@ namespace mlip {
 
 // A small helper to parse each line into tokens
 static std::vector<std::string> split(const std::string &str);
+
+// The digits of a POSCAR atom count: the token after at most one '+' (as
+// VASP's integer read, ASE and pymatgen accept "+2"), or an empty view when
+// the rest is not digits only (a '-', a fraction, a word).
+static std::string_view count_digits(const std::string &token) {
+  std::string_view digits(token);
+  if (!digits.empty() && digits.front() == '+') digits.remove_prefix(1);
+  if (digits.empty() ||
+      !std::all_of(digits.begin(), digits.end(),
+                   [](unsigned char c) { return std::isdigit(c) != 0; }))
+    return {};
+  return digits;
+}
 
 void VaspPoscarReader::read(const std::string &path) {
   std::ifstream ifs(path);
@@ -121,16 +135,16 @@ Structure VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   // For simplicity, assume it's element symbols
   bool hasElementSymbols = true;
   std::vector<std::string> fields = split(lines[5]);
-  // If they're all digits -> that's the counts line, no symbols
+  // If they're all atom counts -> that's the counts line, no symbols
   {
-    bool allDigits = true;
+    bool allCounts = true;
     for (auto &f : fields) {
-      if (f.empty() || !std::all_of(f.begin(), f.end(), ::isdigit)) {
-        allDigits = false;
+      if (count_digits(f).empty()) {
+        allCounts = false;
         break;
       }
     }
-    if (allDigits)
+    if (allCounts)
       hasElementSymbols = false;
   }
 
@@ -146,13 +160,18 @@ Structure VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   {
     std::vector<std::string> cfields = split(lines[countsLineIndex]);
     for (auto &cf : cfields) {
+      const std::string where = "the atom count '" + cf + "' on line " +
+                                std::to_string(countsLineIndex + 1);
+      const std::string_view digits = count_digits(cf);
+      if (digits.empty())
+        throw std::runtime_error(where + " is not a whole number.");
       int count = 0;
-      const auto r = std::from_chars(cf.data(), cf.data() + cf.size(), count);
-      if (r.ec != std::errc{} || r.ptr != cf.data() + cf.size() || count < 0) {
-        throw std::runtime_error(
-          "the atom count '" + cf + "' on line " +
-          std::to_string(countsLineIndex + 1) + " is not a whole number.");
-      }
+      const auto r =
+          std::from_chars(digits.data(), digits.data() + digits.size(), count);
+      if (r.ec == std::errc::result_out_of_range)
+        throw std::runtime_error(where + " is too large.");
+      if (r.ec != std::errc{} || r.ptr != digits.data() + digits.size())
+        throw std::runtime_error(where + " is not a whole number.");
       speciesCounts.push_back(count);
     }
   }
