@@ -852,7 +852,8 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
 // Before the fix: the check read FIXINDEX with the lenient
 // core::parse_indices, which dropped '1 3' (the values joined into one
 // malformed segment) and expanded '2-1' to nothing, so both were refused
-// with "cannot determine the per-species intercepts" (rank 1).
+// with "BIAS true: the training data cannot determine the per-species
+// energy constants (the intercepts) of ATOM Nb Ta" (rank 1).
 TEST_CASE("BIAS true: the composition check reads FIXINDEX as the trainer "
           "does",
           "[descriptors_calc][bias][composition][fixindex]") {
