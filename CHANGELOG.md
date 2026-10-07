@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Tests: `tadah.mlip_headers` (`ctest -L headers`, cmake-tools' `tadah_add_header_check`) compiles every header of `include/` on its own and twice in a row, with what a user of `tadah.mlip` gets. Every MLIP header passes.
 - `StructureDB::add_selected(file, indices)`: the structures of a file at 0-based indices, in the given order, read in one pass up to the largest index; only the selected structures are parsed and kept, the others are skipped without being parsed (as `StructureDB::count` skips them), so memory grows with the number of selected structures, not with the largest index, and a structure that is not valid elsewhere in the file does not stop it. An index past the end is refused naming the file, the structure and how many the file has. Test: `test_dataset_tools.cpp`.
 
 ### Removed
