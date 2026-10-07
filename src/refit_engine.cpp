@@ -270,8 +270,10 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
   if (edit || retarget) {
     // CLI needs/excludes only guard flag usage; the config-file path (and
-    // combinations the CLI cannot express) are re-validated here.
+    // combinations the CLI cannot express) are re-validated here, and the
+    // one configuration number of these modes, OPTIM_PCT.
     validate_refit_mode_keys(c);
+    (void)read_optim_pct(c);
     return;
   }
   if (!c.contains("EAM") || c.size("EAM") == 0) {

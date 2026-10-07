@@ -136,6 +136,8 @@ void validate_refit_mode_keys(const Context &c) {
 
 int run_refit_edit(Context &c) {
   validate_refit_mode_keys(c);
+  // OPTIM_PCT, the hpotarget's bounds, before any file is written
+  const double pct = read_optim_pct(c);
   const std::string in_pot = c.get<std::string>("EDIT");
 
   core::CoreUserConfigParser parser;
@@ -290,8 +292,6 @@ int run_refit_edit(Context &c) {
   guard_not_input(out_pot, in_pot,
                   "pass -o <name> to choose a different output name");
   TrainEngine::dumpPotFile(out_pot, out);
-
-  const double pct = read_optim_pct(c);
   write_hpotarget(out_hpo, out, pct);
   log_info("tadah refit --edit: wrote pot=" + out_pot +
            " hpotarget=" + out_hpo);
