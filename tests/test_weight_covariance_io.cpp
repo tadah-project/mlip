@@ -76,11 +76,16 @@ TEST_CASE("WCOV and WNOISE: write and read back", "[weight_covariance]") {
 }
 
 /* Pins: read_weight_covariance refuses, naming WCOV or WNOISE: no WCOV or
- * no WNOISE (naming OALGO 3 and SIGMA); N = 2 for 3 weights ("N = 2", "3
- * WEIGHTS"); N = 2 with 3 values after it ("5 values", "has 4") and N = 4
- * with 33 ("17 values", "has 34", the count of two appended SIGMAs before
- * fix/hpo-trainer-reuse); a WNOISE of odd length, of an unknown type, with
- * a type twice, a negative variance, or without E. */
+ * no WNOISE (naming OALGO 3; why an OALGO 3 potential has none is the case
+ * below); N = 2 for 3 weights ("N = 2", "3 WEIGHTS"); N = 2 with 3 values
+ * after it ("5 values", "has 4") and N = 4 with 33 ("17 values", "has 34",
+ * the count of two appended SIGMAs before fix/hpo-trainer-reuse); a WNOISE
+ * of odd length, of an unknown type, with a type twice, or with a negative
+ * variance. (A WNOISE without E, "F 0.5", was refused here too until the
+ * review of WCOV and WNOISE: it is the WNOISE of a fit without energies,
+ * read by the case below. This Context without WCOV, with no OALGO and so
+ * the default OALGO 1, was expected to name SIGMA too, which only an OALGO
+ * 3 potential had.) */
 TEST_CASE("read_weight_covariance refuses what does not fit the potential",
           "[weight_covariance]") {
   Context ok;
@@ -94,7 +99,6 @@ TEST_CASE("read_weight_covariance refuses what does not fit the potential",
     INFO(m);
     CHECK(m.find("WCOV") != std::string::npos);
     CHECK(m.find("OALGO 3") != std::string::npos);
-    CHECK(m.find("SIGMA") != std::string::npos);
   }
   {
     Context c;
@@ -127,8 +131,7 @@ TEST_CASE("read_weight_covariance refuses what does not fit the potential",
     CHECK(m.find("17 values") != std::string::npos);
     CHECK(m.find("has 34") != std::string::npos);
   }
-  for (const char *noise : {"E 0.5 F", "X 0.5", "E 0.5 E 0.25", "E -0.5",
-                            "F 0.5"}) {
+  for (const char *noise : {"E 0.5 F", "X 0.5", "E 0.5 E 0.25", "E -0.5"}) {
     INFO("WNOISE " << noise);
     Context c = ok;
     c.remove("WNOISE");
@@ -146,6 +149,107 @@ TEST_CASE("read_weight_covariance refuses what does not fit the potential",
     const std::string m = refusal(c, 2);
     INFO(m);
     CHECK(m.find("WNOISE") != std::string::npos);
+  }
+}
+
+/* Pins: read_weight_covariance reads the WNOISE of a fit without energies
+ * (EWEIGHT 0, or every structure's eweight 0), which lists F (and S) and no
+ * E, as write_weight_covariance writes it: "F 0.5" read with F set to 0.5
+ * and E and S unset.
+ * Before the fix: refused, "WNOISE lists no E (energies): every prediction
+ * has an energy. `tadah train` writes WCOV and WNOISE for a fit with OALGO
+ * 3; retrain the potential with OALGO 3." (the writer wrote what its reader
+ * refused, and the remedy was that of a potential without OALGO 3). */
+TEST_CASE("read_weight_covariance reads the WNOISE of a fit without energies",
+          "[weight_covariance]") {
+  Context c;
+  c.add("OALGO", 3);
+  c.add("WCOV", "2 1 0 0 1");
+  c.add("WNOISE", "F");
+  c.add("WNOISE", 0.5);
+  REQUIRE(refusal(c, 2) == "<no exception>");
+  const WeightCovariance wc = read_weight_covariance(c, 2);
+  CHECK_FALSE(wc.noise.set[kEnergyRow]);
+  CHECK(wc.noise.set[kForceRow]);
+  CHECK_FALSE(wc.noise.set[kStressRow]);
+  CHECK(wc.noise.value[kForceRow] == 0.5);
+}
+
+/* Pins: a potential without WCOV and WNOISE is refused with the reason its
+ * configuration gives: with OALGO 1 the message names OALGO 1 and says to
+ * retrain with OALGO 3; with OALGO 3 (M_BLR BF_Linear) it names the three
+ * ways such a potential has none ("SIGMA": a potential of an earlier
+ * version; "observations": a fit with no more observations than effective
+ * weights; "FIXWEIGHT": weights set without a fit) and does not say to
+ * retrain with OALGO 3; with OALGO 3 and MODEL M_KRR Kern_RBF 2 it names
+ * implementation 2 and the remedy "MODEL M_KRR <kernel> 1".
+ * Before the fix: every one said "`tadah train` writes WCOV and WNOISE for
+ * a fit with OALGO 3; retrain the potential with OALGO 3" (the OALGO 3
+ * potentials already had it, and retraining them alike gave the same
+ * potential), naming neither the observations, FIXWEIGHT nor
+ * implementation 2. */
+TEST_CASE("read_weight_covariance says why a potential has no covariance",
+          "[weight_covariance]") {
+  {
+    Context c;
+    c.add("OALGO", 1);
+    c.add("MODEL", "M_BLR BF_Linear");
+    const std::string m = refusal(c, 2);
+    INFO(m);
+    CHECK(m.find("WCOV") != std::string::npos);
+    CHECK(m.find("OALGO 1") != std::string::npos);
+    CHECK(m.find("retrain the potential with OALGO 3") != std::string::npos);
+  }
+  {
+    Context c;
+    c.add("OALGO", 3);
+    c.add("MODEL", "M_BLR BF_Linear");
+    const std::string m = refusal(c, 2);
+    INFO(m);
+    CHECK(m.find("WCOV") != std::string::npos);
+    CHECK(m.find("SIGMA") != std::string::npos);
+    CHECK(m.find("observations") != std::string::npos);
+    CHECK(m.find("FIXWEIGHT") != std::string::npos);
+    CHECK(m.find("retrain the potential with OALGO 3") == std::string::npos);
+  }
+  {
+    Context c;
+    c.add("OALGO", 3);
+    c.add("MODEL", "M_KRR Kern_RBF 2");
+    const std::string m = refusal(c, 2);
+    INFO(m);
+    CHECK(m.find("WCOV") != std::string::npos);
+    CHECK(m.find("implementation 2") != std::string::npos);
+    CHECK(m.find("MODEL M_KRR <kernel> 1") != std::string::npos);
+    CHECK(m.find("retrain the potential with OALGO 3") == std::string::npos);
+  }
+}
+
+/* Pins: require_noise_of refuses every prediction of a covariance whose
+ * WNOISE has no E (the fit had no energies with a non-zero weight): every
+ * prediction has an energy, so energies alone and forces with F are both
+ * refused, naming the energies, WNOISE and EWEIGHT 0 (the cause), not
+ * OALGO 3.
+ * Before the fix: require_noise_of checked only forces and stresses, so
+ * both passed (read_weight_covariance refused such a WNOISE first, with the
+ * remedy of a potential without OALGO 3). */
+TEST_CASE("require_noise_of refuses the energies of a fit without them",
+          "[weight_covariance]") {
+  WeightCovariance wc;
+  wc.noise.set[kForceRow] = true;
+  for (const bool force : {false, true}) {
+    INFO("force " << force);
+    std::string m = "<no exception>";
+    try {
+      require_noise_of(wc, force, false);
+    } catch (const std::exception &e) {
+      m = e.what();
+    }
+    INFO(m);
+    CHECK(m.find("energies") != std::string::npos);
+    CHECK(m.find("WNOISE") != std::string::npos);
+    CHECK(m.find("EWEIGHT 0") != std::string::npos);
+    CHECK(m.find("OALGO 3") == std::string::npos);
   }
 }
 
