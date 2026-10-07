@@ -712,3 +712,53 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE_NOTHROW(validate_refit_mode_keys(
       ctx({{"RETARGET", "b"}, {"RETARGET_RHOFORM", "NONNEG"}})));
 }
+
+/* Pins: `tadah refit --edit` writes no weight covariance of its input: the
+ * edited weights are not those any fit computed a covariance for, so the
+ * edited potential (an --add of a phi basis function) has none of SIGMA,
+ * WCOV and WNOISE, whichever the input carries (a SIGMA line, as Tadah!
+ * 1.0.0 to 1.6.0 wrote it; WCOV and WNOISE, as an OALGO 3 fit writes them,
+ * for its 6 weights).
+ * Before the fix: the input's SIGMA was copied into the edited potential
+ * beside the edited weights; WCOV and WNOISE were not keys (Context::add
+ * threw "Key not allowed: WCOV"). */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit writes no weight covariance of its input",
+                 "[refit][edit][weight_covariance]") {
+  for (const char *which : {"SIGMA", "WCOV and WNOISE"}) {
+    DYNAMIC_SECTION(which) {
+      ScopedTempDir tmp;
+      Context in = make_knot_pot();
+      if (std::string(which) == "SIGMA") {
+        in.add("SIGMA", 6);
+        for (int k = 0; k < 36; ++k) in.add("SIGMA", k % 7 == 0 ? 1.0 : 0.0);
+      } else {
+        in.add("WCOV", 6);
+        for (int k = 0; k < 36; ++k) in.add("WCOV", k % 7 == 0 ? 1.0 : 0.0);
+        in.add("WNOISE", "E 0.01");
+      }
+      TrainEngine::dumpPotFile("in.tadah", in);
+      Context c;
+      c.add("EDIT", std::string("in.tadah"));
+      c.add("FUNC", std::string("phi"));
+      c.add("ADD", 3.6);
+      Task task("refit", c);
+      REQUIRE(RefitEngine().run(task) == EXIT_SUCCESS);
+      std::ifstream f("pot_edited.tadah");
+      const std::string text((std::istreambuf_iterator<char>(f)),
+                             std::istreambuf_iterator<char>());
+      INFO(text);
+      for (const char *key : {"SIGMA", "WCOV", "WNOISE"}) {
+        INFO(key);
+        std::istringstream lines(text);
+        bool found = false;
+        for (std::string line; std::getline(lines, line);) {
+          std::istringstream ls(line);
+          std::string k;
+          if ((ls >> k) && k == key) found = true;
+        }
+        CHECK_FALSE(found);
+      }
+    }
+  }
+}
