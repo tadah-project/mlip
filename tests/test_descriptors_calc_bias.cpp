@@ -1051,8 +1051,9 @@ void set_basis(Context &c, const std::vector<std::vector<double>> &vectors) {
 // trains into 6 WEIGHTS; an M_BLR potential fitted with OALGO 3 (WCOV of
 // 1 + 5 x 5 values, and WNOISE) retrained with OALGO 1 has no WCOV or
 // WNOISE, and retrained with OALGO 3 the WCOV and WNOISE of its own fit
-// (26 and 4 values, equal to the potential's: the same fit of the same
-// data); the Trainer's context has no WCOV or WNOISE either.
+// (26 values, and E with its value: FORCE false; equal to the potential's:
+// the same fit of the same data); the Trainer's context has no WCOV or
+// WNOISE either.
 // Before the fix: the Trainer built the model from the potential's fit:
 // for the kernels it threw, "the potential has 6 WEIGHTS but SBASIS 10
 // basis vectors (BASIS)", "BASIS has 30 values, which is not a multiple of
@@ -1123,7 +1124,8 @@ TEST_CASE("A Trainer built from a potential reads none of the potential's "
     const std::vector<double> wcov = stored_doubles(pot, "WCOV");
     REQUIRE(wcov.size() == 26);
     REQUIRE(wcov[0] == 5.0);
-    REQUIRE(pot.size("WNOISE") == 4);
+    REQUIRE(pot.size("WNOISE") == 2);
+    REQUIRE(pot.get<std::string>("WNOISE", 0) == "E");
     for (int oalgo : {1, 3}) {
       CAPTURE(oalgo);
       Context cfg = pot;
@@ -1143,7 +1145,7 @@ TEST_CASE("A Trainer built from a potential reads none of the potential's "
         REQUIRE(out.size() == wcov.size());
         for (std::size_t i = 0; i < out.size(); ++i)
           CHECK(out[i] == Approx(wcov[i]).epsilon(1e-12).margin(1e-300));
-        REQUIRE(out_pot.size("WNOISE") == 4);
+        REQUIRE(out_pot.size("WNOISE") == 2);
         CHECK(out_pot.get<double>("WNOISE", 1) ==
               Approx(pot.get<double>("WNOISE", 1)).epsilon(1e-12));
       }

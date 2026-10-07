@@ -20,12 +20,14 @@ class Trainer {
   public:
     /** \brief The configuration @p c without what a fit writes: WEIGHTS,
      *  BASIS (the basis vectors of a non-linear kernel), NMEAN, NSTDEV and
-     *  SIGMA. A training configuration may be a potential (`tadah train -c
-     *  pot.tadah`, a `tadah hpo -c` seed); the fit replaces all of these,
-     *  so a model built for training reads none of them. */
+     *  the weight covariance (WCOV, WNOISE, and SIGMA of Tadah! 1.0.0 to
+     *  1.6.0). A training configuration may be a potential (`tadah train
+     *  -c pot.tadah`, a `tadah hpo -c` seed); the fit replaces all of
+     *  these, so a model built for training reads none of them. */
     static tadah::core::Context training_context(const tadah::core::Context &c) {
       tadah::core::Context t = c;
-      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA"})
+      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA",
+                              "WCOV", "WNOISE"})
         if (t.has_stored(key)) t.remove(key);
       return t;
     }
@@ -74,11 +76,9 @@ class Trainer {
     /** Set the model weights directly from FIXINDEX/FIXWEIGHT without any
      *  training data. Requires FIXINDEX to cover every model weight; see
      *  weight_provisioning.h for the contract. No fit computes a covariance
-     *  of these weights: a SIGMA in the context is removed, as a model fit
-     *  removes it (training_context() leaves none of the configuration's;
-     *  this removes one set in the context since). */
+     *  of these weights: the model has none (an earlier fit's is removed),
+     *  so the potential has no WCOV or WNOISE. */
     void provision_fixed_weights() {
-      context.remove("SIGMA");
       tadah::mlip::provision_fixed_weights(*model, context,
                                            fb->get_phi_cols(context));
     }

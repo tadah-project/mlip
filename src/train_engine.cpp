@@ -118,12 +118,23 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
   tr.model->train(stdb, tr.dc);
 
+  // --uncertainty lists the weights with their standard deviations: a fit
+  // that computed no covariance (its noise variance undefined) is refused
+  // before the potential is written (owner decision D8).
+  const bool uncertainty = context.get<bool>("UNCERTAINTY");
+  if (uncertainty && !tr.model->has_covariance())
+    throw std::runtime_error(
+        "tadah train --uncertainty: no weight covariance: " +
+        tr.model->covariance_unavailable() +
+        ". No potential was written. Add observations (data with a non-zero "
+        "weight), or train without --uncertainty.");
+
   tadah::core::Context param_file = tr.model->get_param_file();
   stamp_into_param_file(param_file, report);
   dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
 
-  // Output uncertainty if requested
-  if (context.get<bool>("UNCERTAINTY")) {
+  // The weights and their standard deviations (weights.tadah)
+  if (uncertainty) {
     tadah::core::t_type weights = tr.model->get_weights();
     tadah::core::t_type unc = tr.model->get_weights_uncertainty();
     Output(param_file).print_train_unc(weights, unc);
@@ -138,6 +149,13 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
     throw std::runtime_error(
         "TrainEngine requires INIT2B or/and INITMB parameters to be set");
   }
+  // Only the SVD fit computes the weight covariance: refused before any
+  // training or output.
+  if (context.get<bool>("UNCERTAINTY") && context.get<int>("OALGO") != 3)
+    throw std::runtime_error(
+        "tadah train --uncertainty needs OALGO 3: only the SVD fit (OALGO 3) "
+        "computes the weight covariance; the configuration has OALGO " +
+        std::to_string(context.get<int>("OALGO")) + ".");
 }
 
 // helper function to dump the potential file
