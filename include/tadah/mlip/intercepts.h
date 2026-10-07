@@ -86,9 +86,12 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *
  *  A no-op for BIAS false and for a function without intercept columns
  *  (Kern_RBF). An atom of an element not in ATOM is refused
- *  (throw_element_not_in_atom).
+ *  (throw_element_not_in_atom). FIXINDEX is read as the fit reads it,
+ *  with core::parse_fixindex (without the weight count, which the fit
+ *  checks), and what that refuses is thrown here.
  *  @throws std::runtime_error naming the species, the rank found, the
- *          intercept weights and the remedies
+ *          intercept weights and the remedies, or core::parse_fixindex's
+ *          refusal of FIXINDEX/FIXWEIGHT
  *  @throws std::logic_error for a kernel whose basis vectors do not have
  *          DSIZE values (they would be evaluated past the descriptor) */
 void require_intercepts_determined(const StructureDB &stdb,

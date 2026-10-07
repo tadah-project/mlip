@@ -14,7 +14,8 @@ namespace mlip {
  *
  * Invariants shared by the FIXINDEX/FIXWEIGHT machinery:
  *  - FIXWEIGHT[k] pairs with FIXINDEX[k] in user declaration order
- *    (core::parse_indices preserves order and removes duplicates);
+ *    (core::parse_fixindex reads FIXINDEX: it keeps that order and refuses
+ *    a weight named twice and a count other than FIXWEIGHT's);
  *  - FIXINDEX entries are 1-based model-weight indices in [1, n_cols];
  *  - a lone FIXINDEX or FIXWEIGHT is an error — there is no auto-seeding
  *    from WEIGHTS;
@@ -57,10 +58,12 @@ std::size_t model_weight_count(DM_Function_Base &fb,
 /** Classify how the model weights are provisioned for this configuration.
  *
  * Throws std::runtime_error with an actionable message on illegal
- * combinations: a lone FIXINDEX or FIXWEIGHT, a FIXINDEX/FIXWEIGHT size
- * mismatch, an out-of-bounds index, no DBFILE without any pinning, a
- * missing DBFILE with incomplete FIXINDEX coverage, or a missing DBFILE
- * for a model whose basis is drawn from the training data.
+ * combinations: what core::parse_fixindex refuses (a lone FIXINDEX or
+ * FIXWEIGHT, a malformed or descending entry, an index outside 1..n_cols,
+ * a FIXINDEX/FIXWEIGHT count mismatch, a weight named twice), a FIXWEIGHT
+ * value that is not a number, no DBFILE without any pinning, a missing
+ * DBFILE with incomplete FIXINDEX coverage, or a missing DBFILE for a
+ * model whose basis is drawn from the training data.
  *
  * @param ctx    training configuration
  * @param n_cols total number of model weights K (model_weight_count())

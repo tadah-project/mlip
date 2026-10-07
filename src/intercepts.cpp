@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -259,15 +260,12 @@ void require_intercepts_determined(const StructureDB &stdb,
   const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
   const std::vector<std::size_t> cols = f.intercept_columns(ctx);
   if (cols.empty()) return;
+  // The weights FIXINDEX pins, read as the fit reads them
+  // (core::parse_fixindex; the fit checks them against its weight count).
   std::vector<bool> pinned_weight;
-  if (ctx.has_stored("FIXINDEX") && ctx.has_stored("FIXWEIGHT")) {
-    std::vector<std::string> fi(ctx.size("FIXINDEX"));
-    ctx.get("FIXINDEX", fi);
-    for (std::size_t i : tadah::core::parse_indices(fi)) {
-      if (i < 1) continue;
-      if (pinned_weight.size() < i) pinned_weight.resize(i, false);
-      pinned_weight[i - 1] = true;
-    }
+  for (std::size_t i : tadah::core::parse_fixindex(ctx, std::nullopt)) {
+    if (pinned_weight.size() < i) pinned_weight.resize(i, false);
+    pinned_weight[i - 1] = true;
   }
   std::vector<std::size_t> fitted;
   for (std::size_t c : cols)
