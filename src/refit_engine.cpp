@@ -48,14 +48,6 @@ using tadah::models::eam_lattice::crystal_epa;
 // potential, must declare the form of the DM_REAM potential it writes.
 const char *const kRefitRhoFormWho = "tadah refit configuration";
 
-// The one-sided knot families in the spellings REFIT_BASIS accepts: Knot5,
-// Knot3 and KnotMix (alias Mixed).
-bool is_knot_family(const std::string &b) {
-  return b == "Knot5" || b == "KNOT5" || b == "knot5" || b == "Knot3" ||
-         b == "KNOT3" || b == "knot3" || b == "KnotMix" || b == "KNOTMIX" ||
-         b == "knotmix" || b == "Mixed" || b == "MIXED";
-}
-
 // The RHOFORM x REFIT_BASIS x REFIT_MODE matrix, checked before any fitting.
 // `knot_family`: Knot3/Knot5/KnotMix; `basis_user_set`: REFIT_BASIS given
 // (else `basis` is the mode's default); `compact`: REFIT_MODE compact;
@@ -434,11 +426,10 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   }
 
   // ---- the basis family (REFIT_BASIS, else the mode's default) ----
-  const bool basis_blip = (cfg.basis == "Blip" || cfg.basis == "blip");
-  const bool basis_blip5 =
-      (cfg.basis == "Blip5" || cfg.basis == "BLIP5" || cfg.basis == "blip5" ||
-       cfg.basis == "M6");
-  const bool basis_knotfam = is_knot_family(cfg.basis);
+  // (the spellings of refit_keys.h, which the mode rule reads too)
+  const bool basis_blip = refit_basis_is_blip(cfg.basis);
+  const bool basis_blip5 = refit_basis_is_blip5(cfg.basis);
+  const bool basis_knotfam = refit_basis_is_knot_family(cfg.basis);
 
   // ---- RHOFORM: form x basis x mode, then the fit in the declared form ----
   check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
@@ -503,7 +494,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   }
 
   // (cfg.basis, not basis_knotfam: a defaulted Knot5 fell back to Blip)
-  if (!fitted && is_knot_family(cfg.basis))
+  if (!fitted && refit_basis_is_knot_family(cfg.basis))
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
         "compact on an HPO (Ceres) build — the one-sided knot families have "

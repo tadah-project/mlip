@@ -87,6 +87,19 @@ const core::BlueprintKey *find_option(const core::BlueprintTask &task,
   return nullptr;
 }
 
+// The configuration key named `name` (ALLOWED_KEYS, any letter case);
+// nullptr if none.
+const core::BlueprintKey *find_config_key(const std::string &name) {
+  const auto &keys = core::BlueprintParser::getKeysMapRef();
+  const auto it = keys.find(boost::to_upper_copy(name));
+  return it == keys.end() ? nullptr : &it->second;
+}
+
+void print_key(const core::BlueprintKey &key) {
+  std::cout << explain_key_text(key);
+  std::cout.flush();
+}
+
 void print_text(const std::string &text) {
   for (const auto &line : explain_text_lines(text)) std::cout << line << "\n";
   std::cout.flush();
@@ -176,10 +189,14 @@ int ExplainEngine::run(mlip::Task &task) {
     printed = true;
   }
   if (tokens.size() == 1) {
-    if (!printed)
-      throw std::runtime_error("tadah explain: no command '" + tokens[0] +
-                               "'");
-    return EXIT_SUCCESS;
+    if (printed) return EXIT_SUCCESS;
+    // a configuration key, which no command need have as an option
+    if (const core::BlueprintKey *key = find_config_key(tokens[0])) {
+      print_key(*key);
+      return EXIT_SUCCESS;
+    }
+    throw std::runtime_error("tadah explain: no command or configuration "
+                             "key '" + tokens[0] + "'");
   }
   // An option of the command the tokens before the last name.
   const auto owner = taskMap.find(command(tokens.size() - 1));
@@ -193,11 +210,15 @@ int ExplainEngine::run(mlip::Task &task) {
   }
   if (const core::BlueprintKey *key =
           find_option(owner->second, boost::to_lower_copy(tokens.back()))) {
-    std::cout << explain_key_text(*key);
-    std::cout.flush();
+    print_key(*key);
     return EXIT_SUCCESS;
   }
   if (printed) return EXIT_SUCCESS;
+  // a configuration key that is no option of the command
+  if (const core::BlueprintKey *key = find_config_key(tokens.back())) {
+    print_key(*key);
+    return EXIT_SUCCESS;
+  }
   std::string where = tokens[0];
   for (std::size_t i = 1; i + 1 < tokens.size(); ++i) where += " " + tokens[i];
   // <command>.<name> could have named a subcommand of a command that has one
@@ -210,7 +231,8 @@ int ExplainEngine::run(mlip::Task &task) {
   throw std::runtime_error("tadah explain: " + where + " has no " +
                            (has_subcommands ? "subcommand or option"
                                             : "option") +
-                           " '" + tokens.back() + "'");
+                           " '" + tokens.back() +
+                           "', and it is no configuration key");
 }
 
 void ExplainEngine::validate(const tadah::mlip::Task &task) {
