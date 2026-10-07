@@ -4,6 +4,7 @@
 #include <tadah/core/context.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
+#include <tadah/models/functions/function_base.h>
 
 #include <cstddef>
 
@@ -14,7 +15,8 @@ namespace mlip {
  *
  * Invariants shared by the FIXINDEX/FIXWEIGHT machinery:
  *  - FIXWEIGHT[k] pairs with FIXINDEX[k] in user declaration order
- *    (core::parse_indices preserves order and removes duplicates);
+ *    (core::parse_fixindex reads FIXINDEX: it keeps that order and refuses
+ *    a weight named twice and a count other than FIXWEIGHT's);
  *  - FIXINDEX entries are 1-based model-weight indices in [1, n_cols];
  *  - a lone FIXINDEX or FIXWEIGHT is an error — there is no auto-seeding
  *    from WEIGHTS;
@@ -43,24 +45,36 @@ bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
  *  token, 1 when there is none (M_KRR::train). */
 int krr_implementation(const tadah::core::Context &ctx);
 
+/** True for M_KRR implementation 2, `MODEL M_KRR <kernel> 2` with any
+ *  kernel, Kern_Linear too: its solve (MODELS M_KRR_Train::train2) fits
+ *  the targets of SBASIS basis vectors drawn from the training structures,
+ *  every weight at once, and pins none. */
+bool is_krr_implementation_2(const tadah::core::Context &ctx);
+
 /** The number of model weights K a training of this configuration fits:
- *  the design-matrix width fb.get_phi_cols(ctx), except for a model whose
- *  basis is drawn from the training data (basis_drawn_from_training_data),
- *  whose K is SBASIS, the number of basis vectors training draws (before
- *  training fb has none, and its width is 0). Throws, naming SBASIS, when
- *  such a model has no SBASIS or fewer than its n0 intercept vectors plus
- *  one drawn vector (n0 + 1: the bound of the basis draw,
- *  sbasis_lower_bound_problem; 3 with BIAS true on two species). */
-std::size_t model_weight_count(DM_Function_Base &fb,
+ *  the design-matrix width, f.weights_count(DSIZE) (as
+ *  DM_Function_Base::get_phi_cols(ctx)), except for a model whose basis is
+ *  drawn from the training data (basis_drawn_from_training_data), whose K
+ *  is SBASIS, the number of basis vectors training draws (before training
+ *  f has none, and its width is 0). Throws, naming SBASIS, when such a
+ *  model has no SBASIS or fewer than its n0 intercept vectors plus one
+ *  drawn vector (n0 + 1: the bound of the basis draw,
+ *  sbasis_lower_bound_problem; 3 with BIAS true on two species). @p ctx
+ *  holds DSIZE (DescriptorsCalc sets it). */
+std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx);
 
 /** Classify how the model weights are provisioned for this configuration.
  *
  * Throws std::runtime_error with an actionable message on illegal
- * combinations: a lone FIXINDEX or FIXWEIGHT, a FIXINDEX/FIXWEIGHT size
- * mismatch, an out-of-bounds index, no DBFILE without any pinning, a
- * missing DBFILE with incomplete FIXINDEX coverage, or a missing DBFILE
- * for a model whose basis is drawn from the training data.
+ * combinations: FIXINDEX or FIXWEIGHT with M_KRR implementation 2
+ * (is_krr_implementation_2; MODELS refuse_fixed_weights_in_train2's
+ * message, before FIXINDEX is read), what core::parse_fixindex refuses (a
+ * lone FIXINDEX or FIXWEIGHT, a malformed or descending entry, an index
+ * outside 1..n_cols, a FIXINDEX/FIXWEIGHT count mismatch, a weight named
+ * twice), a FIXWEIGHT value that is not a number, no DBFILE without any
+ * pinning, a missing DBFILE with incomplete FIXINDEX coverage, or a
+ * missing DBFILE for a model whose basis is drawn from the training data.
  *
  * @param ctx    training configuration
  * @param n_cols total number of model weights K (model_weight_count())

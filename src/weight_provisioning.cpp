@@ -5,6 +5,7 @@
 #include <tadah/core/core_types.h>
 #include <tadah/core/number_format.h>
 #include <tadah/core/utils.h>
+#include <tadah/models/m_krr_train.h>
 
 #include <algorithm>
 #include <sstream>
@@ -17,39 +18,21 @@ namespace mlip {
 
 namespace {
 
-constexpr const char *kLoneKeyMsg =
-    "FIXINDEX requires FIXWEIGHT (and vice versa). Provide both keys with "
-    "matching lengths; the i-th FIXWEIGHT value pins the weight named by "
-    "the i-th FIXINDEX entry. There is no auto-seeding from WEIGHTS.";
-
 struct FixedSpec {
-  std::vector<size_t> indices;  // 1-based, declaration order, deduplicated
+  std::vector<size_t> indices;  // 1-based, declaration order, each once
   std::vector<double> values;   // values[k] pins weight indices[k]
 };
 
-/* Parse and validate FIXINDEX/FIXWEIGHT. Both keys must be present. */
+/* FIXINDEX/FIXWEIGHT, checked: core::parse_fixindex (a lone key, the
+ * indices against the n_cols weights, their count against FIXWEIGHT's, a
+ * weight named twice), then the FIXWEIGHT values. Empty without the keys. */
 FixedSpec parse_fixed_spec(const tadah::core::Context &ctx,
                            std::size_t n_cols) {
   FixedSpec spec;
-  spec.indices = tadah::core::parse_indices(ctx("FIXINDEX"));
+  spec.indices = tadah::core::parse_fixindex(ctx, n_cols);
+  if (spec.indices.empty()) return spec;
 
   const std::vector<std::string> &fw = ctx("FIXWEIGHT");
-  if (fw.size() != spec.indices.size()) {
-    throw std::runtime_error(
-        "FIXINDEX names " + std::to_string(spec.indices.size()) +
-        " weights but FIXWEIGHT provides " + std::to_string(fw.size()) +
-        " values; they must pair 1:1 (the i-th value pins the i-th index).");
-  }
-
-  for (size_t idx : spec.indices) {
-    if (idx < 1 || idx > n_cols) {
-      throw std::runtime_error(
-          "FIXINDEX entry " + std::to_string(idx) +
-          " is out of range: this model has " + std::to_string(n_cols) +
-          " weights (valid range 1.." + std::to_string(n_cols) + ").");
-    }
-  }
-
   spec.values.reserve(fw.size());
   for (const std::string &v : fw) {
     try {
@@ -99,9 +82,17 @@ int krr_implementation(const tadah::core::Context &ctx) {
              : 1;
 }
 
-std::size_t model_weight_count(DM_Function_Base &fb,
+bool is_krr_implementation_2(const tadah::core::Context &ctx) {
+  return ctx.contains("MODEL") && ctx.size("MODEL") >= 2 &&
+         ctx.get<std::string>("MODEL", 0) == "M_KRR" &&
+         krr_implementation(ctx) == 2;
+}
+
+std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx) {
-  if (!basis_drawn_from_training_data(ctx)) return fb.get_phi_cols(ctx);
+  // DM_Function_Base::get_phi_cols(ctx), the design-matrix width
+  if (!basis_drawn_from_training_data(ctx))
+    return f.weights_count(ctx.get<std::size_t>("DSIZE"));
   const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1);
   // The bound of the basis draw (Basis::check_sbasis): the intercept
   // vectors e_0 .. e_{n0-1}, then at least one vector drawn from the
@@ -123,13 +114,15 @@ std::size_t model_weight_count(DM_Function_Base &fb,
 
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols) {
+  // M_KRR implementation 2 pins no weight: its FIXINDEX is refused before
+  // it is read against n_cols, which is not its weight count for
+  // Kern_Linear (DSIZE, while it fits SBASIS basis vectors).
+  if (is_krr_implementation_2(ctx))
+    tadah::models::refuse_fixed_weights_in_train2(
+        ctx, ctx.get<std::string>("MODEL", 1));
   const bool has_db = ctx.contains("DBFILE") && ctx.size("DBFILE") > 0;
-  const bool has_fw = ctx.contains("FIXWEIGHT");
-  const bool has_fi = ctx.contains("FIXINDEX");
-
-  if (has_fw != has_fi) {
-    throw std::runtime_error(kLoneKeyMsg);
-  }
+  const FixedSpec spec = parse_fixed_spec(ctx, n_cols);
+  const bool pinned = !spec.indices.empty();
 
   if (!has_db && basis_drawn_from_training_data(ctx)) {
     throw std::runtime_error(
@@ -138,7 +131,7 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
         "weights belong to them. Provide a training DBFILE.");
   }
 
-  if (!has_fw) {
+  if (!pinned) {
     if (!has_db) {
       throw std::runtime_error(
           "No training DBFILE and no FIXINDEX/FIXWEIGHT: the model weights "
@@ -148,7 +141,6 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
     return WeightSource::FullLS;
   }
 
-  const FixedSpec spec = parse_fixed_spec(ctx, n_cols);
   const bool full_coverage = spec.indices.size() == n_cols;
 
   if (!has_db) {
@@ -176,12 +168,6 @@ void provision_fixed_weights(M_Tadah_Base &model,
         "training data), so its weights cannot be set from FIXWEIGHT alone; "
         "train it (FIXINDEX/FIXWEIGHT then pin weights of the drawn basis).");
   }
-  const bool has_fw = ctx.contains("FIXWEIGHT");
-  const bool has_fi = ctx.contains("FIXINDEX");
-  if (!has_fw || !has_fi) {
-    throw std::runtime_error(kLoneKeyMsg);
-  }
-
   const FixedSpec spec = parse_fixed_spec(ctx, n_cols);
   if (spec.indices.size() != n_cols) {
     throw std::runtime_error(
