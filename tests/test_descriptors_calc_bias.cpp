@@ -31,6 +31,7 @@
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/models/basis.h>
 #include <tadah/mlip/models/m_tadah_base.h>
@@ -41,7 +42,9 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/dc_selector.h>
+#include <tadah/models/functions/kernels/kern_quadratic.h>
 
 #include <cmath>
 #include <cstdint>
@@ -50,6 +53,7 @@
 #include <memory>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -1013,4 +1017,399 @@ TEST_CASE("Normaliser::learn leaves every intercept column out of the "
   CHECK(norm.std_dev[1] == 0.0);
   CHECK(norm.std_dev[2] > 0.0);
   CHECK(norm.std_dev[3] == std::numeric_limits<double>::max());
+}
+
+namespace {
+
+/* A potential trained by a Trainer from @p c on @p db, as its file holds
+ * it (written and read back). */
+Context trained_potential(Context c, StructureDB db) {
+  MLIPWorkspaceManager ws;
+  Trainer tr(c, ws);
+  tr.train(db);
+  return Loaded::reload(tr.get_param_file());
+}
+
+/* The basis vectors @p vectors (each of the same length) as BASIS values
+ * of @p c, with SBASIS their number. */
+void set_basis(Context &c, const std::vector<std::vector<double>> &vectors) {
+  if (c.has_stored("BASIS")) c.remove("BASIS");
+  set(c, "SBASIS", std::to_string(vectors.size()));
+  for (const auto &v : vectors)
+    for (double x : v) c.add("BASIS", x);
+}
+
+}  // namespace
+
+// Pins: a Trainer built from a potential, as `tadah train -c pot.tadah`
+// and a `tadah hpo -c` seed build one, reads none of the potential's fit:
+// its context has no WEIGHTS, BASIS, NMEAN, NSTDEV or SIGMA. An M_KRR
+// Kern_Quadratic potential (ATOM Nb Ta, BIAS true, NORM true, SBASIS 6,
+// DSIZE 5) retrained with SBASIS 10 and with SBASIS 7 gives 10 and 7
+// WEIGHTS, 10 x 5 and 7 x 5 BASIS values and 5 NMEAN; an M_BLR BF_Linear
+// potential (5 WEIGHTS) with MODEL M_KRR Kern_RBF, MPARAMS 1.0 and SBASIS 6
+// trains into 6 WEIGHTS; an M_BLR potential fitted with OALGO 3 (SIGMA of
+// 1 + 5 x 5 values) retrained with OALGO 1 has no SIGMA, and retrained
+// with OALGO 3 the SIGMA of its own fit (26 values, equal to the
+// potential's: the same fit of the same data).
+// Before the fix: the Trainer built the model from the potential's fit:
+// for the kernels it threw, "the potential has 6 WEIGHTS but SBASIS 10
+// basis vectors (BASIS)", "BASIS has 30 values, which is not a multiple of
+// SBASIS 7" and "the potential has WEIGHTS but no basis vectors (SBASIS and
+// BASIS)"; the OALGO 1 fit kept the potential's SIGMA (26 values), and the
+// OALGO 3 fit appended its own to it (52 values, the potential's first).
+TEST_CASE("A Trainer built from a potential reads none of the potential's "
+          "fit",
+          "[descriptors_calc][bias][retrain]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB db = make_db(kVaried, false, 400);
+  const std::vector<std::string> fit_keys = {"WEIGHTS", "BASIS", "NMEAN",
+                                             "NSTDEV", "SIGMA"};
+  auto build = [&](Context cfg, std::unique_ptr<Trainer> &tr) {
+    return refusal_of([&] { tr.reset(new Trainer(cfg, ws)); });
+  };
+  SECTION("M_KRR Kern_Quadratic retrained with another SBASIS") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", "Kern_Quadratic");
+    set(c, "NORM", "true");
+    c.add("SBASIS", 6);
+    const Context pot = trained_potential(c, db);
+    REQUIRE(stored_doubles(pot, "WEIGHTS").size() == 6);
+    REQUIRE(stored_doubles(pot, "BASIS").size() == 30);
+    REQUIRE(stored_doubles(pot, "NMEAN").size() == 5);
+    for (std::size_t s : std::vector<std::size_t>{10, 7}) {
+      CAPTURE(s);
+      Context cfg = pot;
+      set(cfg, "SBASIS", std::to_string(s));
+      std::unique_ptr<Trainer> tr;
+      const std::string m = build(cfg, tr);
+      INFO(m);
+      REQUIRE(m == "<no exception>");
+      for (const auto &k : fit_keys) {
+        CAPTURE(k);
+        CHECK_FALSE(tr->context.has_stored(k));
+      }
+      REQUIRE_NOTHROW(tr->train(db));
+      const Context out = tr->get_param_file();
+      CHECK(out.get<std::size_t>("SBASIS") == s);
+      CHECK(stored_doubles(out, "WEIGHTS").size() == s);
+      CHECK(stored_doubles(out, "BASIS").size() == 5 * s);
+      CHECK(stored_doubles(out, "NMEAN").size() == 5);
+    }
+  }
+  SECTION("an M_BLR BF_Linear potential trained as M_KRR Kern_RBF") {
+    const Context lin = trained_potential(make_context({"Nb", "Ta"}, true), db);
+    REQUIRE(stored_doubles(lin, "WEIGHTS").size() == 5);
+    Context cfg = lin;
+    set_model(cfg, "M_KRR", "Kern_RBF");
+    set(cfg, "MPARAMS", "1.0");
+    set(cfg, "SBASIS", "6");
+    std::unique_ptr<Trainer> tr;
+    const std::string m = build(cfg, tr);
+    INFO(m);
+    REQUIRE(m == "<no exception>");
+    REQUIRE_NOTHROW(tr->train(db));
+    CHECK(stored_doubles(tr->get_param_file(), "WEIGHTS").size() == 6);
+  }
+  SECTION("the SIGMA of an OALGO 3 potential") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set(c, "OALGO", "3");
+    const Context pot = trained_potential(c, db);
+    const std::vector<double> sigma = stored_doubles(pot, "SIGMA");
+    REQUIRE(sigma.size() == 26);
+    REQUIRE(sigma[0] == 5.0);
+    for (int oalgo : {1, 3}) {
+      CAPTURE(oalgo);
+      Context cfg = pot;
+      set(cfg, "OALGO", std::to_string(oalgo));
+      Trainer tr(cfg, ws);
+      CHECK_FALSE(tr.context.has_stored("SIGMA"));
+      tr.train(db);
+      const std::vector<double> out = stored_doubles(tr.get_param_file(),
+                                                     "SIGMA");
+      if (oalgo == 1) {
+        CHECK(out.empty());
+      } else {
+        REQUIRE(out.size() == sigma.size());
+        for (std::size_t i = 0; i < out.size(); ++i)
+          CHECK(out[i] == Approx(sigma[i]).epsilon(1e-12).margin(1e-300));
+      }
+    }
+  }
+}
+
+// Pins: the FIXINDEX WARNING of a non-linear kernel (ATOM Nb Ta, BIAS
+// true) names the intercepts of the basis its fit draws, whose first
+// vectors are e_0 and e_1: for M_KRR Kern_Quadratic "its intercepts are
+// weights 1 (Nb) and 2 (Ta)", for a training configuration and for a
+// potential with one intercept component shared by the species (as tadah
+// trained BIAS true before 1.6.0: BASIS vectors of 1 + 3 values, the first
+// e_0); for Kern_RBF, which has no intercept column, "weights 1 to 2
+// belong to its intercept basis vectors" (a pin).
+// Before the fix: the WARNING described the kernel's own basis: the
+// training configuration, whose kernel has none before its fit, got
+// "weights 1 to 2 belong to its intercept basis vectors" without the
+// intercepts, the potential "its intercepts are weights 1 (Nb)" (its stale
+// e_0 alone).
+TEST_CASE("The FIXINDEX WARNING of a non-linear kernel names the intercepts "
+          "of the basis its fit draws",
+          "[descriptors_calc][bias][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  auto krr = [](const std::string &kernel) {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", kernel);
+    c.add("SBASIS", 6);
+    c.add("FIXINDEX", "3");
+    c.add("FIXWEIGHT", 0.1);
+    return c;
+  };
+  auto warning = [&](Context c) {
+    Trainer tr(c, ws);
+    return tadah::mlip::fixindex_intercept_warning(tr.context, *tr.fb);
+  };
+  SECTION("Kern_Quadratic, a training configuration") {
+    const std::string w = warning(krr("Kern_Quadratic"));
+    INFO(w);
+    CHECK(w.find("FIXINDEX with BIAS true") != std::string::npos);
+    CHECK(w.find("its intercepts are weights 1 (Nb) and 2 (Ta)") !=
+          std::string::npos);
+  }
+  SECTION("Kern_Quadratic, a potential with one shared intercept component") {
+    Context c = krr("Kern_Quadratic");
+    set_basis(c, {{1.0, 0.0, 0.0, 0.0},
+                  {1.0, 0.2, 0.3, 0.1},
+                  {1.0, 0.5, 0.1, 0.4}});
+    for (double v : {-8.0, 0.3, -0.2}) c.add("WEIGHTS", v);
+    const std::string w = warning(c);
+    INFO(w);
+    CHECK(w.find("its intercepts are weights 1 (Nb) and 2 (Ta)") !=
+          std::string::npos);
+  }
+  SECTION("Kern_RBF (a pin)") {
+    Context c = krr("Kern_RBF");
+    c.add("MPARAMS", 1.0);
+    const std::string w = warning(c);
+    INFO(w);
+    CHECK(w.find("weights 1 to 2 belong to its intercept basis vectors") !=
+          std::string::npos);
+  }
+}
+
+// Pins: the composition check of a non-linear kernel (ATOM Nb Ta, BIAS
+// true) takes its intercepts from the basis its fit draws, whatever basis
+// the kernel holds. MODEL M_KRR Kern_Quadratic 1: on data of one
+// composition (every structure Nb8 Ta8) refused, naming "rank 1" and
+// "weights 1 (Nb) and 2 (Ta)" (the intercept vectors e_0 and e_1 that
+// start the draw), for the kernel of a Trainer before its fit (no basis)
+// and for a kernel with a potential's basis vectors of another descriptor
+// (6 values each, DSIZE 5); varied compositions pass. MODEL M_KRR
+// Kern_Quadratic 2 is not checked, also with a potential's basis e_0, e_1.
+// Kern_RBF is not refused (a pin). Without a MODEL that draws the basis, a
+// kernel whose basis vectors do not have the descriptor's length is refused
+// with std::logic_error, naming both lengths.
+// Before the fix: the check took the kernel's own basis: none before the
+// fit (no refusal), the potential's e_0, e_1 for implementation 2 (refused,
+// "rank 1"); with the 6-value vectors it evaluated the kernel at the
+// 5-entry descriptor, reading past it (refused as now with MODEL
+// Kern_Quadratic 1, the values read past the descriptor multiplied by 0;
+// no std::logic_error without MODEL).
+TEST_CASE("The composition check of a non-linear kernel takes its "
+          "intercepts from the basis its fit draws",
+          "[descriptors_calc][bias][composition]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  const StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  const StructureDB varied = make_db(kVaried, false, 400);
+  auto check = [](const StructureDB &db, const Context &c,
+                  const tadah::models::Function_Base &f) {
+    return refusal_of(
+        [&] { tadah::mlip::require_intercepts_determined(db, c, f); });
+  };
+  auto krr = [](const std::string &kernel, int impl) {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", kernel);
+    c.add("MODEL", impl);
+    c.add("SBASIS", 6);
+    return c;
+  };
+  /* The keys the check reads, DSIZE 5 (2 intercepts + D2_BP 3), and a
+   * kernel basis of e_0 and e_1 of `length` values each. */
+  auto kernel_keys = [](std::size_t length, int impl) {
+    Context k;
+    k.add("ATOM", "Nb");
+    k.add("ATOM", "Ta");
+    k.add("BIAS", "true");
+    k.add("EWEIGHT", 1.0);
+    k.add("VERBOSE", 0);
+    k.addInternal("DSIZE", 5);
+    if (impl > 0) {
+      k.add("MODEL", "M_KRR");
+      k.add("MODEL", "Kern_Quadratic");
+      k.add("MODEL", impl);
+    }
+    std::vector<double> e0(length, 0.0), e1(length, 0.0);
+    e0[0] = 1.0;
+    e1[1] = 1.0;
+    set_basis(k, {e0, e1});
+    return k;
+  };
+  SECTION("Kern_Quadratic 1, the kernel of a Trainer before its fit") {
+    Context c = krr("Kern_Quadratic", 1);
+    Trainer tr(c, ws);
+    const std::string m = check(fixed, tr.context, *tr.fb);
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+    CHECK(m.find("rank 1") != std::string::npos);
+    CHECK(m.find("weights 1 (Nb) and 2 (Ta)") != std::string::npos);
+    CHECK(check(varied, tr.context, *tr.fb) == "<no exception>");
+  }
+  SECTION("Kern_Quadratic 1, basis vectors of another descriptor") {
+    const Context k = kernel_keys(6, 1);
+    const tadah::models::Kern_Quadratic kq(k);
+    const std::string m = check(fixed, k, kq);
+    INFO(m);
+    CHECK(m.find("rank 1") != std::string::npos);
+    CHECK(m.find("weights 1 (Nb) and 2 (Ta)") != std::string::npos);
+    CHECK(check(varied, k, kq) == "<no exception>");
+  }
+  SECTION("Kern_Quadratic 2 is not checked") {
+    Context c = krr("Kern_Quadratic", 2);
+    Trainer tr(c, ws);
+    CHECK(check(fixed, tr.context, *tr.fb) == "<no exception>");
+    const Context k = kernel_keys(5, 2);
+    const tadah::models::Kern_Quadratic kq(k);
+    const std::string m = check(fixed, k, kq);
+    INFO(m);
+    CHECK(m == "<no exception>");
+  }
+  SECTION("Kern_RBF 1 (a pin)") {
+    Context c = krr("Kern_RBF", 1);
+    c.add("MPARAMS", 1.0);
+    Trainer tr(c, ws);
+    CHECK(check(fixed, tr.context, *tr.fb) == "<no exception>");
+  }
+  SECTION("a kernel's basis of another length, no MODEL") {
+    const Context k = kernel_keys(6, 0);
+    const tadah::models::Kern_Quadratic kq(k);
+    CHECK_THROWS_AS(tadah::mlip::require_intercepts_determined(varied, k, kq),
+                    std::logic_error);
+    const std::string m = check(varied, k, kq);
+    INFO(m);
+    CHECK(m.find("6 values") != std::string::npos);
+    CHECK(m.find("DSIZE 5") != std::string::npos);
+  }
+}
+
+// Pins: the weight count of a non-linear kernel's configuration
+// (model_weight_count, which tadah hpo checks at startup) refuses SBASIS
+// below the intercept vectors plus one drawn vector, the bound of the
+// basis draw (Basis::check_sbasis): with ATOM Nb Ta and BIAS true, SBASIS 2
+// of M_KRR Kern_RBF is refused naming "SBASIS 2", "at least 3 basis
+// vectors", "the 2 intercept vectors" and the "training AEDs" (for
+// implementation 2 the "training structures"), and SBASIS 3 gives 3; with
+// ATOM Ta and BIAS true, or with BIAS false, SBASIS 1 is refused naming "at
+// least 2 basis vectors" and "column 0 is the bias vector e0", and SBASIS 2
+// gives 2 (a pin).
+// Before the fix: SBASIS 2 on two species with BIAS true gave 2 (the bound
+// was 2 whatever the species), a count every fit of the configuration
+// refuses ("needs at least 3 basis vectors").
+TEST_CASE("model_weight_count: SBASIS of a non-linear kernel needs one "
+          "drawn vector after the intercept vectors",
+          "[descriptors_calc][bias][basis]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  auto count = [&](const std::vector<std::string> &atoms, bool bias, int impl,
+                   int sbasis) {
+    Context c = make_context(atoms, bias);
+    set_model(c, "M_KRR", "Kern_RBF");
+    c.add("MODEL", impl);
+    c.add("MPARAMS", 1.0);
+    c.add("SBASIS", sbasis);
+    Trainer tr(c, ws);
+    std::size_t k = 0;
+    const std::string m = refusal_of(
+        [&] { k = tadah::mlip::model_weight_count(*tr.fb, tr.context); });
+    return m == "<no exception>" ? std::to_string(k) : m;
+  };
+  for (int impl : {1, 2}) {
+    CAPTURE(impl);
+    const std::string m = count({"Nb", "Ta"}, true, impl, 2);
+    INFO(m);
+    CHECK(m.find("M_KRR Kern_RBF") != std::string::npos);
+    CHECK(m.find("SBASIS 2") != std::string::npos);
+    CHECK(m.find("at least 3 basis vectors") != std::string::npos);
+    CHECK(m.find("the 2 intercept vectors") != std::string::npos);
+    CHECK(m.find(impl == 1 ? "training AEDs" : "training structures") !=
+          std::string::npos);
+    CHECK(count({"Nb", "Ta"}, true, impl, 3) == "3");
+  }
+  for (const bool two : {false, true}) {
+    CAPTURE(two);
+    const std::vector<std::string> atoms =
+        two ? std::vector<std::string>{"Nb", "Ta"}
+            : std::vector<std::string>{"Ta"};
+    const bool bias = !two;   // ATOM Ta with BIAS true, Nb Ta with BIAS false
+    const std::string m = count(atoms, bias, 1, 1);
+    INFO(m);
+    CHECK(m.find("at least 2 basis vectors") != std::string::npos);
+    CHECK(m.find("column 0 is the bias vector e0") != std::string::npos);
+    CHECK(count(atoms, bias, 1, 2) == "2");
+  }
+}
+
+// Pins: with ATOM Nb Ta and BIAS true the basis draw takes SBASIS from 3
+// (the intercept vectors e_0, e_1 and one drawn vector) to the candidates
+// plus 2: build_random_basis (implementation 1; 8 structures of 16 atoms,
+// 128 AEDs) refuses SBASIS 2 ("needs at least 3 basis vectors", "columns 0
+// to 1 are the 2 intercept vectors") and 131 ("set SBASIS to at most
+// 130"), and draws 130; prep_basis_for_krr (implementation 2, 8
+// structures) refuses SBASIS 11 ("set SBASIS to at most 10") and draws 10.
+// Before the fix: passes as well (a pin: Basis::check_sbasis has counted
+// one intercept vector per species since the KRR basis seeded one per
+// species; its bounds with two species had no test).
+TEST_CASE("The KRR basis draw takes SBASIS from N + 1 to the candidates "
+          "plus N with BIAS true on N species",
+          "[descriptors_calc][bias][basis]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Context c = make_context({"Nb", "Ta"}, true);
+  c.add("SBASIS", 6);
+  Trainer tr(c, ws);
+  StructureDB db;
+  for (unsigned s = 0; s < 8; ++s)
+    db.add(tanb_cell(static_cast<int>(2 * s), 900 + s));
+  NNFinder().calc(db, kRcut);
+  StDescriptorsDB sd = tr.dc.calc(db);
+  tadah::mlip::Basis<DM_Function_Base &> basis(tr.context);
+  auto draw = [&](std::size_t s) {
+    return refusal_of([&] { basis.build_random_basis(s, sd); });
+  };
+  {
+    const std::string m = draw(2);
+    INFO(m);
+    CHECK(m.find("SBASIS 2") != std::string::npos);
+    CHECK(m.find("needs at least 3 basis vectors") != std::string::npos);
+    CHECK(m.find("columns 0 to 1 are the 2 intercept vectors") !=
+          std::string::npos);
+  }
+  {
+    const std::string m = draw(131);
+    INFO(m);
+    CHECK(m.find("set SBASIS to at most 130") != std::string::npos);
+  }
+  CHECK(draw(130) == "<no exception>");
+  CHECK(basis.b.cols() == 130);
+  auto prep = [&](int s) {
+    set(tr.context, "SBASIS", std::to_string(s));
+    return refusal_of([&] { basis.prep_basis_for_krr(sd, db); });
+  };
+  {
+    const std::string m = prep(11);
+    INFO(m);
+    CHECK(m.find("set SBASIS to at most 10") != std::string::npos);
+  }
+  CHECK(prep(10) == "<no exception>");
+  CHECK(basis.b.cols() == 10);
 }
