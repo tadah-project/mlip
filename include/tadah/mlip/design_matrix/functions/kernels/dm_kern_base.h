@@ -26,6 +26,12 @@ class DM_Kern_Base: public DM_Function_Base, public virtual tadah::models::Kern_
         DM_Kern_Base(const tadah::core::Context&c);
         virtual ~DM_Kern_Base();
         virtual size_t get_phi_cols(const tadah::core::Context &context) override;
+        /** One "kernel" block of basis.cols() columns, labelled by the
+         *  kernel. Throws when there are no basis vectors, or when their
+         *  length (basis.rows()) is not the descriptor's
+         *  (descriptor_layout.total_cols()). */
+        virtual ColumnLayout phi_layout(const ColumnLayout &descriptor_layout,
+                                        const tadah::core::Context &context) const override;
         virtual void  calc_phi_energy_row(tadah::core::phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
         virtual void  calc_phi_force_rows(tadah::core::phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
         virtual void  calc_phi_stress_rows(tadah::core::phi_type &Phi, size_t &row, const Structure &st, const StDescriptors &st_d) override;
