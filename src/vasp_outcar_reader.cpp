@@ -83,6 +83,10 @@ void VaspOutcarReader::parse_data() {
   size_t ionic_step = 0;
   bool have_energy = false;  // this step's first-principles free energy
   bool have_stress = false;  // this step's 'in kB' line
+  // The step being read has started: its first SCF iteration line, or its
+  // stress or TOTAL-FORCE block (the header's lattice comes before any
+  // step's iterations, and each step's lattice after them).
+  bool step_started = false;
   size_t stored = 0, without_stress = 0;
 
   // Steps of VASP's machine-learned force field (ML_MODE = train/run) are
@@ -102,9 +106,16 @@ void VaspOutcarReader::parse_data() {
     have_energy = false;
     have_stress = false;
     ml_in_step = false;
+    step_started = false;
   };
 
   while (next_line()) {
+    // '----- Iteration      2(   1)  -----': an SCF iteration of a
+    // first-principles step.
+    if (line.find("- Iteration ") != std::string::npos &&
+        line.find('(') != std::string::npos)
+      step_started = true;
+
     if (line.find("molecular dynamics") != std::string::npos) {
       is_md = true;
       s.label += "MD ";
@@ -168,6 +179,7 @@ void VaspOutcarReader::parse_data() {
     }
 
     else if (line.find("in kB") != std::string::npos) {
+      step_started = true;
       std::vector<double> row(6); // xx yy zz xy yz zx
       std::istringstream iss(line);
       std::string tmp;
@@ -215,6 +227,7 @@ void VaspOutcarReader::parse_data() {
     }
 
     else if (line.find("TOTAL-FORCE (eV/Angst)") != std::string::npos) {
+      step_started = true;
       if (natom_types.empty())
         refuse("a TOTAL-FORCE block before the 'ions per type' line");
       // The dashed line, then one 'x y z fx fy fz' line per atom, in the
@@ -314,6 +327,7 @@ void VaspOutcarReader::parse_data() {
       have_energy = false;
       have_stress = false;
       ml_in_step = false;
+      step_started = false;
     }
 
   }
@@ -332,6 +346,16 @@ void VaspOutcarReader::parse_data() {
               << ionic_step + 1
               << ", the last, has no EKIN_LAT line (the file ends inside it) "
                  "and was skipped; "
+              << stored << " structure(s) read." << std::endl;
+  }
+  // A run cut off inside a step but outside its blocks: during its SCF
+  // iterations, or between its blocks, before its free energy.
+  else if (step_started) {
+    std::cerr << "WARNING: VASP OUTCAR " << filename_
+              << ": the file ends inside ionic step " << ionic_step + 1
+              << " (line " << line_no
+              << "), which was skipped (it has no 'free  energy   TOTEN' "
+                 "line); "
               << stored << " structure(s) read." << std::endl;
   }
   log_missing_stress("VASP OUTCAR " + filename_, without_stress, stored);

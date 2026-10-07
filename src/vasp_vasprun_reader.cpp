@@ -4,6 +4,7 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/utils.h>
 
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -66,6 +67,20 @@ namespace {
 
 constexpr int kParseFlags = rx::parse_validate_closing_tags;
 
+/* True when a <calculation> element opens in `text` at or after `from`:
+ * '<calculation' followed by '>', a blank or '/'. */
+bool calculation_opens(const std::string &text, std::size_t from) {
+  const std::string open = "<calculation";
+  for (std::size_t p = text.find(open, from); p != std::string::npos;
+       p = text.find(open, p + open.size())) {
+    const std::size_t q = p + open.size();
+    if (q == text.size() || text[q] == '>' || text[q] == '/' ||
+        std::isspace(static_cast<unsigned char>(text[q])))
+      return true;
+  }
+  return false;
+}
+
 /* `text` as the null-terminated buffer rapidxml parses in place. */
 std::vector<char> xml_buffer(const std::string &text) {
   std::vector<char> b(text.begin(), text.end());
@@ -88,6 +103,7 @@ void VaspVasprunReader::read_data(const std::string& filename) {
 
   doc.clear();
   ends_inside_ = 0;
+  ends_after_ = 0;
   ends_before_first_ = false;
   buffer_ = xml_buffer(text);
   try {
@@ -95,9 +111,10 @@ void VaspVasprunReader::read_data(const std::string& filename) {
   } catch (const rx::parse_error &e) {
     // VASP writes the file as it runs: a run stopped, or still running,
     // leaves it without its end, and the parser stops at the end of the
-    // text. Its complete calculations are read; the one it ends inside is
-    // skipped with a warning (parse_data). An error before the end is a file
-    // that is not well-formed.
+    // text. Its complete calculations are read; the one it ends inside, if a
+    // calculation opens after the last complete one, is skipped with a
+    // warning (parse_data). An error before the end is a file that is not
+    // well-formed.
     const char *at = e.where<char>();
     const bool at_end =
         at != nullptr && at >= buffer_.data() &&
@@ -114,14 +131,19 @@ void VaspVasprunReader::read_data(const std::string& filename) {
     if (last == std::string::npos) {
       // No calculation is complete: nothing to read.
       buffer_.clear();
-      if (text.find("<calculation>") == std::string::npos)
+      if (!calculation_opens(text, 0))
         ends_before_first_ = true;
       else
         ends_inside_ = 1;
     } else {
       buffer_ = xml_buffer(text.substr(0, last + close.size()) +
                            "\n</modeling>\n");
-      ends_inside_ = complete + 1;
+      // The text after the last complete calculation: the start of the
+      // next one, or what VASP writes after the last (the final structure).
+      if (calculation_opens(text, last + close.size()))
+        ends_inside_ = complete + 1;
+      else
+        ends_after_ = complete;
       try {
         doc.parse<kParseFlags>(buffer_.data());
       } catch (const rx::parse_error &e2) {
@@ -157,6 +179,11 @@ void VaspVasprunReader::parse_data() {
               << ends_inside_ << " (a run stopped while writing it), which was "
               << "skipped; " << stdb.size() - before << " structure(s) read."
               << std::endl;
+  else if (ends_after_ > 0)
+    std::cerr << "WARNING: " << where() << "the file ends after calculation "
+              << ends_after_ << ", without its closing </modeling> tag (a run "
+              << "stopped, or still running); no calculation was skipped: "
+              << stdb.size() - before << " structure(s) read." << std::endl;
 }
 
 int VaspVasprunReader::get_number_of_atoms() const {

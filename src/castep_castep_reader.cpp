@@ -213,7 +213,14 @@ void CastepCastepReader::parse_data() {
     result_geometry_taken = true;
     geometry_printed = false;
   };
+  // A step of a run that is being read and is not stored yet: from its
+  // 'Starting ... iteration' line, or from its first result (an energy,
+  // forces or stress) in a run's step; cleared where it is stored or the
+  // reader's state is reset (the next step or run). A file that ends with
+  // a step pending ends inside it.
+  bool step_pending = false;
   auto take_result_geometry = [&]() {
+    if (current_state != CalcState::Idle) step_pending = true;
     if (!result_geometry_taken || geometry_printed) snapshot_geometry();
   };
 
@@ -304,6 +311,7 @@ void CastepCastepReader::parse_data() {
                   << std::endl;
         result_geometry_taken = false;
         clear_results();
+        step_pending = false;
         return;
       }
       throw std::runtime_error(
@@ -358,12 +366,14 @@ void CastepCastepReader::parse_data() {
     result_geometry_taken = false;
     clear_results();
     s.T = 0.0;
+    step_pending = false;
   };
 
   auto reset_flags = [&](CalcState new_state) {
     current_state = new_state;
     data_block_complete  = false;
     result_geometry_taken = false;
+    step_pending = false;
     clear_results();
     if (debug) std::cout << "Resetting flags for new calculation type" << std::endl;
   };
@@ -523,6 +533,7 @@ void CastepCastepReader::parse_data() {
       simLabel.algo = algo;
       simLabel.stepNumber = step_number(step_str);
       simLabel.calcState = CalcState::GeometryOptimization;
+      step_pending = true;
       if (debug) std::cout << "Starting" +algo+ " iteration " << step_str << std::endl;
     }
 
@@ -536,6 +547,7 @@ void CastepCastepReader::parse_data() {
       simLabel.startLine = line_counter;
       simLabel.stepNumber = step_number(step);
       simLabel.calcState = CalcState::MolecularDynamics;
+      step_pending = true;
       if (debug) std::cout << "Starting MD iteration " << step << std::endl;
       continue;
     }
@@ -828,7 +840,40 @@ void CastepCastepReader::parse_data() {
       reset_flags(CalcState::Idle);
     }
   } // end while getline
-  if (md_step_ready) finalize_structure();  // the file ends after an MD step
+  if (md_step_ready) {
+    finalize_structure();  // the file ends after an MD step
+  } else if (step_pending && !ended_inside) {
+    // The file ends inside a step, outside its blocks (during its SCF, or
+    // between its blocks): the step is skipped.
+    std::string step;
+    switch (current_state) {
+      case CalcState::MolecularDynamics:
+        step = "MD step " + std::to_string(simLabel.stepNumber);
+        break;
+      case CalcState::GeometryOptimization:
+        step = "geometry optimisation iteration " +
+               std::to_string(simLabel.stepNumber);
+        break;
+      case CalcState::FiniteBasisSetCorrection:
+        step = go_task ? "geometry optimisation iteration 0"
+                       : "the finite basis set correction";
+        break;
+      case CalcState::SinglePointEnergy:
+        step = "the single-point energy calculation";
+        break;
+      case CalcState::BandStructure:
+        step = "the band-structure calculation";
+        break;
+      case CalcState::Idle:
+        step = "a step";
+        break;
+    }
+    std::cerr << "WARNING: CASTEP .castep " << simLabel.filename
+              << ": the file ends at line " << line_counter << " inside "
+              << step << ", which starts at line " << simLabel.startLine
+              << " and was skipped; " << stored << " structure(s) read."
+              << std::endl;
+  }
   log_missing_stress("CASTEP .castep " + simLabel.filename, stored_without_stress, stored);
   log_missing_forces("CASTEP .castep " + simLabel.filename, stored_without_forces, stored);
 }
