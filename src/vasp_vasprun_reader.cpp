@@ -52,9 +52,7 @@ VaspVasprunReader::VaspVasprunReader(StructureDB& stdb, const std::string& filen
   read_data(filename);
 }
 
-VaspVasprunReader::~VaspVasprunReader() {
-  delete xmlFile;
-}
+VaspVasprunReader::~VaspVasprunReader() = default;
 
 std::string VaspVasprunReader::where() const {
   return "VASP vasprun.xml " + filename_ + ": ";
@@ -64,33 +62,101 @@ std::string VaspVasprunReader::where_calculation() const {
   return where() + "calculation " + std::to_string(calculation_) + ": ";
 }
 
+namespace {
+
+constexpr int kParseFlags = rx::parse_validate_closing_tags;
+
+/* `text` as the null-terminated buffer rapidxml parses in place. */
+std::vector<char> xml_buffer(const std::string &text) {
+  std::vector<char> b(text.begin(), text.end());
+  b.push_back('\0');
+  return b;
+}
+
+}  // namespace
+
 void VaspVasprunReader::read_data(const std::string& filename) {
   filename_ = filename;
-  std::ifstream infile(filename);
+  std::ifstream infile(filename, std::ios::binary);
   if (!infile.good())
     throw std::runtime_error(where() + "cannot open the file");
+  std::ostringstream bytes;
+  bytes << infile.rdbuf();
+  if (infile.bad())
+    throw std::runtime_error(where() + "cannot read the file");
+  const std::string text = bytes.str();
 
-  delete xmlFile;
-  xmlFile = nullptr;
+  doc.clear();
+  ends_inside_ = 0;
+  ends_before_first_ = false;
+  buffer_ = xml_buffer(text);
   try {
-    xmlFile = new rx::file<>(filename.c_str());
-    doc.parse<0>(xmlFile->data());
+    doc.parse<kParseFlags>(buffer_.data());
   } catch (const rx::parse_error &e) {
-    throw std::runtime_error(where() + "not well-formed XML (" + e.what() + ")");
-  } catch (const std::exception &e) {
-    throw std::runtime_error(where() + "cannot read the file (" + e.what() + ")");
+    // VASP writes the file as it runs: a run stopped, or still running,
+    // leaves it without its end, and the parser stops at the end of the
+    // text. Its complete calculations are read; the one it ends inside is
+    // skipped with a warning (parse_data). An error before the end is a file
+    // that is not well-formed.
+    const char *at = e.where<char>();
+    const bool at_end =
+        at != nullptr && at >= buffer_.data() &&
+        static_cast<std::size_t>(at - buffer_.data()) >= text.size();
+    if (!at_end)
+      throw std::runtime_error(where() + "not well-formed XML (" + e.what() + ")");
+    const std::string close = "</calculation>";
+    const std::size_t last = text.rfind(close);
+    std::size_t complete = 0;
+    for (std::size_t p = text.find(close); p != std::string::npos;
+         p = text.find(close, p + close.size()))
+      ++complete;
+    doc.clear();
+    if (last == std::string::npos) {
+      // No calculation is complete: nothing to read.
+      buffer_.clear();
+      if (text.find("<calculation>") == std::string::npos)
+        ends_before_first_ = true;
+      else
+        ends_inside_ = 1;
+    } else {
+      buffer_ = xml_buffer(text.substr(0, last + close.size()) +
+                           "\n</modeling>\n");
+      ends_inside_ = complete + 1;
+      try {
+        doc.parse<kParseFlags>(buffer_.data());
+      } catch (const rx::parse_error &e2) {
+        throw std::runtime_error(where() + "not well-formed XML (" +
+                                 e2.what() + ")");
+      }
+    }
   }
 
   _s.label = filename + " ";
 }
 
 void VaspVasprunReader::parse_data() {
+  if (buffer_.empty()) {
+    // The file ends before any calculation is complete.
+    std::cerr << "WARNING: " << where() << "the file ends "
+              << (ends_before_first_ ? "before its first calculation"
+                                     : "inside calculation 1")
+              << " (a run stopped while writing it)"
+              << (ends_before_first_ ? "; " : ", which was skipped; ")
+              << "0 structure(s) read." << std::endl;
+    return;
+  }
   rx::xml_node<> *root_node = doc.first_node("modeling");
   if (!root_node)
     throw std::runtime_error(where() + "no <modeling> root element");
 
   extract_atom_types(root_node);
+  const std::size_t before = stdb.size();
   extract_calculations(root_node);
+  if (ends_inside_ > 0)
+    std::cerr << "WARNING: " << where() << "the file ends inside calculation "
+              << ends_inside_ << " (a run stopped while writing it), which was "
+              << "skipped; " << stdb.size() - before << " structure(s) read."
+              << std::endl;
 }
 
 int VaspVasprunReader::get_number_of_atoms() const {

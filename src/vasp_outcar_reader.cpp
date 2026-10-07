@@ -125,6 +125,9 @@ void VaspOutcarReader::parse_data() {
 
     else if (line.find("ions per type = ") != std::string::npos) {
       // 'ions per type =  <n_1> ... <n_K>', one count per VRHFIN element.
+      if (atom_types.empty())
+        refuse("'ions per type' comes before any VRHFIN line, which names "
+               "the elements");
       std::istringstream iss(line.substr(line.find('=') + 1));
       std::vector<std::string> counts;
       for (std::string w; iss >> w;) counts.push_back(w);
@@ -259,9 +262,14 @@ void VaspOutcarReader::parse_data() {
       }
     }
     else if (line.find("EKIN_LAT=") != std::string::npos) {
-      std::istringstream iss(line);
-      std::string tmp;
-      if (!(iss >> tmp >> tmp >> tmp >> tmp >> tmp >> s.T)) {
+      // '... EKIN_LAT=  0.000000  (temperature  300.00 K)': VASP's fixed
+      // width joins the number to the word from 10000 K up
+      // ('(temperature10147.82 K)').
+      const std::size_t t = line.find("temperature");
+      std::istringstream iss(t == std::string::npos
+                                 ? std::string()
+                                 : line.substr(t + std::string("temperature").size()));
+      if (!(iss >> s.T)) {
         refuse("cannot read the temperature of ionic step " +
                std::to_string(ionic_step + 1) + " from " + quoted());
       }
