@@ -876,8 +876,8 @@ const std::vector<std::pair<std::string, std::string>> kCompactOnlyKeys = {
     {"REFIT_COMPACT_MERGE", "true"},    {"REFIT_CURVE_DERIV_WEIGHT", "0.1"},
     {"REFIT_CURVE_WEIGHTING", "false"}, {"REFIT_CURVE_RELAX", "0.1"}};
 
-// The stage blocks only REFIT_MODE compact reads (OPTIMIZER: the top-level
-// block of the old grammar, which compact mode refuses too).
+// The stage blocks only REFIT_MODE compact reads. (A top-level OPTIMIZER
+// block, the grammar before them, is read by neither mode: kTopLevelOptimizer.)
 const std::vector<std::pair<std::string, std::string>> kCompactBlocks = {
     {"INIT", "PHI XMIN PIN"},
     {"EXPLORE", "MAX_ADD 4"},
@@ -885,8 +885,23 @@ const std::vector<std::pair<std::string, std::string>> kCompactBlocks = {
     // is refused as a whole, before its contents are read
     {"REFINE", "OPTIMIZER LIB CERES ALGO LM MAXEVAL 5 THREADS 4 GTOL -1 "
                "ENDOPTIMIZER"},
-    {"FUSE", "ENABLED false"},
-    {"OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL"}};
+    {"FUSE", "ENABLED false"}};
+
+// The refusal of a top-level OPTIMIZER block in either REFIT_MODE: the
+// migration text of the compact fitter's parser (HPO's RefitParser::parse,
+// whose own test pins it), to which REFIT_MODE dense adds its last sentence.
+const std::string kTopLevelOptimizer =
+    "tadah refit: a top-level OPTIMIZER block is no longer supported. The "
+    "stage pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
+    "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
+    "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO in "
+    "EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; JOINT -> "
+    "FUSE. The Refitting page of the documentation has examples (Stage "
+    "blocks).";
+const std::string kTopLevelOptimizerDense =
+    kTopLevelOptimizer +
+    " Under REFIT_MODE dense, which reads no stage block, remove the "
+    "OPTIMIZER block.";
 
 // The keys only REFIT_MODE dense reads, each with a valid value.
 const std::vector<std::pair<std::string, std::string>> kDenseOnlyKeys = {
@@ -907,11 +922,12 @@ TEST_CASE_METHOD(PTFixture,
    * REFIT_MODE dense"; "(the default)" when there is no REFIT_MODE key):
    *  - REFIT_MODE dense: every REFIT_COMPACT_* key, REFIT_CURVE_WEIGHTING,
    *    REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
-   *    REFINE and FUSE blocks and a top-level OPTIMIZER block ("the REFINE
-   *    block has no effect ..."; a REFINE block with keys compact mode
-   *    refuses is refused as a whole), and REFIT_OBJECTIVE curve in any
-   *    letter case; REFIT_OBJECTIVE energy is accepted, and another value
-   *    is refused with the message compact mode gives it;
+   *    REFINE and FUSE blocks ("the REFINE block has no effect ..."; a
+   *    REFINE block with keys compact mode refuses is refused as a whole),
+   *    and REFIT_OBJECTIVE curve in any letter case; REFIT_OBJECTIVE energy
+   *    is accepted, and another value is refused with the message compact
+   *    mode gives it (a top-level OPTIMIZER block, which neither mode
+   *    reads: the next test case);
    *  - REFIT_MODE compact, explicit or the default: REFIT_LEVEL, N2B,
    *    NRHO_BASIS, NF_BASIS, REFIT_MAX_ESCALATIONS, REFIT_PLACEMENT and
    *    REFIT_CONSTRAIN_F0 (read by the dense fit only);
@@ -1043,6 +1059,53 @@ TEST_CASE_METHOD(PTFixture,
         task_with(compact_refit_context("absent.eam.alloy"), false);
     CHECK_THROWS_WITH(RefitEngine().validate(compact_file),
                       no_effect_in_mode("REFIT_CONSTRAIN_F0", "compact"));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: a top-level OPTIMIZER block is refused in "
+                 "either REFIT_MODE with the migration text",
+                 "[refit][mode_keys]") {
+  /* Pins: RefitEngine::validate(), and run() before it reads the EAM file,
+   * refuse a top-level OPTIMIZER block (the grammar before the stage
+   * blocks), which neither REFIT_MODE reads, with the migration text of the
+   * compact fitter's parser: "tadah refit: a top-level OPTIMIZER block is
+   * no longer supported. The stage pipeline is now INIT -> EXPLORE ->
+   * REFINE -> FUSE, ... The Refitting page of the documentation has
+   * examples (Stage blocks)."; under REFIT_MODE dense it ends " Under
+   * REFIT_MODE dense, which reads no stage block, remove the OPTIMIZER
+   * block.". Under REFIT_MODE compact, written or the default, it comes
+   * before this engine's refusal of compact mode (it has no compact
+   * fitter); in either mode before the refusal of the other mode's keys
+   * (REFIT_COMPACT_NMAX under dense, N2B under compact).
+   * Before the fix: the mode rule refused the block under REFIT_MODE dense
+   * as a key of compact mode, "tadah refit: the OPTIMIZER block has no
+   * effect under REFIT_MODE dense: only REFIT_MODE compact reads it; remove
+   * the OPTIMIZER block, or set REFIT_MODE compact", although compact mode
+   * refuses it too, and REFIT_COMPACT_NMAX was refused before it; under
+   * compact it passed the rule, so this engine refused compact mode
+   * ("tadah refit: REFIT_MODE compact needs the compact fitter, ...") and
+   * N2B was refused first (HPO's engine refused the block in
+   * RefitParser::parse only, after it had read the table). On v1-dev,
+   * before the mode rule, validate() accepted the block in either mode and
+   * run() failed reading the absent EAM file. */
+  ScopedTempDir tmp;
+  {
+    Context c = dense_refit_context("absent.eam.alloy");
+    add_block(c, "OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL");
+    check_refused(c, kTopLevelOptimizerDense);
+    c.add("REFIT_COMPACT_NMAX", std::string("3"));
+    check_refused(c, kTopLevelOptimizerDense);
+  }
+  for (const bool defaulted : {false, true}) {
+    INFO((defaulted ? "REFIT_MODE compact (the default)"
+                    : "REFIT_MODE compact"));
+    Context c = compact_refit_context("absent.eam.alloy");
+    if (defaulted) c.remove("REFIT_MODE");
+    add_block(c, "OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL");
+    check_refused(c, kTopLevelOptimizer);
+    c.add("N2B", std::string("50"));
+    check_refused(c, kTopLevelOptimizer);
   }
 }
 
