@@ -214,13 +214,18 @@ TEST_CASE("M_KRR::get_param_file keeps the training FORCE, STRESS, ALPHA "
 
 /* Pins: an M_BLR (BF_Linear) potential, by the rule M_KRR's follows,
  * stores the training FORCE and STRESS verbatim (both combinations), ALPHA
- * 0.5 and BETA 2.0 of the configuration, and no DBFILE, and so does the
- * pot.tadah TrainEngine::dumpPotFile writes from it.
+ * 0.5 and BETA 2.0 of the configuration, and no DBFILE; the pot.tadah
+ * TrainEngine::dumpPotFile writes from it has the lines "FORCE <training
+ * FORCE>", "STRESS <training STRESS>", "ALPHA 0.5" and "BETA 2" (one token
+ * each) and no DBFILE line. (The context written here has no DBFILE
+ * already; dumpPotFile's own removal of one in its input is pinned by
+ * test_dump_pot_file.cpp.)
  * Before the potential-content fix: the potential kept DBFILE
- * (kkrr_train.db; m_blr.h had its c.remove("DBFILE") commented out), so
- * `tadah train -c pot.tadah` with the documented DBFILE line added listed
- * the dataset twice and fitted every structure twice. FORCE, STRESS, ALPHA
- * and BETA were kept then as well (a pin of those). */
+ * (kkrr_train.db; m_blr.h had its c.remove("DBFILE") commented out), and so
+ * did the written file, so `tadah train -c pot.tadah` with the documented
+ * DBFILE line added listed the dataset twice and fitted every structure
+ * twice. FORCE, STRESS, ALPHA and BETA were kept then as well, in the
+ * potential and in the file (a pin of those). */
 TEST_CASE("M_BLR::get_param_file keeps the training FORCE, STRESS, ALPHA "
           "and BETA and drops DBFILE",
           "[m_blr][param_file]") {
@@ -256,7 +261,13 @@ TEST_CASE("M_BLR::get_param_file keeps the training FORCE, STRESS, ALPHA "
   const auto lines = read_pot_lines(f);
   fs::remove_all(dir);
   REQUIRE(lines.count("MODEL") == 1);
-  CHECK(lines.count("ALPHA") == 1);
-  CHECK(lines.count("BETA") == 1);
+  using Tokens = std::vector<std::string>;
+  auto line_of = [&](const std::string &key) {
+    return lines.count(key) ? lines.at(key) : Tokens{kAbsent};
+  };
+  CHECK(line_of("FORCE") == Tokens{want_f});
+  CHECK(line_of("STRESS") == Tokens{want_s});
+  CHECK(line_of("ALPHA") == Tokens{"0.5"});
+  CHECK(line_of("BETA") == Tokens{"2"});
   CHECK(lines.count("DBFILE") == 0);
 }
