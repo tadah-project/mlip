@@ -3,6 +3,7 @@
 #include <tadah/core/number_format.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <limits>
@@ -123,7 +124,209 @@ std::optional<int> integer(const Context &c, const std::string &key,
   return static_cast<int>(integer_token(key, *tok, lo, hi));
 }
 
+// ---- the mode rule ----
+
+// Every key of a refit configuration that one REFIT_MODE reads and the other
+// does not (check_refit_mode_keys); the others are read in both. Dense: the
+// windowed least squares, models::EAMRefit::fit (its basis sizes, their
+// preset and escalation, the placement, the soft F(0) pin of EMBF0 FREE),
+// which compact mode never runs. Compact: the compact fitter of the HPO
+// library and its stage blocks (RefitParser), which dense mode never runs.
+struct ModeKey {
+  const char *key;
+  RefitMode mode;  ///< the one mode that reads it
+  bool block;      ///< a multi-line block (KEY ... ENDKEY)
+};
+constexpr ModeKey kModeKeys[] = {
+    {"REFIT_LEVEL", RefitMode::Dense, false},
+    {"N2B", RefitMode::Dense, false},
+    {"NRHO_BASIS", RefitMode::Dense, false},
+    {"NF_BASIS", RefitMode::Dense, false},
+    {"REFIT_MAX_ESCALATIONS", RefitMode::Dense, false},
+    {"REFIT_PLACEMENT", RefitMode::Dense, false},
+    {"REFIT_CONSTRAIN_F0", RefitMode::Dense, false},
+    {"REFIT_COMPACT_NMAX", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SAMPLES", RefitMode::Compact, false},
+    {"REFIT_COMPACT_OPT_EVERY", RefitMode::Compact, false},
+    {"REFIT_COMPACT_STALL", RefitMode::Compact, false},
+    {"REFIT_COMPACT_INSERT_TOPK", RefitMode::Compact, false},
+    {"REFIT_COMPACT_JITTERS", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SEED", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SHARE", RefitMode::Compact, false},
+    {"REFIT_COMPACT_MERGE", RefitMode::Compact, false},
+    {"REFIT_CURVE_DERIV_WEIGHT", RefitMode::Compact, false},
+    {"REFIT_CURVE_WEIGHTING", RefitMode::Compact, false},
+    {"REFIT_CURVE_RELAX", RefitMode::Compact, false},
+    {"INIT", RefitMode::Compact, true},
+    {"EXPLORE", RefitMode::Compact, true},
+    {"REFINE", RefitMode::Compact, true},
+    {"FUSE", RefitMode::Compact, true}};
+// (A top-level OPTIMIZER block, the grammar before the stage blocks, is read
+// by neither mode: check_refit_mode_keys refuses it first, in both, with
+// top_level_optimizer_refusal().)
+
+// Read by a refit of an EAM file in either REFIT_MODE, and by neither
+// --edit nor --retarget (check_refit_output_mode_keys); EAM itself has its
+// own refusal there (validate_refit_mode_keys).
+constexpr const char *kFitKeys[] = {
+    "REFIT_MODE",         "REFIT_BASIS",          "REFIT_TOL_AMBIENT",
+    "REFIT_TOL_COMPRESSED", "REFIT_REACH_SMIN",   "REFIT_REACH_MARGIN",
+    "REFIT_R_LO_FRAC",    "REFIT_OBJECTIVE",      "OUTPUT_GRID_SCALE",
+    "SETFL_OUT",          "REFIT_LOG"};
+
+// Read by a refit of an EAM file and by --edit (the hpotarget they write),
+// not by --retarget: its output is OUTFILE (-o), or its input with
+// --in-place. (NUMERIC, the precision of the files a command writes, is no
+// key of the refit and is not refused: --retarget writes only an
+// hpotarget, whose bounds every hpotarget writer prints %.8e whatever
+// NUMERIC is, so it has nothing to apply it to; a task file's NUMERIC
+// above its first TASK line applies to every task.)
+constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT"};
+
+// Read by REFIT_OBJECTIVE curve only (compact mode): the compact fitter
+// reads the derivative weight in the curve objective's solve and score and
+// the weighting and its floor in the curve weights only.
+constexpr const char *kCurveObjectiveKeys[] = {
+    "REFIT_CURVE_WEIGHTING", "REFIT_CURVE_RELAX", "REFIT_CURVE_DERIV_WEIGHT"};
+
+const char *mode_name(RefitMode m) {
+  return m == RefitMode::Dense ? "dense" : "compact";
+}
+
+std::string lower(std::string s) {
+  for (auto &ch : s)
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return s;
+}
+
+// The configuration sets `key`: it stores it, and not as the blueprint
+// default the task factory added (KeyProvenance; none recorded: every stored
+// key is the configuration's).
+bool configured(const Context &c, const KeyProvenance *provenance,
+                const std::string &key) {
+  return c.has_stored(key) &&
+         !(provenance &&
+           provenance->origin(key).kind == KeyOrigin::Kind::Default);
+}
+
 }  // namespace
+
+RefitMode read_refit_mode(const Context &c) {
+  const std::optional<std::string> tok = single(c, "REFIT_MODE");
+  if (!tok) return RefitMode::Compact;
+  const std::string m = lower(*tok);
+  if (m == "compact") return RefitMode::Compact;
+  if (m == "dense") return RefitMode::Dense;
+  throw std::runtime_error(kWho +
+                           "REFIT_MODE must be 'compact' (the default) or "
+                           "'dense', got '" + *tok + "'");
+}
+
+std::string top_level_optimizer_refusal() {
+  return kWho +
+         "a top-level OPTIMIZER block is no longer supported. The stage "
+         "pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
+         "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
+         "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO "
+         "in EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; "
+         "JOINT -> FUSE. The Refitting page of the documentation has "
+         "examples (Stage blocks).";
+}
+
+bool read_refit_curve_objective(const Context &c) {
+  const std::optional<std::string> tok = single(c, "REFIT_OBJECTIVE");
+  const std::string obj = tok ? lower(*tok) : std::string("energy");
+  if (obj == "curve") return true;
+  if (obj == "energy") return false;
+  throw std::runtime_error(kWho +
+                           "REFIT_OBJECTIVE must be 'energy' (default) or "
+                           "'curve'; got '" + obj + "'");
+}
+
+void check_refit_mode_keys(const Context &c, RefitMode mode,
+                           const KeyProvenance *provenance) {
+  // neither mode reads a top-level OPTIMIZER block (its stages are the
+  // compact fitter's stage blocks now, which dense mode does not read)
+  if (configured(c, provenance, "OPTIMIZER"))
+    throw std::runtime_error(
+        top_level_optimizer_refusal() +
+        (mode == RefitMode::Dense
+             ? " Under REFIT_MODE dense, which reads no stage block, remove "
+               "the OPTIMIZER block."
+             : ""));
+  const RefitMode other =
+      mode == RefitMode::Dense ? RefitMode::Compact : RefitMode::Dense;
+  const std::string runs = std::string(mode_name(mode)) +
+                           (c.has_stored("REFIT_MODE") ? "" : " (the default)");
+  const auto refuse = [&](const std::string &what) {
+    throw std::runtime_error(kWho + what + " has no effect under REFIT_MODE " +
+                             runs + ": only REFIT_MODE " + mode_name(other) +
+                             " reads it; remove " + what +
+                             ", or set REFIT_MODE " + mode_name(other));
+  };
+  for (const ModeKey &k : kModeKeys)
+    if (k.mode != mode && configured(c, provenance, k.key))
+      refuse(k.block ? std::string("the ") + k.key + " block"
+                     : std::string(k.key));
+  const bool curve = read_refit_curve_objective(c);
+  if (mode == RefitMode::Dense) {
+    if (curve) refuse("REFIT_OBJECTIVE curve");
+    return;
+  }
+  if (!curve) {
+    const std::string energy =
+        std::string("energy") +
+        (configured(c, provenance, "REFIT_OBJECTIVE") ? "" : " (the default)");
+    for (const char *key : kCurveObjectiveKeys)
+      if (configured(c, provenance, key))
+        throw std::runtime_error(
+            kWho + key + " has no effect under REFIT_OBJECTIVE " + energy +
+            ": only REFIT_OBJECTIVE curve reads it; remove " + key +
+            ", or set REFIT_OBJECTIVE curve");
+    return;
+  }
+  // REFIT_CURVE_RELAX is the floor of the curve weighting, which
+  // REFIT_CURVE_WEIGHTING false switches off (its default is true)
+  const bool weighting = c.has_stored("REFIT_CURVE_WEIGHTING")
+                             ? c.get<bool>("REFIT_CURVE_WEIGHTING")
+                             : true;
+  if (!weighting && configured(c, provenance, "REFIT_CURVE_RELAX"))
+    throw std::runtime_error(
+        kWho +
+        "REFIT_CURVE_RELAX has no effect under REFIT_CURVE_WEIGHTING false: "
+        "only REFIT_CURVE_WEIGHTING true (the default) reads it; remove "
+        "REFIT_CURVE_RELAX, or set REFIT_CURVE_WEIGHTING true");
+}
+
+void check_refit_output_mode_keys(const Context &c, RefitOutputMode mode,
+                                  const KeyProvenance *provenance) {
+  const std::string flag =
+      mode == RefitOutputMode::Edit ? "--edit" : "--retarget";
+  const auto refuse = [&](const std::string &what, const std::string &reader,
+                          const std::string &tail) {
+    throw std::runtime_error("tadah refit " + flag + ": " + what +
+                             " has no effect under " + flag + ": " + reader +
+                             "; remove " + what + tail);
+  };
+  for (const char *key : kFitKeys)
+    if (configured(c, provenance, key))
+      refuse(key, "only a refit of an EAM file reads it", "");
+  for (const ModeKey &k : kModeKeys)
+    if (configured(c, provenance, k.key))
+      refuse(k.block ? std::string("the ") + k.key + " block"
+                     : std::string(k.key),
+             std::string("only a refit of an EAM file in REFIT_MODE ") +
+                 mode_name(k.mode) + " reads it",
+             "");
+  if (configured(c, provenance, "OPTIMIZER"))
+    refuse("the OPTIMIZER block",
+           "no mode of tadah refit reads a top-level OPTIMIZER block", "");
+  if (mode == RefitOutputMode::Retarget)
+    for (const char *key : kFitAndEditKeys)
+      if (configured(c, provenance, key))
+        refuse(key, "only a refit of an EAM file and --edit read it",
+               " (the file --retarget writes is -o, OUTFILE)");
+}
 
 RefitNumbers read_refit_numbers(const Context &c) {
   RefitNumbers n;

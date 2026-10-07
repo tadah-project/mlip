@@ -76,7 +76,8 @@ potedit::Channel parse_channel(std::string f) {
 
 }  // namespace
 
-void validate_refit_mode_keys(const Context &c) {
+void validate_refit_mode_keys(const Context &c,
+                              const KeyProvenance *provenance) {
   const bool edit = has(c, "EDIT");
   const bool retarget = has(c, "RETARGET");
   const bool eam = has(c, "EAM");
@@ -128,14 +129,19 @@ void validate_refit_mode_keys(const Context &c) {
   if (!retarget && has(c, "IN_PLACE") && c.get<bool>("IN_PLACE"))
     throw std::runtime_error(
         "tadah refit: --in-place requires --retarget <file.hpotarget>.");
+  // Neither mode reads the keys of a refit of an EAM file.
+  if (edit || retarget)
+    check_refit_output_mode_keys(
+        c, edit ? RefitOutputMode::Edit : RefitOutputMode::Retarget,
+        provenance);
 }
 
 // ---------------------------------------------------------------------------
 // --edit
 // ---------------------------------------------------------------------------
 
-int run_refit_edit(Context &c) {
-  validate_refit_mode_keys(c);
+int run_refit_edit(Context &c, const KeyProvenance *provenance) {
+  validate_refit_mode_keys(c, provenance);
   // OPTIM_PCT, the hpotarget's bounds, before any file is written
   const double pct = read_optim_pct(c);
   const std::string in_pot = c.get<std::string>("EDIT");
@@ -302,8 +308,8 @@ int run_refit_edit(Context &c) {
 // --retarget
 // ---------------------------------------------------------------------------
 
-int run_refit_retarget(Context &c) {
-  validate_refit_mode_keys(c);
+int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
+  validate_refit_mode_keys(c, provenance);
   const std::string in = c.get<std::string>("RETARGET");
   const bool in_place = has(c, "IN_PLACE") && c.get<bool>("IN_PLACE");
 

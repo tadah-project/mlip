@@ -34,18 +34,21 @@ const std::array<OptimGroupSpec, 8> &hpotarget_group_specs();
 
 /** \brief The group bound floor: max(1e-8, 1e-3·max|v|), rounded to 6
  *  significant digits. The rounding makes the floor reproducible from the
- *  8-significant-digit PRINTED bounds (--retarget recovers the group scale
- *  to ~1e-9 relative), so floor-dominated bounds are byte-stable under
- *  repeated retargeting instead of jittering in their last digit. */
+ *  PRINTED bounds (%.8e, 9 significant digits; --retarget recovers the
+ *  group scale to ~1e-9 relative), so floor-dominated bounds are
+ *  byte-stable under repeated retargeting instead of jittering in their
+ *  last digit. */
 double optim_group_floor(double gmax);
 
-/** \brief Decimal grid for OPTIM bounds: 10x the print resolution of the
- *  larger bound (bounds are printed with 8 significant digits). Centre and
- *  half-width are snapped to this grid before emission, so the printed
- *  bounds are EXACT decimals and --retarget recovers the centre exactly —
- *  the round-trip is a fixed point instead of jittering in the last digit
- *  (the naive midpoint of two 8-digit bounds carries the LARGER bound's
- *  rounding error into the finer print grid of the smaller one). */
+/** \brief Decimal grid for OPTIM bounds: 10^(floor(log10(|centre| +
+ *  |half-width|)) - 6), at most 7 significant digits of a bound, coarser
+ *  than the print resolution (bounds are printed %.8e, 9 significant
+ *  digits). Centre and half-width are snapped to this grid before
+ *  emission, so the printed bounds are EXACT decimals and --retarget
+ *  recovers the centre exactly — the round-trip is a fixed point instead
+ *  of jittering in the last digit (the naive midpoint of two printed
+ *  bounds carries the LARGER bound's rounding error into the finer print
+ *  grid of the smaller one). */
 double optim_bound_quantum(double centre, double halfwidth);
 
 /** \brief Snap x to the decimal grid q (round-half-away like the printer). */

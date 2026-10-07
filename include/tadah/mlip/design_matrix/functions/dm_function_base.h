@@ -24,6 +24,8 @@ struct DM_Function_Base: public virtual tadah::models::Function_Base {
   DM_Function_Base(const tadah::core::Context &c);
   virtual ~DM_Function_Base();
 
+  /** The design-matrix width: weights_count(DSIZE) of the basis function
+   *  or kernel (models::Function_Base::weights_count). */
   virtual size_t get_phi_cols(const tadah::core::Context &)=0;
 
   /** \brief The column layout of this function's design matrix, given the

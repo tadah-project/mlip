@@ -8,7 +8,9 @@
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/task.h>
+#include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/refit_engine.h>
 #include <tadah/mlip/engines/refit_modes.h>
 #include <tadah/mlip/engines/train_engine.h>
@@ -711,4 +713,259 @@ TEST_CASE_METHOD(PTFixture,
       Catch::Contains("requires --retarget"));
   REQUIRE_NOTHROW(validate_refit_mode_keys(
       ctx({{"RETARGET", "b"}, {"RETARGET_RHOFORM", "NONNEG"}})));
+}
+
+// ---------------------------------------------------------------------------
+//  --edit and --retarget refuse the keys of a refit of an EAM file
+// ---------------------------------------------------------------------------
+namespace {
+// What reads a key that --edit or --retarget does not (the refusal's middle
+// part), and the keys of each, each with a valid value.
+const std::string kFitReads = "only a refit of an EAM file reads it";
+const std::string kDenseReads =
+    "only a refit of an EAM file in REFIT_MODE dense reads it";
+const std::string kCompactReads =
+    "only a refit of an EAM file in REFIT_MODE compact reads it";
+const std::string kFitEditReads =
+    "only a refit of an EAM file and --edit read it";
+
+struct FitKey {
+  std::string key, value;
+  const std::string *reader;
+  bool block;  ///< a stage block (one token per value, "the <KEY> block")
+};
+const std::vector<FitKey> kFitOnlyKeys = {
+    // read in both REFIT_MODEs
+    {"REFIT_MODE", "dense", &kFitReads, false},
+    {"REFIT_BASIS", "Blip", &kFitReads, false},
+    {"REFIT_TOL_AMBIENT", "0.5", &kFitReads, false},
+    {"REFIT_TOL_COMPRESSED", "2", &kFitReads, false},
+    {"REFIT_REACH_SMIN", "0.8", &kFitReads, false},
+    {"REFIT_REACH_MARGIN", "1.5", &kFitReads, false},
+    {"REFIT_R_LO_FRAC", "0.15", &kFitReads, false},
+    {"REFIT_OBJECTIVE", "energy", &kFitReads, false},
+    {"OUTPUT_GRID_SCALE", "2", &kFitReads, false},
+    {"SETFL_OUT", "x.eam", &kFitReads, false},
+    {"REFIT_LOG", "x.log", &kFitReads, false},
+    // REFIT_MODE dense
+    {"REFIT_LEVEL", "accurate", &kDenseReads, false},
+    {"N2B", "50", &kDenseReads, false},
+    {"NRHO_BASIS", "40", &kDenseReads, false},
+    {"NF_BASIS", "30", &kDenseReads, false},
+    {"REFIT_MAX_ESCALATIONS", "9", &kDenseReads, false},
+    {"REFIT_PLACEMENT", "uniform", &kDenseReads, false},
+    {"REFIT_CONSTRAIN_F0", "false", &kDenseReads, false},
+    // REFIT_MODE compact
+    {"REFIT_COMPACT_NMAX", "3", &kCompactReads, false},
+    {"REFIT_COMPACT_SAMPLES", "400", &kCompactReads, false},
+    {"REFIT_COMPACT_OPT_EVERY", "2", &kCompactReads, false},
+    {"REFIT_COMPACT_STALL", "4", &kCompactReads, false},
+    {"REFIT_COMPACT_INSERT_TOPK", "2", &kCompactReads, false},
+    {"REFIT_COMPACT_JITTERS", "1", &kCompactReads, false},
+    {"REFIT_COMPACT_SEED", "7", &kCompactReads, false},
+    {"REFIT_COMPACT_SHARE", "0.4", &kCompactReads, false},
+    {"REFIT_COMPACT_MERGE", "true", &kCompactReads, false},
+    {"REFIT_CURVE_DERIV_WEIGHT", "0.1", &kCompactReads, false},
+    {"REFIT_CURVE_WEIGHTING", "false", &kCompactReads, false},
+    {"REFIT_CURVE_RELAX", "0.1", &kCompactReads, false},
+    {"INIT", "PHI XMIN PIN", &kCompactReads, true},
+    {"EXPLORE", "MAX_ADD 4", &kCompactReads, true},
+    {"REFINE", "OPTIMIZER LIB CERES ALGO LM MAXEVAL 5 ENDOPTIMIZER",
+     &kCompactReads, true},
+    {"FUSE", "ENABLED false", &kCompactReads, true}};
+
+// The refusal of `what` under `mode` ("--edit" or "--retarget").
+std::string output_mode_refusal(const std::string &mode,
+                                const std::string &what,
+                                const std::string &reader,
+                                const std::string &tail = "") {
+  return "tadah refit " + mode + ": " + what + " has no effect under " +
+         mode + ": " + reader + "; remove " + what + tail;
+}
+
+const std::string kOptimizerUnread =
+    "no mode of tadah refit reads a top-level OPTIMIZER block";
+
+void add_tokens(Context &c, const std::string &key, const std::string &body) {
+  std::istringstream iss(body);
+  for (std::string t; iss >> t;) c.add(key, t);
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit and --retarget: a key of a refit of an EAM "
+                 "file is refused, naming the key and what reads it",
+                 "[refit][edit][retarget][mode_keys]") {
+  /* Pins: RefitEngine::validate(), and run() before it reads or writes a
+   * file, refuse under --edit and under --retarget every key that only a
+   * refit of an EAM file reads, naming the key and what reads it:
+   * "tadah refit --edit: N2B has no effect under --edit: only a refit of an
+   * EAM file in REFIT_MODE dense reads it; remove N2B" (the dense keys),
+   * "... in REFIT_MODE compact reads it; ..." (REFIT_COMPACT_*,
+   * REFIT_CURVE_*; the INIT, EXPLORE, REFINE and FUSE blocks as "the
+   * REFINE block"), "... only a refit of an EAM file reads it; ..." (the
+   * keys both REFIT_MODEs read: REFIT_MODE, REFIT_BASIS, REFIT_TOL_*,
+   * REFIT_REACH_*, REFIT_R_LO_FRAC, REFIT_OBJECTIVE, OUTPUT_GRID_SCALE,
+   * SETFL_OUT, REFIT_LOG); a top-level OPTIMIZER block: "the OPTIMIZER
+   * block has no effect under --edit: no mode of tadah refit reads a
+   * top-level OPTIMIZER block; remove the OPTIMIZER block"; under
+   * --retarget also HPOFILEOUT, which --edit reads ("... only a refit of an
+   * EAM file and --edit read it; remove HPOFILEOUT (the file --retarget
+   * writes is -o, OUTFILE)"). Nothing is written (no pot_edited.tadah,
+   * refit_edited.hpotarget or a_edited.hpotarget). NUMERIC, the precision
+   * of the potential and dataset files a command writes and no key of the
+   * refit, passes under --retarget, which writes neither: validate()
+   * accepts NUMERIC 12 and run() writes a_edited.hpotarget byte-identical
+   * to the run without it (its bounds are printed %.8e whatever NUMERIC
+   * is); --edit reads HPOFILEOUT and NUMERIC (new.hpotarget written). The
+   * blueprint defaults the task factory stores for every refit
+   * (KeyProvenance Default: HPOFILEOUT refit.hpotarget, OUTFILE pot.tadah,
+   * REFIT_OBJECTIVE energy, REFIT_CURVE_*, REFIT_COMPACT_MERGE auto,
+   * REFIT_CONSTRAIN_F0 true, IN_PLACE false, VERBOSE 1) pass and both
+   * modes run; the same keys written in the configuration file are refused
+   * (REFIT_OBJECTIVE energy, the first of them in the table, under --edit
+   * and under --retarget).
+   * Before the fix: validate() accepted every key and run() ignored it:
+   * --edit wrote pot_edited.tadah and its hpotarget, --retarget wrote
+   * a_edited.hpotarget (with HPOFILEOUT set as well, which it never read);
+   * in the defaults section the defaults passed as well (a pin) and the
+   * keys written in the file were accepted (no exception, the outputs
+   * written). NUMERIC under --retarget passed as well (a pin); the first
+   * version of the rule refused it ("tadah refit --retarget: NUMERIC has
+   * no effect under --retarget: only a refit of an EAM file and --edit
+   * read it; remove NUMERIC"), which stopped every --retarget TASK of a
+   * task file that sets NUMERIC above its first TASK line, for every
+   * task. */
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  tadah::mlip::engines::write_hpotarget("a.hpotarget", make_knot_pot(), 5.0);
+  const auto edit = [] {
+    Context c;
+    c.add("EDIT", std::string("in.tadah"));
+    c.add("FUNC", std::string("phi"));
+    c.add("ADD", 3.6);
+    return c;
+  };
+  const auto retarget = [] {
+    Context c;
+    c.add("RETARGET", std::string("a.hpotarget"));
+    return c;
+  };
+  const std::vector<std::string> outputs = {
+      "pot_edited.tadah", "refit_edited.hpotarget", "a_edited.hpotarget"};
+  const auto check_refused = [&](const Task &task, const std::string &msg) {
+    for (const auto &f : outputs) fs::remove(f);
+    CHECK_THROWS_WITH(RefitEngine().validate(task), msg);
+    Task copy = task;
+    CHECK_THROWS_WITH(RefitEngine().run(copy), msg);
+    for (const auto &f : outputs) {
+      INFO("written: " << f);
+      CHECK_FALSE(fs::exists(f));
+    }
+  };
+  SECTION("the keys of a refit of an EAM file") {
+    for (const char *mode : {"--edit", "--retarget"}) {
+      for (const FitKey &k : kFitOnlyKeys) {
+        INFO(mode << " " << k.key << " " << k.value);
+        Context c = std::string(mode) == "--edit" ? edit() : retarget();
+        if (k.block)
+          add_tokens(c, k.key, k.value);
+        else
+          c.add(k.key, k.value);
+        const std::string what =
+            k.block ? "the " + k.key + " block" : k.key;
+        check_refused(Task("refit", c),
+                      output_mode_refusal(mode, what, *k.reader));
+      }
+      INFO(mode << " a top-level OPTIMIZER block");
+      Context c = std::string(mode) == "--edit" ? edit() : retarget();
+      add_tokens(c, "OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL");
+      check_refused(Task("refit", c),
+                    output_mode_refusal(mode, "the OPTIMIZER block",
+                                        kOptimizerUnread));
+    }
+  }
+  SECTION("--retarget refuses HPOFILEOUT, which --edit reads, and passes "
+          "NUMERIC") {
+    Context c = retarget();
+    c.add("HPOFILEOUT", std::string("new.hpotarget"));
+    check_refused(Task("refit", c),
+                  output_mode_refusal("--retarget", "HPOFILEOUT",
+                                      kFitEditReads,
+                                      " (the file --retarget writes is -o, "
+                                      "OUTFILE)"));
+    CHECK_FALSE(fs::exists("new.hpotarget"));
+    // NUMERIC is the precision of a written potential or dataset, which
+    // --retarget does not write: it passes, and the hpotarget is the one
+    // written without it
+    const auto slurp = [](const std::string &f) {
+      std::ifstream is(f);
+      return std::string((std::istreambuf_iterator<char>(is)),
+                         std::istreambuf_iterator<char>());
+    };
+    for (const auto &f : outputs) fs::remove(f);
+    Task plain("refit", retarget());
+    REQUIRE(RefitEngine().run(plain) == EXIT_SUCCESS);
+    const std::string without = slurp("a_edited.hpotarget");
+    REQUIRE_FALSE(without.empty());
+    fs::remove("a_edited.hpotarget");
+    Context n = retarget();
+    n.add("NUMERIC", std::string("12"));
+    Task numeric("refit", n);
+    CHECK_NOTHROW(RefitEngine().validate(numeric));
+    CHECK(RefitEngine().run(numeric) == EXIT_SUCCESS);
+    CHECK(slurp("a_edited.hpotarget") == without);
+    // --edit reads both
+    Context e = edit();
+    e.add("HPOFILEOUT", std::string("new.hpotarget"));
+    e.add("NUMERIC", std::string("12"));
+    Task task("refit", e);
+    CHECK_NOTHROW(RefitEngine().validate(task));
+    CHECK(RefitEngine().run(task) == EXIT_SUCCESS);
+    CHECK(fs::exists("new.hpotarget"));
+  }
+  SECTION("the blueprint defaults the task factory stores pass") {
+    using tadah::mlip::KeyOrigin;
+    using tadah::mlip::KeyProvenance;
+    const std::vector<std::pair<std::string, std::string>> defaults = {
+        {"HPOFILEOUT", "refit.hpotarget"}, {"OUTFILE", "pot.tadah"},
+        {"REFIT_OBJECTIVE", "energy"},     {"REFIT_CURVE_WEIGHTING", "true"},
+        {"REFIT_CURVE_RELAX", "0.05"},     {"REFIT_CURVE_DERIV_WEIGHT", "0.0"},
+        {"REFIT_COMPACT_MERGE", "auto"},   {"REFIT_CONSTRAIN_F0", "true"},
+        {"IN_PLACE", "false"},             {"VERBOSE", "1"}};
+    // `file`: the configuration file's keys; the defaults are added as the
+    // blueprint's (as_defaults) or as written in the file
+    const auto task_with = [&](const Context &file, bool as_defaults) {
+      Context c = file, from_file = file;
+      std::vector<std::string> defaulted;
+      for (const auto &[key, value] : defaults) {
+        c.add(key, value);
+        if (as_defaults)
+          defaulted.push_back(key);
+        else
+          from_file.add(key, value);
+      }
+      Task task("refit", c);
+      task.setKeyProvenance(KeyProvenance(Context(), from_file, "edit.refit",
+                                          KeyOrigin::Kind::ConfigFile,
+                                          defaulted));
+      return task;
+    };
+    for (const auto &f : outputs) fs::remove(f);
+    Task e = task_with(edit(), true);
+    CHECK_NOTHROW(RefitEngine().validate(e));
+    CHECK(RefitEngine().run(e) == EXIT_SUCCESS);
+    CHECK(fs::exists("pot_edited.tadah"));
+    Task r = task_with(retarget(), true);
+    CHECK_NOTHROW(RefitEngine().validate(r));
+    CHECK(RefitEngine().run(r) == EXIT_SUCCESS);
+    CHECK(fs::exists("a_edited.hpotarget"));
+    // written in the configuration file, they are refused (the first of
+    // the table each mode does not read)
+    check_refused(task_with(edit(), false),
+                  output_mode_refusal("--edit", "REFIT_OBJECTIVE", kFitReads));
+    check_refused(task_with(retarget(), false),
+                  output_mode_refusal("--retarget", "REFIT_OBJECTIVE",
+                                      kFitReads));
+  }
 }

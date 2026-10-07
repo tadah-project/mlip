@@ -11,6 +11,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/core/intercept_layout.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 #include <limits>
@@ -102,6 +103,8 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+    check_bias_constraints(context);
+    require_intercepts_determined(stdb, context, bf);
 
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
@@ -112,6 +115,8 @@ public:
   }
 
   void train(const StructureDB &stdb, DC_Base &dc) {
+    check_bias_constraints(context);
+    require_intercepts_determined(stdb, context, bf);
 
     if(context.template get<bool>("NORM")) {
 
@@ -143,6 +148,7 @@ public:
   }
 
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
+    require_weights_fit(c, std.dim());
     if(context.template get<bool>("NORM") && !std.normalised && bf.get_label()!="BF_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
@@ -150,6 +156,10 @@ public:
 
   StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc) {
     return M_Tadah_Base::predict(c,stdb,dc);
+  }
+
+  const tadah::models::Function_Base &function() const override {
+    return bf;
   }
 
   tadah::core::Context get_param_file() {
@@ -177,6 +187,10 @@ public:
       c.add("WEIGHTS", weights(i));
     }
 
+    // NMEAN and NSTDEV of this fit only: a training configuration may carry
+    // those of another potential (tadah train -c pot.tadah).
+    if (c.has_stored("NMEAN")) c.remove("NMEAN");
+    if (c.has_stored("NSTDEV")) c.remove("NSTDEV");
     if(context.template get<bool>("NORM")) {
       for (size_t i=0;i<norm.mean.size();++i) {
         c.add("NMEAN", norm.mean[i]);
@@ -190,6 +204,7 @@ public:
   StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
+    require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
     tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
     DesignMatrix<BF> dm(bf,context_pred);
     dm.apply_weights = false;  // predict the values, not the weighted rows
@@ -291,6 +306,10 @@ private:
 non linear basis function\n");
     }
     const size_t nb = tadah::core::n_intercept_columns(context);
+    if (nb == 0)
+      throw std::runtime_error("NORM true with BF_Linear requires BIAS true: "
+          "the mean correction of the normalised weights goes into the "
+          "intercept columns");
     tadah::core::t_type nw(weights.rows());
     for (size_t b = 0; b < nb; ++b) nw(b) = weights(b);
     for (size_t i = nb; i < weights.size(); ++i) {
@@ -311,6 +330,10 @@ non linear basis function\n");
 non linear basis function\n");
     }
     const size_t nb = tadah::core::n_intercept_columns(context);
+    if (nb == 0)
+      throw std::runtime_error("NORM true with BF_Linear requires BIAS true: "
+          "the mean correction of the normalised weights goes into the "
+          "intercept columns");
     tadah::core::t_type w(nw.rows());
     for (size_t b = 0; b < nb; ++b) w(b) = nw(b);
     for (size_t i = nb; i < nw.size(); ++i) {

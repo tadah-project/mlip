@@ -22,13 +22,24 @@ namespace engines {
  * goodness-of-fit table, a tabulated comparison dump for plotting, and an
  * HPO-ready target file with OPTIM bounds.
  *
- * Two fitting modes (config key REFIT_MODE):
+ * Two fitting modes (config key REFIT_MODE, in any letter case):
  *  - "dense" (this engine): region-uniform blip grids, least squares, basis
  *    auto-escalation against the compression-aware crystal self-test.
- *  - "compact": optimised blip centres/widths (ladder + analytic-gradient
- *    Ceres polish). Implemented by the HPO library's engine, which overrides
- *    the "REFIT" registration and the compact_fit() hook below; in an
- *    HPO-less build this base falls back to dense with a warning.
+ *  - "compact" (the default): optimised blip centres/widths (ladder +
+ *    analytic-gradient Ceres polish). Implemented by the HPO library's
+ *    engine, which overrides the "REFIT" registration and the
+ *    has_compact_fitter() / compact_fit() hooks below. This base has no
+ *    compact fitter, so validate() and run() refuse REFIT_MODE compact,
+ *    written or the default, before the EAM file is read ("tadah refit:
+ *    REFIT_MODE compact (the default) needs the compact fitter, which this
+ *    tadah was built without ..."); it fell back to the dense fit with a
+ *    WARNING.
+ * validate() and run() refuse a key that the configuration's mode does not
+ * read, before the numbers (check_refit_mode_keys, refit_keys.h: e.g. N2B
+ * under compact, the REFINE block under dense), and under --edit and
+ * --retarget a key of a refit of an EAM file, which those modes do not read
+ * (check_refit_output_mode_keys: e.g. N2B, REFIT_TOL_AMBIENT, a REFINE
+ * block; HPOFILEOUT under --retarget), before a file is read or written.
  *
  * The configuration must declare the density form of the written DM_REAM
  * potential, RHOFORM SIGNED | NONNEG | MONOTONE (validate() and run() throw
@@ -60,9 +71,17 @@ public:
   };
 
 protected:
-  /** Compact-mode hook. Returns true when it produced a fit (refit filled,
-   *  self-test computed). The base (dense-only build) returns false and the
-   *  caller falls back to dense fitting with a WARNING. */
+  /** True when this engine has the compact fitter (compact_fit()): HPO's
+   *  engine in a build with Ceres. The base has none and returns false, so
+   *  REFIT_MODE compact is refused. */
+  virtual bool has_compact_fitter() const;
+
+  /** Compact-mode hook, called only when has_compact_fitter(). Returns true
+   *  when it produced a fit (refit filled, self-test computed), false when
+   *  the fitter cannot fit this table, having logged a WARNING that says
+   *  why: run() then fits it in dense mode (HPO's engine: no reachable
+   *  pair-distance window). The base throws std::logic_error (it has no
+   *  compact fitter, and run() refuses compact mode before calling it). */
   virtual bool compact_fit(const tadah::core::Context &c,
                            const models::EAMSetflIO &eam,
                            models::EAMRefitConfig &cfg,
