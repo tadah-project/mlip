@@ -57,10 +57,10 @@ std::string top_level_optimizer_refusal();
  *     REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
  *     REFINE and FUSE blocks, and REFIT_OBJECTIVE curve (REFIT_OBJECTIVE
  *     energy passes in both);
- *   - read by REFIT_OBJECTIVE curve only, in compact mode:
- *     REFIT_CURVE_WEIGHTING. (REFIT_CURVE_RELAX and
- *     REFIT_CURVE_DERIV_WEIGHT have no effect under energy, and pass there:
- *     their values are checked in either objective.)
+ *   - read by REFIT_OBJECTIVE curve only, in compact mode: every curve
+ *     knob, REFIT_CURVE_WEIGHTING, REFIT_CURVE_RELAX and
+ *     REFIT_CURVE_DERIV_WEIGHT; and REFIT_CURVE_RELAX, the floor of the
+ *     curve weighting, only with REFIT_CURVE_WEIGHTING true (its default);
  *   - read by neither mode: a top-level OPTIMIZER block, refused first, in
  *     either mode, with top_level_optimizer_refusal(), to which REFIT_MODE
  *     dense adds " Under REFIT_MODE dense, which reads no stage block,
@@ -81,10 +81,54 @@ std::string top_level_optimizer_refusal();
  *    "tadah refit: REFIT_CURVE_WEIGHTING has no effect under
  *     REFIT_OBJECTIVE energy (the default): only REFIT_OBJECTIVE curve
  *     reads it; remove REFIT_CURVE_WEIGHTING, or set REFIT_OBJECTIVE curve"
+ *    "tadah refit: REFIT_CURVE_RELAX has no effect under
+ *     REFIT_CURVE_WEIGHTING false: only REFIT_CURVE_WEIGHTING true (the
+ *     default) reads it; remove REFIT_CURVE_RELAX, or set
+ *     REFIT_CURVE_WEIGHTING true"
  *  REFIT_OBJECTIVE is read with read_refit_curve_objective (in either
  *  mode). */
 void check_refit_mode_keys(const tadah::core::Context &c, RefitMode mode,
                            const KeyProvenance *provenance);
+
+/** The modes of `tadah refit` on existing refit outputs, which read no EAM
+ *  file. */
+enum class RefitOutputMode {
+  Edit,     ///< --edit <pot.tadah>
+  Retarget  ///< --retarget <file.hpotarget>
+};
+
+/** The rule of --edit and --retarget: refuse a key of @p c that a refit of
+ *  an EAM file reads and @p mode does not (the same table as the mode
+ *  rule's, refit_keys.cpp):
+ *   - the keys of either REFIT_MODE (REFIT_MODE, REFIT_BASIS,
+ *     REFIT_TOL_AMBIENT, REFIT_TOL_COMPRESSED, REFIT_REACH_SMIN,
+ *     REFIT_REACH_MARGIN, REFIT_R_LO_FRAC, REFIT_OBJECTIVE,
+ *     OUTPUT_GRID_SCALE, SETFL_OUT, REFIT_LOG), of REFIT_MODE dense only
+ *     and of REFIT_MODE compact only (check_refit_mode_keys), the stage
+ *     blocks among them, and a top-level OPTIMIZER block, which no mode
+ *     reads;
+ *   - under --retarget also HPOFILEOUT and NUMERIC, which a refit and
+ *     --edit read (the potential and the hpotarget they write).
+ *  (EAM, and RHOFORM and EMBF0 under --retarget, have their own refusals:
+ *  validate_refit_mode_keys, refit_modes.h.) A key counts as in
+ *  check_refit_mode_keys (stored and not a blueprint default). The first
+ *  key refused throws std::runtime_error naming it and what reads it:
+ *    "tadah refit --edit: N2B has no effect under --edit: only a refit of
+ *     an EAM file in REFIT_MODE dense reads it; remove N2B"
+ *    "tadah refit --retarget: the REFINE block has no effect under
+ *     --retarget: only a refit of an EAM file in REFIT_MODE compact reads
+ *     it; remove the REFINE block"
+ *    "tadah refit --edit: REFIT_TOL_AMBIENT has no effect under --edit:
+ *     only a refit of an EAM file reads it; remove REFIT_TOL_AMBIENT"
+ *    "tadah refit --edit: the OPTIMIZER block has no effect under --edit:
+ *     no mode of tadah refit reads a top-level OPTIMIZER block; remove the
+ *     OPTIMIZER block"
+ *    "tadah refit --retarget: HPOFILEOUT has no effect under --retarget:
+ *     only a refit of an EAM file and --edit read it; remove HPOFILEOUT
+ *     (the file --retarget writes is -o, OUTFILE)" */
+void check_refit_output_mode_keys(const tadah::core::Context &c,
+                                  RefitOutputMode mode,
+                                  const KeyProvenance *provenance);
 
 /** The refit configuration numbers. A key the configuration does not store
  *  (Context::has_stored: no blueprint default is inserted) has the default
@@ -122,8 +166,7 @@ struct RefitNumbers {
   unsigned seed = 12345;           ///< REFIT_COMPACT_SEED, 0..4294967295
   double share = 0.5;              ///< REFIT_COMPACT_SHARE, > 0
   double curve_deriv_weight = 0.0; ///< REFIT_CURVE_DERIV_WEIGHT, >= 0
-  double curve_relax = 0.05;       ///< REFIT_CURVE_RELAX, in (0, 1], in
-                                   ///< every REFIT_OBJECTIVE
+  double curve_relax = 0.05;       ///< REFIT_CURVE_RELAX, in (0, 1]
 };
 
 /** Read the refit configuration numbers of @p c. A real number takes the

@@ -1,7 +1,13 @@
 #include <tadah/mlip/engines/explain_engine.h>
 #include <tadah/core/context.h>
 #include <tadah/core/blueprint_parser.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 #include <boost/algorithm/string.hpp> // for boost::split
 
 namespace tadah {
@@ -9,87 +15,204 @@ namespace mlip {
 namespace engines {
 
 namespace {
-// A key's explanation: its long description, or the description of a key
-// that has none (the text its command's --help gives it, where a
-// configuration key states its range), then its examples.
-void print_key(const core::BlueprintKey &key) {
-  std::cout << (key.longDescription.empty() ? key.description
-                                            : key.longDescription)
-            << std::endl;
-  if (!key.examples.empty()) {
-    std::cout << "\nEXAMPLES: " << std::endl;
-    for (const auto &example : key.examples) {
-      std::cout << "  " << example << std::endl;
+
+bool is_space(char ch) {
+  return std::isspace(static_cast<unsigned char>(ch)) != 0;
+}
+
+std::string rstrip(const std::string &s) {
+  std::size_t end = s.size();
+  while (end > 0 && is_space(s[end - 1])) --end;
+  return s.substr(0, end);
+}
+
+std::string trim(const std::string &s) {
+  const std::string r = rstrip(s);
+  std::size_t b = 0;
+  while (b < r.size() && is_space(r[b])) ++b;
+  return r.substr(b);
+}
+
+bool ends_with(const std::string &s, const std::string &tail) {
+  return s.size() >= tail.size() &&
+         s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// The leading whitespace of a line.
+std::string margin_of(const std::string &line) {
+  std::size_t n = 0;
+  while (n < line.size() && (line[n] == ' ' || line[n] == '\t')) ++n;
+  return line.substr(0, n);
+}
+
+// The lines of `text` without the whitespace prefix all its non-blank
+// lines share, blank lines empty (Python's textwrap.dedent, then rstrip).
+std::vector<std::string> dedented_lines(const std::string &text) {
+  std::vector<std::string> lines;
+  std::istringstream in(text);
+  for (std::string line; std::getline(in, line);) lines.push_back(rstrip(line));
+  bool first = true;
+  std::string common;
+  for (const auto &l : lines) {
+    if (l.empty()) continue;
+    const std::string m = margin_of(l);
+    if (first) {
+      common = m;
+      first = false;
+    } else {
+      std::size_t k = 0;
+      while (k < common.size() && k < m.size() && common[k] == m[k]) ++k;
+      common.resize(k);
     }
   }
+  for (auto &l : lines)
+    if (!l.empty()) l.erase(0, common.size());
+  return lines;
 }
+
+// The key named `name` (lower case, the last part of its blueprint name)
+// among a command's options and its groups' options; nullptr if none.
+const core::BlueprintKey *find_option(const core::BlueprintTask &task,
+                                      const std::string &name) {
+  const auto named = [&](const core::BlueprintKey &key) {
+    std::vector<std::string> parts;
+    boost::split(parts, key.keyName, boost::is_any_of("."));
+    return parts.back() == name;
+  };
+  for (const auto &key : task.blueprintKeys)
+    if (named(key)) return &key;
+  for (const auto &group : task.groups)
+    for (const auto &key : group.blueprintKeys)
+      if (named(key)) return &key;
+  return nullptr;
+}
+
+void print_text(const std::string &text) {
+  for (const auto &line : explain_text_lines(text)) std::cout << line << "\n";
+  std::cout.flush();
+}
+
 }  // namespace
+
+std::vector<std::string> explain_text_lines(const std::string &text) {
+  std::vector<std::string> lines = dedented_lines(text);
+  while (!lines.empty() && lines.front().empty()) lines.erase(lines.begin());
+  while (!lines.empty() && lines.back().empty()) lines.pop_back();
+  std::vector<std::string> out;
+  bool in_literal = false;
+  std::size_t literal_indent = 0;  // of the paragraph that opened one
+  bool skip_blank = false;
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    std::string ln = lines[i];
+    if (skip_blank && ln.empty()) {
+      skip_blank = false;
+      continue;
+    }
+    skip_blank = false;
+    const std::size_t indent = margin_of(ln).size();
+    if (in_literal) {
+      if (ln.empty() || indent > literal_indent) {
+        out.push_back(ln);
+        continue;
+      }
+      in_literal = false;
+    }
+    const bool closes_paragraph = i + 1 == lines.size() || lines[i + 1].empty();
+    if (closes_paragraph && ends_with(ln, "::")) {
+      in_literal = true;
+      literal_indent = indent;
+      if (trim(ln) == "::") {
+        skip_blank = true;
+        continue;
+      }
+      ln = ends_with(ln, " ::") ? rstrip(ln.substr(0, ln.size() - 3))
+                                : ln.substr(0, ln.size() - 1);
+    }
+    out.push_back(ln);
+  }
+  return out;
+}
+
+std::string explain_key_text(const core::BlueprintKey &key) {
+  std::string out;
+  for (const auto &line : explain_text_lines(
+           key.longDescription.empty() ? key.description : key.longDescription))
+    out += line + "\n";
+  if (!key.examples.empty()) {
+    out += "\nEXAMPLES: \n";
+    for (const auto &example : key.examples) {
+      std::istringstream in(example);
+      for (std::string line; std::getline(in, line);) {
+        line = trim(line);
+        if (!line.empty()) out += "  " + line + "\n";
+      }
+    }
+  }
+  return out;
+}
 
 int ExplainEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
-  std::string option = taskContext.get<std::string>("OPTION", 0);
+  const std::string option = taskContext.get<std::string>("OPTION", 0);
   std::vector<std::string> tokens;
   boost::split(tokens, option, boost::is_any_of("."));
-  boost::to_upper(tokens[0]);
-  std::string option2 =  boost::join(tokens, ".");
+  if (tokens.size() > 3)
+    throw std::runtime_error("tadah explain: '" + option +
+                             "' is not <command>, <command>.<option> or "
+                             "<command>.<subcommand>.<option>");
   const auto &taskMap = core::BlueprintParser::getTasksMapRef();
-
-  try {
-    // deal with plain commands and subcommands (without options)
-    std::cout << taskMap.at(option2).longDescription << std::endl;
-  } catch (const std::out_of_range &e) {}
-
-  try {
-    if (tokens.size() == 2) {
-      auto it = taskMap.find(tokens[0]);
-      boost::to_lower(tokens[1]);
-      for (const auto &key : it->second.blueprintKeys) {
-        std::vector<std::string> tokens2;
-        boost::split(tokens2, key.keyName, boost::is_any_of("."));
-        if (tokens2.back() == tokens[1]) {
-          print_key(key);
-          return EXIT_SUCCESS;
-        }
-      }
-      for (const auto &group : it->second.groups) {
-        std::vector<std::string> tokens2;
-        boost::split(tokens2, group.groupName, boost::is_any_of("."));
-        for (const auto &key : group.blueprintKeys) {
-          std::vector<std::string> tokens3;
-          boost::split(tokens3, key.keyName, boost::is_any_of("."));
-          if (tokens3.back() == tokens[1]) {
-            print_key(key);
-            return EXIT_SUCCESS;
-          }
-        }
-      }
-    } else if (tokens.size() == 3) {
-      auto it = taskMap.find(tokens[0]+"." + tokens[1]);
-      for (const auto &key : it->second.blueprintKeys) {
-        std::vector<std::string> tokens2;
-        boost::split(tokens2, key.keyName, boost::is_any_of("."));
-        if (tokens2.back() == tokens[2]) {
-          print_key(key);
-          return EXIT_SUCCESS;
-        }
-      }
-      for (const auto &group : it->second.groups) {
-        std::vector<std::string> tokens2;
-        boost::split(tokens2, group.groupName, boost::is_any_of("."));
-        for (const auto &key : group.blueprintKeys) {
-          std::vector<std::string> tokens3;
-          boost::split(tokens3, key.keyName, boost::is_any_of("."));
-          if (tokens3.back() == tokens[2]) {
-            print_key(key);
-            return EXIT_SUCCESS;
-          }
-        }
-      }
-    }
-  } catch (const std::out_of_range &e) {}
-
-  return EXIT_SUCCESS;
+  // The blueprint name of the command of the first n tokens (the first in
+  // upper case, as the tasks map has it).
+  const auto command = [&](std::size_t n) {
+    std::string name = boost::to_upper_copy(tokens[0]);
+    for (std::size_t i = 1; i < n; ++i) name += "." + tokens[i];
+    return name;
+  };
+  // The command or subcommand all the tokens name, if one.
+  bool printed = false;
+  const auto named = taskMap.find(command(tokens.size()));
+  if (named != taskMap.end()) {
+    print_text(named->second.longDescription);
+    printed = true;
+  }
+  if (tokens.size() == 1) {
+    if (!printed)
+      throw std::runtime_error("tadah explain: no command '" + tokens[0] +
+                               "'");
+    return EXIT_SUCCESS;
+  }
+  // An option of the command the tokens before the last name.
+  const auto owner = taskMap.find(command(tokens.size() - 1));
+  if (owner == taskMap.end()) {
+    if (printed) return EXIT_SUCCESS;
+    if (taskMap.find(command(1)) == taskMap.end())
+      throw std::runtime_error("tadah explain: no command '" + tokens[0] +
+                               "'");
+    throw std::runtime_error("tadah explain: " + tokens[0] +
+                             " has no subcommand '" + tokens[1] + "'");
+  }
+  if (const core::BlueprintKey *key =
+          find_option(owner->second, boost::to_lower_copy(tokens.back()))) {
+    std::cout << explain_key_text(*key);
+    std::cout.flush();
+    return EXIT_SUCCESS;
+  }
+  if (printed) return EXIT_SUCCESS;
+  std::string where = tokens[0];
+  for (std::size_t i = 1; i + 1 < tokens.size(); ++i) where += " " + tokens[i];
+  // <command>.<name> could have named a subcommand of a command that has one
+  const std::string sub_prefix = owner->first + ".";
+  const bool has_subcommands =
+      tokens.size() == 2 &&
+      std::any_of(taskMap.begin(), taskMap.end(), [&](const auto &t) {
+        return t.first.compare(0, sub_prefix.size(), sub_prefix) == 0;
+      });
+  throw std::runtime_error("tadah explain: " + where + " has no " +
+                           (has_subcommands ? "subcommand or option"
+                                            : "option") +
+                           " '" + tokens.back() + "'");
 }
+
 void ExplainEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
   if (!context.contains("OPTION")) {
@@ -103,4 +226,3 @@ void ExplainEngine::validate(const tadah::mlip::Task &task) {
 } // namespace engines
 } // namespace mlip
 } // namespace tadah
-

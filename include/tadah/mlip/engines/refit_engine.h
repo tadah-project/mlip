@@ -36,7 +36,10 @@ namespace engines {
  *    WARNING.
  * validate() and run() refuse a key that the configuration's mode does not
  * read, before the numbers (check_refit_mode_keys, refit_keys.h: e.g. N2B
- * under compact, the REFINE block under dense).
+ * under compact, the REFINE block under dense), and under --edit and
+ * --retarget a key of a refit of an EAM file, which those modes do not read
+ * (check_refit_output_mode_keys: e.g. N2B, REFIT_TOL_AMBIENT, a REFINE
+ * block; HPOFILEOUT under --retarget), before a file is read or written.
  *
  * The configuration must declare the density form of the written DM_REAM
  * potential, RHOFORM SIGNED | NONNEG | MONOTONE (validate() and run() throw

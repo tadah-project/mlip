@@ -139,8 +139,9 @@ void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
 
 // One plot-friendly file per function: value, 1st and 2nd derivatives
 // (central differences on the dense dump grid — inspection only), residual,
-// and an in_window flag marking the physically reachable region the fit
-// concentrates on. Header documents the columns.
+// and an in_window flag marking the window the fit used
+// (EAMRefit::fit_window_r_lo / fit_window_rho_hi, refit_range_report.dat's
+// fit_window_lo..fit_window_hi). Header documents the columns.
 void write_curve_file(const std::string &path, const std::string &fname,
                       double lo, double hi,
                       const std::function<double(double)> &orig,
@@ -159,7 +160,8 @@ void write_curve_file(const std::string &path, const std::string &fname,
   os << "# tadah refit inspection curve: " << fname
      << " (original tabulated vs native fit)\n"
      << "# derivatives: central finite differences on this grid (plot aid)\n"
-     << "# in_window: 1 = physically reachable region (fit emphasis), 0 = tail\n"
+     << "# in_window: 1 = inside the fit window (refit_range_report.dat's "
+        "fit_window_lo..fit_window_hi), 0 = outside\n"
      << "# x  v_orig  v_fit  d1_orig  d1_fit  d2_orig  d2_fit  resid  in_window\n";
   os << std::scientific << std::setprecision(10);
   for (int i = 1; i + 1 < N; ++i) {
@@ -178,8 +180,8 @@ void write_curve_files(const models::EAMSetflIO &eam,
                        const models::EAMRefit &refit) {
   const double rcut = eam.rcut();
   const double r_lo = 0.15 * rcut;
-  const double rwin = refit.r_reach() > 0 ? 0.9 * refit.r_reach() : r_lo;
-  const double rhow = refit.rho_reach() > 0 ? refit.rho_reach() : eam.rhomax();
+  const double rwin = refit.fit_window_r_lo();
+  const double rhow = refit.fit_window_rho_hi();
   write_curve_file("refit_curve_phi.dat", "pair phi(r)", r_lo, rcut,
                    [&](double r) { return eam.phi_tab(r); },
                    [&](double r) { return refit.phi_fit(r); }, rwin, rcut);
@@ -292,9 +294,10 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
   if (edit || retarget) {
     // CLI needs/excludes only guard flag usage; the config-file path (and
-    // combinations the CLI cannot express) are re-validated here, and the
-    // one configuration number of these modes, OPTIM_PCT.
-    validate_refit_mode_keys(c);
+    // combinations the CLI cannot express) are re-validated here, with the
+    // keys of a refit of an EAM file, which neither mode reads, and the one
+    // configuration number of these modes, OPTIM_PCT.
+    validate_refit_mode_keys(c, task.getKeyProvenance());
     (void)read_optim_pct(c);
     return;
   }
@@ -323,9 +326,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
 
   // ---- editing modes on existing refit outputs (no EAM input) ----
   if (c.contains("RETARGET") && c.size("RETARGET") > 0)
-    return run_refit_retarget(c);
+    return run_refit_retarget(c, task.getKeyProvenance());
   if (c.contains("EDIT") && c.size("EDIT") > 0)
-    return run_refit_edit(c);
+    return run_refit_edit(c, task.getKeyProvenance());
 
   // ---- RHOFORM: the density form fitted, self-tested and written ----
   // Mandatory in the configuration (no default, never inserted); checked
@@ -705,8 +708,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
          << "# function  full_lo  full_hi  fit_window_lo  fit_window_hi  "
             "notes\n";
       os << std::scientific << std::setprecision(8);
-      const double rwin = refit.r_reach() > 0 ? 0.9 * refit.r_reach()
-                                              : refit.r_lo();
+      // the windows the fit used: the compact fit's [r_lo, rcut] and
+      // [0, rho_reach]; the dense fit's radial window (its wall edge, at
+      // most 0.8 r_reach, and never below r_lo) and [0, rho_reach], or
+      // [0, rhomax] under REFIT_PLACEMENT uniform
+      const double rwin = refit.fit_window_r_lo();
       os << "phi " << refit.r_lo() << " " << rc << " " << rwin << " " << rc
          << "  # below r_lo the setfl carries the ORIGINAL table "
             "(offset-matched); control: REFIT_R_LO_FRAC, REFIT_REACH_SMIN\n";
@@ -718,7 +724,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
       // small uniform basis on the tail above it, and REFIT_PLACEMENT
       // uniform fits one uniform basis on the whole range (rho_reach 0).
       os << "F   " << 0.0 << " " << eam.rhomax() << " " << 0.0 << " "
-         << (refit.rho_reach() > 0 ? refit.rho_reach() : eam.rhomax())
+         << refit.fit_window_rho_hi()
          << (fitted ? "  # above fit_window_hi the setfl carries the ORIGINAL "
                       "table (offset-matched); control: REFIT_REACH_SMIN, "
                       "REFIT_REACH_MARGIN\n"
