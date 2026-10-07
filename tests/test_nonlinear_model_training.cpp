@@ -1576,13 +1576,17 @@ TEST_CASE("A non-linear KRR potential built before its DescriptorsCalc "
  * make a model: Trainer::provision_fixed_weights refuses, saying the basis
  * is drawn from the training data, and classify_weight_source refuses a
  * configuration without a training DBFILE, naming DBFILE; with a DBFILE a
- * FIXINDEX naming weight 6 of SBASIS 5 is out of range ("this model has 5
- * weights").
+ * FIXINDEX naming weight 6 of SBASIS 5 is out of range ("FIXINDEX: index 6
+ * is outside 1-5 (the model has 5 weights)", core::parse_fixindex's
+ * message, the one every site gives).
  * Before the fix: provision_fixed_weights threw "FIXINDEX entry 1 is out
  * of range: this model has 0 weights" (the kernel has no basis before
  * training, its width was 0); classify_weight_source with K = 5 and every
  * weight pinned returned FixedOnlyNoData without a DBFILE (a model with
- * weights and no basis). The range check was right (a pin). */
+ * weights and no basis). The range check was right (a pin), with MLIP's
+ * own text, "FIXINDEX entry 6 is out of range: this model has 5 weights
+ * (valid range 1..5).", which this case checked for "this model has 5
+ * weights" until fix/fixindex-strict. */
 TEST_CASE("Non-linear KRR weights cannot be provisioned without training "
           "data",
           "[nonlinear][fixweight]") {
@@ -1620,8 +1624,9 @@ TEST_CASE("Non-linear KRR weights cannot be provisioned without training "
     cd.add("DBFILE", "train.db");
     cd.add("FIXINDEX", "6");
     cd.add("FIXWEIGHT", 0.5);
-    CHECK_THROWS_WITH(tadah::mlip::classify_weight_source(cd, kSbasis),
-                      Catch::Contains("this model has 5 weights"));
+    CHECK_THROWS_WITH(
+        tadah::mlip::classify_weight_source(cd, kSbasis),
+        "FIXINDEX: index 6 is outside 1-5 (the model has 5 weights)");
   }
 }
 
