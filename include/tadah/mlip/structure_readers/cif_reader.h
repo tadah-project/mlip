@@ -13,10 +13,11 @@ namespace mlip {
  * A CIF holds one data block (one structure); an error gemmi raises while
  * parsing it, or reading the block (make_small_structure_from_block: the
  * cell parameters and the atom sites), is rethrown as std::runtime_error
- * naming the file (or the text, or its data block). The cell is read by
- * the reader: the three lengths must be given, an angle left out (or '.')
- * is 90 degrees, the CIF dictionary's default, and an unknown length or
- * angle ('?') is refused naming the tag (gemmi kept a 1 A cube unless all
+ * naming the file (or the origin given to parseCifContents, or the text
+ * and its data block), as every error and WARNING below does. The cell is
+ * read by the reader: the three lengths must be given, an angle left out
+ * (or '.') is 90 degrees, the CIF dictionary's default, and an unknown
+ * length or angle ('?') is refused naming the tag (gemmi kept a 1 A cube unless all
  * six were given, and read a '.' or '?' angle among them as NaN). Of each pair of
  * symmetry tags (the operator loop _space_group_symop_operation_xyz or
  * _symmetry_equiv_pos_as_xyz, the H-M symbol _space_group_name_H-M_alt or
@@ -98,8 +99,9 @@ namespace mlip {
  * setting ('F d -3 m', 'C c c b') agrees with any setting of that name;
  * next to a loop or a readable Hall symbol, an H-M symbol that is a
  * number or cannot be read; a number that is not an integer and is not
- * used), a WARNING on std::cerr names the file,
- * quotes the findings and says what the unit cell is built with.
+ * used), a WARNING on std::cerr names the file (or the origin, or the
+ * text and its data block), quotes the findings and says what the unit
+ * cell is built with.
  *
  * A site whose _atom_site_occupancy differs from 1 by more than 1e-6 is
  * refused with std::runtime_error, "site <label> has occupancy <occ>" (as
@@ -111,6 +113,20 @@ namespace mlip {
  * The cell is gemmi's orthogonalisation (a along x, b in the xy plane),
  * whose columns are the lattice vectors; it is stored transposed, so row
  * i of Structure::cell is lattice vector a_i.
+ *
+ * The structure's label is "<origin> | Symmetry: <group> | Volume: <V>".
+ * <origin> is "CIF file: <path>" (read()), "CIF text (data_<block>)"
+ * (parseCifContents(text)) or the origin given to
+ * parseCifContents(text, origin) ("COD entry 1534932"). <group> is the
+ * space group the unit cell is built with, as the WARNINGs name it: the
+ * tabulated setting (gemmi's extended H-M symbol: 'F d -3 m:2', 'R -3 m:H',
+ * 'I 1'), "<n> operators of <record>" for a group in no tabulated setting
+ * ("2 operators of the symmetry-operator loop"), or 'P 1' without a
+ * symmetry record. The H-M symbol as written appears in the WARNINGs,
+ * where it differs. V is the cell volume in cubic angstrom (6 decimals).
+ *
+ * A read replaces the reader's structure only when it succeeds: a CIF that
+ * is refused leaves the last structure (cell, atoms and label) as it was.
  */
 class CifReader : public IStructureReader {
 public:
@@ -122,9 +138,10 @@ public:
   /**
    * @brief Parses the entire CIF text, populating m_structure with cell & atoms.
    *
-   * There is no file: warnings and errors name the data block ("CIF text
-   * (data_<name>)"), or, before one is found (a syntax error, two data
-   * blocks), the text ("CIF text").
+   * There is no file: warnings, errors and the label name the data block
+   * ("CIF text (data_<name>)"), or, before one is found (a syntax error,
+   * two data blocks), the text ("CIF text"). The overload below names an
+   * origin instead.
    */
   void parseCifContents(const std::string &contents);
 

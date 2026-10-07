@@ -46,6 +46,13 @@ public:
    * server's body; the message holds no request URL. The previous structure
    * is kept.
    *
+   * The CIF is read by CifReader::parseCifContents with the origin
+   * "COD entry <id>": its errors and WARNINGs name the COD entry ("COD
+   * entry 1534932: site Fe1 has occupancy 0.5; ..."), not the CIF data
+   * block, and the label is "COD entry <id> | Symmetry: <group> | Volume:
+   * <V>", <group> the space group the cell is built with (see CifReader).
+   * A refused CIF leaves the previous structure as it was.
+   *
    * @param path  A COD entry ID (optionally with prepended "cod-")
    * (e.g. "cod-1534932" and "1534932" are both valid)
    * or a fully qualified URL (e.g. "https://www.crystallography.net/cod/1534932.cif").
