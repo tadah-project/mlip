@@ -52,7 +52,9 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/weight_provisioning.h>
+#include <tadah/core/registry.h>
 #include <tadah/models/cut_all.h>
+#include <tadah/models/dc_selector.h>
 #include <tadah/models/descriptors/d2/d2_blip.h>
 #include <tadah/models/descriptors/dm/dm_dummy.h>
 #include <tadah/models/functions/kernels/kern_base.h>
@@ -1379,12 +1381,31 @@ Context handmade_rbf_potential(std::size_t n_basis, std::size_t n_weights) {
   return c;
 }
 
-/* The message of the exception building a Trainer (DescriptorsCalc, then
- * the model) on `c` throws, "" when none. */
-std::string trainer_error(Context c) {
-  MLIPWorkspaceManager ws;
+/* A potential loaded as `tadah predict` loads it: DC_Selector, the
+ * DescriptorsCalc on its descriptors (which sets DSIZE), the function and
+ * the model, built from the potential's context (a Trainer builds a model
+ * to be fitted, from the configuration without WEIGHTS and BASIS). */
+struct LoadedPotential {
+  Context ctx;
+  tadah::models::DC_Selector dcs;
+  DescriptorsCalc<> dc;
+  std::unique_ptr<tadah::mlip::DM_Function_Base> fb;
+  std::unique_ptr<tadah::mlip::M_Tadah_Base> model;
+  explicit LoadedPotential(const Context &pot)
+      : ctx(pot), dcs(ctx), dc(ctx, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb),
+        fb(tadah::core::factory<tadah::mlip::DM_Function_Base,
+                                const Context &>(
+            ctx.get<std::string>("MODEL", 1), ctx)),
+        model(tadah::core::factory<tadah::mlip::M_Tadah_Base,
+                                   tadah::mlip::DM_Function_Base &, Context &>(
+            ctx.get<std::string>("MODEL", 0), *fb, ctx)) {}
+};
+
+/* The message of the exception loading the potential `c` as `tadah
+ * predict` does (LoadedPotential) throws, "" when none. */
+std::string load_error(Context c) {
   try {
-    Trainer loaded(c, ws);
+    LoadedPotential loaded(c);
   } catch (const std::exception &e) {
     return e.what();
   }
@@ -1394,8 +1415,8 @@ std::string trainer_error(Context c) {
 }  // namespace
 
 /* Pins: a trained M_KRR Kern_RBF potential (get_param_file, DSIZE removed
- * as a file would not have it) loads into a Trainer (as in `tadah
- * predict`) and predicts what the trained model predicts (1e-14
+ * as a file would not have it) loads as `tadah predict` loads it
+ * (LoadedPotential) and predicts what the trained model predicts (1e-14
  * relative), and the loaded model writes the potential back with SBASIS 5
  * and the trained BASIS, value for value; a potential with 5 x 3 BASIS
  * values and 5 WEIGHTS loads (a pin of the hand-made potential); with BASIS
@@ -1415,7 +1436,11 @@ std::string trainer_error(Context c) {
  * copy is empty in a model loaded from a potential); and with the length
  * checked when M_KRR was built (the first version of this fix), building
  * the Trainer on the 4-value potential threw, so its REQUIRE_NOTHROW
- * failed. */
+ * failed. Until the Trainer built its model from the configuration without
+ * WEIGHTS and BASIS (a model to be fitted), the potential was loaded into a
+ * Trainer; the checks are the same, and with LoadedPotential they pass
+ * before that change as well (a pin: tadah predict has always loaded a
+ * potential so). */
 TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
           "WEIGHTS",
           "[nonlinear][load]") {
@@ -1426,12 +1451,11 @@ TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
     REQUIRE_NOTHROW(t.train());
     Context c = t.tr->model->get_param_file();
     c.remove("DSIZE");  // as read from a file: DescriptorsCalc sets it
-    MLIPWorkspaceManager ws;
-    std::unique_ptr<Trainer> loaded;
-    REQUIRE_NOTHROW(loaded = std::make_unique<Trainer>(c, ws));
+    std::unique_ptr<LoadedPotential> loaded;
+    REQUIRE_NOTHROW(loaded = std::make_unique<LoadedPotential>(c));
     Context pc = t.tr->context;
     const StructureDB a = t.tr->model->predict(pc, t.db, t.tr->dc);
-    Context lc = loaded->context;
+    Context lc = loaded->ctx;
     const StructureDB b = loaded->model->predict(lc, t.db, loaded->dc);
     for (std::size_t s = 0; s < t.db.size(); ++s)
       CHECK(b(s).energy == Approx(a(s).energy).epsilon(1e-14));
@@ -1448,18 +1472,17 @@ TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
     }
   }
   SECTION("5 vectors of 3 values and 5 WEIGHTS (a pin)") {
-    CHECK(trainer_error(handmade_rbf_potential(kSbasis * 3, kSbasis)) == "");
+    CHECK(load_error(handmade_rbf_potential(kSbasis * 3, kSbasis)) == "");
   }
   SECTION("BASIS vectors one value too long") {
     Context c = handmade_rbf_potential(kSbasis * 4, kSbasis);
-    MLIPWorkspaceManager ws;
-    std::unique_ptr<Trainer> loaded;
-    REQUIRE_NOTHROW(loaded = std::make_unique<Trainer>(c, ws));
+    std::unique_ptr<LoadedPotential> loaded;
+    REQUIRE_NOTHROW(loaded = std::make_unique<LoadedPotential>(c));
     StructureDB db = training_db();
-    loaded->nnf.calc(db, loaded->context);
+    NNFinder().calc(db, loaded->ctx);
     std::string msg;
     try {
-      Context lc = loaded->context;
+      Context lc = loaded->ctx;
       (void)loaded->model->predict(lc, db, loaded->dc);
     } catch (const std::exception &e) {
       msg = e.what();
@@ -1471,7 +1494,7 @@ TEST_CASE("A non-linear KRR potential's BASIS must match its descriptor and "
   }
   SECTION("WEIGHTS fewer than the basis vectors") {
     const std::string msg =
-        trainer_error(handmade_rbf_potential(kSbasis * 3, 4));
+        load_error(handmade_rbf_potential(kSbasis * 3, 4));
     INFO("message: " << msg);
     CHECK(msg.find("4 WEIGHTS") != std::string::npos);
     CHECK(msg.find("SBASIS 5") != std::string::npos);

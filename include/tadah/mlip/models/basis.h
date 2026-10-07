@@ -6,6 +6,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/core/core_types.h>
 #include <tadah/core/context.h>
+#include <tadah/core/intercept_layout.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -17,14 +18,68 @@
 namespace tadah {
 namespace mlip {
 
+/** \brief The number n0 of intercept ("bias") vectors e_0 .. e_{n0-1}
+ *  that the basis of a non-linear M_KRR model of @p ctx starts with: one
+ *  per intercept column (ATOM species) with BIAS true, e_0 alone with BIAS
+ *  false. */
+inline std::size_t n_intercept_basis_vectors(const tadah::core::Context &ctx) {
+  const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
+  return n_int ? n_int : 1;
+}
+
+/** \brief The intercept vectors e_0 .. e_{n0-1} of length @p dim (e_k is 1
+ *  in component k, 0 elsewhere) as the columns of a dim x n0 matrix: the
+ *  first n0 columns of every basis Basis builds. */
+inline tadah::core::Matrix intercept_basis_vectors(std::size_t n0,
+                                                   std::size_t dim) {
+  if (dim < n0)
+    throw std::logic_error(
+        "intercept_basis_vectors: " + std::to_string(n0) + " intercept "
+        "vectors need a descriptor of at least " + std::to_string(n0) +
+        " components, not " + std::to_string(dim));
+  tadah::core::Matrix b(dim, n0);
+  b.set_zero();
+  for (std::size_t k = 0; k < n0; ++k) b(k, k) = 1;
+  return b;
+}
+
+/** \brief What columns 0 .. n0-1 of a basis hold, for messages: "column 0
+ *  is the bias vector e0", or "columns 0 to 1 are the 2 intercept vectors
+ *  e_0 .. e_1, one per ATOM species with BIAS true". */
+inline std::string intercept_basis_vectors_text(std::size_t n0) {
+  return n0 == 1
+      ? "column 0 is the bias vector e0"
+      : "columns 0 to " + std::to_string(n0 - 1) + " are the " +
+            std::to_string(n0) + " intercept vectors e_0 .. e_" +
+            std::to_string(n0 - 1) + ", one per ATOM species with BIAS true";
+}
+
+/** \brief The fewest basis vectors a non-linear M_KRR model takes, n0 + 1
+ *  (the n0 intercept vectors and one drawn from the @p what, e.g. "training
+ *  AEDs"): "" when SBASIS @p s has them, else why not ("SBASIS 2: a
+ *  non-linear M_KRR model needs at least 3 basis vectors (...). Set SBASIS
+ *  to 3 or more."). Basis::check_sbasis and, before training,
+ *  model_weight_count (weight_provisioning.h) refuse it. */
+inline std::string sbasis_lower_bound_problem(std::size_t s, std::size_t n0,
+                                              const std::string &what) {
+  if (s >= n0 + 1) return "";
+  return "SBASIS " + std::to_string(s) + ": a non-linear M_KRR model needs "
+         "at least " + std::to_string(n0 + 1) + " basis vectors (" +
+         intercept_basis_vectors_text(n0) + ", the others are drawn from the " +
+         what + "). Set SBASIS to " + std::to_string(n0 + 1) + " or more.";
+}
+
 /** \brief The basis vectors of a non-linear M_KRR model.
  *
  *  build_random_basis() (MODEL M_KRR <kernel> 1) and prep_basis_for_krr()
  *  (MODEL M_KRR <kernel> 2) build SBASIS basis vectors, the columns of b:
- *  column 0 is the bias vector e0 = (1, 0, ..., 0), and columns 1 ..
- *  SBASIS-1 are SBASIS-1 candidates drawn without replacement from the
- *  training set: its atomic energy descriptors (AEDs), or for
- *  prep_basis_for_krr the mean AED of each structure.
+ *  columns 0 .. n0-1 are the intercept ("bias") vectors e_0 .. e_{n0-1}
+ *  (e_k = 1 in component k, 0 elsewhere; n_intercept_vectors(): one per
+ *  ATOM species with BIAS true, e_0 alone with BIAS false), and columns
+ *  n0 .. SBASIS-1 are SBASIS-n0 candidates drawn without replacement from
+ *  the training set: its atomic energy descriptors (AEDs), or for
+ *  prep_basis_for_krr the mean AED of each structure. With one species,
+ *  or BIAS false, column 0 is e0 and columns 1 .. SBASIS-1 are drawn.
  *
  *  The draw is deterministic and portable (draw_candidates()): the same
  *  training set (in the same order) and SBASIS give the same basis on
@@ -50,6 +105,12 @@ public:
 
   void set_basis(tadah::core::Matrix &b_) {
     b=b_;
+  }
+  /** The number of intercept vectors the basis starts with, e_0 ..
+   *  e_{n-1}: one per intercept column (ATOM species) with BIAS true; e_0
+   *  with BIAS false, as before per-species intercepts. */
+  size_t n_intercept_vectors() const {
+    return n_intercept_basis_vectors(context);
   }
 
   /** \brief An integer in [0, n), n >= 1, drawn without bias from the raw
@@ -82,26 +143,28 @@ public:
     return idx;
   }
 
-  /** \brief SBASIS s with n candidates: s >= 2 (the bias vector and at
-   *  least one drawn vector) and s - 1 <= n. Throws naming SBASIS. */
-  static void check_sbasis(std::size_t s, std::size_t n, const std::string &what) {
-    if (s < 2)
+  /** \brief SBASIS s with n candidates and n0 intercept vectors
+   *  (n_intercept_vectors()): s >= n0 + 1 (the intercept vectors and at
+   *  least one drawn vector) and s - n0 <= n. Throws naming SBASIS. */
+  static void check_sbasis(std::size_t s, std::size_t n0, std::size_t n,
+                           const std::string &what) {
+    const std::string held = intercept_basis_vectors_text(n0);
+    const std::string too_few = sbasis_lower_bound_problem(s, n0, what);
+    if (!too_few.empty()) throw std::runtime_error(too_few);
+    if (s - n0 > n)
       throw std::runtime_error(
-          "SBASIS " + std::to_string(s) + ": a non-linear M_KRR model needs "
-          "at least 2 basis vectors (column 0 is the bias vector e0, the "
-          "others are drawn from the " + what + "). Set SBASIS to 2 or more.");
-    if (s - 1 > n)
-      throw std::runtime_error(
-          "SBASIS " + std::to_string(s) + " draws " + std::to_string(s - 1) +
-          " basis vectors from the " + what + " (column 0 is the bias vector "
-          "e0), but the training set has " + std::to_string(n) + ": set "
-          "SBASIS to at most " + std::to_string(n + 1) + ".");
+          "SBASIS " + std::to_string(s) + " draws " + std::to_string(s - n0) +
+          " basis vectors from the " + what + " (" + held + "), but the "
+          "training set has " + std::to_string(n) + ": set SBASIS to at "
+          "most " + std::to_string(n + n0) + ".");
   }
 
-  /** \brief Column 0 the bias vector e0, columns 1 .. s-1 the AEDs at the
-   *  positions draw_candidates(n, s-1) of the list of all n AEDs of
-   *  st_desc_db (structure by structure, atom by atom). */
+  /** \brief Columns 0 .. n0-1 the intercept vectors (n0 =
+   *  n_intercept_vectors()), columns n0 .. s-1 the AEDs at the positions
+   *  draw_candidates(n, s-n0) of the list of all n AEDs of st_desc_db
+   *  (structure by structure, atom by atom). */
   void build_random_basis(size_t s, StDescriptorsDB &st_desc_db) {
+    const size_t n0 = n_intercept_vectors();
 
     // the AEDs, structure by structure, atom by atom
     std::vector<std::pair<size_t,size_t>> indices;
@@ -111,17 +174,17 @@ public:
       }
     }
 
-    check_sbasis(s, indices.size(), "training AEDs");
-    const std::vector<std::size_t> drawn = draw_candidates(indices.size(), s - 1);
+    check_sbasis(s, n0, indices.size(), "training AEDs");
+    const std::vector<std::size_t> drawn = draw_candidates(indices.size(), s - n0);
 
     const size_t dim = st_desc_db(indices[drawn[0]].first).dim();
     b.resize(dim,s);
     b.set_zero();
-    // set first basis function as "bias vector"
-    b(0,0)=1;
-    for (size_t i=1; i<s; ++i) {
-      const size_t st = indices[drawn[i-1]].first;
-      const size_t a = indices[drawn[i-1]].second;
+    // the first basis vectors are the intercept ("bias") vectors
+    for (size_t k=0; k<n0; ++k) b(k,k)=1;
+    for (size_t i=n0; i<s; ++i) {
+      const size_t st = indices[drawn[i-n0]].first;
+      const size_t a = indices[drawn[i-n0]].second;
       const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);
       for (size_t j=0; j<aed.size(); ++j) {
         b(j,i)=aed[j];
@@ -129,31 +192,37 @@ public:
     }
   }
 
-  /** \brief Column 0 the bias vector e0 (target 0), columns 1 .. s-1 the
-   *  mean AEDs of the structures at the positions draw_candidates(n,
-   *  s-1) of the n structures, with their energies per atom in T. */
+  /** \brief Columns 0 .. n0-1 the intercept vectors (target 0; n0 =
+   *  n_intercept_vectors()), columns n0 .. s-1 the mean AEDs of the
+   *  structures at the positions draw_candidates(n, s-n0) of the n
+   *  structures, with their energies per atom in T. */
   void prep_basis_for_krr(StDescriptorsDB &st_desc_db,
                           const StructureDB &stdb) {
 
     size_t s = context.get<size_t>("SBASIS");
+    const size_t n0 = n_intercept_vectors();
 
     if (stdb.size() != st_desc_db.size()) {
       throw std::runtime_error("The size of StructureDB is different \n \
 from StDescriptorsDB. This is likely to be a bug.\n");
     }
 
-    check_sbasis(s, stdb.size(), "training structures");
-    const std::vector<std::size_t> drawn = draw_candidates(stdb.size(), s - 1);
+    check_sbasis(s, n0, stdb.size(), "training structures");
+    const std::vector<std::size_t> drawn = draw_candidates(stdb.size(), s - n0);
 
     b.resize(st_desc_db(drawn[0]).dim(),s);
     T.resize(s);
     T.set_zero();
     b.set_zero();
-    b(0,0)=1;
+    // the first basis vectors are the intercept ("bias") vectors, target 0
+    for (size_t k=0; k<n0; ++k) {
+      b(k,k)=1;
+      T(k)=0;
+    }
     // Here we add all atomic energy descriptors into single
     // descriptor which represents total energy of this configuration
-    for (size_t i=1; i<s; ++i) {
-      const size_t st = drawn[i-1];
+    for (size_t i=n0; i<s; ++i) {
+      const size_t st = drawn[i-n0];
       T(i)=stdb(st).energy/st_desc_db(st).naed();
       for( size_t a=0; a<st_desc_db(st).naed(); a++ ) {
         const tadah::core::aed_type &aed = st_desc_db(st).get_aed(a);

@@ -15,8 +15,7 @@ DM_BF_Polynomial2::DM_BF_Polynomial2(const tadah::core::Context &c):
 {}
 size_t DM_BF_Polynomial2::get_phi_cols(const tadah::core::Context &context)
 {
-  size_t cols = context.get<size_t>("DSIZE");
-  return (cols*cols+cols)/2;
+  return weights_count(context.get<size_t>("DSIZE"));
 }
 void DM_BF_Polynomial2::calc_phi_energy_row(tadah::core::phi_type &Phi,
                                             size_t &row,

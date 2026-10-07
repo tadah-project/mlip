@@ -1,6 +1,7 @@
 #ifndef TADAH_MLIP_TRAINER_H
 #define TADAH_MLIP_TRAINER_H
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/models/m_tadah_base.h>
@@ -17,6 +18,18 @@ namespace mlip {
 
 class Trainer {
   public:
+    /** \brief The configuration @p c without what a fit writes: WEIGHTS,
+     *  BASIS (the basis vectors of a non-linear kernel), NMEAN, NSTDEV and
+     *  SIGMA. A training configuration may be a potential (`tadah train -c
+     *  pot.tadah`, a `tadah hpo -c` seed); the fit replaces all of these,
+     *  so a model built for training reads none of them. */
+    static tadah::core::Context training_context(const tadah::core::Context &c) {
+      tadah::core::Context t = c;
+      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA"})
+        if (t.has_stored(key)) t.remove(key);
+      return t;
+    }
+
     tadah::core::Context context;
     tadah::models::DC_Selector DCS; // const
     DescriptorsCalc<> dc; // modifies Context at init only
@@ -33,7 +46,7 @@ class Trainer {
         delete fb;
     }
     Trainer (tadah::core::Context &c, tadah::mlip::memory::IMLIPWorkspaceManager& workspaceManager):
-      context(c), // copy
+      context(training_context(c)), // a copy, without the fit's arrays
       DCS(context), // const, initialized with context
       dc(context,*DCS.d2b,*DCS.dmb,
           *DCS.c2b,*DCS.cmb), // modifies context at init only
@@ -43,7 +56,11 @@ class Trainer {
           (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFIES CONTEXT ON TRAINING
       dm(*fb, context, workspaceManager), // does not modify context
       workspaceManager_(&workspaceManager)
-  {  }
+  {
+    // The descriptor of training (dc, DSIZE) is the descriptor of
+    // pair_style tadah (DC_Selector): the trained weights fit both.
+    require_descriptor_layout(DCS, context, "Trainer");
+  }
 
     void train(StructureDB &stdb) {
       nnf.calc(stdb, context);
@@ -57,8 +74,9 @@ class Trainer {
     /** Set the model weights directly from FIXINDEX/FIXWEIGHT without any
      *  training data. Requires FIXINDEX to cover every model weight; see
      *  weight_provisioning.h for the contract. No fit computes a covariance
-     *  of these weights: a SIGMA in the context (of the potential used as
-     *  the configuration) is removed, as a model fit removes it. */
+     *  of these weights: a SIGMA in the context is removed, as a model fit
+     *  removes it (training_context() leaves none of the configuration's;
+     *  this removes one set in the context since). */
     void provision_fixed_weights() {
       context.remove("SIGMA");
       tadah::mlip::provision_fixed_weights(*model, context,

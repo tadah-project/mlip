@@ -214,13 +214,19 @@ TEST_CASE("provision_fixed_weights: incomplete coverage throws",
 }
 
 /* Pins: a Trainer whose configuration carries a SIGMA (that of a potential
- * used as the configuration, here N = K and K*K values) and that pins every
- * weight with FIXINDEX/FIXWEIGHT (provision_fixed_weights, no fit) writes
- * no SIGMA: neither its context nor the potential it writes
- * (get_param_file) has the key, and the weights are the FIXWEIGHT values.
- * Before the fix: both kept the configuration's SIGMA, so the potential
- * (an HPO best_pot.tadah with every weight pinned) paired a covariance of
- * other weights with the pinned ones. */
+ * used as the configuration, here N = K and K*K values) holds none of it
+ * once built (Trainer::training_context: neither its context nor the
+ * potential it writes, get_param_file, has the key), and after it pins
+ * every weight with FIXINDEX/FIXWEIGHT (provision_fixed_weights, no fit)
+ * still writes no SIGMA, with the FIXWEIGHT values for weights.
+ * provision_fixed_weights' own removal, of a SIGMA set in the context after
+ * the Trainer was built, is pinned in test_trainer_sigma.cpp
+ * ("provision_fixed_weights removes the SIGMA of an earlier fit of its
+ * Trainer").
+ * Before the fix (neither Trainer::training_context nor
+ * provision_fixed_weights removed a SIGMA): both kept the configuration's
+ * SIGMA, so the potential (an HPO best_pot.tadah with every weight pinned)
+ * paired a covariance of other weights with the pinned ones. */
 TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
           "[weight_provisioning][sigma]") {
   PeriodicTable::initialize();
@@ -240,6 +246,8 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
   for (std::size_t k = 0; k < K * K; ++k) ctx.add("SIGMA", 0.125);
 
   Trainer tr(ctx, ws);
+  CHECK_FALSE(tr.context.has_stored("SIGMA"));
+  CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));
   REQUIRE_NOTHROW(tr.provision_fixed_weights());
   CHECK_FALSE(tr.context.has_stored("SIGMA"));
   CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));

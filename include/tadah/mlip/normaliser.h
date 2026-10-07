@@ -65,11 +65,9 @@ public:
 
     // Filter out std dev=0 -> set them to inf
     // such that division by stdev gives 0.
-    // Do it for all but bias
-    size_t b=0;
-    if (bias)
-      b++;
-    for (size_t i=b; i<std_dev.size(); ++i) {
+    // Do it for all but the intercept columns: `bias` of them, one per
+    // ATOM species (they are not normalised).
+    for (size_t i=bias; i<std_dev.size(); ++i) {
       if (std_dev[i]==0) {
         std_dev[i] = std::numeric_limits<double>::max();
         //std_dev[i] = std::numeric_limits<double>::infinity();

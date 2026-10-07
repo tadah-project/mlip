@@ -10,6 +10,9 @@
 #include <tadah/core/core_types.h>
 #include <tadah/models/m_core.h>
 #include <tadah/models/m_predict.h>
+#include <tadah/models/functions/function_base.h>
+
+#include <cstddef>
 namespace tadah {
 namespace mlip {
 
@@ -121,6 +124,20 @@ public:
 
   /** Return potential file. */
   virtual tadah::core::Context get_param_file()=0;
+
+  /** \brief The basis function or kernel the weights act through. */
+  virtual const tadah::models::Function_Base &function() const=0;
+
+  /** \brief Refuses weights that do not fit a descriptor of @p dsize
+   *  entries: the WEIGHTS count, with NORM true the NMEAN/NSTDEV sizes,
+   *  and a kernel's basis vectors (models::require_weights_fit, whose
+   *  message names WEIGHTS, DSIZE, BIAS and ATOM of @p c, and says to
+   *  retrain a multi-species BIAS potential trained before 1.6.0 with one
+   *  shared intercept column). Every prediction from descriptors calls it
+   *  first; training never does (a training configuration may carry stale
+   *  WEIGHTS, which the fit replaces; Trainer builds the model to be
+   *  fitted without them). */
+  void require_weights_fit(const tadah::core::Context &c, std::size_t dsize) const;
 
   // TRAINING
 

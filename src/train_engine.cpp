@@ -7,6 +7,7 @@
 #include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/load_transforms.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/dm/embf0.h>
@@ -21,32 +22,6 @@
 namespace tadah {
 namespace mlip {
 namespace engines {
-
-namespace {
-
-void check_bias_constraints(const core::Context &ctx) {
-  const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
-  const bool bias = ctx.contains("BIAS") && ctx.get<bool>("BIAS");
-  const std::string model_bf =
-      ctx.contains("MODEL") && ctx.size("MODEL") >= 2
-          ? ctx.get<std::string>("MODEL", 1)
-          : std::string{};
-
-  if (norm && model_bf == "BF_Linear" && !bias) {
-    throw std::runtime_error(
-        "Configuration: NORM=true with MODEL=BF_Linear requires BIAS=true. "
-        "Without intercept columns the train→nweights conversion would silently "
-        "produce wrong LAMMPS predictions. Set BIAS=true or NORM=false.");
-  }
-  if (bias && (!ctx.contains("ATOM") || ctx.size("ATOM") == 0)) {
-    throw std::runtime_error(
-        "Configuration: BIAS=true requires a non-empty ATOM list "
-        "(BIAS adds one intercept column per species).");
-  }
-}
-
-}  // namespace
-
 
 namespace {
 // EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
@@ -64,8 +39,9 @@ void hint_embf0_reference(const Trainer &tr,
       "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
       "reference energies are absolute (e.g. DFT totals), set ESHIFT_ATOM, "
       "ESHIFT_DBATOM or ESHIFT (compatible with EAMFAST), or BIAS true "
-      "(disables EAMFAST; its intercept column precedes the descriptor "
-      "weights, so FIXINDEX/FIXWEIGHT indices shift).");
+      "(disables EAMFAST; its intercept columns, one per ATOM species, "
+      "precede the descriptor weights, so FIXINDEX/FIXWEIGHT indices "
+      "shift).");
 }
 }  // namespace
 
@@ -83,6 +59,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
 
   tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
   Trainer tr(context, workspaceManager);
+  {
+    // which weights are intercepts is the model function's (and needs
+    // DSIZE); a non-linear kernel's, those of the basis its fit draws
+    const std::string w = fixindex_intercept_warning(tr.context, *tr.fb);
+    if (!w.empty())
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
+  }
 
   // Load structures and provide feedback if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
@@ -93,6 +76,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // sees the already-transformed positions, energies, and weights.
   LoadTransformReport report = apply_load_transforms(stdb, tr.context);
   hint_embf0_reference(tr, report);
+  // BIAS true: the energy-weighted compositions must determine the
+  // intercepts the fit has (a non-linear kernel's: those of the intercept
+  // vectors its basis draw starts with), refused before the neighbour lists
+  // are built.
+  require_intercepts_determined(stdb, tr.context, *tr.fb);
 
   // Calculate nearest neighbors and provide feedback
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,

@@ -4,7 +4,8 @@
 // pot.tadah`, the -c potential of `tadah hpo`): the Trainer built from it
 // fits a model of its own, whose potential carries the SIGMA of that fit
 // only (OALGO 3) or none (any other fit), and an M_KRR potential trains as
-// an M_BLR one does.
+// an M_BLR one does; a Trainer whose weights are then set from FIXWEIGHT
+// (provision_fixed_weights) holds no SIGMA of its earlier fit.
 //
 // Data: three sheared and rattled Ta cells of 3 and 4 atoms, D2_Blip with
 // 3 functions, Cut_Cos at 5 A, INITMB false (DSIZE 3), FORCE true, LAMBDA
@@ -211,4 +212,48 @@ TEST_CASE("Retraining an OALGO 3 potential without OALGO 3 writes no SIGMA",
     CHECK(out.get<double>("WEIGHTS", 1) == -0.5);
     CHECK(out.get<double>("WEIGHTS", 2) == 0.75);
   }
+}
+
+/* Pins: Trainer::provision_fixed_weights() removes a SIGMA set in the
+ * Trainer's context after the Trainer was built: an OALGO 3 fit of the
+ * Trainer (M_BLR BF_Linear, DSIZE 3) leaves its 10 SIGMA values in
+ * tr.context and in the potential (get_param_file); FIXINDEX 1-3 and
+ * FIXWEIGHT 0.25 -0.5 0.75 are then added to tr.context, the model is
+ * reset to be fitted again in place (model->reset_trained()) and
+ * provision_fixed_weights() sets every weight: neither tr.context nor the
+ * potential has a SIGMA, the model is trained, and the weights are the
+ * FIXWEIGHT values. The SIGMA of the configuration never reaches
+ * provision_fixed_weights (Trainer::training_context removes it when the
+ * Trainer is built; "provision_fixed_weights writes no SIGMA of the
+ * configuration", test_weight_provisioning.cpp), so this is the case its
+ * own removal is for.
+ * Before the fix: passes as well (a pin of provision_fixed_weights'
+ * context.remove("SIGMA"), which no test reached once the Trainer built
+ * its context without the configuration's SIGMA: with that line deleted,
+ * tr.context and the potential keep the fit's 10 SIGMA values beside the
+ * pinned weights). */
+TEST_CASE("provision_fixed_weights removes the SIGMA of an earlier fit of "
+          "its Trainer",
+          "[trainer][sigma]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Context c = make_context("M_BLR", "BF_Linear", "3");
+  Trainer tr(c, ws);
+  StructureDB db = training_db();
+  tr.train(db);
+  REQUIRE(tr.context.size("SIGMA") == 10);
+  REQUIRE(tr.get_param_file().size("SIGMA") == 10);
+
+  tr.context.add("FIXINDEX", "1-3");
+  tr.context.add("FIXWEIGHT", "0.25 -0.5 0.75");
+  tr.model->reset_trained();
+  REQUIRE_NOTHROW(tr.provision_fixed_weights());
+  CHECK_FALSE(tr.context.has_stored("SIGMA"));
+  CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));
+  CHECK(tr.model->is_trained());
+  const auto &w = tr.model->get_weights();
+  REQUIRE(w.size() == 3);
+  CHECK(w[0] == 0.25);
+  CHECK(w[1] == -0.5);
+  CHECK(w[2] == 0.75);
 }

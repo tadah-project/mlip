@@ -6,6 +6,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
@@ -77,6 +78,7 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Calculating descriptors...");
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
                        *DCS.c2b,*DCS.cmb);
+  require_descriptor_layout(DCS, potContext, "tadah analysis descriptor");
   DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,const core::Context&>(
       potContext.get<std::string>("MODEL",1),potContext);
   M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(

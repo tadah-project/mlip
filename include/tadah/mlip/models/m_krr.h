@@ -11,6 +11,8 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/models/basis.h>
+#include <tadah/core/intercept_layout.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 
 #include <limits>
@@ -32,25 +34,28 @@ namespace mlip {
  * (one weight per descriptor component, as M_BLR BF_Linear). With a
  * non-linear kernel the atomic energy is
  * \f$ E_i = \sum_{j} w_j K(\mathbf{b}_j, \mathbf{x}_i) \f$ over SBASIS
- * basis vectors \f$ \mathbf{b}_j \f$: column 0 is the bias vector e0 and
- * the other SBASIS-1 are atomic energy descriptors of the training set
- * drawn by a fixed, portable draw (Basis), so training is reproducible.
+ * basis vectors \f$ \mathbf{b}_j \f$: columns 0 .. n0-1 are the
+ * intercept vectors e_0 .. e_{n0-1} (n0 = N, one per ATOM species, with
+ * BIAS true; e0 alone, n0 = 1, otherwise) and the other SBASIS-n0 are
+ * atomic energy descriptors of the training set drawn by a fixed, portable
+ * draw (Basis), so training is reproducible.
  * The design-matrix column j is K(b_j, x) summed over the atoms (and its
  * derivatives for the force and stress rows), and the weights solve the
  * least-squares problem of those columns (OALGO, LAMBDA). The potential
  * records SBASIS and BASIS with the weights.
  *
  * **Implementation 2** fits energies only, by solving
- * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (e0 and the mean
- * descriptors of drawn structures).
+ * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
+ * intercept vectors, with target 0, and the mean descriptors of drawn
+ * structures, with their energies per atom).
  *
  * **Configuration options**:
  * - **MPARAMS**: the kernel's parameters: sigma for Kern_RBF
  *   (\f$ \gamma = 1/\sigma^2 \f$), d gamma c for Kern_Polynomial, gamma c
  *   for Kern_Sigmoid; Kern_Linear, Kern_Quadratic and Kern_LQ take none.
  * - **SBASIS**: the number of basis vectors of a non-linear kernel, at least
- *   2 and at most the number of training AEDs (structures for
- *   implementation 2) plus 1.
+ *   n0 + 1 and at most the number of training AEDs (structures for
+ *   implementation 2) plus n0.
  * - **LAMBDA**: Controls regularization. Use `0` for ordinary least squares,
  *   positive values for manual setting, or `-1` for automatic tuning
  *   (OALGO 3). The kernel's intercept columns
@@ -119,6 +124,7 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+    check_bias_constraints(context);
 
     // Precomputed descriptors: no basis is drawn on this path, so a
     // non-linear kernel would fit no column (or the columns of a basis
@@ -129,6 +135,7 @@ public:
           "descriptors (train(StDescriptorsDB, StructureDB)) draws no basis "
           "vectors; train a non-linear kernel with train(StructureDB, "
           "DescriptorsCalc), which draws them.");
+    require_intercepts_determined(stdb, context, kernel);
 
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
@@ -138,6 +145,7 @@ public:
     train(desmat);
   }
   void train(const StructureDB &stdb, DC_Base &dc) {
+    check_bias_constraints(context);
     int modelN;
     if (context.size("MODEL")==3) {
       modelN=context.template get<int>("MODEL",2);
@@ -188,6 +196,10 @@ public:
         kernel.set_basis(basis.b);
       }
     }
+    // The kernel's intercept columns (with BIAS true those of the intercept
+    // basis vectors, drawn above, or Kern_Linear's) must be determined by
+    // the energy-weighted compositions.
+    require_intercepts_determined(stdb, context, kernel);
     bool wcopy=false;
     desmat.build(stdb,norm,dc,wcopy);
     train(desmat);
@@ -218,10 +230,12 @@ public:
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
-   *  and predict(c, st, dc)) comes here: the basis vectors are checked
-   *  against the length of these descriptors first. */
+   *  and predict(c, st, dc)) comes here: the potential's fit to these
+   *  descriptors (WEIGHTS, the basis vectors' length, NMEAN/NSTDEV of a
+   *  non-linear NORM model: models::require_weights_fit) is checked first,
+   *  before they are normalised. */
   Structure predict(const tadah::core::Context &c, StDescriptors &std, const Structure &st) {
-    check_basis_length(std.dim());
+    require_weights_fit(c, std.dim());
     if(context.template get<bool>("NORM") && !std.normalised && kernel.get_label()!="Kern_Linear")
       norm.normalise(std);
     return M_Tadah_Base::predict(c,std,st);
@@ -229,6 +243,10 @@ public:
 
   StructureDB predict(tadah::core::Context &c, const StructureDB &stdb, DC_Base &dc) {
     return M_Tadah_Base::predict(c,stdb,dc);
+  }
+
+  const tadah::models::Function_Base &function() const override {
+    return kernel;
   }
 
 tadah::core::Context get_param_file() {
@@ -258,6 +276,10 @@ tadah::core::Context get_param_file() {
       c.add("WEIGHTS", weights(i));
     }
 
+    // NMEAN and NSTDEV of this fit only: a training configuration may carry
+    // those of another potential (tadah train -c pot.tadah).
+    if (c.has_stored("NMEAN")) c.remove("NMEAN");
+    if (c.has_stored("NSTDEV")) c.remove("NSTDEV");
     if(context.template get<bool>("NORM")) {
       for (size_t i=0;i<norm.mean.size();++i) {
         c.add("NMEAN", norm.mean[i]);
@@ -289,6 +311,7 @@ tadah::core::Context get_param_file() {
   StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
                       tadah::core::aed_type &predicted_error) {
 
+    require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
     tadah::models::LinearRegressor::read_sigma(context_pred,Sigma);
     DesignMatrix<K> dm(kernel,context_pred);
     dm.apply_weights = false;  // predict the values, not the weighted rows
@@ -380,27 +403,35 @@ private:
   Basis<K> basis;
   DesignMatrix<K> desmat;
 
+  // Convert weights from normalised feature space to the equivalent weights
+  // for raw (unnormalised) descriptors, as M_BLR does: the constant the
+  // normalisation introduces (-sum mean[i] kw[i]) goes into the intercept
+  // columns, one per ATOM species (each atom has 1.0 in exactly one of
+  // them, so the same correction lands on every species' intercept).
+  // Requires BIAS true: there is no other column to absorb it.
   tadah::core::t_type convert_to_nweights(const tadah::core::t_type &weights) const {
     if(kernel.get_label()!="Kern_Linear") {
       throw std::runtime_error("Cannot convert weights to nweights for\n\
 non linear kernel\n");
     }
+    const size_t nb = tadah::core::n_intercept_columns(context);
+    if (nb == 0)
+      throw std::runtime_error("NORM true with Kern_Linear requires BIAS true: "
+          "the mean correction of the normalised weights goes into the "
+          "intercept columns");
+    // normalise weights such that when predict is called
+    // we can supply it with a non-normalised descriptor
     tadah::core::t_type kw(weights.rows());
-    if(context.template get<bool>("NORM") && kernel.get_label()=="Kern_Linear") {
-      // normalise weights such that when predict is called
-      // we can supply it with a non-normalised descriptor
-      kw.resize(weights.rows());
-      kw(0) = weights(0);
-      for (size_t i=1; i<weights.size(); ++i) {
+    for (size_t b=0; b<nb; ++b) kw(b) = weights(b);
+    for (size_t i=nb; i<weights.size(); ++i) {
 
-        if (norm.std_dev[i] > std::numeric_limits<double>::min())
-          kw(i) = weights(i) / norm.std_dev[i];
-        else
-          kw(i) = weights(i);
+      if (norm.std_dev[i] > std::numeric_limits<double>::min())
+        kw(i) = weights(i) / norm.std_dev[i];
+      else
+        kw(i) = weights(i);
 
-        kw(0) -= norm.mean[i]*kw(i);
+      for (size_t b=0; b<nb; ++b) kw(b) -= norm.mean[i]*kw(i);
 
-      }
     }
     return kw;
   }
@@ -410,16 +441,21 @@ non linear kernel\n");
       throw std::runtime_error("Cannot convert nweights to weights for\n\
 non linear kernel\n");
     }
+    const size_t nb = tadah::core::n_intercept_columns(context);
+    if (nb == 0)
+      throw std::runtime_error("NORM true with Kern_Linear requires BIAS true: "
+          "the mean correction of the normalised weights goes into the "
+          "intercept columns");
     // convert normalised weights back to "normal"
     tadah::core::t_type w(kw.rows());
-    w(0) = kw(0);
-    for (size_t i=1; i<kw.size(); ++i) {
+    for (size_t b=0; b<nb; ++b) w(b) = kw(b);
+    for (size_t i=nb; i<kw.size(); ++i) {
       if (norm.std_dev[i] > std::numeric_limits<double>::min())
         w(i) = kw(i) * norm.std_dev[i];
       else
         w(i) = kw(i);
 
-      w(0) += kw(i)*norm.mean[i];
+      for (size_t b=0; b<nb; ++b) w(b) += kw(i)*norm.mean[i];
     }
     return w;
   }
@@ -446,25 +482,6 @@ non linear kernel\n");
   using tadah::models::M_KRR_Train<K>::Sigma;
   using tadah::models::M_KRR_Train<K>::context;
   using tadah::models::M_KRR_Train<K>::kernel;
-
-  /** A potential's basis vectors (BASIS, read by the kernel) must have the
-   *  length of the descriptors they are compared with, @p dsize (DSIZE).
-   *  It is checked where the two meet: here, from predict(c, std, st),
-   *  and in the design matrix (DM_Kern_Base::phi_layout), so a model may
-   *  be built before its DescriptorsCalc. */
-  void check_basis_length(size_t dsize) const {
-    if (kernel.get_label()=="Kern_Linear") return;
-    const auto *kb = dynamic_cast<const tadah::models::Kern_Base*>(&kernel);
-    if (kb == nullptr || kb->get_basis().cols() == 0) return;
-    const size_t len = kb->get_basis().rows();
-    if (len != dsize)
-      throw std::runtime_error(
-          "M_KRR " + kernel.get_label() + ": BASIS holds SBASIS " +
-          std::to_string(kb->get_basis().cols()) + " basis vectors of " +
-          std::to_string(len) + " values each, but the descriptor of the "
-          "potential has " + std::to_string(dsize) + " components (DSIZE): "
-          "BASIS must have SBASIS x " + std::to_string(dsize) + " values.");
-  }
 };
 } // namespace mlip
 } // namespace tadah

@@ -7,6 +7,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/descriptors_calc.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/output/output.h>
 #include <tadah/mlip/analytics/analytics.h>
@@ -118,6 +119,7 @@ int PredictEngine::run(mlip::Task &task) {
 
   DescriptorsCalc<> dc(potContext,*DCS.d2b,*DCS.dmb,
                        *DCS.c2b,*DCS.cmb);
+  require_descriptor_layout(DCS, potContext, "tadah predict");
   
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Prediction...");
   DM_Function_Base *fb = tadah::core::factory<DM_Function_Base,const core::Context&>(
