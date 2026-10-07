@@ -689,10 +689,14 @@ TEST_CASE("NORM true with BIAS false is refused for linear models",
 // Pins: a potential with ATOM Nb Ta and BIAS true whose WEIGHTS fit one
 // shared intercept column (1 + 3 for D2_BP 3, DSIZE 2 + 3) builds, and is
 // refused when it predicts (tadah predict's path), with a message naming
-// WEIGHTS, DSIZE, BIAS and ATOM and saying to retrain; likewise an M_KRR
-// Kern_RBF potential whose basis vectors have 1 + 3 entries.
+// WEIGHTS, DSIZE, BIAS and ATOM ("has 4 WEIGHTS", "5 components (DSIZE)")
+// and saying to retrain ("since 1.3.0-beta.1" pair_style tadah used one
+// intercept column per species with it); likewise an M_KRR Kern_RBF
+// potential whose basis vectors have 1 + 3 entries ("of 4 values each").
 // Before the fix: DSIZE was 4, so both predicted with the shared
-// intercept (no exception; DSIZE 4 != 5).
+// intercept (no exception; DSIZE 4 != 5). Before the one-guard rewording
+// (review): the messages said "WEIGHTS has 4 values", "DSIZE 5" and "4
+// entries", and the hint named no version.
 TEST_CASE("A multi-species BIAS potential with one shared intercept column "
           "is refused when it predicts",
           "[descriptors_calc][bias][legacy]") {
@@ -707,8 +711,9 @@ TEST_CASE("A multi-species BIAS potential with one shared intercept column "
     const std::string m = refusal_of([&] { (void)l->predict(test); });
     INFO(m);
     CHECK(l->ctx.get<std::size_t>("DSIZE") == 5);
-    CHECK(m.find("WEIGHTS has 4 values") != std::string::npos);
-    CHECK(m.find("DSIZE 5") != std::string::npos);
+    CHECK(m.find("has 4 WEIGHTS") != std::string::npos);
+    CHECK(m.find("5 components (DSIZE)") != std::string::npos);
+    CHECK(m.find("since 1.3.0-beta.1") != std::string::npos);
     CHECK(m.find("BIAS true") != std::string::npos);
     CHECK(m.find("ATOM Nb Ta") != std::string::npos);
     CHECK(m.find("one intercept column shared by all species") !=
@@ -730,7 +735,7 @@ TEST_CASE("A multi-species BIAS potential with one shared intercept column "
     INFO(m);
     CHECK(l->ctx.get<std::size_t>("DSIZE") == 5);
     CHECK(m.find("BASIS") != std::string::npos);
-    CHECK(m.find("4 entries") != std::string::npos);
+    CHECK(m.find("of 4 values each") != std::string::npos);
     CHECK(m.find("one intercept column shared by all species") !=
           std::string::npos);
   }
