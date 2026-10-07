@@ -58,14 +58,15 @@ bool is_knot_family(const std::string &b) {
 
 // The RHOFORM x REFIT_BASIS x REFIT_MODE matrix, checked before any fitting.
 // `knot_family`: Knot3/Knot5/KnotMix; `basis_user_set`: REFIT_BASIS given
-// (else `basis` is the mode's default); `rctype`: the many-body cutoff the
-// refit writes (EAMRefitConfig::rctype). Every form fits in both modes (the
-// compact fitter in the HPO build, the dense windowed LSQ otherwise); what
-// remains are MONOTONE's own conditions, then the NONNEG x knot convex lock
-// (a HINT for a chosen knot basis, a WARNING for the defaulted one).
+// (else `basis` is the mode's default); `compact`: REFIT_MODE compact;
+// `rctype`: the many-body cutoff the refit writes (EAMRefitConfig::rctype).
+// Every form fits in both modes (the compact fitter of the HPO build, the
+// dense windowed LSQ); what remains are MONOTONE's own conditions, then the
+// NONNEG x knot convex lock (a HINT for a chosen knot basis, a WARNING for
+// the defaulted one).
 void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
-                          bool knot_family, bool basis_user_set,
-                          const std::string &mode, const std::string &rctype) {
+                          bool knot_family, bool basis_user_set, bool compact,
+                          const std::string &rctype) {
   // MONOTONE is defined for the bump families only; a defaulted knot basis
   // (REFIT_MODE compact) is named as such, since the remedy is to set one.
   if (form == models::RhoForm::Monotone && knot_family)
@@ -89,7 +90,7 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
   // the user chose the knot family, a WARNING when it is the compact default
   // (on a table with a concave core, such as the Ravelo Ta setfl, the
   // defaulted refit fails its self-test; Blip5 fits it in NONNEG).
-  if (form == models::RhoForm::NonNeg && knot_family && mode == "compact") {
+  if (form == models::RhoForm::NonNeg && knot_family && compact) {
     if (basis_user_set)
       core::Logger::instance().log(core::LogLevel::WARNING,
           "HINT: RHOFORM NONNEG with REFIT_BASIS " + basis +
@@ -107,6 +108,18 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
           "can fail. Set REFIT_BASIS Blip5 (a non-negative bump density "
           "without the convex lock), or use RHOFORM SIGNED.");
   }
+}
+
+// REFIT_MODE compact needs the compact fitter (RefitEngine::compact_fit):
+// an engine without one (this base; HPO's without Ceres) refuses it, written
+// or the default, instead of fitting the table in dense mode.
+void require_fitter(const Context &c, RefitMode mode, bool has_compact_fitter) {
+  if (mode != RefitMode::Compact || has_compact_fitter) return;
+  throw std::runtime_error(
+      std::string("tadah refit: REFIT_MODE compact") +
+      (c.has_stored("REFIT_MODE") ? "" : " (the default)") +
+      " needs the compact fitter, which this tadah was built without (it "
+      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE dense");
 }
 
 void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
@@ -209,12 +222,19 @@ void write_compare_dump(const std::string &path, const models::EAMSetflIO &eam,
 
 } // namespace
 
+bool RefitEngine::has_compact_fitter() const {
+  return false;  // the HPO engine overrides this hook and compact_fit()
+}
+
 bool RefitEngine::compact_fit(const tadah::core::Context &,
                               const models::EAMSetflIO &,
                               models::EAMRefitConfig &,
                               std::unique_ptr<models::EAMRefit> &,
                               SelfTest &) {
-  return false;  // dense-only build: the HPO engine overrides this hook
+  throw std::logic_error(
+      "tadah refit: RefitEngine::compact_fit called on an engine without a "
+      "compact fitter (internal error: REFIT_MODE compact is refused before "
+      "the fit)");
 }
 
 RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
@@ -288,8 +308,14 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   // The written DM_REAM potential declares its density form, which only the
   // configuration can choose (no default).
   models::require_rhoform(c, kRefitRhoFormWho);
-  // Every configuration number, strictly and with its range.
+  // The mode rule: a key the configuration's REFIT_MODE does not read is
+  // refused (before its number would be checked); then every configuration
+  // number, strictly and with its range; then whether this engine fits the
+  // mode. run() repeats these before it reads the EAM file.
+  const RefitMode mode = read_refit_mode(c);
+  check_refit_mode_keys(c, mode, task.getKeyProvenance());
   (void)read_refit_numbers(c);
+  require_fitter(c, mode, has_compact_fitter());
 }
 
 int RefitEngine::run(tadah::mlip::Task &task) {
@@ -305,9 +331,15 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // Mandatory in the configuration (no default, never inserted); checked
   // before the table is read.
   const models::RhoForm rho_form = models::require_rhoform(c, kRefitRhoFormWho);
-  // The configuration numbers, strictly and with their ranges, before the
-  // table is read (the compact fitter reads them with the same reader).
+  // REFIT_MODE and the mode rule, the configuration numbers (strictly and
+  // with their ranges; the compact fitter reads them with the same reader)
+  // and whether this engine fits the mode, before the table is read, as in
+  // validate().
+  const RefitMode mode = read_refit_mode(c);
+  check_refit_mode_keys(c, mode, task.getKeyProvenance());
   const RefitNumbers nums = read_refit_numbers(c);
+  require_fitter(c, mode, has_compact_fitter());
+  const bool compact = (mode == RefitMode::Compact);
 
   const std::string eam_path  = c.get<std::string>("EAM");
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
@@ -316,15 +348,14 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const std::string level     = get_str(c, "REFIT_LEVEL", "balanced");
   // Default basis: Knot5 in compact mode (the measured-best family: worst-
   // case |dCij| 1.6 GPa vs Blip's 2.3 across the 5 reference EAMs, every
-  // E-V observable in tolerance); Blip in dense mode and as the fallback
-  // when the compact fitter is unavailable (no Ceres). An EXPLICIT
-  // REFIT_BASIS always wins (and explicit knot families on a Ceres-less
-  // build remain a hard error rather than a silent substitution).
-  const std::string mode = get_str(c, "REFIT_MODE", "compact");
+  // E-V observable in tolerance); Blip in dense mode and when the compact
+  // fitter declines the table (below). An EXPLICIT REFIT_BASIS always wins
+  // (an explicit knot family in a dense fit is a hard error rather than a
+  // silent substitution).
   std::string basis = get_str(c, "REFIT_BASIS", "");
   const bool basis_user_set = !basis.empty();
   if (!basis_user_set)
-    basis = (mode == "compact") ? "Knot5" : "Blip";
+    basis = compact ? "Knot5" : "Blip";
   const double optim_pct      = nums.optim_pct;
   const double grid_scale     = nums.output_grid_scale;
 
@@ -408,7 +439,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
 
   // ---- RHOFORM: form x basis x mode, then the fit in the declared form ----
   check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
-                       mode, cfg.rctype);
+                       compact, cfg.rctype);
   cfg.rho_form = rho_form;
   core::Logger::instance().log(core::LogLevel::INFO,
       std::string("tadah refit: RHOFORM ") + models::rhoform_name(rho_form) +
@@ -446,7 +477,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
 
   // ---- compact mode (optimised blip centres/widths; HPO engine hook) ----
   bool fitted = false;
-  if (mode == "compact") {
+  if (compact) {
     // The compact fitter must optimise the SAME family the receiving
     // EAMRefit evaluates/serialises, else the pot's evaluation basis would
     // silently differ from the fit (measured hazard). Compact supports the
@@ -456,21 +487,16 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "tadah refit: REFIT_MODE compact supports REFIT_BASIS Blip, "
           "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
           "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
+    // (require_fitter refused compact mode without a compact fitter.)
+    // false: the fitter could not fit this table and said why in a WARNING;
+    // the dense fit runs instead.
     fitted = compact_fit(c, eam, cfg, refit_ptr, st);
-    if (!fitted) {
+    if (!fitted && !basis_user_set) {
+      cfg.basis = "Blip";  // defaulted Knot5 has no dense path
       core::Logger::instance().log(core::LogLevel::WARNING,
-          "tadah refit: REFIT_MODE compact requires the HPO build (Ceres); "
-          "falling back to dense fitting.");
-      if (!basis_user_set) {
-        cfg.basis = "Blip";  // defaulted Knot5 has no dense path
-        core::Logger::instance().log(core::LogLevel::WARNING,
-            "tadah refit: defaulted basis falls back Knot5 -> Blip for the "
-            "dense path (set REFIT_BASIS explicitly to control this).");
-      }
+          "tadah refit: defaulted basis falls back Knot5 -> Blip for the "
+          "dense path (set REFIT_BASIS explicitly to control this).");
     }
-  } else if (mode != "dense") {
-    core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: unknown REFIT_MODE '" + mode + "' — using dense.");
   }
 
   // (cfg.basis, not basis_knotfam: a defaulted Knot5 fell back to Blip)
@@ -542,10 +568,13 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   models::EAMRefit &refit = *refit_ptr;
 
   // ---- report the automatic reachability/placement decisions ----
-  // (the lattice is guaranteed recognised by the crystal gate above)
-  if (cfg.placement != "uniform") {
+  // (the lattice is guaranteed recognised by the crystal gate above). The
+  // compact fit always fits on the reachable windows; REFIT_PLACEMENT and
+  // the small uniform tail basis are the dense fit's.
+  if (fitted || cfg.placement != "uniform") {
     core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: windowed basis placement (reachability-driven):");
+        fitted ? "tadah refit: fit windows (reachability-driven):"
+               : "tadah refit: windowed basis placement (reachability-driven):");
     core::Logger::instance().log(core::LogLevel::WARNING,
         "  reachable pair distances r >= " + core::to_string(refit.r_reach(), 4) +
         " A (compression to a/a0=" + core::to_string(cfg.reach_smin, 2) +
@@ -553,10 +582,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     core::Logger::instance().log(core::LogLevel::WARNING,
         "  embedding fit window rho <= " + core::to_string(refit.rho_reach(), 4) +
         " (table rhomax=" + core::to_string(eam.rhomax(), 4) +
-        "; the unreachable tail keeps a small uniform basis)");
+        (fitted ? ")" : "; the unreachable tail keeps a small uniform basis)"));
     core::Logger::instance().log(core::LogLevel::WARNING,
-        "  (control: REFIT_PLACEMENT window|uniform, REFIT_REACH_SMIN, "
-        "REFIT_REACH_MARGIN)");
+        fitted ? "  (control: REFIT_REACH_SMIN, REFIT_REACH_MARGIN)"
+               : "  (control: REFIT_PLACEMENT window|uniform, REFIT_REACH_SMIN, "
+                 "REFIT_REACH_MARGIN)");
     if (refit.rho_reach() >= 0.999 * eam.rhomax())
       core::Logger::instance().log(core::LogLevel::WARNING,
           "tadah refit: the SOURCE table's rhomax leaves no compression "
@@ -620,12 +650,19 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "  E-V compressed (a/a0 0.75-0.95): RMSE=" +
         core::to_string(1000.0 * st.rmse_c, 3) + " meV/atom  max=" +
         core::to_string(1000.0 * st.mx_c, 3) + " meV/atom  (V/V0 down to ~0.42)");
+    // The advice names the keys of the fit that ran: the compact fitter's
+    // basis ceiling, or the dense fit's escalation and basis sizes.
     if (1000.0 * st.mx_a > tol_amb || 1000.0 * st.mx_c > tol_cmp ||
         std::fabs(1000.0 * (st.e_fit - st.e_orig)) > tol_amb) {
       core::Logger::instance().log(core::LogLevel::WARNING,
-          "  WARNING: still above tolerance after escalation — raise "
-          "REFIT_MAX_ESCALATIONS, pin a larger N2B/NRHO_BASIS/NF_BASIS, or "
-          "relax REFIT_TOL_* if this regime is irrelevant for your use.");
+          fitted ? "  WARNING: still above tolerance — raise "
+                   "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis), "
+                   "or relax REFIT_TOL_* if this regime is irrelevant for "
+                   "your use."
+                 : "  WARNING: still above tolerance after escalation — "
+                   "raise REFIT_MAX_ESCALATIONS, pin a larger "
+                   "N2B/NRHO_BASIS/NF_BASIS, or relax REFIT_TOL_* if this "
+                   "regime is irrelevant for your use.");
     }
   }
 

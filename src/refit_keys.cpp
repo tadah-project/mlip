@@ -3,6 +3,7 @@
 #include <tadah/core/number_format.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <limits>
@@ -123,7 +124,127 @@ std::optional<int> integer(const Context &c, const std::string &key,
   return static_cast<int>(integer_token(key, *tok, lo, hi));
 }
 
+// ---- the mode rule ----
+
+// Every key of a refit configuration that one REFIT_MODE reads and the other
+// does not (check_refit_mode_keys); the others are read in both. Dense: the
+// windowed least squares, models::EAMRefit::fit (its basis sizes, their
+// preset and escalation, the placement, the soft F(0) pin of EMBF0 FREE),
+// which compact mode never runs. Compact: the compact fitter of the HPO
+// library and its stage blocks (RefitParser), which dense mode never runs.
+struct ModeKey {
+  const char *key;
+  RefitMode mode;  ///< the one mode that reads it
+  bool block;      ///< a multi-line block (KEY ... ENDKEY)
+};
+constexpr ModeKey kModeKeys[] = {
+    {"REFIT_LEVEL", RefitMode::Dense, false},
+    {"N2B", RefitMode::Dense, false},
+    {"NRHO_BASIS", RefitMode::Dense, false},
+    {"NF_BASIS", RefitMode::Dense, false},
+    {"REFIT_MAX_ESCALATIONS", RefitMode::Dense, false},
+    {"REFIT_PLACEMENT", RefitMode::Dense, false},
+    {"REFIT_CONSTRAIN_F0", RefitMode::Dense, false},
+    {"REFIT_COMPACT_NMAX", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SAMPLES", RefitMode::Compact, false},
+    {"REFIT_COMPACT_OPT_EVERY", RefitMode::Compact, false},
+    {"REFIT_COMPACT_STALL", RefitMode::Compact, false},
+    {"REFIT_COMPACT_INSERT_TOPK", RefitMode::Compact, false},
+    {"REFIT_COMPACT_JITTERS", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SEED", RefitMode::Compact, false},
+    {"REFIT_COMPACT_SHARE", RefitMode::Compact, false},
+    {"REFIT_COMPACT_MERGE", RefitMode::Compact, false},
+    {"REFIT_CURVE_DERIV_WEIGHT", RefitMode::Compact, false},
+    {"REFIT_CURVE_WEIGHTING", RefitMode::Compact, false},
+    {"REFIT_CURVE_RELAX", RefitMode::Compact, false},
+    {"INIT", RefitMode::Compact, true},
+    {"EXPLORE", RefitMode::Compact, true},
+    {"REFINE", RefitMode::Compact, true},
+    {"FUSE", RefitMode::Compact, true},
+    // the top-level block of the grammar before the stage blocks, which
+    // compact mode refuses with its migration text
+    {"OPTIMIZER", RefitMode::Compact, true}};
+
+// Read by REFIT_OBJECTIVE curve only (compact mode). REFIT_CURVE_RELAX and
+// REFIT_CURVE_DERIV_WEIGHT have no effect under energy either, but the
+// documentation states them as accepted there, their values checked.
+constexpr const char *kCurveObjectiveKeys[] = {"REFIT_CURVE_WEIGHTING"};
+
+const char *mode_name(RefitMode m) {
+  return m == RefitMode::Dense ? "dense" : "compact";
+}
+
+std::string lower(std::string s) {
+  for (auto &ch : s)
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return s;
+}
+
+// The configuration sets `key`: it stores it, and not as the blueprint
+// default the task factory added (KeyProvenance; none recorded: every stored
+// key is the configuration's).
+bool configured(const Context &c, const KeyProvenance *provenance,
+                const std::string &key) {
+  return c.has_stored(key) &&
+         !(provenance &&
+           provenance->origin(key).kind == KeyOrigin::Kind::Default);
+}
+
 }  // namespace
+
+RefitMode read_refit_mode(const Context &c) {
+  const std::optional<std::string> tok = single(c, "REFIT_MODE");
+  if (!tok) return RefitMode::Compact;
+  const std::string m = lower(*tok);
+  if (m == "compact") return RefitMode::Compact;
+  if (m == "dense") return RefitMode::Dense;
+  throw std::runtime_error(kWho +
+                           "REFIT_MODE must be 'compact' (the default) or "
+                           "'dense', got '" + *tok + "'");
+}
+
+bool read_refit_curve_objective(const Context &c) {
+  const std::optional<std::string> tok = single(c, "REFIT_OBJECTIVE");
+  const std::string obj = tok ? lower(*tok) : std::string("energy");
+  if (obj == "curve") return true;
+  if (obj == "energy") return false;
+  throw std::runtime_error(kWho +
+                           "REFIT_OBJECTIVE must be 'energy' (default) or "
+                           "'curve'; got '" + obj + "'");
+}
+
+void check_refit_mode_keys(const Context &c, RefitMode mode,
+                           const KeyProvenance *provenance) {
+  const RefitMode other =
+      mode == RefitMode::Dense ? RefitMode::Compact : RefitMode::Dense;
+  const std::string runs = std::string(mode_name(mode)) +
+                           (c.has_stored("REFIT_MODE") ? "" : " (the default)");
+  const auto refuse = [&](const std::string &what) {
+    throw std::runtime_error(kWho + what + " has no effect under REFIT_MODE " +
+                             runs + ": only REFIT_MODE " + mode_name(other) +
+                             " reads it; remove " + what +
+                             ", or set REFIT_MODE " + mode_name(other));
+  };
+  for (const ModeKey &k : kModeKeys)
+    if (k.mode != mode && configured(c, provenance, k.key))
+      refuse(k.block ? std::string("the ") + k.key + " block"
+                     : std::string(k.key));
+  const bool curve = read_refit_curve_objective(c);
+  if (mode == RefitMode::Dense) {
+    if (curve) refuse("REFIT_OBJECTIVE curve");
+    return;
+  }
+  if (curve) return;
+  const std::string energy =
+      std::string("energy") +
+      (configured(c, provenance, "REFIT_OBJECTIVE") ? "" : " (the default)");
+  for (const char *key : kCurveObjectiveKeys)
+    if (configured(c, provenance, key))
+      throw std::runtime_error(
+          kWho + key + " has no effect under REFIT_OBJECTIVE " + energy +
+          ": only REFIT_OBJECTIVE curve reads it; remove " + key +
+          ", or set REFIT_OBJECTIVE curve");
+}
 
 RefitNumbers read_refit_numbers(const Context &c) {
   RefitNumbers n;
