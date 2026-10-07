@@ -7,7 +7,8 @@
 // without their offset, so an invalid EMBF0 on line 6 of a task file was
 // reported "on line 3" (its index among the TASK section's key lines).
 // A TASK line followed by no key line is a section too: its name is
-// checked and it takes the GLOBAL keys.
+// checked and it takes the GLOBAL keys. A TASK line naming a group of tasks
+// (TASK data) is refused.
 // TaskFactory: a task file without a TASK section is an error.
 
 #include "catch2/catch.hpp"
@@ -306,6 +307,59 @@ TEST_CASE("Task file: a TASK line without key lines is a section of its own",
     CHECK(tasks[0].getTaskName() == "PREDICT");
     CHECK(tasks[0].getContext().get<std::string>("POTENTIAL") == "pot.tadah");
     CHECK(tasks[0].getContext().get<std::string>("DBFILE") == "db.tadah");
+  }
+}
+
+/* Pins: a TASK section that names a group of tasks (a blueprint task with
+ * tasks of its own: data, analysis, properties) is refused by the parser,
+ * with or without key lines, naming the section and its tasks:
+ *  - "TASK data" after "TASK train" (no key line), "TASK analysis" followed
+ *    by a key line, and "TASK properties" alone each throw 'TASK section
+ *    "<NAME>" is a group of tasks, not a task' and list the group's tasks
+ *    ("TASK data <task>" with "convert" and "print" among them; "TASK
+ *    analysis <task>" with "descriptor"; "TASK properties <task>" with
+ *    "pairwise");
+ *  - TaskFactory refuses a task file with "TASK train" (LAMBDA 0) followed
+ *    by "TASK data" before it makes any task;
+ *  - a task of the group ("TASK data print") is not refused.
+ * Before the fix: the parser checked only that the name is a blueprint task,
+ * which the group names are, so it returned the sections (no throw), and
+ * TaskFactory made the tasks (no throw): `tadah --task` ran the training and
+ * then stopped with 'EngineFactory::create: No engine found for DATA'. */
+TEST_CASE("Task file: a TASK line naming a group of tasks is refused",
+          "[config][task_file]") {
+  const std::vector<std::pair<std::vector<std::string>, std::vector<std::string>>> cases = {
+      {{"TASK train", "VERBOSE 0", "TASK data"},
+       {"TASK section \"DATA\" is a group of tasks, not a task", "TASK data <task>",
+        "convert", "print"}},
+      {{"TASK analysis", "VERBOSE 0"},
+       {"TASK section \"ANALYSIS\" is a group of tasks, not a task",
+        "TASK analysis <task>", "descriptor"}},
+      {{"TASK properties"},
+       {"TASK section \"PROPERTIES\" is a group of tasks, not a task",
+        "TASK properties <task>", "pairwise"}}};
+  for (const auto &c : cases) {
+    INFO("lines: " << c.first.front() << " ... " << c.first.back());
+    try {
+      MLIPUserConfigParser().parse(c.first);
+      FAIL_CHECK("no exception");
+    } catch (const std::runtime_error &e) {
+      for (const auto &part : c.second) CHECK_THAT(e.what(), Contains(part));
+    }
+  }
+  {
+    const TempFile f("sections_group",
+                     "VERBOSE 0\nTASK train\nLAMBDA 0\nTASK data\n");
+    CHECK_THROWS_WITH(
+        tadah::mlip::TaskFactory().createTasksFromInput(TaskFileInput(f.path)),
+        Contains("TASK section \"DATA\" is a group of tasks"));
+  }
+  {
+    std::vector<std::pair<std::string, tadah::core::Context>> sections;
+    REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(
+                        std::vector<std::string>{"TASK data print", "DBFILE db.tadah"}));
+    REQUIRE(sections.size() == 1);
+    CHECK(sections[0].first == "DATA.print");
   }
 }
 
