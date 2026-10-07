@@ -843,6 +843,165 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
   }
 }
 
+// Pins: the composition check reads FIXINDEX as the trainer does
+// (core::parse_fixindex): on data whose every structure is 8 Nb + 8 Ta
+// (ATOM Nb Ta, BIAS true), FIXINDEX given as separate values, '1 3' with
+// FIXWEIGHT -7.6 0.0, pins the Nb intercept and the model trains (weight 1
+// -7.6, weight 3 0.0); FIXINDEX '2-1' (with two FIXWEIGHT values) is refused
+// as a descending range, not as data that cannot determine the intercepts.
+// Before the fix: the check read FIXINDEX with the lenient
+// core::parse_indices, which dropped '1 3' (the values joined into one
+// malformed segment) and expanded '2-1' to nothing, so both were refused
+// with "BIAS true: the training data cannot determine the per-species
+// energy constants (the intercepts) of ATOM Nb Ta" (rank 1).
+TEST_CASE("BIAS true: the composition check reads FIXINDEX as the trainer "
+          "does",
+          "[descriptors_calc][bias][composition][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  SECTION("separate values pin the Nb intercept") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", "1 3");
+    c.add("FIXWEIGHT", -7.6);
+    c.add("FIXWEIGHT", 0.0);
+    REQUIRE(c.size("FIXINDEX") == 2);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    REQUIRE(m == "<no exception>");
+    CHECK(tr.model->get_weights()(0) == -7.6);
+    CHECK(tr.model->get_weights()(2) == 0.0);
+  }
+  SECTION("a descending range is refused as such") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", "2-1");
+    c.add("FIXWEIGHT", -7.6);
+    c.add("FIXWEIGHT", -8.9);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("FIXINDEX: index '2-1' is a descending range") !=
+          std::string::npos);
+    CHECK(m.find("cannot determine") == std::string::npos);
+  }
+}
+
+// Pins: the composition check bounds FIXINDEX by the weight count of the
+// fit (model_weight_count) and refuses an index past it with the fit's own
+// message, before the fit, on data whose every structure is 8 Nb + 8 Ta
+// (ATOM Nb Ta, BIAS true, D2_BP 3):
+//   - M_BLR BF_Linear (5 weights): FIXINDEX 18446744073709551615, 6 and 0
+//     (FIXWEIGHT 0.05) are refused as "FIXINDEX: index <i> is outside 1-5
+//     (the model has 5 weights)", by Trainer::train (M_BLR::train) and by
+//     require_intercepts_determined called as tadah train calls it (the
+//     Trainer's context and function, before the fit);
+//   - M_KRR Kern_Quadratic (SBASIS 6, its weights those of the basis the
+//     fit draws): FIXINDEX 7 as "outside 1-6 (the model has 6 weights)".
+// Before the fix: the check read FIXINDEX without the weight count and
+// sized a vector<bool> by the largest index (pinned_weight.resize(i)):
+// 18446744073709551615 threw std::length_error "vector<bool>::_M_fill_insert"
+// (100000000000 asked for 12.5 GB), 6 and 7 passed it and the data were
+// refused as "cannot determine the per-species energy constants (the
+// intercepts)" (rank 1), so the fit's bound was never reached, and 0 was
+// "FIXINDEX: index 0 is not a model weight (the weights are numbered from
+// 1)", where the trainer and BIAS false say "outside 1-5".
+TEST_CASE("BIAS true: the composition check bounds FIXINDEX by the fit's "
+          "weight count",
+          "[descriptors_calc][bias][composition][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  for (const char *fi : {"18446744073709551615", "6", "0"}) DYNAMIC_SECTION(
+      "M_BLR BF_Linear, FIXINDEX " << fi) {
+    const std::string expected = std::string("FIXINDEX: index ") + fi +
+                                 " is outside 1-5 (the model has 5 weights)";
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.add("FIXINDEX", fi);
+    c.add("FIXWEIGHT", 0.05);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m == expected);
+    Trainer te(c, ws);
+    const std::string me = refusal_of([&] {
+      tadah::mlip::require_intercepts_determined(fixed, te.context, *te.fb);
+    });
+    INFO(me);
+    CHECK(me == expected);
+  }
+  SECTION("M_KRR Kern_Quadratic, FIXINDEX 7") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set_model(c, "M_KRR", "Kern_Quadratic");
+    c.add("SBASIS", 6);
+    c.add("FIXINDEX", "7");
+    c.add("FIXWEIGHT", 0.05);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m == "FIXINDEX: index 7 is outside 1-6 (the model has 6 weights)");
+  }
+}
+
+// Pins: M_KRR implementation 2, whose solve (K + LAMBDA I) w = t fits the
+// targets of its basis vectors (drawn for every kernel, Kern_Linear too),
+// is not checked by the composition check, with Kern_Linear as with a
+// non-linear kernel, on data whose every structure is 8 Nb + 8 Ta (ATOM Nb
+// Ta, BIAS true, D2_BP 3, MODEL M_KRR Kern_Linear 2, SBASIS 5, LAMBDA
+// 1e-3): require_intercepts_determined, which tadah train calls before the
+// fit, passes without FIXINDEX and with FIXINDEX 99 / FIXWEIGHT 14 (it
+// does not read FIXINDEX for implementation 2); Trainer::train refuses
+// FIXINDEX 1 / FIXWEIGHT -7.6 and FIXINDEX 99 / FIXWEIGHT 14 with the
+// solve's "MODEL M_KRR Kern_Linear 2 cannot pin weights".
+// Before the fix: the check skipped implementation 2 for a non-linear
+// kernel only: Kern_Linear 2 was refused as data that "cannot determine
+// the per-species energy constants" (rank 1), and with FIXINDEX 99 as
+// "FIXINDEX: index 99 is outside 1-5 (the model has 5 weights)" (the
+// count of implementation 1, DSIZE, while implementation 2 has the weights
+// of its 5 basis vectors); Trainer::train (M_KRR::train2, which calls no
+// check) trained with FIXINDEX 1 and 99 alike, the pins ignored.
+TEST_CASE("BIAS true: M_KRR implementation 2 is not checked, with "
+          "Kern_Linear too",
+          "[descriptors_calc][bias][composition][fixindex][krr]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 600);
+  auto krr2 = [] {
+    Context c = make_context({"Nb", "Ta"}, true);
+    c.remove("MODEL");
+    c.add("MODEL", "M_KRR");
+    c.add("MODEL", "Kern_Linear");
+    c.add("MODEL", 2);
+    c.add("SBASIS", 5);
+    set(c, "LAMBDA", "1e-3");
+    return c;
+  };
+  for (const char *fi : {"", "99"}) DYNAMIC_SECTION(
+      "the composition check passes, FIXINDEX '" << fi << "'") {
+    Context c = krr2();
+    if (*fi) {
+      c.add("FIXINDEX", fi);
+      c.add("FIXWEIGHT", 14.0);
+    }
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] {
+      tadah::mlip::require_intercepts_determined(fixed, tr.context, *tr.fb);
+    });
+    INFO(m);
+    CHECK(m == "<no exception>");
+  }
+  for (const char *fi : {"1", "99"}) DYNAMIC_SECTION(
+      "Trainer::train refuses FIXINDEX " << fi) {
+    Context c = krr2();
+    c.add("FIXINDEX", fi);
+    c.add("FIXWEIGHT", std::string(fi) == "1" ? -7.6 : 14.0);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.rfind("MODEL M_KRR Kern_Linear 2 cannot pin weights", 0) == 0);
+  }
+}
+
 // Pins: the composition check takes the intercepts from the model's
 // function (Function_Base::intercept_columns) on data whose every structure
 // is 8 Nb + 8 Ta (ATOM Nb Ta, BIAS true, D2_BP 3: DSIZE 5):

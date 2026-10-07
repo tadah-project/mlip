@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -246,12 +247,12 @@ void require_intercepts_determined(const StructureDB &stdb,
     ++compositions[counts];
   }
 
-  // M_KRR implementation 2 solves (K + LAMBDA I) w = T on its basis vectors
-  // (the intercept vectors with the target 0, the structures' mean AEDs with
-  // their energies per atom), not the least squares of the structures'
-  // energies: nothing to refuse.
-  if (basis_drawn_from_training_data(ctx) && krr_implementation(ctx) == 2)
-    return;
+  // M_KRR implementation 2, with any kernel (Kern_Linear too), solves
+  // (K + LAMBDA I) w = T on its basis vectors (the intercept vectors with
+  // the target 0, the structures' mean AEDs with their energies per atom),
+  // not the least squares of the structures' energies: nothing to refuse,
+  // and it pins no weight (its solve refuses FIXINDEX).
+  if (is_krr_implementation_2(ctx)) return;
 
   // The intercept columns of the function as the fit has it (fit_function);
   // those FIXINDEX/FIXWEIGHT pin are not fitted.
@@ -259,19 +260,19 @@ void require_intercepts_determined(const StructureDB &stdb,
   const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
   const std::vector<std::size_t> cols = f.intercept_columns(ctx);
   if (cols.empty()) return;
-  std::vector<bool> pinned_weight;
-  if (ctx.has_stored("FIXINDEX") && ctx.has_stored("FIXWEIGHT")) {
-    std::vector<std::string> fi(ctx.size("FIXINDEX"));
-    ctx.get("FIXINDEX", fi);
-    for (std::size_t i : tadah::core::parse_indices(fi)) {
-      if (i < 1) continue;
-      if (pinned_weight.size() < i) pinned_weight.resize(i, false);
-      pinned_weight[i - 1] = true;
-    }
-  }
+  // The weights FIXINDEX pins, read as the fit reads them: core::parse_fixindex
+  // with the fit's weight count (model_weight_count; SBASIS for a basis the
+  // fit draws), so what the fit would refuse, an index past its weights, is
+  // refused here, before it, with its message. The count is needed only
+  // with the keys (it checks SBASIS).
+  std::set<std::size_t> pinned;
+  if (ctx.has_stored("FIXINDEX") || ctx.has_stored("FIXWEIGHT"))
+    for (std::size_t i :
+         tadah::core::parse_fixindex(ctx, model_weight_count(fn, ctx)))
+      pinned.insert(i);
   std::vector<std::size_t> fitted;
   for (std::size_t c : cols)
-    if (c >= pinned_weight.size() || !pinned_weight[c]) fitted.push_back(c);
+    if (pinned.count(c + 1) == 0) fitted.push_back(c);
   if (fitted.empty()) return;
   const std::vector<std::vector<double>> v = intercept_values(ctx, f, fitted);
 

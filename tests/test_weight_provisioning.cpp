@@ -117,9 +117,14 @@ TEST_CASE("classify_weight_source: illegal combinations", "[weight_provisioning]
                         Catch::Contains("pair 1:1"));
   }
   SECTION("out-of-bounds index") {
+    /* core::parse_fixindex's message, the one every site gives (before
+     * the fix: "FIXINDEX entry 6 is out of range: this model has 5 weights
+     * (valid range 1..5).", which this section checked for "out of
+     * range"). */
     Context c = ctx_with(true, "6", {0.5});
-    REQUIRE_THROWS_WITH(classify_weight_source(c, kNCols),
-                        Catch::Contains("out of range"));
+    REQUIRE_THROWS_WITH(
+        classify_weight_source(c, kNCols),
+        "FIXINDEX: index 6 is outside 1-5 (the model has 5 weights)");
   }
   SECTION("no DBFILE, partial coverage lists uncovered weights") {
     Context c = ctx_with(false, "2", {0.5});
@@ -131,6 +136,118 @@ TEST_CASE("classify_weight_source: illegal combinations", "[weight_provisioning]
     REQUIRE_THROWS_WITH(classify_weight_source(c, kNCols),
                         Catch::Contains("cannot be determined"));
   }
+}
+
+/* Pins: classify_weight_source reads FIXINDEX with core::parse_fixindex:
+ *  - FIXINDEX given as separate values pairs like the comma list: '2 4'
+ *    with two FIXWEIGHT values is PartialLS and '1 2 3 4 5' without a
+ *    DBFILE FixedOnlyNoData, as '2,4' and '1-5' are;
+ *  - '2-1' is refused as a descending range, '2,2' as a weight named twice
+ *    (with two FIXWEIGHT values or one), and '0' as outside 1-5 (the model
+ *    has 5 weights).
+ * Before the fix: the lenient core::parse_indices dropped '2 4' and
+ * '1 2 3 4 5' (the values joined into one malformed segment) and expanded
+ * '2-1' to nothing: "FIXINDEX names 0 weights but FIXWEIGHT provides 2
+ * values"; '2,2' was deduplicated to weight 2, so with one FIXWEIGHT value
+ * it was PartialLS and with two "FIXINDEX names 1 weights but FIXWEIGHT
+ * provides 2 values"; '0' was "FIXINDEX entry 0 is out of range". After
+ * core::parse_fixindex first read FIXINDEX, '2,2' with one value was
+ * refused as "FIXINDEX 2,2 has 2 indices but FIXWEIGHT has 1 value" (this
+ * case pinned that): it compared the count before it looked for a
+ * repeat. */
+TEST_CASE("classify_weight_source: FIXINDEX is read strictly, separate values "
+          "as one list",
+          "[weight_provisioning][fixindex]") {
+  SECTION("separate values pair like the comma list") {
+    Context partial = ctx_with(true, "2 4", {0.1, 0.2});
+    REQUIRE(partial.size("FIXINDEX") == 2);
+    CHECK(classify_weight_source(partial, kNCols) == WeightSource::PartialLS);
+    Context all = ctx_with(false, "1 2 3 4 5", {1, 2, 3, 4, 5});
+    CHECK(classify_weight_source(all, kNCols) ==
+          WeightSource::FixedOnlyNoData);
+  }
+  SECTION("a descending range, a repeat and index 0 are refused") {
+    Context desc = ctx_with(true, "2-1", {0.1, 0.2});
+    CHECK_THROWS_WITH(classify_weight_source(desc, kNCols),
+                      Catch::Contains("FIXINDEX: index '2-1' is a descending "
+                                      "range"));
+    Context twice = ctx_with(true, "2,2", {0.1, 0.2});
+    CHECK_THROWS_WITH(classify_weight_source(twice, kNCols),
+                      Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
+    Context one = ctx_with(true, "2,2", {0.1});
+    CHECK_THROWS_WITH(classify_weight_source(one, kNCols),
+                      Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
+    Context zero = ctx_with(true, "0", {0.1});
+    CHECK_THROWS_WITH(
+        classify_weight_source(zero, kNCols),
+        "FIXINDEX: index 0 is outside 1-5 (the model has 5 weights)");
+  }
+}
+
+/* Pins: classify_weight_source (tadah hpo's startup check) refuses
+ * FIXINDEX/FIXWEIGHT for M_KRR implementation 2 (MODEL M_KRR Kern_Linear 2
+ * and Kern_RBF 2), whose solve cannot pin weights, before it reads
+ * FIXINDEX: FIXINDEX 1 / FIXWEIGHT 14 and FIXINDEX 99 (past any weight) are
+ * both "MODEL M_KRR <kernel> 2 cannot pin weights"; implementation 1 (the
+ * same kernels with 1) classifies FIXINDEX 1 as PartialLS, as before.
+ * Before the fix: implementation 2 was classified as implementation 1:
+ * FIXINDEX 1 was PartialLS (every evaluation then trained with the pin
+ * ignored) and 99 "FIXINDEX: index 99 is outside 1-5 (the model has 5
+ * weights)". */
+TEST_CASE("classify_weight_source: M_KRR implementation 2 cannot pin weights",
+          "[weight_provisioning][fixindex][krr]") {
+  for (const char *kern : {"Kern_Linear", "Kern_RBF"}) DYNAMIC_SECTION(kern) {
+    auto with_model = [&](const std::string &impl, const std::string &fi) {
+      Context c = ctx_with(true, fi, {14.0});
+      c.add("MODEL", "M_KRR");
+      c.add("MODEL", kern);
+      c.add("MODEL", impl);
+      return c;
+    };
+    const std::string refusal =
+        std::string("MODEL M_KRR ") + kern + " 2 cannot pin weights";
+    CHECK_THROWS_WITH(classify_weight_source(with_model("2", "1"), kNCols),
+                      Catch::StartsWith(refusal));
+    CHECK_THROWS_WITH(classify_weight_source(with_model("2", "99"), kNCols),
+                      Catch::StartsWith(refusal));
+    CHECK(classify_weight_source(with_model("1", "1"), kNCols) ==
+          WeightSource::PartialLS);
+  }
+}
+
+/* Pins: provision_fixed_weights takes FIXINDEX given as separate values
+ * ('K 1 2 ... K-1', one value each) as the comma list: FIXWEIGHT[0] pins
+ * weight K, FIXWEIGHT[i] weight i.
+ * Before the fix: "FIXINDEX names 0 weights but FIXWEIGHT provides K
+ * values" (the lenient parser dropped the joined values). */
+TEST_CASE("provision_fixed_weights: FIXINDEX given as separate values",
+          "[weight_provisioning][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  std::size_t K = 0;
+  {
+    Context probe_ctx = make_model_context();
+    Trainer probe(probe_ctx, ws);
+    K = probe.fb->get_phi_cols(probe.context);
+  }
+  REQUIRE(K >= 2);
+  Context ctx = make_model_context();
+  {
+    std::ostringstream fi;  // K 1 2 ... K-1
+    fi << K;
+    for (std::size_t i = 1; i < K; ++i) fi << " " << i;
+    ctx.add("FIXINDEX", fi.str());
+  }
+  REQUIRE(ctx.size("FIXINDEX") == K);
+  for (std::size_t k = 0; k < K; ++k)
+    ctx.add("FIXWEIGHT", 0.5 + static_cast<double>(k));
+  Trainer tr(ctx, ws);
+  REQUIRE_NOTHROW(tr.provision_fixed_weights());
+  const auto &w = tr.model->get_weights();
+  REQUIRE(w.size() == K);
+  CHECK(w[K - 1] == 0.5);
+  for (std::size_t i = 1; i < K; ++i)
+    CHECK(w[i - 1] == 0.5 + static_cast<double>(i));
 }
 
 TEST_CASE("provision_fixed_weights: scatter + trained flag on real M_BLR",
@@ -211,6 +328,31 @@ TEST_CASE("provision_fixed_weights: incomplete coverage throws",
   Trainer tr(ctx, ws);
   REQUIRE_THROWS_WITH(tr.provision_fixed_weights(),
                       Catch::Contains("not covered by FIXINDEX"));
+}
+
+/* Pins: provision_fixed_weights on a configuration with neither FIXINDEX
+ * nor FIXWEIGHT names every weight as uncovered ("provision_fixed_weights:
+ * every model weight must be pinned. Weights 1-K are not covered by
+ * FIXINDEX."), not the lone-key message: neither key is lone.
+ * Before the fix: it threw the lone-key message ("FIXINDEX requires
+ * FIXWEIGHT (and vice versa). ...") when either key was missing, so also
+ * when both were. */
+TEST_CASE("provision_fixed_weights without FIXINDEX and FIXWEIGHT names the "
+          "uncovered weights",
+          "[weight_provisioning][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Context ctx = make_model_context();
+  REQUIRE_FALSE(ctx.has_stored("FIXINDEX"));
+  REQUIRE_FALSE(ctx.has_stored("FIXWEIGHT"));
+  Trainer tr(ctx, ws);
+  const std::size_t K = tr.fb->get_phi_cols(tr.context);
+  REQUIRE(K >= 2);
+  REQUIRE_THROWS_WITH(
+      tr.provision_fixed_weights(),
+      "provision_fixed_weights: every model weight must be pinned. Weights "
+      "1-" + std::to_string(K) + " are not covered by FIXINDEX.");
+  CHECK_FALSE(tr.model->is_trained());
 }
 
 /* Pins: a Trainer whose configuration carries a SIGMA (that of a potential
