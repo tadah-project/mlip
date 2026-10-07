@@ -1,11 +1,12 @@
 // Catch2 v2 unit tests for ColumnLayout / ColumnBlock (Phase 2).
 //
-// We do not exercise a full DesignMatrix build here — Phase 2's
-// integration test is implicit: every prior MLIP test that builds a
-// DesignMatrix now also passes through the new
-// `layout_ = dc.layout(context)` + `validate(cols)` cross-check
-// inside `DesignMatrix::build()`. Those tests stay green; the suite
-// remains 100%.
+// We do not exercise a full DesignMatrix build here. DesignMatrix::build()
+// checks the descriptor layout (dc.layout(context)) against DSIZE and the
+// function's layout (f.phi_layout(), see column_block.h) against the
+// matrix width; test_nonlinear_model_training.cpp tests both, with linear
+// and non-linear functions. (Phase 2 compared the descriptor layout with
+// the matrix width, which only a linear function's equals: every
+// non-linear model was refused, and no test trained one.)
 //
 // The unit tests below verify the layout structure itself:
 //   * total_cols == sum of block.col_count
