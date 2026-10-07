@@ -56,29 +56,33 @@ private:
   Structure m_structure;
 
   /**
-   * @brief Parses the complete contents of a .cell file from a single string.
+   * @brief The structure of the complete contents of a .cell file, without
+   *        its label; its errors say what is wrong, and read() adds the
+   *        file.
    */
-  void parseCellContents(const std::string &contents);
+  static Structure parseCellContents(const std::string &contents);
 
   /**
-   * @brief Parses LATTICE_ABC lines into the 3×3 matrix in m_structure.cell.
+   * @brief Parses LATTICE_ABC lines into the 3×3 matrix in st.cell.
    * @param lines two lines: a b c, then alpha beta gamma (degrees); the
    *        block's unit line is already removed
    * @param unit factor converting the block's length unit to Angstrom
+   * @param st the structure whose cell is set
    */
-  void parseLatticeABC(const std::vector<std::string> &lines, double unit);
+  static void parseLatticeABC(const std::vector<std::string> &lines,
+                              double unit, Structure &st);
 
   /**
    * @brief Converts atomic fractional coordinates (fx, fy, fz) to absolute in Å
-   *        using the current m_structure.cell matrix.
+   *        using the cell matrix of @p st.
    */
-  void fracToAbs(double fx, double fy, double fz, double &cx, double &cy,
-                       double &cz);
+  static void fracToAbs(const Structure &st, double fx, double fy, double fz,
+                        double &cx, double &cy, double &cz);
 
   /**
    * @brief Helper for mapping string species (e.g., "Si", "O") to tadah::core::Element enum.
    */
-  tadah::core::Element parseSpecies(const std::string &sym);
+  static tadah::core::Element parseSpecies(const std::string &sym);
 };
 
 } // namespace mlip

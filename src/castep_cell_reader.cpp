@@ -42,9 +42,17 @@ void CastepCellReader::read(const std::string &path) {
 
   std::ostringstream buffer;
   buffer << ifs.rdbuf();
-  parseCellContents(buffer.str());
-
-  m_structure.label = "CASTEP cell file: " + path;
+  // Every error names the file. The structure is built in a local and
+  // replaces the previous one only when the file has been read.
+  Structure st;
+  try {
+    st = parseCellContents(buffer.str());
+  } catch (const std::exception &e) {
+    throw std::runtime_error("CastepCellReader: CASTEP cell file " + path +
+                             ": " + e.what());
+  }
+  st.label = "CASTEP cell file: " + path;
+  m_structure = std::move(st);
 }
 
 Structure CastepCellReader::getStructure() const {
@@ -65,7 +73,7 @@ static double lengthUnit(const std::string &word, const std::string &block) {
   if (u == "cm") return 1e8;
   if (u == "m") return 1e10;
   if (u == "pm") return 1e-2;
-  throw std::runtime_error("CastepCellReader: unknown length unit '" + word +
+  throw std::runtime_error("unknown length unit '" + word +
                            "' in " + block +
                            " (known: ang, bohr, a0, nm, cm, m, pm).");
 }
@@ -87,7 +95,8 @@ static bool blank(const std::string &line) {
 // The blocks may come in any order: their lines are collected first, and
 // fractional positions are converted only once the lattice is known.
 //--------------------------------------------------------------------
-void CastepCellReader::parseCellContents(const std::string &contents) {
+Structure CastepCellReader::parseCellContents(const std::string &contents) {
+  Structure st;
   std::istringstream iss(contents);
   std::string line;
 
@@ -149,43 +158,43 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
   // ---- lattice ----
   if (seenCart && seenABC) {
     throw std::runtime_error(
-      "CastepCellReader: both LATTICE_CART and LATTICE_ABC are given.");
+      "both LATTICE_CART and LATTICE_ABC are given.");
   }
   if (!seenCart && !seenABC) {
     throw std::runtime_error(
-      "CastepCellReader: no lattice block (LATTICE_CART or LATTICE_ABC).");
+      "no lattice block (LATTICE_CART or LATTICE_ABC).");
   }
   if (seenCart) {
     const double unit = take_unit(cartLines, "LATTICE_CART");
     if (cartLines.size() != 3) {
       throw std::runtime_error(
-        "CastepCellReader: LATTICE_CART needs exactly three lattice "
+        "LATTICE_CART needs exactly three lattice "
         "vectors, found " + std::to_string(cartLines.size()) + ".");
     }
     for (int i = 0; i < 3; ++i) {
       const auto toks = split_line(cartLines[i]);
       if (toks.size() < 3) {
         throw std::runtime_error(
-          "CastepCellReader: LATTICE_CART line missing coords: '" +
+          "LATTICE_CART line missing coords: '" +
           cartLines[i] + "'.");
       }
       // Line i is lattice vector a_i, stored as row i.
       for (int j = 0; j < 3; ++j)
-        m_structure.cell(i, j) = unit * tadah::core::to_double(toks[j]);
+        st.cell(i, j) = unit * tadah::core::to_double(toks[j]);
     }
   } else {
     const double unit = take_unit(abcLines, "LATTICE_ABC");
-    parseLatticeABC(abcLines, unit);
+    parseLatticeABC(abcLines, unit, st);
   }
   {
-    const tadah::core::Vec3d a0 = m_structure.cell.row(0);
-    const tadah::core::Vec3d a1 = m_structure.cell.row(1);
-    const tadah::core::Vec3d a2 = m_structure.cell.row(2);
+    const tadah::core::Vec3d a0 = st.cell.row(0);
+    const tadah::core::Vec3d a1 = st.cell.row(1);
+    const tadah::core::Vec3d a2 = st.cell.row(2);
     const double det = a0 * a1.cross(a2);
     const double scale = a0.norm() * a1.norm() * a2.norm();
     if (!(std::fabs(det) > 1e-12 * scale)) {
       throw std::runtime_error(
-        "CastepCellReader: the lattice vectors are coplanar (singular "
+        "the lattice vectors are coplanar (singular "
         "cell).");
     }
   }
@@ -193,18 +202,17 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
   // ---- positions ----
   if (seenFrac && seenAbs) {
     throw std::runtime_error(
-      "CastepCellReader: both POSITIONS_FRAC and POSITIONS_ABS are given.");
+      "both POSITIONS_FRAC and POSITIONS_ABS are given.");
   }
   if (!seenFrac && !seenAbs) {
     throw std::runtime_error(
-      "CastepCellReader: no positions block (POSITIONS_FRAC or "
+      "no positions block (POSITIONS_FRAC or "
       "POSITIONS_ABS).");
   }
   auto atom_line = [&](const std::string &ln, const std::string &name) {
     const auto toks = split_line(ln);
     if (toks.size() < 4) {
-      throw std::runtime_error("CastepCellReader: " + name +
-                               " line needs a species and three "
+      throw std::runtime_error(name + " line needs a species and three "
                                "coordinates: '" + ln + "'.");
     }
     return toks;
@@ -212,12 +220,13 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
   for (const auto &ln : fracLines) {
     const auto toks = atom_line(ln, "POSITIONS_FRAC");
     double cx, cy, cz;
-    fracToAbs(tadah::core::to_double(toks[1]), tadah::core::to_double(toks[2]),
-              tadah::core::to_double(toks[3]), cx, cy, cz);
+    fracToAbs(st, tadah::core::to_double(toks[1]),
+              tadah::core::to_double(toks[2]), tadah::core::to_double(toks[3]),
+              cx, cy, cz);
     Atom a;
     static_cast<tadah::core::Element&>(a) = parseSpecies(toks[0]);
     a.position = {cx, cy, cz};
-    m_structure.atoms.push_back(a);
+    st.atoms.push_back(a);
   }
   if (seenAbs) {
     const double unit = take_unit(absLines, "POSITIONS_ABS");
@@ -228,28 +237,29 @@ void CastepCellReader::parseCellContents(const std::string &contents) {
       a.position = {unit * tadah::core::to_double(toks[1]),
                     unit * tadah::core::to_double(toks[2]),
                     unit * tadah::core::to_double(toks[3])};
-      m_structure.atoms.push_back(a);
+      st.atoms.push_back(a);
     }
   }
-  if (m_structure.atoms.empty()) {
+  if (st.atoms.empty()) {
     throw std::runtime_error(
-      std::string("CastepCellReader: the ") +
+      std::string("the ") +
       (seenFrac ? "POSITIONS_FRAC" : "POSITIONS_ABS") +
       " block has no atoms.");
   }
+  return st;
 }
 
 //--------------------------------------------------------------------
 // parseLatticeABC
 //--------------------------------------------------------------------
 void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines,
-                                       double unit) {
+                                       double unit, Structure &st) {
   // Two lines (the unit line already removed): "a b c" and
   // "alpha beta gamma" (degrees).
   if (lines.size() != 2 || split_line(lines[0]).size() < 3 ||
       split_line(lines[1]).size() < 3) {
     throw std::runtime_error(
-      "CastepCellReader: LATTICE_ABC block incomplete (need a line a b c "
+      "LATTICE_ABC block incomplete (need a line a b c "
       "and a line alpha beta gamma).");
   }
   const auto l0 = split_line(lines[0]);
@@ -272,16 +282,16 @@ void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines,
   //        sqrt(cVal^2 - cx^2 - cy^2))
 
   // a
-  m_structure.cell(0,0) = aVal;
-  m_structure.cell(0,1) = 0.0;
-  m_structure.cell(0,2) = 0.0;
+  st.cell(0,0) = aVal;
+  st.cell(0,1) = 0.0;
+  st.cell(0,2) = 0.0;
 
   // b
   double bx = bVal * std::cos(gamma);
   double by = bVal * std::sin(gamma);
-  m_structure.cell(1,0) = bx;
-  m_structure.cell(1,1) = by;
-  m_structure.cell(1,2) = 0.0;
+  st.cell(1,0) = bx;
+  st.cell(1,1) = by;
+  st.cell(1,2) = 0.0;
 
   // c
   double cx = cVal * std::cos(beta);
@@ -291,26 +301,26 @@ void CastepCellReader::parseLatticeABC(const std::vector<std::string> &lines,
     // could be numerical rounding or truly invalid
     if (czsq > -1e-10) czsq = 0.0; // clamp small negative to zero
     else {
-      throw std::runtime_error("CastepCellReader: invalid angles produce negative c.z^2.");
+      throw std::runtime_error("invalid angles produce negative c.z^2.");
     }
   }
   double cz = std::sqrt(czsq);
 
-  m_structure.cell(2,0) = cx;
-  m_structure.cell(2,1) = cy;
-  m_structure.cell(2,2) = cz;
+  st.cell(2,0) = cx;
+  st.cell(2,1) = cy;
+  st.cell(2,2) = cz;
 }
 
 //--------------------------------------------------------------------
 // fracToAbs
 //--------------------------------------------------------------------
-void CastepCellReader::fracToAbs(double fx, double fy, double fz, 
-                                       double &cx, double &cy, double &cz) {
+void CastepCellReader::fracToAbs(const Structure &st, double fx, double fy,
+                                 double fz, double &cx, double &cy, double &cz) {
   // r_cart = fx*a + fy*b + fz*c
-  //    a, b, c are rows of the 3×3 matrix in m_structure.cell
-  cx = fx*m_structure.cell(0,0) + fy*m_structure.cell(1,0) + fz*m_structure.cell(2,0);
-  cy = fx*m_structure.cell(0,1) + fy*m_structure.cell(1,1) + fz*m_structure.cell(2,1);
-  cz = fx*m_structure.cell(0,2) + fy*m_structure.cell(1,2) + fz*m_structure.cell(2,2);
+  //    a, b, c are rows of the 3×3 matrix in st.cell
+  cx = fx*st.cell(0,0) + fy*st.cell(1,0) + fz*st.cell(2,0);
+  cy = fx*st.cell(0,1) + fy*st.cell(1,1) + fz*st.cell(2,1);
+  cz = fx*st.cell(0,2) + fy*st.cell(1,2) + fz*st.cell(2,2);
 }
 
 //--------------------------------------------------------------------
