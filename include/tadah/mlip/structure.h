@@ -315,12 +315,17 @@ struct Structure {
    */
   bool is_the_same(const Structure& st, double thr=1e-6) const;
 
-  // move iterator forward to the next structure
-  // return number of atoms in the structure
-  // return 0 if there is no more structures
-  // Blank lines (whitespace only, '\r' included) before a label are
-  // skipped, and a blank line ends the atoms, as in read().
-  static int next_structure(std::ifstream &ifs);
+  /** Skip the next structure of a dataset stream without parsing it.
+   *
+   * Blank lines (whitespace only, '\r' included) before a label are
+   * skipped, and a blank line ends the atoms, as in read().
+   *
+   * @return false at the end of the stream, where no label is left;
+   *         otherwise true, with @p natoms set to the number of atom lines
+   *         of the skipped structure (0 for a structure without atoms,
+   *         whose blank line comes straight after the stress lines).
+   */
+  static bool next_structure(std::ifstream &ifs, size_t &natoms);
 
   /* clearing == drop the shared pointer */
   void clear_nn();
