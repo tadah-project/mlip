@@ -36,7 +36,8 @@ struct PerRowType {
  *
  *  An OALGO 3 fit writes both (M_BLR / M_KRR get_param_file); `tadah
  *  predict --error` reads them. They replace SIGMA, which Tadah! 1.0.0 to
- *  1.6.0 wrote with a transposed formula (a deprecated key now). */
+ *  1.5.0 and the 1.6.0 development builds wrote with a transposed formula
+ *  (a deprecated key now). */
 struct WeightCovariance {
   tadah::core::Matrix cov;
   PerRowType noise;

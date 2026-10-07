@@ -51,7 +51,8 @@ WeightCovariance read_weight_covariance(const tadah::core::Context &c,
     throw std::runtime_error(
         "The potential has no weight covariance (WCOV and WNOISE), which "
         "--error needs. " + kRetrain + " (a potential written by Tadah! 1.0.0 "
-        "to 1.6.0 has a SIGMA instead, which is ignored: it was computed "
+        "to 1.5.0 or a 1.6.0 development build has a SIGMA instead, which "
+        "is ignored: it was computed "
         "with a transposed formula).");
   const std::size_t stored = c.size("WCOV");
   const std::size_t N = c.get<std::size_t>("WCOV");

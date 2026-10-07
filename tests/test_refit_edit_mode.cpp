@@ -717,8 +717,8 @@ TEST_CASE_METHOD(PTFixture,
  * edited weights are not those any fit computed a covariance for, so the
  * edited potential (an --add of a phi basis function) has none of SIGMA,
  * WCOV and WNOISE, whichever the input carries (a SIGMA line, as Tadah!
- * 1.0.0 to 1.6.0 wrote it; WCOV and WNOISE, as an OALGO 3 fit writes them,
- * for its 6 weights).
+ * 1.0.0 to 1.5.0 and the 1.6.0 development builds wrote it; WCOV and
+ * WNOISE, as an OALGO 3 fit writes them, for its 6 weights).
  * Before the fix: the input's SIGMA was copied into the edited potential
  * beside the edited weights; WCOV and WNOISE were not keys (Context::add
  * threw "Key not allowed: WCOV"). */
