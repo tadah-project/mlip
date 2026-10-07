@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **A comment on a `TASK` line of a task file** (`TASK train   # first task`, `TASK predict<TAB># second`) is not part of the task name: `MLIPUserConfigParser` reads the name from the text before the `#`, as `CoreUserConfigParser` reads a key line. The words of the comment were joined to the name, so `tadah --task` stopped with `Unknown task section "TRAIN.#.first.task"`, and a `TASK` line with only a comment after `TASK` was reported as an unknown section instead of a `TASK` without a name. Test: `test_user_config_sections.cpp`.
+
 ## [1.6.0] — 2026-09-25
 
 ### Added
