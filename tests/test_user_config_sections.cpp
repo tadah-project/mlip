@@ -6,6 +6,8 @@
 // handed to the key parser without their blank and comment lines and
 // without their offset, so an invalid EMBF0 on line 6 of a task file was
 // reported "on line 3" (its index among the TASK section's key lines).
+// A TASK line followed by no key line is a section too: its name is
+// checked and it takes the GLOBAL keys.
 // TaskFactory: a task file without a TASK section is an error.
 
 #include "catch2/catch.hpp"
@@ -216,6 +218,94 @@ TEST_CASE("Task file: a comment on a TASK line is not part of the task name",
     REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(f.path),
                         Contains("Invalid value for key EMBF0 on line 6 of " +
                                  f.path + ": 'frei'"));
+  }
+}
+
+/* Pins: a TASK line followed by no key line (the next line is another TASK
+ * line, the end of the input, or only blank and comment lines) is a section
+ * of its own, so its name is checked like any other and it takes the GLOBAL
+ * keys:
+ *  - "TASK bogus" followed by "TASK predict" is refused with 'Unknown task
+ *    section "BOGUS"', and so is "TASK bogus" on the last line;
+ *  - "TASK global" is refused as 'Unknown task section "GLOBAL"', at the
+ *    start of the input with keys and on the last line without;
+ *  - GLOBAL keys and a keyless "TASK predict" (at the end of the input, or
+ *    followed by blank and comment lines) give the sections GLOBAL and
+ *    PREDICT, the PREDICT context holding the GLOBAL POTENTIAL and DBFILE;
+ *  - two keyless TASK lines in a row are two sections;
+ *  - TaskFactory makes a keyless "TASK predict" of a task file a PREDICT
+ *    task with the GLOBAL keys.
+ * Before the fix: splitSections dropped a TASK section without a key line,
+ * so the unknown names were never checked (no throw: the first REQUIRE_
+ * THROWS_WITH failed, the second as well); a section named GLOBAL was not
+ * checked either, so "TASK global" with keys at the start was taken for the
+ * GLOBAL section (no throw); the keyless PREDICT sections
+ * were missing (sizes 1 instead of 2, and 1 instead of 3), and TaskFactory
+ * found no TASK section ("the task file '...' has no TASK section"). */
+TEST_CASE("Task file: a TASK line without key lines is a section of its own",
+          "[config][task_file]") {
+  SECTION("an unknown task name before another task is refused") {
+    const std::vector<std::string> lines = {"TASK bogus", "TASK predict",
+                                            "POTENTIAL pot.tadah"};
+    REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(lines),
+                        Contains("Unknown task section \"BOGUS\""));
+  }
+  SECTION("an unknown task name on the last line is refused") {
+    const std::vector<std::string> lines = {"TASK predict",
+                                            "POTENTIAL pot.tadah",
+                                            "TASK bogus"};
+    REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(lines),
+                        Contains("Unknown task section \"BOGUS\""));
+  }
+  SECTION("'TASK global' is an unknown task name, not the GLOBAL section") {
+    for (const auto &lines : std::vector<std::vector<std::string>>{
+             {"TASK global", "VERBOSE 0", "TASK predict",
+              "POTENTIAL pot.tadah"},
+             {"TASK predict", "POTENTIAL pot.tadah", "TASK global"}}) {
+      INFO("first line: " << lines[0]);
+      REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(lines),
+                          Contains("Unknown task section \"GLOBAL\""));
+    }
+  }
+  SECTION("a keyless task takes the GLOBAL keys") {
+    for (const bool trailing_comment : {false, true}) {
+      INFO("blank and comment lines after the TASK line: "
+           << trailing_comment);
+      std::vector<std::string> lines = {"POTENTIAL pot.tadah",
+                                        "DBFILE db.tadah", "TASK predict"};
+      if (trailing_comment) {
+        lines.push_back("");
+        lines.push_back("# nothing else");
+      }
+      std::vector<std::pair<std::string, tadah::core::Context>> sections;
+      REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(lines, true));
+      REQUIRE(sections.size() == 2);
+      CHECK(sections[0].first == "GLOBAL");
+      CHECK(sections[1].first == "PREDICT");
+      CHECK(sections[1].second.get<std::string>("POTENTIAL") == "pot.tadah");
+      CHECK(sections[1].second.get<std::string>("DBFILE") == "db.tadah");
+    }
+  }
+  SECTION("two keyless tasks in a row are two sections") {
+    const std::vector<std::string> lines = {"POTENTIAL pot.tadah",
+                                            "TASK predict", "TASK predict"};
+    std::vector<std::pair<std::string, tadah::core::Context>> sections;
+    REQUIRE_NOTHROW(sections = MLIPUserConfigParser().parse(lines, true));
+    REQUIRE(sections.size() == 3);
+    CHECK(sections[1].first == "PREDICT");
+    CHECK(sections[2].first == "PREDICT");
+    CHECK(sections[2].second.get<std::string>("POTENTIAL") == "pot.tadah");
+  }
+  SECTION("TaskFactory runs a keyless task on the GLOBAL keys") {
+    const TempFile f("sections_keyless",
+                     "POTENTIAL pot.tadah\nDBFILE db.tadah\nTASK predict\n");
+    std::vector<tadah::mlip::Task> tasks;
+    REQUIRE_NOTHROW(tasks = tadah::mlip::TaskFactory().createTasksFromInput(
+                        TaskFileInput(f.path)));
+    REQUIRE(tasks.size() == 1);
+    CHECK(tasks[0].getTaskName() == "PREDICT");
+    CHECK(tasks[0].getContext().get<std::string>("POTENTIAL") == "pot.tadah");
+    CHECK(tasks[0].getContext().get<std::string>("DBFILE") == "db.tadah");
   }
 }
 
