@@ -7,6 +7,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/task.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
@@ -177,6 +178,43 @@ Context dense_refit_context(const std::string &eam_file,
   c.add("REFIT_TOL_COMPRESSED", 20.0);
   c.add("REFIT_MAX_ESCALATIONS", 2);
   return c;
+}
+
+// The REFIT_MODE compact counterpart of dense_refit_context: a bump basis,
+// the same tolerances and none of the dense mode's keys (REFIT_LEVEL,
+// REFIT_MAX_ESCALATIONS, ...), which REFIT_MODE compact refuses.
+Context compact_refit_context(const std::string &eam_file,
+                              const std::string &rhoform = "SIGNED") {
+  Context c;
+  c.add("EAM", eam_file);
+  c.add("REFIT_MODE", std::string("compact"));
+  c.add("REFIT_BASIS", std::string("Blip5"));
+  c.add("RHOFORM", rhoform);
+  c.add("REFIT_TOL_AMBIENT", 5.0);
+  c.add("REFIT_TOL_COMPRESSED", 20.0);
+  return c;
+}
+
+// The refusal of REFIT_MODE compact by this engine, which has no compact
+// fitter (HPO's engine has it); `defaulted`: the configuration has no
+// REFIT_MODE key.
+std::string no_compact_fitter(bool defaulted = false) {
+  return std::string("tadah refit: REFIT_MODE compact") +
+         (defaulted ? " (the default)" : "") +
+         " needs the compact fitter, which this tadah was built without (it "
+         "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE "
+         "dense";
+}
+
+// The mode rule's refusal of `what` (a key, "the <KEY> block" or
+// "REFIT_OBJECTIVE curve") under REFIT_MODE `mode` (dense | compact);
+// `defaulted`: the configuration has no REFIT_MODE key.
+std::string no_effect_in_mode(const std::string &what, const std::string &mode,
+                              bool defaulted = false) {
+  const std::string other = mode == "dense" ? "compact" : "dense";
+  return "tadah refit: " + what + " has no effect under REFIT_MODE " + mode +
+         (defaulted ? " (the default)" : "") + ": only REFIT_MODE " + other +
+         " reads it; remove " + what + ", or set REFIT_MODE " + other;
 }
 }  // namespace
 
@@ -548,86 +586,13 @@ TEST_CASE_METHOD(PTFixture,
             std::string::npos);
     }
   }
-  SECTION("compact mode accepts the positive forms with a bump basis") {
-    // The HPO engine fits them in the compact fitter (HPO test_compact_*);
-    // this MLIP-only RefitEngine has no compact hook, so it falls back to
-    // the dense path, in the declared form.
-    for (const char *form : {"NONNEG", "MONOTONE"}) {
-      INFO(form);
-      ScopedTempDir sub;
-      write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
-      Context c = dense_refit_context("synth_fcc.eam.alloy", form);
-      c.remove("REFIT_MODE");
-      c.add("REFIT_MODE", std::string("compact"));
-      const RefitOutputs out = run_refit(c);
-      INFO(out.log);
-      CHECK(out.rhoform == form);
-      CHECK(out.log.find("falling back to dense fitting") !=
-            std::string::npos);
-      // a bump basis: no knot convex-lock HINT or WARNING
-      CHECK(out.log.find("RHOFORM NONNEG with") == std::string::npos);
-      REQUIRE_FALSE(out.amps.empty());
-      for (double a : out.amps) CHECK(a >= 0.0);
-    }
-  }
-  SECTION("compact mode: MONOTONE names a defaulted knot basis") {
-    // REFIT_MODE compact defaults to Knot5, for which MONOTONE is not
-    // defined: the message says the basis is the default, with the remedy
-    for (const char *mode : {static_cast<const char *>(nullptr), "compact"}) {
-      INFO((mode ? mode : "(default mode)"));
-      const auto [what, logged] =
-          refit_error(config("MONOTONE", nullptr, mode));
-      CHECK(what.find("RHOFORM MONOTONE is not defined for REFIT_BASIS Knot5 "
-                      "(the REFIT_MODE compact default, a one-sided knot "
-                      "family): use a bump basis (Blip, Blip5) or RHOFORM "
-                      "NONNEG") != std::string::npos);
-      CHECK_FALSE(fs::exists("pot.tadah"));
-    }
-    // an explicit knot basis in compact mode: the same refusal, no default
-    const auto [what, logged] =
-        refit_error(config("MONOTONE", "Knot3", nullptr));
-    CHECK(what.find("REFIT_BASIS Knot3 (the one-sided knot family)") !=
-          std::string::npos);
-  }
-  SECTION("compact mode: NONNEG with a knot family: the convex-lock HINT "
-          "for a chosen basis, a WARNING for the default") {
-    // Explicit Knot5: the HINT, then (MLIP-only build, no compact fitter)
-    // the knot families' refusal of the dense path.
-    const auto [what, logged] =
-        refit_error(config("NONNEG", "Knot5", nullptr));
-    CHECK(logged.find("WARNING: HINT: RHOFORM NONNEG with REFIT_BASIS Knot5: "
-                      "a knot density with every amplitude >= 0 is "
-                      "non-increasing and convex") != std::string::npos);
-    CHECK(logged.find("compact default") == std::string::npos);
-    CHECK(what.find("REFIT_BASIS Knot5 requires REFIT_MODE compact on an HPO "
-                    "(Ceres) build") != std::string::npos);
-    // The defaulted Knot5 (no REFIT_BASIS): a WARNING, not a HINT, naming
-    // REFIT_BASIS Blip5 as the remedy (a concave-core table can fail the
-    // self-test in the non-negative knot density); without the compact
-    // fitter the refit then falls back to a dense Blip fit, in NONNEG.
-    ScopedTempDir sub;
-    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
-    Context c = dense_refit_context("synth_fcc.eam.alloy", "NONNEG");
-    c.remove("REFIT_MODE");
-    c.remove("REFIT_BASIS");
-    const RefitOutputs out = run_refit(c);
-    INFO(out.log);
-    CHECK(out.log.find("WARNING: tadah refit: RHOFORM NONNEG with the "
-                       "REFIT_MODE compact default basis Knot5: a knot "
-                       "density with every amplitude >= 0 is non-increasing "
-                       "and convex") != std::string::npos);
-    CHECK(out.log.find("Set REFIT_BASIS Blip5 (a non-negative bump density "
-                       "without the convex lock), or use RHOFORM SIGNED.") !=
-          std::string::npos);
-    CHECK(out.log.find("HINT: RHOFORM NONNEG") == std::string::npos);
-    CHECK(out.rhoform == "NONNEG");
-    // REFIT_MODE compact given explicitly, basis still defaulted: the same
-    c.add("REFIT_MODE", std::string("compact"));
-    const RefitOutputs out2 = run_refit(c);
-    CHECK(out2.log.find("WARNING: tadah refit: RHOFORM NONNEG with the "
-                        "REFIT_MODE compact default basis Knot5") !=
-          std::string::npos);
-  }
+  // The REFIT_MODE compact cases of this matrix (MONOTONE with the
+  // defaulted Knot5, the NONNEG x knot-family HINT and WARNING, the
+  // positive forms with a bump basis) run through HPO's engine, which has
+  // the compact fitter: HPO test_compact_refit_rhoform.cpp. This engine has
+  // none and refuses REFIT_MODE compact before the table is read (below,
+  // "REFIT_MODE compact without a compact fitter"); they ran here through
+  // the fallback to the dense fit that the refusal replaced.
   SECTION("NONNEG with a knot family in dense mode: the knot refusal, no "
           "HINT") {
     const auto [what, logged] =
@@ -659,10 +624,14 @@ TEST_CASE_METHOD(PTFixture,
    * escalation cap), REFIT_MAX_ESCALATIONS from 0, REFIT_COMPACT_NMAX one
    * or three integers from 1 to 2147483647 whose largest gives a curve
    * sample grid of 4 x NMAX points per function that fits an int (so at
-   * most 536870911; refused naming the grid, in any REFIT_MODE); a number
-   * below the smallest normal double
-   * says it is too small. (A scalar key holds one value: Context::add
-   * overwrites it.) The values at the ends of the ranges are accepted.
+   * most 536870911; refused naming the grid); a number below the smallest
+   * normal double says it is too small. (A scalar key holds one value:
+   * Context::add overwrites it.) The values at the ends of the ranges are
+   * accepted. A key that only REFIT_MODE compact reads (REFIT_COMPACT_*,
+   * REFIT_CURVE_*) is set in a REFIT_MODE compact configuration, since
+   * REFIT_MODE dense refuses it (the mode rule, before the numbers); once
+   * its numbers pass, this engine, which has no compact fitter, refuses
+   * REFIT_MODE compact.
    * Before the fix: validate() read none of them (no exception), and run()
    * read them with Context::get (istringstream) unchecked, so the first
    * message checked is not thrown and run() fails reading the absent EAM
@@ -671,7 +640,11 @@ TEST_CASE_METHOD(PTFixture,
    * accepted. Before the NMAX grid check moved into the reader: the compact
    * fit checked the sample grid after the EAM file was read (compact mode
    * only), so validate() accepted NMAX 536870912 and 2147483647 (an end of
-   * the accepted range here then). */
+   * the accepted range here then). Before the mode rule: the compact keys
+   * were set in the dense configuration, which ignored them, and
+   * validate() accepted REFIT_MODE compact without a compact fitter (run()
+   * fell back to the dense fit), so for the ends of the compact keys'
+   * ranges the refusal of REFIT_MODE compact is not thrown. */
   const std::string i32 = "2147483647";
   struct Case {
     std::string key;
@@ -764,9 +737,17 @@ TEST_CASE_METHOD(PTFixture,
       {"REFIT_MAX_ESCALATIONS", {"-1"},
        "REFIT_MAX_ESCALATIONS must be an integer from 0 to " + i32 +
            ", got '-1'"}};
-  const auto with = [](const std::string &key,
-                       const std::vector<std::string> &tokens) {
-    Context c = dense_refit_context("absent.eam.alloy");
+  // A key of the compact mode only is read in a REFIT_MODE compact
+  // configuration (REFIT_MODE dense refuses it: the mode rule), the others
+  // in a dense one.
+  const auto compact_key = [](const std::string &key) {
+    return key.rfind("REFIT_COMPACT_", 0) == 0 ||
+           key.rfind("REFIT_CURVE_", 0) == 0;
+  };
+  const auto with = [&](const std::string &key,
+                        const std::vector<std::string> &tokens) {
+    Context c = compact_key(key) ? compact_refit_context("absent.eam.alloy")
+                                 : dense_refit_context("absent.eam.alloy");
     c.remove(key);
     for (const auto &t : tokens) c.add(key, t);
     return c;
@@ -811,7 +792,13 @@ TEST_CASE_METHOD(PTFixture,
            {"REFIT_R_LO_FRAC", "0.15"}}) {
     INFO(key << " " << tok);
     Task task("refit", with(key, {tok}));
-    CHECK_NOTHROW(RefitEngine().validate(task));
+    // A compact mode key: the numbers pass, and this engine, which has no
+    // compact fitter, then refuses REFIT_MODE compact (HPO's engine accepts
+    // them: test_compact_refit_stages.cpp).
+    if (compact_key(key))
+      CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
+    else
+      CHECK_NOTHROW(RefitEngine().validate(task));
   }
 }
 
@@ -860,4 +847,420 @@ TEST_CASE_METHOD(PTFixture,
   setfl.read_setfl("refit.eam");
   CHECK(setfl.nr() == 3);
   CHECK(setfl.nrho() == 3);
+}
+
+// ---------------------------------------------------------------------------
+//  The mode rule: a key of the other REFIT_MODE is refused
+// ---------------------------------------------------------------------------
+namespace {
+// validate() and run() both throw `message` for `c` (run() before it reads
+// the EAM file, which is absent here).
+void check_refused(const Context &c, const std::string &message) {
+  Task task("refit", c);
+  CHECK_THROWS_WITH(RefitEngine().validate(task), message);
+  CHECK_THROWS_WITH(RefitEngine().run(task), message);
+}
+
+// A stage block as CORE's config parser stores it: one token per value.
+void add_block(Context &c, const std::string &key, const std::string &body) {
+  std::istringstream iss(body);
+  for (std::string t; iss >> t;) c.add(key, t);
+}
+
+// The keys only REFIT_MODE compact reads, each with a valid value.
+const std::vector<std::pair<std::string, std::string>> kCompactOnlyKeys = {
+    {"REFIT_COMPACT_NMAX", "3"},        {"REFIT_COMPACT_SAMPLES", "400"},
+    {"REFIT_COMPACT_OPT_EVERY", "2"},   {"REFIT_COMPACT_STALL", "4"},
+    {"REFIT_COMPACT_INSERT_TOPK", "2"}, {"REFIT_COMPACT_JITTERS", "1"},
+    {"REFIT_COMPACT_SEED", "7"},        {"REFIT_COMPACT_SHARE", "0.4"},
+    {"REFIT_COMPACT_MERGE", "true"},    {"REFIT_CURVE_DERIV_WEIGHT", "0.1"},
+    {"REFIT_CURVE_WEIGHTING", "false"}, {"REFIT_CURVE_RELAX", "0.1"}};
+
+// The stage blocks only REFIT_MODE compact reads. (A top-level OPTIMIZER
+// block, the grammar before them, is read by neither mode: kTopLevelOptimizer.)
+const std::vector<std::pair<std::string, std::string>> kCompactBlocks = {
+    {"INIT", "PHI XMIN PIN"},
+    {"EXPLORE", "MAX_ADD 4"},
+    // keys REFIT_MODE compact refuses (THREADS, a negative GTOL): the block
+    // is refused as a whole, before its contents are read
+    {"REFINE", "OPTIMIZER LIB CERES ALGO LM MAXEVAL 5 THREADS 4 GTOL -1 "
+               "ENDOPTIMIZER"},
+    {"FUSE", "ENABLED false"}};
+
+// The refusal of a top-level OPTIMIZER block in either REFIT_MODE: the
+// migration text of the compact fitter's parser (HPO's RefitParser::parse,
+// whose own test pins it), to which REFIT_MODE dense adds its last sentence.
+const std::string kTopLevelOptimizer =
+    "tadah refit: a top-level OPTIMIZER block is no longer supported. The "
+    "stage pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
+    "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
+    "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO in "
+    "EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; JOINT -> "
+    "FUSE. The Refitting page of the documentation has examples (Stage "
+    "blocks).";
+const std::string kTopLevelOptimizerDense =
+    kTopLevelOptimizer +
+    " Under REFIT_MODE dense, which reads no stage block, remove the "
+    "OPTIMIZER block.";
+
+// The keys only REFIT_MODE dense reads, each with a valid value.
+const std::vector<std::pair<std::string, std::string>> kDenseOnlyKeys = {
+    {"REFIT_LEVEL", "accurate"},  {"N2B", "50"},
+    {"NRHO_BASIS", "40"},         {"NF_BASIS", "30"},
+    {"REFIT_MAX_ESCALATIONS", "9"}, {"REFIT_PLACEMENT", "uniform"},
+    {"REFIT_CONSTRAIN_F0", "false"}};
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: a key of the other REFIT_MODE is refused, "
+                 "naming the key and the mode that reads it",
+                 "[refit][mode_keys]") {
+  /* Pins: RefitEngine::validate(), and run() before it reads the EAM file,
+   * refuse a key that only the other REFIT_MODE reads, naming it and both
+   * modes ("tadah refit: N2B has no effect under REFIT_MODE compact (the
+   * default): only REFIT_MODE dense reads it; remove N2B, or set
+   * REFIT_MODE dense"; "(the default)" when there is no REFIT_MODE key):
+   *  - REFIT_MODE dense: every REFIT_COMPACT_* key, REFIT_CURVE_WEIGHTING,
+   *    REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
+   *    REFINE and FUSE blocks ("the REFINE block has no effect ..."; a
+   *    REFINE block with keys compact mode refuses is refused as a whole),
+   *    and REFIT_OBJECTIVE curve in any letter case; REFIT_OBJECTIVE energy
+   *    is accepted, and another value is refused with the message compact
+   *    mode gives it (a top-level OPTIMIZER block, which neither mode
+   *    reads: the next test case);
+   *  - REFIT_MODE compact, explicit or the default: REFIT_LEVEL, N2B,
+   *    NRHO_BASIS, NF_BASIS, REFIT_MAX_ESCALATIONS, REFIT_PLACEMENT and
+   *    REFIT_CONSTRAIN_F0 (read by the dense fit only);
+   *  - REFIT_MODE compact under REFIT_OBJECTIVE energy (explicit or the
+   *    default): REFIT_CURVE_WEIGHTING ("... has no effect under
+   *    REFIT_OBJECTIVE energy (the default): only REFIT_OBJECTIVE curve
+   *    reads it; ..."); under curve it passes the rule, and so do
+   *    REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT under energy (no
+   *    effect there, their values checked), after which this engine, which
+   *    has no compact fitter, refuses REFIT_MODE compact;
+   *  - a key the task factory stored as its blueprint default
+   *    (KeyProvenance: Default; REFIT_COMPACT_MERGE, REFIT_CURVE_*,
+   *    REFIT_OBJECTIVE energy under dense, REFIT_CONSTRAIN_F0 under
+   *    compact) is not the configuration's and passes; the same key from
+   *    the configuration file is refused.
+   * Before the fix: validate() checked none of this and did not throw;
+   * run() ignored the keys of the other mode (dense never parsed the stage
+   * blocks; compact never read the dense keys and, in this engine, fell
+   * back to the dense fit) and failed reading the absent EAM file instead
+   * ("EAMSetflIO: setfl file does not exist: absent.eam.alloy");
+   * REFIT_CURVE_WEIGHTING was ignored under REFIT_OBJECTIVE energy. The
+   * blueprint defaults passed (a pin). */
+  ScopedTempDir tmp;
+  SECTION("REFIT_MODE dense refuses the keys and blocks of compact mode") {
+    for (const auto &[key, value] : kCompactOnlyKeys) {
+      INFO(key << " " << value);
+      Context c = dense_refit_context("absent.eam.alloy");
+      c.add(key, value);
+      check_refused(c, no_effect_in_mode(key, "dense"));
+    }
+    for (const auto &[key, body] : kCompactBlocks) {
+      INFO(key << " block: " << body);
+      Context c = dense_refit_context("absent.eam.alloy");
+      add_block(c, key, body);
+      check_refused(c, no_effect_in_mode("the " + key + " block", "dense"));
+    }
+    for (const char *curve : {"curve", "CURVE"}) {
+      INFO("REFIT_OBJECTIVE " << curve);
+      Context c = dense_refit_context("absent.eam.alloy");
+      c.add("REFIT_OBJECTIVE", std::string(curve));
+      check_refused(c, no_effect_in_mode("REFIT_OBJECTIVE curve", "dense"));
+    }
+    Context energy = dense_refit_context("absent.eam.alloy");
+    energy.add("REFIT_OBJECTIVE", std::string("energy"));
+    Task task("refit", energy);
+    CHECK_NOTHROW(RefitEngine().validate(task));
+    Context other = dense_refit_context("absent.eam.alloy");
+    other.add("REFIT_OBJECTIVE", std::string("Shape"));
+    check_refused(other, "tadah refit: REFIT_OBJECTIVE must be 'energy' "
+                         "(default) or 'curve'; got 'shape'");
+  }
+  SECTION("REFIT_MODE compact refuses the keys of dense mode") {
+    for (const bool defaulted : {false, true}) {
+      for (const auto &[key, value] : kDenseOnlyKeys) {
+        INFO(key << " " << value << (defaulted ? " (default mode)" : ""));
+        Context c = compact_refit_context("absent.eam.alloy");
+        if (defaulted) c.remove("REFIT_MODE");
+        c.add(key, value);
+        check_refused(c, no_effect_in_mode(key, "compact", defaulted));
+      }
+    }
+  }
+  SECTION("REFIT_CURVE_WEIGHTING is refused under REFIT_OBJECTIVE energy") {
+    const std::string weighting =
+        "tadah refit: REFIT_CURVE_WEIGHTING has no effect under "
+        "REFIT_OBJECTIVE energy";
+    const std::string rest =
+        ": only REFIT_OBJECTIVE curve reads it; remove REFIT_CURVE_WEIGHTING, "
+        "or set REFIT_OBJECTIVE curve";
+    for (const char *value : {"false", "true"}) {
+      INFO("REFIT_CURVE_WEIGHTING " << value);
+      Context c = compact_refit_context("absent.eam.alloy");
+      c.add("REFIT_CURVE_WEIGHTING", std::string(value));
+      check_refused(c, weighting + " (the default)" + rest);
+      c.add("REFIT_OBJECTIVE", std::string("energy"));
+      check_refused(c, weighting + rest);
+      // under curve the rule passes; this engine then refuses compact mode
+      c.remove("REFIT_OBJECTIVE");
+      c.add("REFIT_OBJECTIVE", std::string("curve"));
+      check_refused(c, no_compact_fitter());
+    }
+    // REFIT_CURVE_RELAX and REFIT_CURVE_DERIV_WEIGHT have no effect under
+    // energy, their values checked: they pass the rule
+    Context c = compact_refit_context("absent.eam.alloy");
+    c.add("REFIT_CURVE_RELAX", std::string("0.1"));
+    c.add("REFIT_CURVE_DERIV_WEIGHT", std::string("0.1"));
+    check_refused(c, no_compact_fitter());
+  }
+  SECTION("a blueprint default the task factory stored is not refused") {
+    using tadah::mlip::KeyOrigin;
+    using tadah::mlip::KeyProvenance;
+    // what TaskFactory stores for every refit key with a blueprint default
+    const std::vector<std::pair<std::string, std::string>> defaults = {
+        {"REFIT_COMPACT_MERGE", "auto"},     {"REFIT_CURVE_WEIGHTING", "true"},
+        {"REFIT_CURVE_RELAX", "0.05"},       {"REFIT_CURVE_DERIV_WEIGHT", "0.0"},
+        {"REFIT_OBJECTIVE", "energy"},       {"REFIT_CONSTRAIN_F0", "true"}};
+    const auto task_with = [&](const Context &file, bool as_defaults) {
+      Context c = file;
+      std::vector<std::string> defaulted;
+      Context from_file = file;
+      for (const auto &[key, value] : defaults) {
+        if (c.has_stored(key)) continue;
+        c.add(key, value);
+        if (as_defaults)
+          defaulted.push_back(key);
+        else
+          from_file.add(key, value);
+      }
+      Task task("refit", c);
+      task.setKeyProvenance(KeyProvenance(Context(), from_file, "config.refit",
+                                          KeyOrigin::Kind::ConfigFile,
+                                          defaulted));
+      return task;
+    };
+    // dense: the compact defaults pass
+    const Task dense = task_with(dense_refit_context("absent.eam.alloy"), true);
+    CHECK_NOTHROW(RefitEngine().validate(dense));
+    // compact: REFIT_CONSTRAIN_F0's default passes (this engine then refuses
+    // compact mode), and so do REFIT_CURVE_WEIGHTING's under energy
+    const Task compact =
+        task_with(compact_refit_context("absent.eam.alloy"), true);
+    CHECK_THROWS_WITH(RefitEngine().validate(compact), no_compact_fitter());
+    // written in the configuration file, the same keys are refused
+    const Task dense_file =
+        task_with(dense_refit_context("absent.eam.alloy"), false);
+    CHECK_THROWS_WITH(RefitEngine().validate(dense_file),
+                      no_effect_in_mode("REFIT_COMPACT_MERGE", "dense"));
+    const Task compact_file =
+        task_with(compact_refit_context("absent.eam.alloy"), false);
+    CHECK_THROWS_WITH(RefitEngine().validate(compact_file),
+                      no_effect_in_mode("REFIT_CONSTRAIN_F0", "compact"));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: a top-level OPTIMIZER block is refused in "
+                 "either REFIT_MODE with the migration text",
+                 "[refit][mode_keys]") {
+  /* Pins: RefitEngine::validate(), and run() before it reads the EAM file,
+   * refuse a top-level OPTIMIZER block (the grammar before the stage
+   * blocks), which neither REFIT_MODE reads, with the migration text of the
+   * compact fitter's parser: "tadah refit: a top-level OPTIMIZER block is
+   * no longer supported. The stage pipeline is now INIT -> EXPLORE ->
+   * REFINE -> FUSE, ... The Refitting page of the documentation has
+   * examples (Stage blocks)."; under REFIT_MODE dense it ends " Under
+   * REFIT_MODE dense, which reads no stage block, remove the OPTIMIZER
+   * block.". Under REFIT_MODE compact, written or the default, it comes
+   * before this engine's refusal of compact mode (it has no compact
+   * fitter); in either mode before the refusal of the other mode's keys
+   * (REFIT_COMPACT_NMAX under dense, N2B under compact).
+   * Before the fix: the mode rule refused the block under REFIT_MODE dense
+   * as a key of compact mode, "tadah refit: the OPTIMIZER block has no
+   * effect under REFIT_MODE dense: only REFIT_MODE compact reads it; remove
+   * the OPTIMIZER block, or set REFIT_MODE compact", although compact mode
+   * refuses it too, and REFIT_COMPACT_NMAX was refused before it; under
+   * compact it passed the rule, so this engine refused compact mode
+   * ("tadah refit: REFIT_MODE compact needs the compact fitter, ...") and
+   * N2B was refused first (HPO's engine refused the block in
+   * RefitParser::parse only, after it had read the table). On v1-dev,
+   * before the mode rule, validate() accepted the block in either mode and
+   * run() failed reading the absent EAM file. */
+  ScopedTempDir tmp;
+  {
+    Context c = dense_refit_context("absent.eam.alloy");
+    add_block(c, "OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL");
+    check_refused(c, kTopLevelOptimizerDense);
+    c.add("REFIT_COMPACT_NMAX", std::string("3"));
+    check_refused(c, kTopLevelOptimizerDense);
+  }
+  for (const bool defaulted : {false, true}) {
+    INFO((defaulted ? "REFIT_MODE compact (the default)"
+                    : "REFIT_MODE compact"));
+    Context c = compact_refit_context("absent.eam.alloy");
+    if (defaulted) c.remove("REFIT_MODE");
+    add_block(c, "OPTIMIZER", "GLOBAL ALGO MLSL ENDGLOBAL");
+    check_refused(c, kTopLevelOptimizer);
+    c.add("N2B", std::string("50"));
+    check_refused(c, kTopLevelOptimizer);
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: REFIT_MODE is compact or dense in any letter "
+                 "case, and another value is refused",
+                 "[refit][mode_keys]") {
+  /* Pins: REFIT_MODE is read in any letter case, as REFIT_OBJECTIVE is:
+   * 'Dense' and 'DENSE' run the dense fit (refit_opt.log: mode=dense, no
+   * WARNING), 'COMPACT' is compact mode (which this engine, without a
+   * compact fitter, refuses); another value is refused in validate() and
+   * run(), before the EAM file is read ("tadah refit: REFIT_MODE must be
+   * 'compact' (the default) or 'dense', got 'sparse'"), and writes nothing.
+   * Before the fix: only 'compact' and 'dense' were known; any other
+   * value, 'Dense' and 'COMPACT' included, ran the dense fit after
+   * "WARNING: tadah refit: unknown REFIT_MODE '<value>' — using dense."
+   * (validate() accepted it and run() wrote pot.tadah). */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  for (const char *dense : {"Dense", "DENSE"}) {
+    INFO("REFIT_MODE " << dense);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.remove("REFIT_MODE");
+    c.add("REFIT_MODE", std::string(dense));
+    const RefitOutputs out = run_refit(c);
+    INFO(out.log);
+    CHECK(out.log.find("unknown REFIT_MODE") == std::string::npos);
+    CHECK(slurp("refit_opt.log").find("mode=dense") != std::string::npos);
+  }
+  {
+    Context c = compact_refit_context("synth_fcc.eam.alloy");
+    c.remove("REFIT_MODE");
+    c.add("REFIT_MODE", std::string("COMPACT"));
+    check_refused(c, no_compact_fitter());
+  }
+  for (const char *other : {"sparse", "compact2"}) {
+    INFO("REFIT_MODE " << other);
+    for (const char *f : {"pot.tadah", "refit.eam", "refit_opt.log"})
+      fs::remove(f);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.remove("REFIT_MODE");
+    c.add("REFIT_MODE", std::string(other));
+    check_refused(c, std::string("tadah refit: REFIT_MODE must be 'compact' "
+                                 "(the default) or 'dense', got '") +
+                         other + "'");
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    CHECK_FALSE(fs::exists("refit_opt.log"));
+  }
+}
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit: REFIT_MODE compact without a compact fitter is "
+                 "refused before the table is read",
+                 "[refit][mode_keys]") {
+  /* Pins: RefitEngine without a compact fitter (the engine of a tadah built
+   * without TADAH_ENABLE_NFP or TADAH_ENABLE_CERES; HPO's engine has one)
+   * refuses REFIT_MODE compact, written or the default, in validate() and
+   * in run() before it reads the EAM file, in every RHOFORM and with the
+   * default or a chosen basis: "tadah refit: REFIT_MODE compact (the
+   * default) needs the compact fitter, which this tadah was built without
+   * (it needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE
+   * dense"; it writes nothing (no pot.tadah, refit.eam or refit_opt.log).
+   * Before the fix: validate() accepted it, and run() fitted the table in
+   * dense mode after "WARNING: tadah refit: REFIT_MODE compact requires
+   * the HPO build (Ceres); falling back to dense fitting." (a defaulted
+   * Knot5 basis became Blip) and wrote pot.tadah. */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  for (const char *form : {"SIGNED", "NONNEG", "MONOTONE"}) {
+    for (const char *basis : {static_cast<const char *>(nullptr), "Blip5"}) {
+      for (const bool defaulted : {false, true}) {
+        // MONOTONE is not defined for the defaulted Knot5 (a refusal that
+        // needs the table, after this one)
+        INFO("RHOFORM " << form << " REFIT_BASIS "
+                        << (basis ? basis : "(default)")
+                        << (defaulted ? " (default mode)" : ""));
+        for (const char *f : {"pot.tadah", "refit.eam", "refit_opt.log"})
+          fs::remove(f);
+        Context c = compact_refit_context("synth_fcc.eam.alloy", form);
+        c.remove("REFIT_BASIS");
+        if (basis) c.add("REFIT_BASIS", std::string(basis));
+        if (defaulted) c.remove("REFIT_MODE");
+        check_refused(c, no_compact_fitter(defaulted));
+        CHECK_FALSE(fs::exists("pot.tadah"));
+        CHECK_FALSE(fs::exists("refit.eam"));
+        CHECK_FALSE(fs::exists("refit_opt.log"));
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  refit_range_report.dat describes the fit that ran
+// ---------------------------------------------------------------------------
+namespace {
+// One function row of refit_range_report.dat ("F   lo hi wlo whi  # note").
+struct RangeRow {
+  double full_lo = 0, full_hi = 0, win_lo = 0, win_hi = 0;
+  std::string note;  ///< the text after "# "
+};
+RangeRow range_row(const std::string &function) {
+  std::istringstream in(slurp("refit_range_report.dat"));
+  for (std::string line; std::getline(in, line);) {
+    std::istringstream ls(line);
+    std::string name;
+    if (!(ls >> name) || name != function) continue;
+    RangeRow row;
+    ls >> row.full_lo >> row.full_hi >> row.win_lo >> row.win_hi;
+    const auto hash = line.find("# ");
+    if (hash != std::string::npos) row.note = line.substr(hash + 2);
+    return row;
+  }
+  FAIL("refit_range_report.dat has no " << function << " row");
+  return {};
+}
+}  // namespace
+
+TEST_CASE_METHOD(PTFixture,
+                 "tadah refit dense: refit_range_report.dat's F row describes "
+                 "the dense fit's basis placement",
+                 "[refit][engine][integration]") {
+  /* Pins: after a dense fit with REFIT_PLACEMENT window (the default) the F
+   * row of refit_range_report.dat has the fit window [0, rho_reach], below
+   * the table's rhomax (60), and the note "tail keeps a small uniform
+   * basis; control: REFIT_REACH_MARGIN"; with REFIT_PLACEMENT uniform (one
+   * uniform basis over the table, no reachable window) its window is the
+   * full range [0, 60] and its note "one uniform basis fitted on the full
+   * range (REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT", and the
+   * report names no tail basis.
+   * Before the fix: the window case passes as well (a pin); under uniform
+   * the note was the window placement's "tail keeps a small uniform basis;
+   * control: REFIT_REACH_MARGIN", a tail the uniform basis does not have. */
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  {
+    (void)run_refit(dense_refit_context("synth_fcc.eam.alloy"));
+    const RangeRow F = range_row("F");
+    CHECK(F.full_lo == 0.0);
+    CHECK(F.full_hi == Approx(60.0));
+    CHECK(F.win_lo == 0.0);
+    CHECK(F.win_hi > 0.0);
+    CHECK(F.win_hi < 0.999 * F.full_hi);
+    CHECK(F.note == "tail keeps a small uniform basis; control: "
+                    "REFIT_REACH_MARGIN");
+  }
+  {
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c.add("REFIT_PLACEMENT", std::string("uniform"));
+    (void)run_refit(c);
+    const RangeRow F = range_row("F");
+    CHECK(F.win_lo == 0.0);
+    CHECK(F.win_hi == F.full_hi);
+    CHECK(F.note == "one uniform basis fitted on the full range "
+                    "(REFIT_PLACEMENT uniform); control: REFIT_PLACEMENT");
+    CHECK(slurp("refit_range_report.dat").find("small uniform basis") ==
+          std::string::npos);
+  }
 }
