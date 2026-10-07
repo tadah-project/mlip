@@ -761,6 +761,25 @@ void CifReader::parseCif(const std::string &fileContents,
     }
   }
 
+  // Every site is of an element Tadah knows (H to Og). gemmi also reads
+  // D (deuterium), which Tadah has not, and takes a type symbol (or, without
+  // the type-symbol column, a label) it cannot read as X.
+  for (const gemmi::SmallStructure::Site &site : struc.sites) {
+    if (site.element == gemmi::El::X)
+      throw std::runtime_error(source + ": site " + site.label + ": '" +
+                               site.type_symbol +
+                               "' is not an element symbol.");
+    const std::string symbol = site.element.name();
+    try {
+      tadah::core::PeriodicTable::find_by_symbol(symbol);
+    } catch (const std::runtime_error &) {
+      throw std::runtime_error(source + ": site " + site.label +
+                               " has element '" + symbol +
+                               "', which Tadah does not know: its elements "
+                               "are H to Og.");
+    }
+  }
+
   // A record that contradicts itself (or names nothing gemmi knows) is
   // reported; the structure is built with what gemmi found first.
   std::string diagnostic;
