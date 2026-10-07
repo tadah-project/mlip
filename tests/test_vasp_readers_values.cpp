@@ -902,3 +902,69 @@ TEST_CASE("VASP POSCAR reader: a line-6 token that is no element is refused, "
     CHECK(names_line(*msg, 6));
   }
 }
+
+/* Pins: an error of the POSCAR reader names the file, as
+ *   VaspPoscarReader: POSCAR file <path>: <what>
+ * for a line-6 token that is no element ('Xx': exactly "... <path>: 'Xx'
+ * on line 6 is not an element symbol (or a VASP POTCAR name such as Ti_pv
+ * or Si/b0d4a2)."), a scaling factor 0, an atom count 'two' on line 7
+ * ("... the atom count 'two' on line 7 is not a whole number"), and a file
+ * of 5 lines. A reader that read a good POSCAR (2 Ta atoms) keeps its
+ * structure (cell and atoms) after each refused file, and reading the good
+ * file again gives its 2 atoms, not 4.
+ * Before the fix: the messages began "VaspPoscarReader: " or
+ * "VaspPoscarReader::read: " and named no file, and the count was refused
+ * by std::stoi ('stoi', a std::invalid_argument, which ends the case); the
+ * file refused on line 6 had already replaced the reader's cell (4 A), so
+ * every later cell check failed too. */
+TEST_CASE("VASP POSCAR reader: an error names the file, and a refused file "
+          "leaves the structure",
+          "[vasp][poscar][species]") {
+  PeriodicTable::initialize();
+  ScratchDir tmp("poscar_source");
+  const std::string good = tmp.write(
+      "POSCAR_good", "bcc Ta\n3.3\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+                     "Ta\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n");
+  struct Bad {
+    std::string name, body, what;
+  };
+  const std::vector<Bad> bad = {
+      {"POSCAR_Xx",
+       "unknown element\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Xx\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "'Xx' on line 6 is not an element symbol (or a VASP POTCAR name such "
+       "as Ti_pv or Si/b0d4a2)."},
+      {"POSCAR_scale0",
+       "zero scale\n0.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Ta\n2\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "scaling factor on line 2"},
+      {"POSCAR_count",
+       "bad count\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n"
+       "Ta\ntwo\nDirect\n 0.0 0.0 0.0\n 0.5 0.5 0.5\n",
+       "the atom count 'two' on line 7 is not a whole number"},
+      {"POSCAR_short", "short\n4.0\n 1.0 0.0 0.0\n 0.0 1.0 0.0\n 0.0 0.0 1.0\n",
+       "not enough lines"}};
+  auto reader = StructureReaderSelector::getReader(good);
+  REQUIRE(dynamic_cast<VaspPoscarReader *>(reader.get()) != nullptr);
+  REQUIRE_NOTHROW(reader->read(good));
+  const Structure before = reader->getStructure();
+  REQUIRE(before.natoms() == 2);
+  for (const auto &b : bad) {
+    const std::string path = tmp.write(b.name, b.body);
+    INFO(b.name << ":\n" << b.body);
+    const auto msg = runtime_error_of([&] { reader->read(path); });
+    REQUIRE(msg);
+    INFO("message: " << *msg);
+    const std::string head = "VaspPoscarReader: POSCAR file " + path + ": ";
+    CHECK(msg->rfind(head, 0) == 0);
+    CHECK_THAT(*msg, Contains(b.what));
+    if (b.name == "POSCAR_Xx") CHECK(*msg == head + b.what);
+    const Structure after = reader->getStructure();
+    CHECK(after.label == before.label);
+    CHECK(after.natoms() == 2);
+    for (int i = 0; i < 3; ++i)
+      for (int k = 0; k < 3; ++k) CHECK(after.cell(i, k) == before.cell(i, k));
+  }
+  REQUIRE_NOTHROW(reader->read(good));
+  CHECK(reader->getStructure().natoms() == 2);
+}
