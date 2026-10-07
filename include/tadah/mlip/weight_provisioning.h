@@ -19,9 +19,9 @@ namespace mlip {
  *  - a lone FIXINDEX or FIXWEIGHT is an error — there is no auto-seeding
  *    from WEIGHTS;
  *  - after provision_fixed_weights() the model satisfies
- *    get_weights().size() == n_cols and is_trained() == true;
- *  - on cached trainers, reinit() (which resets the trained flag) must
- *    precede re-provisioning, mirroring the train() contract.
+ *    get_weights().size() == n_cols and is_trained() == true; a model is
+ *    provisioned once, as it is trained once (tadah hpo builds a Trainer
+ *    for every evaluation).
  */
 enum class WeightSource {
   FullLS,          ///< no FIXINDEX/FIXWEIGHT; all weights LS-fitted

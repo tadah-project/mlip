@@ -857,20 +857,23 @@ TEST_CASE("DesignMatrix refuses a descriptor layout that disagrees with "
   }
 }
 
-/* Pins: one Trainer trained, reinit() and trained again, as HPO's cached
- * trainer does, three times, with SGRID2B changed between the fits (2.0,
- * 1.8, 2.2 for every function: new descriptors, so a new basis): every
- * fit has SBASIS (5) weights for a kernel (6 for BF_Polynomial2) and
- * equals the reference least-squares solution of its own descriptors and
- * basis to 1e-8 relative.
- * Before the fix: the first fit threw (the ColumnLayout check). With that
- * check alone fixed (seen in a scratch build), every kernel's second fit
- * wrote SBASIS 10 for 5 basis vectors: EKM::configure appended the
- * indices of every training to a member it never cleared, and replaced
- * M_KRR's basis by a 10-column one; with Kern_Sigmoid the process aborted
- * ("malloc(): invalid size"). */
-TEST_CASE("Retraining one Trainer (as HPO does) refits every non-linear "
-          "model",
+/* Pins: one Trainer trained, its model reset (reset_trained()) and its
+ * descriptors updated in place (DC_Selector::reinit) and trained again,
+ * three times, with SGRID2B changed between the fits (2.0, 1.8, 2.2 for
+ * every function: new descriptors, so a new basis): every fit has SBASIS
+ * (5) weights for a kernel (6 for BF_Polynomial2) and equals the reference
+ * least-squares solution of its own descriptors and basis to 1e-8
+ * relative. (tadah hpo reused one Trainer so, through Trainer::reinit,
+ * until it built a Trainer per evaluation; the model and descriptor calls
+ * stay public.)
+ * Before the fix: passes as well (a pin of the EKM fix of 1.6.0, before
+ * which the first fit threw (the ColumnLayout check); with that check
+ * alone fixed, every kernel's second fit wrote SBASIS 10 for 5 basis
+ * vectors: EKM::configure appended the indices of every training to a
+ * member it never cleared, and replaced M_KRR's basis by a 10-column one;
+ * with Kern_Sigmoid the process aborted ("malloc(): invalid size")). It
+ * called Trainer::reinit, which this change removes. */
+TEST_CASE("Retraining one Trainer's model refits every non-linear model",
           "[nonlinear][train][retrain]") {
   PeriodicTable::initialize();
   for (const ModelSpec &m : nonlinear_models()) {
@@ -880,7 +883,8 @@ TEST_CASE("Retraining one Trainer (as HPO does) refits every non-linear "
         INFO("SGRID2B " << sgrid);
         if (t.tr->model->is_trained()) {
           set_key(t.tr->context, "SGRID2B", sgrid);
-          REQUIRE_FALSE(t.tr->reinit());  // same descriptor size
+          t.tr->model->reset_trained();
+          REQUIRE_FALSE(t.tr->DCS.reinit(t.tr->context));  // same size
         }
         REQUIRE_NOTHROW(t.train());
         check_fit(t, m);

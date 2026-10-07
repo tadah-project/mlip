@@ -15,7 +15,10 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/stats/data_stats.h>
+#include <tadah/mlip/bound_suggester.h>
 #include <tadah/mlip/preflight_audit.h>
+#include <tadah/models/descriptors/d2/d2_eam.h>
+#include <tadah/models/descriptors/dm/dm_eam.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/param_meta.h>
 
@@ -451,4 +454,53 @@ TEST_CASE("preflight_audit: Off mode returns empty report", "[preflight_audit]")
 
   auto rep = run_preflight_soft_with_metas(data, seed, metas, AuditMode::Off);
   REQUIRE(rep.messages.empty());
+}
+
+/* Pins: for a D2_EAM pair term and a DM_EAM many-body term (their own
+ * meta()), with RCUT2B and RCUTMB set and no OPTIM line, the critical-OPTIM
+ * audit flags neither cutoff, and suggest_bounds_for gives no RCUT2B or
+ * RCUTMB box: the setfl file fixes the cutoff of both descriptors (they
+ * refuse another value), so it is not a search target.
+ * Before the fix: both cutoffs were flagged ("Consider adding `OPTIM RCUT2B
+ * (...)` from `tadah analysis suggest_bounds`") and each got a suggested
+ * box, a search tadah hpo now refuses at startup and whose every candidate
+ * but the seed failed before. */
+TEST_CASE("preflight_audit: the setfl cutoff of D2_EAM and DM_EAM is not "
+          "flagged or suggested",
+          "[preflight_audit][eam]") {
+  Context seed;
+  seed.add("TYPE2B", "D2_EAM 0 Ta Ta");
+  seed.add("TYPEMB", "DM_EAM 0 Ta Ta");
+  seed.add<double>("RCUT2B", 5.58190742024);
+  seed.add<double>("RCUTMB", 5.58190742024);
+  std::vector<MetaPair> metas;
+  const auto d2 = tadah::models::D2_EAM().meta();
+  const auto dm = tadah::models::DM_EAM().meta();
+  REQUIRE(d2.has_value());
+  REQUIRE(dm.has_value());
+  metas.emplace_back("D2_EAM", *d2);
+  metas.emplace_back("DM_EAM", *dm);
+  const auto rep = run_critical_optim_audit_with_metas(seed, {}, metas);
+  for (const auto &m : rep.messages) {
+    INFO(m.descriptor_label << "." << m.param_key << ": " << m.text);
+    CHECK(m.param_key != "RCUT2B");
+    CHECK(m.param_key != "RCUTMB");
+  }
+
+  DataStats data;
+  data.n_atoms = 16;
+  data.n_structures = 1;
+  data.elements = {"Ta"};
+  PerPairStats pp;
+  pp.elements = {"Ta", "Ta"};
+  pp.n_pairs = 64;
+  pp.r_min = 2.5;
+  pp.r_max = 6.0;
+  for (std::size_t i = 0; i < pp.r_percentiles.size(); ++i)
+    pp.r_percentiles[i] = 2.5 + 0.3 * static_cast<double>(i);
+  data.per_pair.push_back(pp);
+  for (const auto &meta : {*d2, *dm}) {
+    INFO(meta.label);
+    CHECK(suggest_bounds_for(data, meta, seed).empty());
+  }
 }

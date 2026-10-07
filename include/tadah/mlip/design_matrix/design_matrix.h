@@ -99,6 +99,9 @@ public:
   ColumnLayout layout_;
   const ColumnLayout& layout() const { return layout_; }
 
+  /** The standard deviations of the reference energies per atom, forces
+   *  and stresses of the last build with them (compute_stdevs(), logged at
+   *  INFO); 1 before. */
   double e_std_dev=1;
   double f_std_dev=1;
   double s_std_dev[6] = {1,1,1,1,1,1};
@@ -126,24 +129,6 @@ public:
     fweightglob(context.get<double>("FWEIGHT")),
     sweightglob(context.get<double>("SWEIGHT"))
   {
-    if (context.contains("ESTDEV"))
-      e_std_dev = context.get<double>("ESTDEV");
-    if (context.contains("FSTDEV"))
-      f_std_dev = context.get<double>("FSTDEV");
-    if (context.contains("SSTDEV"))
-      context.get<double[6]>("SSTDEV", s_std_dev);
-  }
-
-  /** Refresh per-iter scalars from (possibly updated) context.
-   *  Intended for HPO reinit paths where loss-weighting keys may
-   *  change between iters but the DesignMatrix object is reused. */
-  void refresh_context_scalars(const tadah::core::Context &c) {
-    eweightglob = c.get<double>("EWEIGHT");
-    fweightglob = c.get<double>("FWEIGHT");
-    sweightglob = c.get<double>("SWEIGHT");
-    if (c.contains("ESTDEV")) e_std_dev = c.get<double>("ESTDEV");
-    if (c.contains("FSTDEV")) f_std_dev = c.get<double>("FSTDEV");
-    if (c.contains("SSTDEV")) c.get<double[6]>("SSTDEV", s_std_dev);
   }
 
   // Constructor without workspaceManager_ parameter (delegating constructor)
