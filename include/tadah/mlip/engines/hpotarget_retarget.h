@@ -17,7 +17,7 @@
 // per-key --pct RCUT2B=N adds one above the line ("# RCUT2B  (+-N%, 1
 // params)") and removes it when the line's percentage is the global one
 // again, so every percentage is a fixed point. Exactness is at the printed
-// precision (8 significant digits).
+// precision (%.8e, 9 significant digits).
 //
 // Density form: the file never sees the potential, so the writer records a
 // positive RHOFORM in a parsed header line (rhoform_bounds_line); --rhoform
