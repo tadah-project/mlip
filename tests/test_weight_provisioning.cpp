@@ -184,6 +184,37 @@ TEST_CASE("classify_weight_source: FIXINDEX is read strictly, separate values "
   }
 }
 
+/* Pins: classify_weight_source (tadah hpo's startup check) refuses
+ * FIXINDEX/FIXWEIGHT for M_KRR implementation 2 (MODEL M_KRR Kern_Linear 2
+ * and Kern_RBF 2), whose solve cannot pin weights, before it reads
+ * FIXINDEX: FIXINDEX 1 / FIXWEIGHT 14 and FIXINDEX 99 (past any weight) are
+ * both "MODEL M_KRR <kernel> 2 cannot pin weights"; implementation 1 (the
+ * same kernels with 1) classifies FIXINDEX 1 as PartialLS, as before.
+ * Before the fix: implementation 2 was classified as implementation 1:
+ * FIXINDEX 1 was PartialLS (every evaluation then trained with the pin
+ * ignored) and 99 "FIXINDEX: index 99 is outside 1-5 (the model has 5
+ * weights)". */
+TEST_CASE("classify_weight_source: M_KRR implementation 2 cannot pin weights",
+          "[weight_provisioning][fixindex][krr]") {
+  for (const char *kern : {"Kern_Linear", "Kern_RBF"}) DYNAMIC_SECTION(kern) {
+    auto with_model = [&](const std::string &impl, const std::string &fi) {
+      Context c = ctx_with(true, fi, {14.0});
+      c.add("MODEL", "M_KRR");
+      c.add("MODEL", kern);
+      c.add("MODEL", impl);
+      return c;
+    };
+    const std::string refusal =
+        std::string("MODEL M_KRR ") + kern + " 2 cannot pin weights";
+    CHECK_THROWS_WITH(classify_weight_source(with_model("2", "1"), kNCols),
+                      Catch::StartsWith(refusal));
+    CHECK_THROWS_WITH(classify_weight_source(with_model("2", "99"), kNCols),
+                      Catch::StartsWith(refusal));
+    CHECK(classify_weight_source(with_model("1", "1"), kNCols) ==
+          WeightSource::PartialLS);
+  }
+}
+
 /* Pins: provision_fixed_weights takes FIXINDEX given as separate values
  * ('K 1 2 ... K-1', one value each) as the comma list: FIXWEIGHT[0] pins
  * weight K, FIXWEIGHT[i] weight i.
