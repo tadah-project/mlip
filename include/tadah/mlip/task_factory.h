@@ -53,6 +53,14 @@ public:
    *
    * @param taskInput The source of key-value data and the associated task name.
    * @return A vector of one or more Task objects.
+   * @throws std::invalid_argument when, without a task file (`TASK`), the
+   *         task name of @p taskInput is not a blueprint task, before any
+   *         configuration file is read: the message names it, the task it
+   *         matches but for the case of its letters (if one) and the task
+   *         names.
+   * @throws std::runtime_error for an invalid key or value, the name of a
+   *         group of tasks (such as `DATA`), and a configuration or task
+   *         file that cannot be read.
    */
   std::vector<Task> createTasksFromInput(const ITaskInput &taskInput);
 
