@@ -32,7 +32,10 @@ namespace mlip {
  *    true: the weights fitted to the normalised descriptors are converted
  *    to weights of the raw descriptors, and the constant this moves (the
  *    descriptor means times the weights) goes into the intercept columns;
- *  - BIAS true needs a non-empty ATOM list.
+ *  - BIAS true needs a non-empty ATOM list;
+ *  - FIXINDEX/FIXWEIGHT is refused with NORM true: the fit pins weights of
+ *    the normalised descriptors, which the conversion to raw-descriptor
+ *    weights moves.
  *
  *  Called by `tadah train`, by `tadah hpo` at startup and by M_BLR/M_KRR
  *  before they fit.

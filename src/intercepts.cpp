@@ -168,6 +168,18 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
         "Configuration: BIAS=true requires a non-empty ATOM list "
         "(BIAS adds one intercept column per species).");
   }
+  // The fit pins weights of the normalised descriptors, and their
+  // conversion to weights of the raw descriptors moves them (a pinned
+  // intercept by the descriptor means times the weights), so the potential
+  // would not hold the FIXWEIGHT values it records, nor a zero covariance
+  // for them. tadah hpo refused it at startup; tadah train trained it.
+  if (norm && (ctx.has_stored("FIXINDEX") || ctx.has_stored("FIXWEIGHT"))) {
+    throw std::runtime_error(
+        "FIXINDEX/FIXWEIGHT is not supported with NORM true: fixed values "
+        "would be interpreted in the normalized feature space (the fit pins "
+        "weights of the normalised descriptors, and their conversion to "
+        "weights of the raw descriptors moves them). Set NORM false.");
+  }
 }
 
 std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
@@ -350,19 +362,36 @@ void require_intercepts_determined(const StructureDB &stdb,
     }
   }
   const std::string atoms = atom_list(ctx);
+  // The remedies this configuration can take. ESHIFT_DBATOM is none of
+  // them: its least-squares fit of the species energies to the structures'
+  // compositions is singular on the compositions refused here (it sets
+  // every ESHIFT to 0, with a WARNING). Under NORM true a linear model
+  // needs BIAS true (check_bias_constraints), and FIXINDEX is refused.
+  const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
+  const std::string other_compositions =
+      "add energy-weighted structures of other compositions (for example of "
+      "the pure elements, or an isolated atom of each species)";
+  std::string remedies;
+  if (norm) {
+    remedies = "Under NORM true, " + other_compositions +
+               ", or set NORM false and remove a per-species reference "
+               "energy or pin the intercepts instead.";
+  } else {
+    remedies = "Use BIAS false with explicit ESHIFT values (a per-species "
+               "reference energy, such as the isolated atom's) or "
+               "ESHIFT_ATOM (isolated-atom structures in the data), " +
+               other_compositions + ", or pin intercepts with "
+               "FIXINDEX/FIXWEIGHT (the intercepts of " + f.get_label() +
+               " are weights " +
+               weights_text(ctx, cols, intercept_values(ctx, f, cols)) + ").";
+  }
   throw std::runtime_error(
       "BIAS true: the training data cannot determine the per-species energy "
       "constants (the intercepts) of ATOM " + atoms + ". An intercept is "
       "fitted to energies only, and " + data + ". A fit would split the "
       "energy between the species arbitrarily (or overflow), and the "
       "per-atom energies, and the energy of any other composition, would be "
-      "meaningless. Use BIAS false (ESHIFT_ATOM, ESHIFT_DBATOM or ESHIFT "
-      "remove a per-species reference energy), add energy-weighted "
-      "structures of other compositions (for example of the pure elements, "
-      "or an isolated atom of each species), or pin intercepts with "
-      "FIXINDEX/FIXWEIGHT (the intercepts of " + f.get_label() + " are "
-      "weights " + weights_text(ctx, cols, intercept_values(ctx, f, cols)) +
-      ").");
+      "meaningless. " + remedies);
 }
 
 void require_descriptor_layout(const tadah::models::DC_Selector &dcs,
