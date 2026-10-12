@@ -5,6 +5,8 @@
 #include <tadah/core/context.h>
 #include <tadah/mlip/engines/iengine.h>
 
+#include <functional>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -25,7 +27,10 @@ namespace engines {
  * configuration keys (ALLOWED_KEYS), so `tadah explain SETFL` and `tadah
  * explain refit.rhoform` print the text of a key that is no option of a
  * command; a command's own subcommand or option comes first (its text may
- * differ: data.MERGE is the merge subcommand, not the MERGE key). It throws
+ * differ: data.MERGE is the merge subcommand, not the MERGE key). A single
+ * name that is no command and no configuration key is asked of the
+ * application's explain hook (set_explain_hook): tadah's prints the
+ * optimisers of `tadah hpo` (ALGO, LIB:ALGO). It throws
  * std::runtime_error, printing nothing, when the option names none of
  * these: "tadah explain: no command or configuration key 'bogus'", "tadah
  * explain: no command 'bogus'" (bogus.key: the first name of a dotted
@@ -41,6 +46,27 @@ public:
   int run(tadah::mlip::Task &task) override;
   void validate(const tadah::mlip::Task &task) override;
 };
+
+/**
+ * @brief A source of `tadah explain` texts beyond the commands and the
+ *        configuration keys.
+ *
+ * Called with a single name, as the user wrote it, that names no command
+ * and no configuration key. It writes the name's text to @p out and
+ * returns true, or returns false when the name is not one of its own; it
+ * may throw std::runtime_error, whose message is the command's error (a
+ * name it knows of but cannot explain). The application sets it, so MLIP
+ * needs no module it serves: tadah sets the optimiser help of HPO, or with
+ * HPO not built one that says so.
+ */
+using ExplainHook =
+    std::function<bool(const std::string &name, std::ostream &out)>;
+
+/**
+ * @brief Sets the hook ExplainEngine::run asks (see ExplainHook), replacing
+ *        an earlier one; an empty function removes it.
+ */
+void set_explain_hook(ExplainHook hook);
 
 /**
  * @brief The lines of a blueprint long description as `tadah explain`

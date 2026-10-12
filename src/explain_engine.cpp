@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <boost/algorithm/string.hpp> // boost::split, iequals
 
 namespace tadah {
@@ -105,7 +106,15 @@ void print_text(const std::string &text) {
   std::cout.flush();
 }
 
+// The application's source of further texts (set_explain_hook).
+ExplainHook &explain_hook() {
+  static ExplainHook hook;
+  return hook;
+}
+
 }  // namespace
+
+void set_explain_hook(ExplainHook hook) { explain_hook() = std::move(hook); }
 
 std::vector<std::string> explain_text_lines(const std::string &text) {
   std::vector<std::string> lines = dedented_lines(text);
@@ -199,6 +208,15 @@ int ExplainEngine::run(mlip::Task &task) {
     if (const core::BlueprintKey *key = find_config_key(tokens[0])) {
       print_key(*key);
       return EXIT_SUCCESS;
+    }
+    // a name the application explains (an optimiser of tadah hpo)
+    if (const ExplainHook &hook = explain_hook()) {
+      std::ostringstream text;
+      if (hook(tokens[0], text)) {
+        std::cout << text.str();
+        std::cout.flush();
+        return EXIT_SUCCESS;
+      }
     }
     throw std::runtime_error("tadah explain: no command or configuration "
                              "key '" + tokens[0] + "'");
