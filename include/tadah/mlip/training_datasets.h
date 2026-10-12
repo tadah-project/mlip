@@ -26,25 +26,31 @@ namespace mlip {
  *  dataset is never listed twice. */
 void remove_training_datasets(tadah::core::Context &pot);
 
-/** What a potential records: the model's settings and its fit, not the
+/** What a potential records: the model's settings and its fit, not these
  *  inputs of the run that wrote it. Removes from the potential context
  *  @p pot VERBOSE (the verbosity of the tool), NUMERIC and OUTFILE (the
  *  writer's settings; the digits are resolved before), AUDIT, AUDIT_SAMPLE
  *  and HEALTH_LOG (the run's diagnostics), and HPOTARGET and VALIDATION
  *  (the target and validation files of a tadah hpo run, which the run's
- *  journal names). TrainEngine::dumpPotFile (tadah train, tadah refit and
- *  refit --edit) and tadah hpo's potential of an evaluation (best_pot.tadah,
- *  the BDUMP and DUMP archives, the potential its PC_LAMMPS scripts run)
- *  call it, so no potential tadah writes has these keys. A potential that
- *  has them (written before) still loads: they are configuration keys
- *  that tadah predict and pair_style tadah do not read. */
+ *  journal names); every other key stays. TrainEngine::dumpPotFile (tadah
+ *  train, tadah refit and refit --edit) and Tadah.HPO's
+ *  PotHeaderWriter::write_potential_body (best_pot.tadah, the durable best,
+ *  the BDUMP and DUMP archives) call it on the context they write, so no
+ *  potential file tadah writes has these keys; the context of a tadah hpo
+ *  evaluation keeps them, and the models the run builds from it (the
+ *  PC_LAMMPS potential among them) take the run's VERBOSE. A potential that
+ *  has them (written before) still loads. tadah predict and pair_style
+ *  tadah read none of them except VERBOSE: parsing a VERBOSE line sets the
+ *  Tadah log level of the process (core::Context::add), and the models
+ *  built from the file take its verbosity. */
 void remove_run_inputs(tadah::core::Context &pot);
 
-/** The advice every refusal of a configuration without a training DBFILE
- *  ends with (tadah train, tadah hpo): "A potential records no DBFILE (no
- *  potential tadah writes has one): to train from one, add a DBFILE line
- *  to a copy of it (the Training page of the documentation, Retraining from
- *  a potential)." */
+/** The advice the refusals of a configuration without a training DBFILE
+ *  end with (require_training_datasets: tadah train; classify_weight_source
+ *  and the refusal of a run without ATOM: tadah hpo): "A potential records
+ *  no DBFILE (no potential tadah writes has one): to train from one, add a
+ *  DBFILE line to a copy of it (the Training page of the documentation,
+ *  Retraining from a potential)." */
 std::string potential_has_no_datasets_advice();
 
 /** Refuses a training configuration without DBFILE (tadah train, which
