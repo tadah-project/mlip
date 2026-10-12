@@ -18,7 +18,9 @@
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/mlip/training_datasets.h>
 #include <tadah/mlip/weight_covariance.h>
+#include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/m_krr_core.h>
 
 namespace tadah {
@@ -66,6 +68,19 @@ void warn_noise_without_energies(const core::Context &param_file) {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
+  // One dataset listed twice would be fitted twice: refused before any
+  // file is read.
+  require_distinct_training_datasets(context);
+  // The SBASIS of a fit that draws basis vectors (M_KRR with a non-linear
+  // kernel, implementation 2 with any kernel), refused naming the model
+  // before any dataset is read; with BIAS true and no ATOM its bound counts
+  // the species, which the datasets give, so it is checked once ATOM is set
+  // from them.
+  const bool draws_basis = fit_draws_basis(context);
+  const bool sbasis_needs_atoms =
+      draws_basis && context.get<bool>("BIAS") &&
+      (!context.contains("ATOM") || context.size("ATOM") == 0);
+  if (draws_basis && !sbasis_needs_atoms) checked_sbasis(context);
   models::D_mJoin::expand_grids(context);
   // Knot-family refit configs: RCUT2B/RCUTMB are derived from the largest
   // knot — a hand-tweaked/stale stated value is warned about and corrected
@@ -75,6 +90,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   StructureDB::check_atom_key(context, unique_elements);
   StructureDB::check_watom_key(context, unique_elements);
   check_bias_constraints(context);
+  if (sbasis_needs_atoms) checked_sbasis(context);
 
   tadah::mlip::memory::MLIPWorkspaceManager workspaceManager;
   Trainer tr(context, workspaceManager);
@@ -207,6 +223,10 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // error during pair_coeff and a downstream null-deref in calc_rho.
   modContext.remove("AUDIT");
   modContext.remove("HEALTH_LOG");
+  // A potential records no training data (a refit --edit potential is a
+  // copy of its input's context, which may be an M_BLR potential written
+  // with its DBFILE).
+  remove_training_datasets(modContext);
   tadah::models::normalise_embf0_key(modContext);
   // A DM_REAM potential must declare its density form (absent -> throws
   // before the file is opened, so nothing is written); the key is

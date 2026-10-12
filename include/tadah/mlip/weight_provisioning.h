@@ -51,15 +51,35 @@ int krr_implementation(const tadah::core::Context &ctx);
  *  every weight at once, and pins none. */
 bool is_krr_implementation_2(const tadah::core::Context &ctx);
 
+/** True when the fit of this configuration draws SBASIS basis vectors
+ *  from the training data (Basis): M_KRR with a non-linear kernel
+ *  (basis_drawn_from_training_data), and M_KRR implementation 2 with any
+ *  kernel, Kern_Linear too (is_krr_implementation_2: its solve, MODELS
+ *  M_KRR_Train::train2, fits the targets of SBASIS basis vectors). */
+bool fit_draws_basis(const tadah::core::Context &ctx);
+
+/** The SBASIS of a fit that draws basis vectors (fit_draws_basis),
+ *  checked: present, and at least the n0 intercept vectors plus one drawn
+ *  vector (n0 + 1: the bound of the basis draw,
+ *  sbasis_lower_bound_problem; 3 with BIAS true on two species). Throws
+ *  naming the model, "M_KRR <kernel> <implementation>" ("M_KRR Kern_Linear
+ *  2 needs SBASIS, ..."; "M_KRR Kern_RBF 1: SBASIS 1: the fit needs at
+ *  least 2 basis vectors ..."). The upper bound, the number of candidates,
+ *  needs the data and is the draw's (Basis::check_sbasis). @p ctx holds
+ *  ATOM when BIAS is true (n_intercept_basis_vectors). */
+std::size_t checked_sbasis(const tadah::core::Context &ctx);
+
 /** The number of model weights K a training of this configuration fits:
  *  the design-matrix width, f.weights_count(DSIZE) (as
  *  DM_Function_Base::get_phi_cols(ctx)), except for a model whose basis is
  *  drawn from the training data (basis_drawn_from_training_data), whose K
  *  is SBASIS, the number of basis vectors training draws (before training
- *  f has none, and its width is 0). Throws, naming SBASIS, when such a
- *  model has no SBASIS or fewer than its n0 intercept vectors plus one
- *  drawn vector (n0 + 1: the bound of the basis draw,
- *  sbasis_lower_bound_problem; 3 with BIAS true on two species). @p ctx
+ *  f has none, and its width is 0). M_KRR Kern_Linear implementation 2 has
+ *  DSIZE: its solve finds the coefficients of SBASIS basis vectors, and its
+ *  weights are the descriptor weights they make (MODELS
+ *  M_KRR_Train::train2). For every fit that draws basis vectors
+ *  (fit_draws_basis), Kern_Linear 2 included, SBASIS is checked first
+ *  (checked_sbasis, which throws naming the model and SBASIS). @p ctx
  *  holds DSIZE (DescriptorsCalc sets it). */
 std::size_t model_weight_count(const tadah::models::Function_Base &f,
                                const tadah::core::Context &ctx);

@@ -88,12 +88,13 @@ bool is_krr_implementation_2(const tadah::core::Context &ctx) {
          krr_implementation(ctx) == 2;
 }
 
-std::size_t model_weight_count(const tadah::models::Function_Base &f,
-                               const tadah::core::Context &ctx) {
-  // DM_Function_Base::get_phi_cols(ctx), the design-matrix width
-  if (!basis_drawn_from_training_data(ctx))
-    return f.weights_count(ctx.get<std::size_t>("DSIZE"));
-  const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1);
+bool fit_draws_basis(const tadah::core::Context &ctx) {
+  return basis_drawn_from_training_data(ctx) || is_krr_implementation_2(ctx);
+}
+
+std::size_t checked_sbasis(const tadah::core::Context &ctx) {
+  const std::string model = "M_KRR " + ctx.get<std::string>("MODEL", 1) +
+                            " " + std::to_string(krr_implementation(ctx));
   // The bound of the basis draw (Basis::check_sbasis): the intercept
   // vectors e_0 .. e_{n0-1}, then at least one vector drawn from the
   // training AEDs (implementation 2: the structures' mean AEDs).
@@ -112,11 +113,25 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
   return s;
 }
 
+std::size_t model_weight_count(const tadah::models::Function_Base &f,
+                               const tadah::core::Context &ctx) {
+  // A fit that draws basis vectors needs SBASIS of them, whatever its count.
+  if (fit_draws_basis(ctx)) {
+    const std::size_t s = checked_sbasis(ctx);
+    // A non-linear kernel has one weight per basis vector; Kern_Linear 2
+    // the DSIZE descriptor weights its basis vectors' coefficients make.
+    if (basis_drawn_from_training_data(ctx)) return s;
+  }
+  // DM_Function_Base::get_phi_cols(ctx), the design-matrix width
+  return f.weights_count(ctx.get<std::size_t>("DSIZE"));
+}
+
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols) {
   // M_KRR implementation 2 pins no weight: its FIXINDEX is refused before
-  // it is read against n_cols, which is not its weight count for
-  // Kern_Linear (DSIZE, while it fits SBASIS basis vectors).
+  // it is read against n_cols (its solve fits the coefficients of SBASIS
+  // basis vectors at once; with Kern_Linear they make its DSIZE
+  // descriptor weights).
   if (is_krr_implementation_2(ctx))
     tadah::models::refuse_fixed_weights_in_train2(
         ctx, ctx.get<std::string>("MODEL", 1));

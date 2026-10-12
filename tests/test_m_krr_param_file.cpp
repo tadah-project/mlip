@@ -1,16 +1,21 @@
 // test_m_krr_param_file.cpp
 //
-// M_KRR::get_param_file() -- the context `tadah train` writes to pot.tadah
-// and `tadah hpo` writes to best_pot.tadah -- keeps the training FORCE and
-// STRESS, as M_BLR::get_param_file() does, so that the potential states what
-// it was fitted to and `tadah train` with the potential's keys reproduces the
-// fit. It still drops ALPHA, BETA (the evidence-approximation starting
-// guesses) and DBFILE (the training data).
+// M_KRR::get_param_file() and M_BLR::get_param_file() -- the context `tadah
+// train` writes to pot.tadah and `tadah hpo` writes to best_pot.tadah --
+// follow one rule: a potential records the model's settings and its fit,
+// not the training data. Both keep the training FORCE and STRESS, so that
+// the potential states what it was fitted to and `tadah train` with the
+// potential's keys reproduces the fit, and ALPHA and BETA (the evidence
+// approximation's starting guesses, or after a LAMBDA -1 fit the values it
+// found); neither writes DBFILE (the training data), so a potential retrains
+// with the DBFILE lines of the retrain added (`tadah train -c pot.tadah`
+// plus a DBFILE), whichever the model.
 //
-// Before the fix M_KRR::get_param_file() removed FORCE and STRESS as well:
-// a potential fitted to forces said nothing about it, and HPO's validation of
-// an M_KRR candidate read FORCE/STRESS from that context and got the
-// blueprint default (false).
+// Before the FORCE/STRESS fix M_KRR::get_param_file() removed FORCE and
+// STRESS: a potential fitted to forces said nothing about it, and HPO's
+// validation of an M_KRR candidate read FORCE/STRESS from that context and
+// got the blueprint default (false). Before the potential-content fix
+// M_KRR::get_param_file() removed ALPHA and BETA, and M_BLR's kept DBFILE.
 
 #include "catch2/catch.hpp"
 
@@ -41,8 +46,8 @@ using tadah::mlip::memory::MLIPWorkspaceManager;
 namespace fs = std::filesystem;
 
 /* A D2_Blip pair potential (INITMB false) with the given MODEL tokens and
- * explicit FORCE/STRESS, and the keys get_param_file() must drop: ALPHA,
- * BETA and DBFILE (the training file is never opened here). */
+ * explicit FORCE/STRESS, ALPHA 0.5 and BETA 2.0, and DBFILE, which
+ * get_param_file() must drop (the training file is never opened here). */
 Context make_context(const std::vector<std::string> &model, bool force,
                      bool stress) {
   Context c;
@@ -123,18 +128,23 @@ std::string stored(const Context &c, const std::string &key,
 
 } // namespace
 
-/* Contract: an M_KRR (Kern_Linear) potential stores the training FORCE and
+/* Pins: an M_KRR (Kern_Linear) potential stores the training FORCE and
  * STRESS verbatim -- both FORCE true / STRESS false and FORCE false / STRESS
- * true -- and none of ALPHA, BETA, DBFILE; the written pot.tadah has FORCE
- * and STRESS lines and no ALPHA/BETA/DBFILE line.
+ * true -- and ALPHA 0.5 and BETA 2.0 of the configuration, and no DBFILE;
+ * the written pot.tadah has FORCE, STRESS, ALPHA and BETA lines and no
+ * DBFILE line.
  *
- * Fails before the fix: M_KRR::get_param_file() calls c.remove("FORCE") and
- * c.remove("STRESS"), so FORCE and STRESS come back "<absent>" (for both
- * combinations) and the written file has no FORCE or STRESS line. (The
- * checks read stored values on purpose: get<bool>() would insert the
- * blueprint default false and pass the "false" half by accident.) */
-TEST_CASE("M_KRR::get_param_file keeps the training FORCE and STRESS and "
-          "drops ALPHA, BETA and DBFILE",
+ * Before the FORCE/STRESS fix: M_KRR::get_param_file() called
+ * c.remove("FORCE") and c.remove("STRESS"), so FORCE and STRESS came back
+ * "<absent>" (for both combinations) and the written file had no FORCE or
+ * STRESS line. (The checks read stored values on purpose: get<bool>() would
+ * insert the blueprint default false and pass the "false" half by
+ * accident.)
+ * Before the potential-content fix: ALPHA and BETA came back "<absent>"
+ * (M_KRR::get_param_file() removed them; this case checked that they were
+ * dropped), and the written file had no ALPHA or BETA line. */
+TEST_CASE("M_KRR::get_param_file keeps the training FORCE, STRESS, ALPHA "
+          "and BETA and drops DBFILE",
           "[m_krr][param_file]") {
   PeriodicTable::initialize();
   MLIPWorkspaceManager ws;
@@ -165,9 +175,9 @@ TEST_CASE("M_KRR::get_param_file keeps the training FORCE and STRESS and "
   CHECK(stored(pot, "FORCE", 1) == kAbsent);
   CHECK(stored(pot, "STRESS", 1) == kAbsent);
 
-  // Still dropped.
-  CHECK_FALSE(pot.has_stored("ALPHA"));
-  CHECK_FALSE(pot.has_stored("BETA"));
+  // The evidence approximation's ALPHA and BETA, as configured; no DBFILE.
+  CHECK(stored(pot, "ALPHA") == "0.5");
+  CHECK(stored(pot, "BETA") == "2");
   CHECK_FALSE(pot.has_stored("DBFILE"));
 
   // Trainer::get_param_file() (what TrainEngine and HPO write) is the same.
@@ -179,7 +189,8 @@ TEST_CASE("M_KRR::get_param_file keeps the training FORCE and STRESS and "
   CHECK(stored(tr.context, "STRESS") == want_s);
 
   // The written potential (TrainEngine::dumpPotFile, as `tadah train` and
-  // best_pot.tadah) has the FORCE and STRESS lines and none of the others.
+  // best_pot.tadah) has the FORCE, STRESS, ALPHA and BETA lines and no
+  // DBFILE line.
   const fs::path dir = fs::temp_directory_path() /
                        ("tadah_krr_param_" + std::to_string(::getpid()));
   fs::create_directories(dir);
@@ -196,16 +207,27 @@ TEST_CASE("M_KRR::get_param_file keeps the training FORCE and STRESS and "
     CHECK(lines.at("FORCE") == std::vector<std::string>{want_f});
   if (lines.count("STRESS"))
     CHECK(lines.at("STRESS") == std::vector<std::string>{want_s});
-  CHECK(lines.count("ALPHA") == 0);
-  CHECK(lines.count("BETA") == 0);
+  CHECK(lines.count("ALPHA") == 1);
+  CHECK(lines.count("BETA") == 1);
   CHECK(lines.count("DBFILE") == 0);
 }
 
-/* M_BLR, the reference M_KRR now follows: its potential keeps FORCE and
- * STRESS verbatim. Pins existing behaviour; fails if the commented-out
- * c.remove("FORCE") / c.remove("STRESS") in M_BLR::get_param_file()
- * (m_blr.h) are reinstated. */
-TEST_CASE("M_BLR::get_param_file keeps the training FORCE and STRESS",
+/* Pins: an M_BLR (BF_Linear) potential, by the rule M_KRR's follows,
+ * stores the training FORCE and STRESS verbatim (both combinations), ALPHA
+ * 0.5 and BETA 2.0 of the configuration, and no DBFILE; the pot.tadah
+ * TrainEngine::dumpPotFile writes from it has the lines "FORCE <training
+ * FORCE>", "STRESS <training STRESS>", "ALPHA 0.5" and "BETA 2" (one token
+ * each) and no DBFILE line. (The context written here has no DBFILE
+ * already; dumpPotFile's own removal of one in its input is pinned by
+ * test_dump_pot_file.cpp.)
+ * Before the potential-content fix: the potential kept DBFILE
+ * (kkrr_train.db; m_blr.h had its c.remove("DBFILE") commented out), and so
+ * did the written file, so `tadah train -c pot.tadah` with the documented
+ * DBFILE line added listed the dataset twice and fitted every structure
+ * twice. FORCE, STRESS, ALPHA and BETA were kept then as well, in the
+ * potential and in the file (a pin of those). */
+TEST_CASE("M_BLR::get_param_file keeps the training FORCE, STRESS, ALPHA "
+          "and BETA and drops DBFILE",
           "[m_blr][param_file]") {
   PeriodicTable::initialize();
   MLIPWorkspaceManager ws;
@@ -226,4 +248,26 @@ TEST_CASE("M_BLR::get_param_file keeps the training FORCE and STRESS",
   REQUIRE(stored(pot, "MODEL", 0) == "M_BLR");
   CHECK(stored(pot, "FORCE") == want_f);
   CHECK(stored(pot, "STRESS") == want_s);
+  CHECK(stored(pot, "ALPHA") == "0.5");
+  CHECK(stored(pot, "BETA") == "2");
+  CHECK(stored(pot, "DBFILE") == kAbsent);
+
+  const fs::path dir = fs::temp_directory_path() /
+                       ("tadah_blr_param_" + std::to_string(::getpid()));
+  fs::create_directories(dir);
+  const std::string f =
+      (dir / ("pot_" + want_f + "_" + want_s + ".tadah")).string();
+  tadah::mlip::engines::TrainEngine::dumpPotFile(f, pot);
+  const auto lines = read_pot_lines(f);
+  fs::remove_all(dir);
+  REQUIRE(lines.count("MODEL") == 1);
+  using Tokens = std::vector<std::string>;
+  auto line_of = [&](const std::string &key) {
+    return lines.count(key) ? lines.at(key) : Tokens{kAbsent};
+  };
+  CHECK(line_of("FORCE") == Tokens{want_f});
+  CHECK(line_of("STRESS") == Tokens{want_s});
+  CHECK(line_of("ALPHA") == Tokens{"0.5"});
+  CHECK(line_of("BETA") == Tokens{"2"});
+  CHECK(lines.count("DBFILE") == 0);
 }
