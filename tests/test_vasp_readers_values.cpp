@@ -45,6 +45,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -1037,4 +1038,542 @@ TEST_CASE("VASP POSCAR reader: an atom count may carry a '+' sign",
       CHECK_THAT(*msg, Contains("the atom count '" + r.first + "' on line 7 " + r.second));
     }
   }
+}
+
+// --------------------------------------------------------------------
+// Every error names the file (and the line, step or calculation)
+// --------------------------------------------------------------------
+
+namespace {
+
+/* The message of the std::runtime_error parsing the OUTCAR `lines` throws
+ * (written to `name` in `tmp`), or "no exception"; `path` receives the
+ * file's path. */
+std::string outcar_refusal(const ScratchDir &tmp, const std::string &name,
+                           const std::vector<std::string> &lines,
+                           std::string &path) {
+  path = tmp.write(name, join_lines(lines));
+  StructureDB db;
+  const auto what = runtime_error_of([&] { parse_outcar_capturing(db, path); });
+  return what ? *what : "no exception";
+}
+
+/* Parses a vasprun.xml with std::cout and std::cerr captured; returns what
+ * was printed. */
+std::string parse_vasprun_capturing(StructureDB &db, const std::string &path) {
+  PeriodicTable::initialize();
+  std::ostringstream out, err;
+  std::streambuf *old_out = std::cout.rdbuf(out.rdbuf());
+  std::streambuf *old_err = std::cerr.rdbuf(err.rdbuf());
+  try {
+    VaspVasprunReader reader(db, path);
+    reader.parse_data();
+  } catch (...) {
+    std::cout.rdbuf(old_out);
+    std::cerr.rdbuf(old_err);
+    throw;
+  }
+  std::cout.rdbuf(old_out);
+  std::cerr.rdbuf(old_err);
+  return out.str() + err.str();
+}
+
+std::string vasprun_refusal(const ScratchDir &tmp, const std::string &name,
+                            const std::vector<std::string> &lines,
+                            std::string &path) {
+  path = tmp.write(name, join_lines(lines));
+  StructureDB db;
+  const auto what = runtime_error_of([&] { parse_vasprun_capturing(db, path); });
+  return what ? *what : "no exception";
+}
+
+}  // namespace
+
+/* Pins: the OUTCAR reader refuses a value it cannot read, naming the file,
+ * the line and what it reads there, and stores nothing:
+ *  - VRHFIN '=Qq:' (line 41): "VASP OUTCAR <path>: line 41: VRHFIN names
+ *    'Qq', which is not an element symbol";
+ *  - NIONS 'x4' or one too large for any count (line 341): "... line 341:
+ *    cannot read the number of ions NIONS from '<line>'", and the same for a
+ *    count of 'ions per type' too large;
+ *  - 'ions per type' 'abc' (line 348): "... line 348: 'ions per type' must
+ *    give one count for each of the 1 VRHFIN elements, got '<line>'";
+ *  - 'ions per type' 53 (line 348): "... line 348: the ions per type add up
+ *    to 53, but NIONS is 54";
+ *  - no VRHFIN line (line 41 renamed): "... line 348: 'ions per type' comes
+ *    before any VRHFIN line, which names the elements" (an OUTCAR cut down
+ *    without its POTCAR headers, as ASE's test OUTCAR_example_1);
+ *  - no 'ions per type' line: "... line 1960: a TOTAL-FORCE block before the
+ *    'ions per type' line";
+ *  - lattice vector 1 of step 1 'abc' (line 1891): "... line 1891: lattice
+ *    vector 1 of ionic step 1, '<line>', is not three numbers";
+ *  - atom 1 of step 1's TOTAL-FORCE block 'abc' (line 1962): "... line
+ *    1962: the TOTAL-FORCE line of atom 1 of ionic step 1, '<line>', is not
+ *    'x y z fx fy fz'";
+ *  - step 1's free energy 'abc' (line 2026): "... line 2026: cannot read the
+ *    free energy of ionic step 1 from '<line>'";
+ *  - step 1's EKIN_LAT temperature 'abc' (line 2052): "... line 2052:
+ *    cannot read the temperature of ionic step 1 from '<line>'";
+ *  - a missing file: "VASP OUTCAR <path>: cannot open the file".
+ * Before the fix (v1-dev): none named the file: the element was refused as "Unknown
+ * symbol: Qq"; the free energy as "... ionic step 1 has no 'free  energy
+ * TOTEN' line before its EKIN_LAT line"; the missing file as "Could not open
+ * the file: <path>"; every other defect was a line on standard error
+ * ('Error: ...', 'Warning: Unexpected end of data ...') and the steps were
+ * stored, with a partial cell, 53 or no atoms, or merged with the next. */
+TEST_CASE("VASP OUTCAR reader: a value it cannot read is refused, naming the "
+          "file and the line",
+          "[vasp][outcar][source]") {
+  ScratchDir tmp("outcar_source");
+  struct Case {
+    std::string name;
+    size_t line;
+    std::string from, to, what;
+  };
+  const std::vector<Case> cases = {
+      {"vrhfin", 41, "=Ta:", "=Qq:",
+       "line 41: VRHFIN names 'Qq', which is not an element symbol"},
+      {"nions", 341, "NIONS =     54", "NIONS =     x4",
+       "line 341: cannot read the number of ions NIONS from 'number of dos "
+       "     NEDOS =    301   number of ions     NIONS =     x4'"},
+      {"nions_huge", 341, "NIONS =     54", "NIONS =     99999999999999999999",
+       "line 341: cannot read the number of ions NIONS from 'number of dos "
+       "     NEDOS =    301   number of ions     NIONS =     "
+       "99999999999999999999'"},
+      {"per_type_huge", 348, "54", "99999999999999999999",
+       "line 348: 'ions per type' must give one count for each of the 1 "
+       "VRHFIN elements, got 'ions per type =              "
+       "99999999999999999999'"},
+      {"per_type", 348, "54", "abc",
+       "line 348: 'ions per type' must give one count for each of the 1 "
+       "VRHFIN elements, got 'ions per type =              abc'"},
+      {"per_type_sum", 348, "54", "53",
+       "line 348: the ions per type add up to 53, but NIONS is 54"},
+      {"no_vrhfin", 41, "VRHFIN =Ta:", "XXXXXX =Ta:",
+       "line 348: 'ions per type' comes before any VRHFIN line, which names "
+       "the elements"},
+      {"lattice", 1891, "9.027612000  0.000000000", "abc  0.000000000",
+       "line 1891: lattice vector 1 of ionic step 1, 'abc  0.000000000  "
+       "0.000000000     0.110771265  0.000000000  0.000000000', is not three "
+       "numbers"},
+      {"force_line", 1962, "-0.000036", "abc",
+       "line 1962: the TOTAL-FORCE line of atom 1 of ionic step 1, '0.00000 "
+       "     0.00000      0.00000        abc      0.000537      0.000015', is "
+       "not 'x y z fx fy fz'"},
+      {"free_energy", 2026, "-555.75332244", "abc",
+       "line 2026: cannot read the free energy of ionic step 1 from 'free  "
+       "energy   TOTEN  =      abc eV'"},
+      {"ekin_lat", 2052, "300.00", "abc",
+       "line 2052: cannot read the temperature of ionic step 1 from 'kin. "
+       "lattice  EKIN_LAT=         0.000000  (temperature  abc K)'"},
+  };
+  for (const Case &c : cases) {
+    INFO(c.name);
+    std::vector<std::string> l = outcar1_three_steps();
+    edit_line(l, c.line, c.from, c.to);
+    std::string path;
+    const std::string got = outcar_refusal(tmp, "OUTCAR_" + c.name, l, path);
+    CHECK(got == "VASP OUTCAR " + path + ": " + c.what);
+  }
+  {
+    std::vector<std::string> l = outcar1_three_steps();
+    REQUIRE(l[347].find("ions per type") != std::string::npos);
+    l.erase(l.begin() + 347);
+    std::string path;
+    const std::string got = outcar_refusal(tmp, "OUTCAR_no_per_type", l, path);
+    CHECK(got == "VASP OUTCAR " + path +
+              ": line 1959: a TOTAL-FORCE block before the 'ions per type' "
+              "line");
+  }
+  const std::string missing = (tmp.dir / "OUTCAR_missing").string();
+  StructureDB db;
+  CHECK(runtime_error_of([&] { parse_outcar_capturing(db, missing); })
+            .value_or("no exception") ==
+        "VASP OUTCAR " + missing + ": cannot open the file");
+}
+
+/* Pins: an OUTCAR that ends inside a block (a run stopped while writing it)
+ * keeps the steps before and skips the step it ends inside with one
+ * WARNING naming the file, the block, the step and the line: OUTCAR_1 cut
+ * after line 1980 (inside step 1's TOTAL-FORCE block) gives no structure
+ * and "WARNING: VASP OUTCAR <path>: the file ends inside the TOTAL-FORCE
+ * block of ionic step 1 (line 1980), which was skipped; 0 structure(s)
+ * read."; cut after line 2892 (inside step 2's block) it gives step 1 and
+ * the warning for step 2 with 1 structure.
+ * Before the fix: 'Warning: Unexpected end of data when reading atom
+ * information ...' lines that named neither the file nor the step. */
+TEST_CASE("VASP OUTCAR reader: a file that ends inside a block warns, naming "
+          "the file, the block and the step",
+          "[vasp][outcar][source]") {
+  ScratchDir tmp("outcar_ends");
+  for (const auto &[cut, step, stored] :
+       {std::tuple<size_t, int, size_t>{1980, 1, 0}, {2892, 2, 1}}) {
+    INFO("cut after line " << cut);
+    std::vector<std::string> l = outcar1_three_steps();
+    l.resize(cut);
+    const std::string path =
+        tmp.write("OUTCAR_cut_" + std::to_string(cut), join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_outcar_capturing(db, path);
+    CHECK(db.size() == stored);
+    CHECK_THAT(printed,
+               Contains("WARNING: VASP OUTCAR " + path +
+                        ": the file ends inside the TOTAL-FORCE block of ionic "
+                        "step " + std::to_string(step) + " (line " +
+                        std::to_string(cut) + "), which was skipped; " +
+                        std::to_string(stored) + " structure(s) read."));
+    CHECK_THAT(printed, !Contains("Unexpected end of data"));
+  }
+}
+
+/* Pins: an OUTCAR that ends inside an ionic step outside its blocks (a run
+ * stopped during the step's SCF iterations, or between its blocks) keeps
+ * the steps before and skips that step with one WARNING naming the file,
+ * the step and the line: the three-step OUTCAR_1 cut after line 2930 (step
+ * 2's stress, lattice and TOTAL-FORCE block read, before its free energy)
+ * gives step 1 and "WARNING: VASP OUTCAR <path>: the file ends inside ionic
+ * step 2 (line 2930), which was skipped (it has no 'free  energy   TOTEN'
+ * line); 1 structure(s) read."; cut after line 3100 (inside step 3's SCF
+ * iterations) it gives steps 1 and 2 and the warning for step 3 at line
+ * 3100; as a relaxation, cut after its line 2928 (OUTCAR_1's 2930), step 1
+ * and the warning for step 2. A cut after a step's last lines (after line
+ * 2975: step 2's EKIN_LAT, before step 3's first SCF iteration) gives steps
+ * 1 and 2 and no warning, as the whole three-step file and its relaxation
+ * give their 3 steps without one. (Pins as well.)
+ * Before the fix: the same structures, and no warning for any cut. */
+TEST_CASE("VASP OUTCAR reader: a file that ends inside a step outside its "
+          "blocks warns, naming the file and the step",
+          "[vasp][outcar][truncated]") {
+  ScratchDir tmp("outcar_ends_step");
+  const std::vector<std::string> md = outcar1_three_steps();
+  const std::vector<std::string> relax = as_relaxation(md);
+  struct Cut {
+    bool relaxation;
+    size_t after;  // the last line kept
+    size_t stored;
+    int step;      // the step warned about, 0 for none
+  };
+  for (const Cut &c : {Cut{false, 2930, 1, 2}, Cut{false, 3100, 2, 3},
+                       Cut{true, 2928, 1, 2}, Cut{false, 2975, 2, 0},
+                       Cut{false, md.size(), 3, 0},
+                       Cut{true, relax.size(), 3, 0}}) {
+    INFO((c.relaxation ? "relaxation" : "MD") << " cut after line " << c.after);
+    std::vector<std::string> l = c.relaxation ? relax : md;
+    l.resize(c.after);
+    const std::string path = tmp.write(
+        std::string("OUTCAR_") + (c.relaxation ? "relax_" : "md_") +
+            std::to_string(c.after),
+        join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_outcar_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    CHECK(db.size() == c.stored);
+    if (c.step == 0) {
+      CHECK(count_word(printed, "WARNING") == 0);
+    } else {
+      CHECK(count_word(printed, "WARNING") == 1);
+      CHECK_THAT(printed,
+                 Contains("WARNING: VASP OUTCAR " + path +
+                          ": the file ends inside ionic step " +
+                          std::to_string(c.step) + " (line " +
+                          std::to_string(c.after) +
+                          "), which was skipped (it has no 'free  energy   "
+                          "TOTEN' line); " + std::to_string(c.stored) +
+                          " structure(s) read."));
+    }
+  }
+}
+
+/* Pins: the vasprun.xml reader refuses what it cannot read, naming the file
+ * (and the calculation, the varray and the row):
+ *  - atom 1 of <atominfo> 'Qq' (line 483): "VASP vasprun.xml <path>: atom 1
+ *    of <atominfo>, 'Qq', is not an element symbol";
+ *  - calculation 1's basis vector 1 'abc' (line 841): "... calculation 1:
+ *    basis vector 1, '<v>', is not three numbers";
+ *  - the position of atom 1 of calculation 1 'abc' (line 853): "...
+ *    calculation 1: the position of atom 1, '<v>', is not three numbers";
+ *  - calculation 1's forces varray with a row less (line 909 removed): "...
+ *    calculation 1: the forces varray has 52 rows for the 53 atoms of
+ *    <atominfo>";
+ *  - calculation 1's stress varray with a fourth row: "... calculation 1:
+ *    the stress varray has 4 rows, not 3";
+ *  - a file that is not well-formed XML (a closing tag '</struct>' for
+ *    '</structure>', line 907): "VASP vasprun.xml <path>: not well-formed
+ *    XML (...)";
+ *  - a missing file: "VASP vasprun.xml <path>: cannot open the file".
+ * Before the fix: the element was refused as "Unknown symbol: Qq", naming no
+ * file; the other defects printed a line on standard error ('Error parsing
+ * ...', 'Error: File ... cannot be opened or read.', 'Error reading file:
+ * ...', 'Root node not found.') and stored the calculations (an atom less,
+ * a zero force) or nothing, and the 4th stress row was written past the 3x3
+ * tensor (a SIGSEGV). */
+TEST_CASE("VASP vasprun.xml reader: a value it cannot read is refused, naming "
+          "the file and the calculation",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_source");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  REQUIRE(base.at(482).find("<rc><c>Ta</c>") != std::string::npos);
+  struct Case {
+    std::string name;
+    size_t line;
+    std::string from, to, what;
+  };
+  const std::vector<Case> cases = {
+      {"element", 483, "<c>Ta</c>", "<c>Qq</c>",
+       "atom 1 of <atominfo>, 'Qq', is not an element symbol"},
+      {"basis", 841, "9.96025800", "abc",
+       "calculation 1: basis vector 1, 'abc       0.00000000       "
+       "0.00000000', is not three numbers"},
+      {"position", 853, "0.00000000       0.00000000       0.33333300",
+       "abc 0 0",
+       "calculation 1: the position of atom 1, 'abc 0 0', is not three "
+       "numbers"},
+  };
+  for (const Case &c : cases) {
+    INFO(c.name);
+    std::vector<std::string> l = base;
+    edit_line(l, c.line, c.from, c.to);
+    std::string path;
+    const std::string got =
+        vasprun_refusal(tmp, "vasprun_" + c.name + ".xml", l, path);
+    CHECK(got == "VASP vasprun.xml " + path + ": " + c.what);
+  }
+  {
+    std::vector<std::string> l = base;
+    REQUIRE(l.at(908).find("<v>") != std::string::npos);
+    l.erase(l.begin() + 908);
+    std::string path;
+    const std::string got = vasprun_refusal(tmp, "vasprun_forces.xml", l, path);
+    CHECK(got == "VASP vasprun.xml " + path +
+              ": calculation 1: the forces varray has 52 rows for the 53 "
+              "atoms of <atominfo>");
+  }
+  {
+    // A mismatched closing tag (a file that ends early is read up to its
+    // last complete calculation instead: see the next test case).
+    std::vector<std::string> l = base;
+    edit_line(l, 907, "</structure>", "</struct>");
+    std::string path;
+    const std::string msg = vasprun_refusal(tmp, "vasprun_bad_xml.xml", l, path);
+    CHECK_THAT(msg, Catch::StartsWith("VASP vasprun.xml " + path +
+                                      ": not well-formed XML ("));
+  }
+  const std::string missing = (tmp.dir / "vasprun_missing.xml").string();
+  StructureDB db;
+  CHECK(runtime_error_of([&] { parse_vasprun_capturing(db, missing); })
+            .value_or("no exception") ==
+        "VASP vasprun.xml " + missing + ": cannot open the file");
+  // Last: before the fix this one wrote past the 3x3 stress (SIGSEGV).
+  {
+    std::vector<std::string> l = base;
+    REQUIRE(l.at(965).find("<v>") != std::string::npos);
+    l.insert(l.begin() + 966, l.at(965));
+    std::string path;
+    const std::string got = vasprun_refusal(tmp, "vasprun_stress4.xml", l, path);
+    CHECK(got == "VASP vasprun.xml " + path +
+              ": calculation 1: the stress varray has 4 rows, not 3");
+  }
+}
+
+/* Pins: an unreadable stress or force row of a vasprun.xml calculation (a
+ * value VASP could not print, '*****') is no stress tensor, or no forces: the
+ * calculation is stored with stress weight 0 (and zero stress), or force
+ * weight 0 (and zero forces), with one WARNING naming the file, the
+ * calculation and the row; a calculation without a forces varray has force
+ * weight 0 and zero forces as well. The other calculations keep weight 1.
+ * Before the fix: 'Error parsing stress tensor components.' / 'Error
+ * parsing force components.' on standard error, and the calculation was
+ * stored with weight 1 and that row 0; without a forces varray, zero forces
+ * with force weight 1. */
+TEST_CASE("VASP vasprun.xml reader: an unreadable stress or force row gives "
+          "that weight 0",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_weights");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  {
+    std::vector<std::string> l = base;
+    edit_line(l, 964, "33.62613502", "**********");
+    const std::string path = tmp.write("vasprun_bad_stress.xml", join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    REQUIRE(db.size() == 4);
+    CHECK(db(0).sweight == 0.0);
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j) CHECK(db(0).stress(i, j) == 0.0);
+    CHECK(db(1).sweight == 1.0);
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": calculation 1: the stress row 1, '"));
+    CHECK_THAT(printed, Contains("', cannot be read; the calculation is "
+                                 "stored without stress"));
+  }
+  {
+    std::vector<std::string> l = base;
+    edit_line(l, 909, "0.00025635", "**********");
+    const std::string path = tmp.write("vasprun_bad_force.xml", join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    REQUIRE(db.size() == 4);
+    CHECK(db(0).fweight == 0.0);
+    for (const auto &a : db(0).atoms)
+      for (int k = 0; k < 3; ++k) CHECK(a.force[k] == 0.0);
+    CHECK(db(1).fweight == 1.0);
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": calculation 1: the force of atom 1, '"));
+    CHECK_THAT(printed, Contains("', cannot be read; the calculation is "
+                                 "stored without forces"));
+  }
+  {
+    std::vector<std::string> l = base;
+    REQUIRE(l.at(907).find("name=\"forces\"") != std::string::npos);
+    REQUIRE(l.at(961).find("</varray>") != std::string::npos);
+    l.erase(l.begin() + 907, l.begin() + 962);
+    const std::string path = tmp.write("vasprun_no_forces.xml", join_lines(l));
+    StructureDB db;
+    parse_vasprun_capturing(db, path);
+    REQUIRE(db.size() == 4);
+    CHECK(db(0).fweight == 0.0);
+    for (const auto &a : db(0).atoms)
+      for (int k = 0; k < 3; ++k) CHECK(a.force[k] == 0.0);
+    CHECK(db(1).fweight == 1.0);
+  }
+}
+
+/* Pins: the EKIN_LAT temperature of an OUTCAR is read where VASP's fixed
+ * width joins it to the word before ('(temperature10147.82 K)', from 10000
+ * K up, as in the 6580 K MD runs of the data store): OUTCAR_1 with step 1's
+ * temperature 10147.82 gives its 3 steps, step 1 with T 10147.82.
+ * Before the fix: refused, "... line 2052: cannot read the temperature of
+ * ionic step 1 from '...'"; v1-dev printed 'Warning: Unexpected end of data
+ * when reading temperature' and did not end the step there, so steps 1 and
+ * 2 were stored as one structure of 108 atoms (2 structures). */
+TEST_CASE("VASP OUTCAR reader: a temperature of 10000 K and more is read",
+          "[vasp][outcar][source]") {
+  ScratchDir tmp("outcar_hot");
+  std::vector<std::string> l = outcar1_three_steps();
+  edit_line(l, 2052, "(temperature  300.00 K)", "(temperature10147.82 K)");
+  const std::string path = tmp.write("OUTCAR_hot", join_lines(l));
+  StructureDB db;
+  parse_outcar_capturing(db, path);
+  REQUIRE(db.size() == 3);
+  CHECK(db(0).T == 10147.82);
+  CHECK(db(0).natoms() == 54);
+  CHECK(db(1).T == 300.04);
+}
+
+/* Pins: a vasprun.xml that ends after its last complete calculation,
+ * without its closing </modeling> tag (a run stopped, or still running,
+ * after it), is read whole, and one WARNING says that nothing was skipped:
+ * vasprun_2 without its last line, and the same with the start of a
+ * trailing <structure name="finalpos"> (VASP writes it after the last
+ * calculation), give its 4 structures (the energies, forces and stress of
+ * the whole file) and "WARNING: VASP vasprun.xml <path>: the file ends
+ * after calculation 4, without its closing </modeling> tag (a run stopped,
+ * or still running); no calculation was skipped: 4 structure(s) read.".
+ * Before the fix: the same structures with "WARNING: ...: the file ends
+ * inside calculation 5 (a run stopped while writing it), which was skipped;
+ * 4 structure(s) read." (the file has no calculation 5). */
+TEST_CASE("VASP vasprun.xml reader: a file that ends after its last "
+          "calculation says that nothing was skipped",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_after_last");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  REQUIRE(base.size() == 1589);
+  REQUIRE(base.at(1587).find("</calculation>") != std::string::npos);
+  REQUIRE(base.at(1588).find("</modeling>") != std::string::npos);
+  StructureDB whole = read_vasprun(kVasprunDir + "vasprun_2.xml");
+  REQUIRE(whole.size() == 4);
+  std::vector<std::string> nomodeling = base;
+  nomodeling.resize(1588);
+  std::vector<std::string> finalpos = nomodeling;
+  for (const char *l : {" <structure name=\"finalpos\" >", "  <crystal>",
+                        "   <varray name=\"basis\" >"})
+    finalpos.push_back(l);
+  for (const auto &[name, lines] :
+       {std::pair<std::string, std::vector<std::string>>{"nomodeling",
+                                                          nomodeling},
+        {"finalpos", finalpos}}) {
+    INFO(name);
+    const std::string path =
+        tmp.write("vasprun_" + name + ".xml", join_lines(lines));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    INFO("printed: '" << printed << "'");
+    REQUIRE(db.size() == 4);
+    for (size_t k = 0; k < 4; ++k) {
+      CHECK(db(k).energy == whole(k).energy);
+      CHECK(db(k).natoms() == whole(k).natoms());
+      CHECK(db(k).atoms[52].force[2] == whole(k).atoms[52].force[2]);
+      CHECK(db(k).stress(2, 2) == whole(k).stress(2, 2));
+    }
+    CHECK(count_word(printed, "WARNING") == 1);
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": the file ends after calculation 4, "
+                                 "without its closing </modeling> tag (a run "
+                                 "stopped, or still running); no calculation "
+                                 "was skipped: 4 structure(s) read."));
+  }
+}
+
+/* Pins: a vasprun.xml that ends early (VASP writes it as it runs; a run
+ * stopped, or still running) is read up to its last complete calculation,
+ * and the calculation it ends inside is skipped with one WARNING naming the
+ * file and the calculation: vasprun_2 cut inside calculation 2 (after line
+ * 1100) gives calculation 1 and "WARNING: VASP vasprun.xml <path>: the
+ * file ends inside calculation 2 (a run stopped while writing it), which
+ * was skipped; 1 structure(s) read."; cut inside calculation 1 (after line
+ * 900), no structure and the same warning for calculation 1 with 0; cut
+ * before the first calculation (after line 300), no structure and "...:
+ * the file ends before its first calculation (a run stopped while writing
+ * it); 0 structure(s) read.". The data store's 24 truncated vasprun.xml
+ * files end so.
+ * Before the fix: each was refused, "VASP vasprun.xml <path>: not
+ * well-formed XML (unexpected end of data)"; v1-dev printed 'Error reading
+ * file: unexpected end of data' and 'Root node not found.' and stored
+ * nothing. */
+TEST_CASE("VASP vasprun.xml reader: a file that ends early is read up to its "
+          "last complete calculation",
+          "[vasp][vasprun][source]") {
+  ScratchDir tmp("vasprun_cut");
+  const std::vector<std::string> base =
+      split_lines(slurp(kVasprunDir + "vasprun_2.xml"));
+  REQUIRE(base.size() == 1589);
+  REQUIRE(base.at(978).find("</calculation>") != std::string::npos);
+  StructureDB whole = read_vasprun(kVasprunDir + "vasprun_2.xml");
+  REQUIRE(whole.size() == 4);
+  for (const auto &[cut, calc, stored] :
+       {std::tuple<size_t, int, size_t>{1100, 2, 1}, {900, 1, 0}}) {
+    INFO("cut after line " << cut);
+    std::vector<std::string> l = base;
+    l.resize(cut);
+    const std::string path =
+        tmp.write("vasprun_cut_" + std::to_string(cut) + ".xml", join_lines(l));
+    StructureDB db;
+    const std::string printed = parse_vasprun_capturing(db, path);
+    REQUIRE(db.size() == stored);
+    if (stored == 1) {
+      CHECK(db(0).energy == whole(0).energy);
+      CHECK(db(0).natoms() == whole(0).natoms());
+      CHECK(db(0).atoms[52].force[2] == whole(0).atoms[52].force[2]);
+      CHECK(db(0).stress(2, 2) == whole(0).stress(2, 2));
+    }
+    CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                                 ": the file ends inside calculation " +
+                                 std::to_string(calc) +
+                                 " (a run stopped while writing it), which "
+                                 "was skipped; " + std::to_string(stored) +
+                                 " structure(s) read."));
+  }
+  std::vector<std::string> l = base;
+  l.resize(300);
+  const std::string path = tmp.write("vasprun_cut_300.xml", join_lines(l));
+  StructureDB db;
+  const std::string printed = parse_vasprun_capturing(db, path);
+  CHECK(db.size() == 0);
+  CHECK_THAT(printed, Contains("WARNING: VASP vasprun.xml " + path +
+                               ": the file ends before its first calculation "
+                               "(a run stopped while writing it); 0 "
+                               "structure(s) read."));
 }

@@ -100,7 +100,7 @@ void CastepMDReader::read_data(const std::string& filename) {
   filename_ = filename;
   std::ifstream file(filename);
   if (!file.is_open()) {
-    throw std::runtime_error("Could not open the file: " + filename);
+    throw std::runtime_error("CASTEP " + filename + ": cannot open the file");
   }
 
   std::string line;

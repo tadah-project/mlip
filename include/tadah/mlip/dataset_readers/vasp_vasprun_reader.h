@@ -164,13 +164,23 @@ protected:
 
 protected:
   rx::xml_document<> doc; ///< XML document object for parsing.
-  rx::file<> *xmlFile = nullptr; ///< Optional pointer for file management.
+  std::vector<char> buffer_; ///< The text doc is parsed from (in place); empty when the file ends before any complete calculation.
   std::vector<std::string> atom_types; ///< List of atom types; length is the number of atoms.
   StructureDB& stdb; ///< Reference to the StructureDB for storing data.
 
 private:
+  /// "VASP vasprun.xml <file>: ", the start of every message.
+  std::string where() const;
+  /// where() and "calculation <n>: ".
+  std::string where_calculation() const;
+
   Structure _s; ///< Internal structure representation.
   bool stress_tensor_bool = false; ///< Flag indicating stress tensor presence.
+  bool forces_found_ = false; ///< The calculation's forces were read.
+  std::size_t ends_inside_ = 0; ///< The calculation the file ends inside (1-based), 0 for a complete file.
+  std::size_t ends_after_ = 0; ///< The last calculation of a file that ends after it, without its closing modeling tag (no calculation open), 0 otherwise.
+  bool ends_before_first_ = false; ///< The file ends before its first calculation.
+  std::vector<tadah::core::Element> elements_; ///< The elements of atom_types.
   std::string filename_; ///< The file read, for messages.
   size_t calculation_ = 0; ///< The calculation being read, 1-based, for messages.
   double s_conv = 6.241509074e-4; // kbar -> eV/A^3

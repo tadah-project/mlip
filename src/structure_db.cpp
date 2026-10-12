@@ -34,6 +34,19 @@ bool read_next_structure(std::ifstream &ifs, const std::string &fn,
   }
   return false;
 }
+
+/* Structure::next_structure for structure `position` + 1 of the file `fn`,
+ * whose errors name the file and the structure as read_next_structure's
+ * do. */
+bool next_structure_of(std::ifstream &ifs, const std::string &fn,
+                       size_t position, size_t &natoms) {
+  try {
+    return Structure::next_structure(ifs, natoms);
+  } catch (const std::exception &e) {
+    throw std::runtime_error("DBFILE " + fn + ": structure " +
+                             std::to_string(position + 1) + ": " + e.what());
+  }
+}
 }  // namespace
 
 StructureDB::StructureDB() {
@@ -85,7 +98,7 @@ int StructureDB::add(const std::string fn, size_t first, int N) {
   // as large as SIZE_MAX). A structure without atoms is skipped as one.
   size_t natoms;
   for (size_t i=0; i<first; ++i) {
-    if (!Structure::next_structure(ifs, natoms)) return 0;
+    if (!next_structure_of(ifs, fn, i, natoms)) return 0;
   }
 
   // N structures, blank lines between them not counted.
@@ -124,7 +137,7 @@ int StructureDB::add_selected(const std::string fn,
   for (auto &entry : selected) {
     size_t natoms;
     for (; position < entry.first; ++position)
-      if (!Structure::next_structure(ifs, natoms)) throw past_end(position);
+      if (!next_structure_of(ifs, fn, position, natoms)) throw past_end(position);
     if (!read_next_structure(ifs, fn, position, entry.second))
       throw past_end(position);
     ++position;
@@ -204,10 +217,13 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
+  size_t position = 0;  // the structures read so far
   while (std::getline(ifs, line)) {
     // Blank lines before a label are skipped (a line of only whitespace,
     // '\r' included, is blank, as in Structure::read).
     if (tadah::core::is_blank_line(line)) continue;
+    const std::string label = line;
+    ++position;
     // the second line could be energy or
     // a scalling factors eweight fweight sweight
     std::getline(ifs,line);  
@@ -218,8 +234,14 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
     if (count == 3)
       std::getline(ifs,line);
 
-    for (size_t i=0; i<6; ++i)
-      std::getline(ifs,line);
+    // The cell and stress lines, as Structure::read reads them.
+    try {
+      (void)detail::read_cell_stress_lines(ifs);
+    } catch (const std::exception &e) {
+      throw std::runtime_error("DBFILE " + fn + ": structure " +
+                               std::to_string(position) + ": structure '" +
+                               label + "': " + e.what());
+    }
 
     while (std::getline(ifs, line)) {
       if (tadah::core::is_blank_line(line)) break;
@@ -264,7 +286,7 @@ std::pair<int,int> StructureDB::count(const std::string fn){
   // A structure without atoms counts as one (StructureDB::add(file) reads
   // it); only the end of the file ends the count.
   size_t natoms;
-  while (Structure::next_structure(ifs, natoms)) {
+  while (next_structure_of(ifs, fn, static_cast<size_t>(nstruc), natoms)) {
     natoms_tot += static_cast<int>(natoms);
     nstruc++;
   }

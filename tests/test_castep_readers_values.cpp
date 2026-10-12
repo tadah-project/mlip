@@ -1918,3 +1918,260 @@ TEST_CASE("CASTEP .cell writer: every field is separated so a far atom round-tri
     }
   }
 }
+
+// ---- every error of the .castep reader names the file and the line --------
+
+namespace {
+
+const std::string kMdStressCastep =
+    "./tests_data/valid_castep_castep/md_stress.castep";
+
+/* The message of the exception that parsing `path` with Reader throws (any
+ * std::exception: a std::stoi failure included), or "no exception". */
+template <class Reader>
+std::string any_refusal(const std::string &path) {
+  StructureDB db;
+  std::ostringstream err;
+  std::streambuf *old_err = std::cerr.rdbuf(err.rdbuf());
+  std::string msg = "no exception";
+  try {
+    read_into<Reader>(db, path);
+  } catch (const std::exception &e) {
+    msg = e.what();
+  }
+  std::cerr.rdbuf(old_err);
+  return msg;
+}
+
+/* `lines` with line `n` (1-based) holding `to` where it held `from`. */
+std::vector<std::string> edited(std::vector<std::string> lines, size_t n,
+                                const std::string &from, const std::string &to) {
+  INFO("line " << n << ": '" << lines.at(n - 1) << "'");
+  const auto p = lines.at(n - 1).find(from);
+  REQUIRE(p != std::string::npos);
+  lines[n - 1].replace(p, from.size(), to);
+  return lines;
+}
+
+}  // namespace
+
+/* Pins: the .castep reader refuses a value it cannot read, naming the file,
+ * the line and what it reads there (geom.castep, and md_stress.castep for
+ * the MD lines):
+ *  - lattice vector 1 of a Unit Cell block 'abc' (line 271);
+ *  - the number of ions 'x', or too large for any count (line 287);
+ *  - the position of atom 1 'abc' (line 295), and the species 'Zz:1' (line
+ *    303, which also names the label);
+ *  - 'Final energy, E' and 'Final free energy (E-TS)' 'abc' (lines 393, 394);
+ *  - the iteration number of 'LBFGS: finished iteration' and 'Starting LBFGS
+ *    iteration' 'x' (lines 482, 495);
+ *  - the MD 'Potential Energy:' and 'Temperature:' 'abc' (lines 505, 511);
+ *  - a missing file: "CASTEP .castep <path>: cannot open the file".
+ * Each message is "CASTEP .castep <path>: line <n>: ..." as listed below.
+ * Before the fix: a 'Warning: ...' line on standard error with the line
+ * number but not the file, and the file was read on (the cell partly
+ * written, no atoms, an atom less, another energy line or none: no
+ * exception); the MD potential energy as "... structure 1 (the MD step
+ * ending at line ...) has no energy of its own ..."; the species as "CASTEP
+ * species label 'Zz:1' does not start with an element symbol" (no file, no
+ * line); the iteration numbers threw std::stoi's "stoi"; the missing file
+ * "Could not open the file: <path>". */
+TEST_CASE("CASTEP .castep reader: a value it cannot read is refused, naming "
+          "the file and the line",
+          "[castep_readers][source]") {
+  PeriodicTable::initialize();
+  struct Case {
+    std::string name, fixture;
+    size_t line;
+    std::string from, to, what;
+  };
+  const std::vector<Case> cases = {
+      {"cell", kGeomCastep, 271, "2.9640232    -0.0000000", "abc    -0.0000000",
+       "lattice vector 1 of the Unit Cell block, 'abc    -0.0000000    "
+       "-0.0000000        2.119816505   0.000000000   0.000000000', is not "
+       "three numbers"},
+      {"natoms", kGeomCastep, 287, "=   10", "=   x",
+       "cannot read the number of ions from 'Total number of ions in cell =   "
+       "x'"},
+      {"natoms_huge", kGeomCastep, 287, "=   10",
+       "=   99999999999999999999",
+       "cannot read the number of ions from 'Total number of ions in cell =   "
+       "99999999999999999999'"},
+      {"position", kGeomCastep, 295, "-0.000000  -0.000000   0.318951",
+       "abc  -0.000000   0.318951",
+       "the position of atom 1, 'x  H            1        abc  -0.000000   "
+       "0.318951   x', is not 'x <species> <number> u v w x'"},
+      {"species", kGeomCastep, 303, "x  Ra ", "x  Zz:1 ",
+       "CASTEP species label 'Zz:1' does not start with an element symbol"},
+      {"energy", kGeomCastep, 393, "-2690.122546861", "abc",
+       "cannot read the energy from 'Final energy, E             =  abc     "
+       "eV'"},
+      {"free_energy", kGeomCastep, 394, "-2690.157080108", "abc",
+       "cannot read the energy from 'Final free energy (E-TS)    =  abc     "
+       "eV'"},
+      {"finished", kGeomCastep, 482, "iteration     0", "iteration     x",
+       "cannot read the iteration number from 'LBFGS: finished iteration     "
+       "x with enthalpy= -2.65320186E+003 eV'"},
+      {"starting", kGeomCastep, 495, "iteration          1",
+       "iteration          x",
+       "cannot read the iteration number from 'Starting LBFGS iteration      "
+       "    x ...'"},
+      {"potential", kMdStressCastep, 505, "-2385.695732", "abc",
+       "cannot read the potential energy from 'x   Potential Energy:  abc    "
+       "               eV     x'"},
+      {"temperature", kMdStressCastep, 511, "300.000000", "abc",
+       "cannot read the temperature from 'x        Temperature:    abc       "
+       "             K     x'"},
+  };
+  for (const Case &c : cases) {
+    INFO(c.name);
+    TempFile tmp("tmp_castep_source_" + c.name + ".castep");
+    tmp.write_lines(edited(read_lines(c.fixture), c.line, c.from, c.to));
+    CHECK(any_refusal<CastepCastepReader>(tmp.path) ==
+          "CASTEP .castep " + tmp.path + ": line " + std::to_string(c.line) +
+              ": " + c.what);
+  }
+  const std::string missing = "./tmp_castep_source_missing.castep";
+  std::remove(missing.c_str());
+  CHECK(any_refusal<CastepCastepReader>(missing) ==
+        "CASTEP .castep " + missing + ": cannot open the file");
+  CHECK(any_refusal<CastepMDReader>("./tmp_castep_source_missing.md") ==
+        "CASTEP ./tmp_castep_source_missing.md: cannot open the file");
+}
+
+/* Pins: a forces or stress line of a .castep file that cannot be read (a
+ * value CASTEP could not print, '*****') is no forces, or no stress, for that
+ * structure: it is stored with force weight 0 (zero forces), or stress
+ * weight 0 (zero stress), with one WARNING naming the file and the line
+ * ("CASTEP .castep <path>: line 456: the forces line of atom 1, '...', cannot
+ * be read; the structure is stored without forces"; "... line 475: the
+ * stress line 1, '...', cannot be read; the structure is stored without
+ * stress"); a file that ends inside a block warns naming the file, the block
+ * and the line ("CASTEP .castep <path>: the file ends inside the forces
+ * block at line 460").
+ * Before the fix: the same weights, with 'Warning: Could not parse atomic
+ * forces (line: 456).', 'Warning: Could not parse stress row (line: 475).'
+ * and 'Warning: Truncated file reading forces at row 5 (line: 460).', which
+ * name no file. */
+TEST_CASE("CASTEP .castep reader: an unreadable forces or stress line gives "
+          "that weight 0, with a warning naming the file",
+          "[castep_readers][source]") {
+  PeriodicTable::initialize();
+  StructureDB good;
+  read_into<CastepCastepReader>(good, kGeomCastep);
+  REQUIRE(good.size() > 1);
+  REQUIRE(good(0).fweight == 1.0);
+  REQUIRE(good(0).sweight == 1.0);
+  {
+    TempFile tmp("tmp_castep_source_forces.castep");
+    tmp.write_lines(edited(read_lines(kGeomCastep), 456, "0.00000   ", "*******   "));
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == good.size());
+    CHECK(db(0).fweight == 0.0);
+    CHECK(forces_are_zero(db(0)));
+    CHECK(db(1).fweight == 1.0);
+    CHECK_THAT(printed, Catch::Contains("CASTEP .castep " + tmp.path +
+                                        ": line 456: the forces line of atom "
+                                        "1, '"));
+    CHECK_THAT(printed, Catch::Contains("', cannot be read; the structure is "
+                                        "stored without forces"));
+  }
+  {
+    TempFile tmp("tmp_castep_source_stress.castep");
+    tmp.write_lines(edited(read_lines(kGeomCastep), 475, "-90.011421", "*********"));
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    REQUIRE(db.size() == good.size());
+    CHECK(db(0).sweight == 0.0);
+    CHECK(stress_is_zero(db(0)));
+    CHECK(db(1).sweight == 1.0);
+    CHECK_THAT(printed, Catch::Contains("CASTEP .castep " + tmp.path +
+                                        ": line 475: the stress line 1, '"));
+    CHECK_THAT(printed, Catch::Contains("', cannot be read; the structure is "
+                                        "stored without stress"));
+  }
+  {
+    TempFile tmp("tmp_castep_source_cut.castep");
+    std::vector<std::string> l = read_lines(kGeomCastep);
+    l.resize(460);
+    tmp.write_lines(l);
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    CHECK_THAT(printed, Catch::Contains("CASTEP .castep " + tmp.path +
+                                        ": the file ends inside the forces "
+                                        "block at line 460"));
+    CHECK_THAT(printed, !Catch::Contains("Truncated file"));
+  }
+}
+
+/* Pins: a .castep file that ends inside a step outside its blocks (a run
+ * stopped during the step's SCF, or between its blocks) keeps the steps
+ * before and skips that step with one WARNING naming the file, the line,
+ * the step and the line it starts at:
+ *  - md_stress.castep cut after line 900 (MD step 2's forces and stress
+ *    read, before its MD Data): steps 0 and 1 and "WARNING: CASTEP .castep
+ *    <path>: the file ends at line 900 inside MD step 2, which starts at
+ *    line 725 and was skipped; 2 structure(s) read."; cut after line 520
+ *    (MD step 1 just started), step 0 and the warning for MD step 1 at line
+ *    517;
+ *  - geom.castep cut after line 700 (inside LBFGS iteration 1): iteration 0
+ *    and the warning for "geometry optimisation iteration 1, which starts
+ *    at line 495"; cut after line 440 (inside iteration 0, the finite basis
+ *    set correction's SCFs): nothing and the warning for "geometry
+ *    optimisation iteration 0, which starts at line 371";
+ *  - Gd0.castep cut after line 5000 (its SCF energy read, before its
+ *    forces): nothing and the warning for "the band-structure calculation,
+ *    which starts at line 117".
+ * A cut after a step's last line (md_stress after line 921, after
+ * '... finished MD iteration 2'; geom after line 720, after 'finished
+ * iteration 1') keeps the steps up to it without a warning, as the whole
+ * files do. (Pins as well.)
+ * Before the fix: the same structures, and no warning for any cut. */
+TEST_CASE("CASTEP .castep reader: a file that ends inside a step outside its "
+          "blocks warns, naming the file and the step",
+          "[castep_readers][source][truncated]") {
+  PeriodicTable::initialize();
+  const std::string kGd0 = "./tests_data/valid_castep_castep/Gd0.castep";
+  struct Cut {
+    std::string file;
+    size_t after;  // the last line kept, 0 for the whole file
+    size_t stored;
+    std::string step;  // the step warned about, empty for none
+  };
+  const Cut cuts[] = {
+      {kMdStressCastep, 900, 2, "MD step 2, which starts at line 725"},
+      {kMdStressCastep, 520, 1, "MD step 1, which starts at line 517"},
+      {kMdStressCastep, 921, 3, ""},
+      {kMdStressCastep, 0, 4, ""},
+      {kGeomCastep, 700, 1,
+       "geometry optimisation iteration 1, which starts at line 495"},
+      {kGeomCastep, 440, 0,
+       "geometry optimisation iteration 0, which starts at line 371"},
+      {kGeomCastep, 720, 2, ""},
+      {kGd0, 5000, 0,
+       "the band-structure calculation, which starts at line 117"}};
+  for (const Cut &c : cuts) {
+    INFO(c.file << " cut after line " << c.after);
+    std::vector<std::string> l = read_lines(c.file);
+    if (c.after > 0) l.resize(c.after);
+    TempFile tmp("tmp_castep_ends_step_" + std::to_string(c.after) + ".castep");
+    tmp.write_lines(l);
+    StructureDB db;
+    const std::string printed = parse_capturing<CastepCastepReader>(db, tmp.path);
+    INFO("printed: '" << printed << "'");
+    CHECK(db.size() == c.stored);
+    if (c.step.empty()) {
+      CHECK(count_ci(printed, "warning") == 0);
+    } else {
+      CHECK(count_ci(printed, "warning") == 1);
+      CHECK_THAT(printed,
+                 Catch::Contains("WARNING: CASTEP .castep " + tmp.path +
+                                 ": the file ends at line " +
+                                 std::to_string(c.after) + " inside " + c.step +
+                                 " and was skipped; " +
+                                 std::to_string(c.stored) +
+                                 " structure(s) read."));
+    }
+  }
+}

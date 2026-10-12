@@ -1,4 +1,6 @@
 #include <tadah/mlip/structure.h>
+
+#include <array>
 #include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/utils.h>
@@ -153,6 +155,35 @@ std::vector<std::string> tokens_of(const std::string &line) {
 }
 }  // namespace
 
+namespace detail {
+
+std::array<std::string, 18> read_cell_stress_lines(std::istream &in) {
+  std::array<std::string, 18> fields;
+  std::string line;
+  for (int b = 0; b < 2; ++b) {
+    const char *const block = b == 0 ? "cell" : "stress";
+    for (int row = 0; row < 3; ++row) {
+      if (!std::getline(in, line))
+        throw std::runtime_error(std::string("the file ends inside the ") +
+                                 block + " block, at line " +
+                                 std::to_string(row + 1) + " of 3");
+      const std::vector<std::string> t = tokens_of(line);
+      if (t.size() != 3)
+        throw std::runtime_error(
+            std::string(block) + " line " + std::to_string(row + 1) + ", '" +
+            tadah::core::trim(line) + "', has " + std::to_string(t.size()) +
+            (t.size() == 1 ? " field" : " fields") +
+            (b == 0 ? ": each cell line is one lattice vector, 3 numbers"
+                    : ": each stress line is one row of the stress tensor, "
+                      "3 numbers"));
+      for (int k = 0; k < 3; ++k) fields[9 * b + 3 * row + k] = t[k];
+    }
+  }
+  return fields;
+}
+
+}  // namespace detail
+
 int Structure::read(std::ifstream &ifs) {
   std::string line;
   // Ignore extra empty lines (a line of only whitespace, '\r' included, is
@@ -196,22 +227,19 @@ int Structure::read(std::ifstream &ifs) {
                              "fweight sweight'");
   }
 
-  // 3x3 cell matrix, then the 3x3 stress matrix
-  auto read_matrix = [&](tadah::core::Matrix3d &m, const std::string &what) {
+  // The 3x3 cell matrix, then the 3x3 stress matrix: three lines of three
+  // numbers each (detail::read_cell_stress_lines, which next_structure and
+  // StructureDB::find_unique_elements read the same way).
+  const std::array<std::string, 18> block = detail::read_cell_stress_lines(ifs);
+  for (int b = 0; b < 2; ++b) {
+    const std::string what = b == 0 ? "cell" : "stress";
+    tadah::core::Matrix3d &m = b == 0 ? cell : stress;
     for (int i = 0; i < 3; ++i)
-      for (int j = 0; j < 3; ++j) {
-        std::string t;
-        if (!(ifs >> t))
-          throw std::runtime_error("the file ends inside the " + what + " block");
-        m(i, j) = finite_value(t, what + " entry (" + std::to_string(i + 1) +
-                                      ", " + std::to_string(j + 1) + ")");
-      }
-  };
-  read_matrix(cell, "cell");
-  read_matrix(stress, "stress");
-
-  // Move to next line to start reading atoms
-  std::getline(ifs, line);
+      for (int j = 0; j < 3; ++j)
+        m(i, j) = finite_value(block[9 * b + 3 * i + j],
+                               what + " entry (" + std::to_string(i + 1) +
+                                   ", " + std::to_string(j + 1) + ")");
+  }
 
   // Clear existing atoms
   atoms.clear();
@@ -646,6 +674,7 @@ bool Structure::next_structure(std::ifstream &ifs, size_t &natoms) {
   do {
     if (!std::getline(ifs, line)) return false;
   } while (tadah::core::is_blank_line(line));
+  const std::string label = line;
 
   // Read the second line
   std::getline(ifs, line);
@@ -661,9 +690,13 @@ bool Structure::next_structure(std::ifstream &ifs, size_t &natoms) {
   if (count == 3)
     std::getline(ifs, line);
 
-  // Skip cell and stress lines (3+3 = 6 lines)
-  for (size_t i = 0; i < 6; ++i)
-    std::getline(ifs, line);
+  // The cell and stress lines, three of three fields each, as read() reads
+  // them.
+  try {
+    (void)detail::read_cell_stress_lines(ifs);
+  } catch (const std::exception &e) {
+    throw std::runtime_error("structure '" + label + "': " + e.what());
+  }
 
   natoms = 0;
   while(std::getline(ifs, line)) {
