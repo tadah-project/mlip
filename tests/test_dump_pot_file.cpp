@@ -10,6 +10,7 @@
 #include <tadah/core/number_format.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 
 #include <cstdint>
 #include <cstring>
@@ -181,6 +182,82 @@ TEST_CASE("dumpPotFile: explicit NUMERIC 12 -> 12 digits and a warning",
   const Context back = CoreUserConfigParser().parse("pot17.tadah");
   for (std::size_t i = 0; i < kWeights.size(); ++i)
     CHECK(dp_bits(back.get<double>("WEIGHTS", i)) == dp_bits(kWeights[i]));
+}
+
+/* Pins: dumpPotFile (tadah train, refit, refit --edit) with NUMERIC 12, 6 and
+ * 3 writes the numbers of the cutoff and grid keys exactly, as the shortest
+ * text that reads back as the same double: RCUT2B '5.3', CGRID2B 'LIN 3 0.1
+ * 3', SGRID2B '0.7 1.1 0.3333333333333333' (they read back bit-exact), and
+ * every other number with NUMERIC significant digits (WEIGHTS, LSCALE,
+ * ESHIFT); its WARNING says which keys are written exactly. A D2_Knot5
+ * potential whose RCUT2B is its largest knot (5.58190742024) reloads with
+ * that RCUT2B bit-exact and normalize_knot_rcut (train, predict, refit --edit
+ * and hpo startup) leaves it unchanged.
+ * Before the fix: the cutoff and grid keys were rounded with the rest
+ * (SGRID2B '0.7 1.1 0.333333333333' at NUMERIC 12, RCUT2B '5.58' for the
+ * knot potential at 3; the knot relation held only because both were
+ * rounded alike), and the WARNING said NUMERIC limits every non-integer
+ * number. */
+TEST_CASE("dumpPotFile: NUMERIC below 17 writes the cutoff and grid keys "
+          "exactly and rounds the other numbers",
+          "[train][dumpPotFile][lossless][exact_in_potential]") {
+  DumpTempDir tmp;
+  for (const int n : {12, 6, 3}) {
+    INFO("NUMERIC " << n);
+    Context pot = make_pot();
+    pot.add("NUMERIC", n);
+    const std::string log = dump_capturing("pot.tadah", pot);
+    CHECK(log.find("and so are the numbers of CGRID2B, CGRIDMB, RCUT2B, "
+                   "RCUTMB, SGRID2B and SGRIDMB") != std::string::npos);
+    const std::string text = slurp("pot.tadah");
+    INFO(text);
+    CHECK(line_tokens(text, "RCUT2B") == std::vector<std::string>{"5.3"});
+    CHECK(line_tokens(text, "CGRID2B") ==
+          std::vector<std::string>{"LIN", "3", "0.1", "3"});
+    CHECK(line_tokens(text, "SGRID2B") ==
+          std::vector<std::string>{"0.7", "1.1", "0.3333333333333333"});
+    std::vector<std::string> w;
+    for (double v : kWeights) {
+      const std::string t = tadah::core::format_roundtrip(v);
+      w.push_back(tadah::core::is_integer_literal(t)
+                      ? t
+                      : tadah::core::format_sig(v, n));
+    }
+    CHECK(line_tokens(text, "WEIGHTS") == w);
+    CHECK(line_tokens(text, "LSCALE") ==
+          std::vector<std::string>{tadah::core::format_sig(1.0 / 0.997, n)});
+    CHECK(line_tokens(text, "ESHIFT") ==
+          std::vector<std::string>{
+              tadah::core::format_sig(-3.1234567890123456, n)});
+    const Context back = CoreUserConfigParser().parse("pot.tadah");
+    CHECK(dp_bits(back.get<double>("SGRID2B", 2)) == dp_bits(1.0 / 3));
+    CHECK(dp_bits(back.get<double>("RCUT2B")) == dp_bits(5.3));
+  }
+
+  for (const int n : {6, 3}) {
+    INFO("D2_Knot5, NUMERIC " << n);
+    Context knot;
+    knot.add("MODEL", "M_BLR BF_Linear");
+    knot.add("ATOM", "Ta");
+    knot.add("INIT2B", "true");
+    knot.add("TYPE2B", "D2_Knot5 3 Ta Ta");
+    knot.add("RCTYPE2B", "Cut_Dummy");
+    knot.add("RCUT2B", "5.58190742024");
+    knot.add("CGRID2B", "2.123456789 3.987654321 5.58190742024");
+    knot.add("WEIGHTS", std::vector<double>{1.0 / 3, -2.0 / 3, 0.25});
+    knot.add("NUMERIC", n);
+    (void)dump_capturing("knot.tadah", knot);
+    const std::string text = slurp("knot.tadah");
+    INFO(text);
+    CHECK(line_tokens(text, "RCUT2B") ==
+          std::vector<std::string>{"5.58190742024"});
+    CHECK(line_tokens(text, "CGRID2B") ==
+          std::vector<std::string>{"2.123456789", "3.987654321",
+                                   "5.58190742024"});
+    Context back = CoreUserConfigParser().parse("knot.tadah");
+    CHECK_FALSE(tadah::models::potedit::normalize_knot_rcut(back, "test"));
+    CHECK(dp_bits(back.get<double>("RCUT2B")) == dp_bits(5.58190742024));
+  }
 }
 
 TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
