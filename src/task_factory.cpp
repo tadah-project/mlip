@@ -8,11 +8,54 @@
 #include <tadah/core/blueprint_validator.h>
 #include <stdexcept>
 #include <algorithm>
+#include <string>
 #include <utility>
+#include <vector>
 #include <boost/algorithm/string.hpp>
 
 namespace tadah {
 namespace mlip {
+
+namespace {
+
+/* The blueprint entry of the task @p name. A name that is not a blueprint
+ * task (an ITaskInput a program builds can pass any string; the command
+ * line and a task file's parser pass only blueprint names) is a
+ * std::invalid_argument that names it, the task it matches but for the
+ * case of its letters, if one, and the task names: those without tasks of
+ * their own, sorted. */
+const core::BlueprintTask &blueprint_task(const std::string &name) {
+  const auto &tasks = core::BlueprintParser::getTasksMapRef();
+  const auto found = tasks.find(name);
+  if (found != tasks.end()) return found->second;
+
+  std::vector<std::string> names;
+  for (const auto &kv : tasks) {
+    const std::string prefix = kv.first + ".";
+    const bool group = std::any_of(tasks.begin(), tasks.end(),
+        [&](const auto &other) {
+          return other.first.compare(0, prefix.size(), prefix) == 0;
+        });
+    if (!group) names.push_back(kv.first);
+  }
+  std::sort(names.begin(), names.end());
+
+  std::string msg =
+      "TaskFactory::createTasksFromInput - unknown task '" + name + "'";
+  const auto same = std::find_if(names.begin(), names.end(),
+      [&](const std::string &n) { return boost::iequals(n, name); });
+  if (same != names.end())
+    msg += ": task names are case-sensitive, did you mean '" + *same + "'?";
+  else
+    msg += ".";
+  msg += " The tasks:";
+  for (std::size_t i = 0; i < names.size(); ++i)
+    msg += (i == 0 ? " " : ", ") + names[i];
+  throw std::invalid_argument(msg + ".");
+}
+
+}  // namespace
+
 TaskFactory::TaskFactory(std::shared_ptr<MLIPUserConfigParser> parser)
   : parser_(std::move(parser))
 {}
@@ -94,6 +137,9 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // The task section has priority over the global section.
   bool hasConfig = baseContext.contains("CONFIG");  // --config given in CLI
   bool hasTask = baseContext.contains("TASK");  // --task given in CLI
+  // Without a --task file the input names the task: a blueprint task, or
+  // refused here, before any configuration file is read.
+  if (!hasTask) (void)blueprint_task(taskInput.getTaskName());
   std::vector<std::pair<std::string, core::Context>> configVec;
   std::string taskFile;   // the --task file, for its error
   std::string baseContextConfigFile;  // the --config file, for KeyProvenance
@@ -182,11 +228,11 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     auto &task = tasksResult[t];
     const std::string &taskName = task.getTaskName();
     core::Context &taskContext = task.getContext();
-    const auto bp = blueprintTasks.find(taskName);
+    const core::BlueprintTask &bp = blueprint_task(taskName);
     std::vector<std::string> defaulted;  // the keys added here
 
     // dealt with options keys
-    for (const auto &bpKey : bp->second.blueprintKeys) {
+    for (const auto &bpKey : bp.blueprintKeys) {
       if (bpKey.default_value.empty()) {
         continue; // skip if no default value
       }
@@ -205,7 +251,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     }
 
     // also deal with groups
-    for (const auto &group : bp->second.groups) {
+    for (const auto &group : bp.groups) {
       for (const auto &bpKey : group.blueprintKeys) {
         if (bpKey.default_value.empty()) {
           continue; // skip if no default value
