@@ -463,6 +463,63 @@ TEST_CASE("DescriptorsCalc BIAS true with DIMER: each atom's intercept is "
   }
 }
 
+// Pins: with a D2_mJoin two-body descriptor (D2_BP of 3 and of 2
+// functions) and DM_EAD, on the periodic Nb-Ta cell with FORCE true and
+// with STRESS true, ATOM Nb Ta, the BIAS true descriptor of every atom is
+// its one-hot intercept block followed by the BIAS false descriptor, bit
+// for bit, and so are its force (or stress) descriptors: zero intercept
+// rows, then the BIAS false rows, the two-body rows expanded to x, y and z.
+// Before the fix: D2_mJoin kept its own first index 0 (its set_fidx placed
+// only its children), and DescriptorsCalc expands the two-body rows from
+// d2.get_fidx(): rows 0 to 4 were expanded instead of 2 to 6, so the last
+// two two-body rows (5 and 6) kept the radial derivative, unscaled, in x
+// and 0 in y and z (2496 entries differed, the first fd row 5, x).
+TEST_CASE("DescriptorsCalc BIAS true with a D2_mJoin: the two-body force "
+          "rows follow the intercept columns",
+          "[descriptors_calc][bias]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  Structure st = tanb_cell(6, 11);
+  NNFinder().calc(st, kRcut);
+  auto mjoin_context = [](bool bias) {
+    Context c = make_context({"Nb", "Ta"}, bias, true);
+    for (const char *k : {"TYPE2B", "CGRID2B", "SGRID2B", "RCTYPE2B",
+                          "RCUT2B"})
+      c.remove(k);
+    c.add("TYPE2B", "D2_mJoin");
+    for (const std::string &n : {"3", "2"}) {
+      c.add("TYPE2B", "D2_BP");
+      c.add("TYPE2B", n);
+      c.add("TYPE2B", n);
+      c.add("TYPE2B", "*");
+      c.add("TYPE2B", "*");
+      c.add("RCTYPE2B", "Cut_Cos");
+      c.add("RCUT2B", kRcut);
+    }
+    c.add("CGRID2B", "2.4 3.1 3.9 2.8 3.5");
+    c.add("SGRID2B", "1.0 1.2 0.9 1.1 0.8");
+    return c;
+  };
+  for (const char *fs : {"FORCE", "STRESS"}) {
+    DYNAMIC_SECTION(fs << " true") {
+      Context c1 = mjoin_context(true);
+      Context c0 = mjoin_context(false);
+      set(c1, fs, "true");
+      set(c0, fs, "true");
+      Trainer t1(c1, ws), t0(c0, ws);
+      const StDescriptors d1 = t1.dc.calc(st);
+      const StDescriptors d0 = t0.dc.calc(st);
+      REQUIRE(d0.dim() == 5 + 4);
+      REQUIRE_FALSE(d1.fd.empty());
+      std::string msg;
+      const std::size_t bad = layout_mismatches(
+          d1, d0, 2, intercept_columns(st, {kNb, kTa}), msg);
+      INFO("first difference: " << msg);
+      CHECK(bad == 0);
+    }
+  }
+}
+
 // Pins: with ATOM Ta and BIAS true (one species) the descriptor is a 1.0
 // followed by the BIAS false descriptor, bit for bit, with zero intercept
 // rows in the force descriptors, and DSIZE is 1 + the descriptor size:
