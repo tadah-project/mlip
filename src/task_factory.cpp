@@ -49,8 +49,10 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       continue; // skip empty values
     }
     bool valid_schema = false;
+    const core::BlueprintKey *keyInfo = nullptr;
     try {
-      valid_schema = core::CoreUserConfigParser::validateWithBlueprint(key, values, bpMap.at(core::to_upper(key)));
+      keyInfo = &bpMap.at(core::to_upper(key));
+      valid_schema = core::CoreUserConfigParser::validateWithBlueprint(key, values, *keyInfo);
     } catch (const std::out_of_range &e) {
       // suggest closest key match then throw
       const std::string closestKey = core::BlueprintParser::findClosestKey(key, bpMap);
@@ -60,7 +62,19 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid blueprint key: " + key);
     }
     if (!valid_schema) {
-      throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid key-value pair: " + key + " -> " + core::concat(values));
+      // Values joined by a comma or a '+' (one command-line word), which no
+      // reader splits at: name the separator and the values as words.
+      const std::string text = core::concat(values);
+      std::string respaced;
+      const std::string seps = core::CoreUserConfigParser::misusedSeparators(
+          text, *keyInfo, respaced);
+      throw std::runtime_error(
+          "TaskFactory::createTasksFromInput - Invalid key-value pair: " + key +
+          " -> " + text +
+          (seps.empty() ? std::string()
+                        : " ('" + text + "' separates values with " + seps +
+                              ", which is not a value separator: give them "
+                              "as separate words, " + respaced + ")"));
     }
   }
 
