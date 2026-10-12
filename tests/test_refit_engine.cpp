@@ -384,10 +384,11 @@ TEST_CASE_METHOD(PTFixture,
   {
     ScopedTempDir tmp;
     write_synth_eam("synth_fcc_shift.eam.alloy", "fcc", 3.6, 400, 400, 0.37);
+    // (REFIT_CONSTRAIN_F0, which the F(0) pin of EMBF0 FREE reads, is
+    // refused under ZERO: "REFIT_CONSTRAIN_F0, REFIT_LEVEL, REFIT_PLACEMENT
+    // and REFIT_BASIS are read as written or refused" below; this case
+    // set it false and checked its WARNING until 2026-10-12)
     Context c = dense_refit_context("synth_fcc_shift.eam.alloy");
-    // the F(0) pin does not exist under ZERO: explicitly disabling it only
-    // warns and changes nothing
-    c.add("REFIT_CONSTRAIN_F0", std::string("false"));
     shifted = run_refit(c);
   }
   INFO(shifted.log);
@@ -397,8 +398,6 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(shifted.embf0 == "ZERO");
   CHECK(shifted.setfl_F0 == 0.0);
   CHECK(shifted.log.find("EMBF0 ZERO: table F(0) = 0.37 eV removed") !=
-        std::string::npos);
-  CHECK(shifted.log.find("REFIT_CONSTRAIN_F0 false has no effect") !=
         std::string::npos);
   // same weights up to the 12-digit rounding of the two synthetic tables
   REQUIRE(shifted.weights.size() == base.weights.size());
@@ -1553,5 +1552,131 @@ TEST_CASE_METHOD(PTFixture,
     }
     const RangeRow F = range_row("F");
     check_curve_window("refit_curve_F.dat", 0.0, F.win_hi);
+  }
+}
+
+/* Pins: the dense fit's word keys are read as written or refused, before the
+ * EAM file is read (RefitEngine::validate, and run(): the EAM file here does
+ * not exist):
+ *  - REFIT_BASIS: a spelling of no basis family ('Blipp', 'BLIPP') is
+ *    refused in either REFIT_MODE, naming it and the families; 'BLIP' is
+ *    the Blip family, as BLIP5 and KNOT5 are theirs: a dense refit with it
+ *    writes the TYPE2B of REFIT_BASIS Blip and no EXPERIMENTAL (Gaussian)
+ *    WARNING;
+ *  - REFIT_LEVEL in any letter case ('COARSE' is coarse: the same WEIGHTS),
+ *    another value ('acurate', 'Fine-ish') refused naming the four;
+ *  - REFIT_PLACEMENT in any letter case ('Uniform'), another value
+ *    ('unifrom') refused naming window and uniform;
+ *  - REFIT_CONSTRAIN_F0, which only the F(0) pin of EMBF0 FREE reads, true
+ *    or false, is refused under EMBF0 ZERO (the default, and written),
+ *    naming EMBF0 FREE; under EMBF0 FREE it passes, and so does the
+ *    blueprint default the task factory stores (KeyOrigin::Default).
+ * Before the fix: every one passed validate(); a dense refit with 'BLIP' or
+ * 'Blipp' fitted the Blip basis (MODELS' lenient basis_kind_from_string)
+ * while warning that the basis was the experimental Gaussian one; another
+ * REFIT_LEVEL fitted the balanced preset and another REFIT_PLACEMENT the
+ * window placement; REFIT_CONSTRAIN_F0 true was accepted without a word
+ * under EMBF0 ZERO and false with a WARNING only. */
+TEST_CASE_METHOD(PTFixture,
+                 "REFIT_CONSTRAIN_F0, REFIT_LEVEL, REFIT_PLACEMENT and "
+                 "REFIT_BASIS are read as written or refused",
+                 "[refit][engine][strict_keys]") {
+  const auto refusal = [](const Context &c) {
+    Task task("refit", c);
+    std::string what;
+    try {
+      RefitEngine().validate(task);
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    return what;
+  };
+  const auto with = [](Context c, const std::string &key,
+                       const std::string &value) {
+    c.remove(key);
+    c.add(key, value);
+    return c;
+  };
+  const Context dense = dense_refit_context("missing.eam.alloy");
+  SECTION("REFIT_BASIS") {
+    for (const char *mode : {"dense", "compact"}) {
+      for (const char *basis : {"Blipp", "BLIPP"}) {
+        INFO(mode << " " << basis);
+        Context c = with(dense, "REFIT_BASIS", basis);
+        c = with(c, "REFIT_MODE", mode);
+        if (std::string(mode) == "compact") {
+          c.remove("REFIT_LEVEL");
+          c.remove("REFIT_MAX_ESCALATIONS");
+        }
+        CHECK(refusal(c) ==
+              std::string("tadah refit: REFIT_BASIS '") + basis +
+                  "' is no basis family of tadah refit: Blip (Blip, BLIP, "
+                  "blip), Blip5 (Blip5, BLIP5, blip5, M6), the knot families "
+                  "Knot5, Knot3 and KnotMix (Knot5, KNOT5, knot5, Knot3, "
+                  "KNOT3, knot3, KnotMix, KNOTMIX, knotmix, Mixed, MIXED), "
+                  "or, under REFIT_MODE dense only, the experimental "
+                  "Gaussian (Gaussian, gaussian, BP, D2_BP)");
+      }
+    }
+    CHECK(refusal(with(dense, "REFIT_BASIS", "BLIP")).find("REFIT_BASIS") ==
+          std::string::npos);
+    ScopedTempDir tmp;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = dense_refit_context("synth_fcc.eam.alloy");
+    c = with(c, "REFIT_BASIS", "BLIP");
+    c = with(c, "REFIT_MAX_ESCALATIONS", "0");
+    const RefitOutputs upper = run_refit(c);
+    INFO(upper.log);
+    CHECK(upper.log.find("EXPERIMENTAL") == std::string::npos);
+    const std::string pot_upper = slurp("pot.tadah");
+    const RefitOutputs blip = run_refit(with(c, "REFIT_BASIS", "Blip"));
+    CHECK(upper.weights == blip.weights);
+    CHECK(pot_upper == slurp("pot.tadah"));
+  }
+  SECTION("REFIT_LEVEL") {
+    for (const char *level : {"acurate", "Fine-ish"})
+      CHECK(refusal(with(dense, "REFIT_LEVEL", level)) ==
+            std::string("tadah refit: REFIT_LEVEL must be 'coarse', "
+                        "'balanced' (the default), 'fine' or 'accurate' (in "
+                        "any letter case), got '") + level + "'");
+    CHECK(refusal(with(dense, "REFIT_LEVEL", "Fine")).empty());
+    ScopedTempDir tmp;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = with(dense_refit_context("synth_fcc.eam.alloy"),
+                     "REFIT_MAX_ESCALATIONS", "0");
+    const RefitOutputs lower = run_refit(c);
+    const RefitOutputs upper = run_refit(with(c, "REFIT_LEVEL", "COARSE"));
+    REQUIRE_FALSE(lower.weights.empty());
+    CHECK(upper.weights == lower.weights);
+  }
+  SECTION("REFIT_PLACEMENT") {
+    CHECK(refusal(with(dense, "REFIT_PLACEMENT", "unifrom")) ==
+          "tadah refit: REFIT_PLACEMENT must be 'window' (the default) or "
+          "'uniform' (in any letter case), got 'unifrom'");
+    CHECK(refusal(with(dense, "REFIT_PLACEMENT", "Uniform")).empty());
+    CHECK(refusal(with(dense, "REFIT_PLACEMENT", "WINDOW")).empty());
+  }
+  SECTION("REFIT_CONSTRAIN_F0") {
+    for (const char *v : {"true", "false"}) {
+      INFO("REFIT_CONSTRAIN_F0 " << v);
+      const Context c = with(dense, "REFIT_CONSTRAIN_F0", v);
+      CHECK(refusal(c) ==
+            "tadah refit: REFIT_CONSTRAIN_F0 has no effect under EMBF0 ZERO "
+            "(the default): only EMBF0 FREE reads it; remove "
+            "REFIT_CONSTRAIN_F0, or set EMBF0 FREE");
+      CHECK(refusal(with(c, "EMBF0", "ZERO")) ==
+            "tadah refit: REFIT_CONSTRAIN_F0 has no effect under EMBF0 ZERO: "
+            "only EMBF0 FREE reads it; remove REFIT_CONSTRAIN_F0, or set "
+            "EMBF0 FREE");
+      CHECK(refusal(with(c, "EMBF0", "FREE")).empty());
+    }
+    using tadah::mlip::KeyOrigin;
+    using tadah::mlip::KeyProvenance;
+    Context c = with(dense, "REFIT_CONSTRAIN_F0", "true");
+    Task task("refit", c);
+    task.setKeyProvenance(KeyProvenance(Context(), dense, "dense.refit",
+                                        KeyOrigin::Kind::ConfigFile,
+                                        {"REFIT_CONSTRAIN_F0"}));
+    CHECK_NOTHROW(RefitEngine().validate(task));
   }
 }
