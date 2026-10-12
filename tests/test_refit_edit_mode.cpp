@@ -1086,3 +1086,99 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(fs::exists("refit_edited_retargeted.hpotarget"));
   CHECK(slurp("refit_edited.hpotarget") == edited);
 }
+
+/* Pins: --edit and --retarget write the files an explicit -o / --hpofileout
+ * names, also when the name is the default one of a refit (pot.tadah,
+ * refit.hpotarget): set on the command line or in the configuration file
+ * (KeyProvenance CommandLine, ConfigFile), --edit writes pot.tadah and
+ * refit.hpotarget and no pot_edited.tadah or refit_edited.hpotarget, and
+ * --retarget writes pot.tadah (the hpotarget, under the name asked for) and
+ * no a_retargeted.hpotarget; the blueprint defaults the task factory stores
+ * (KeyOrigin::Default) still give the edited names. --retarget --in-place
+ * with an explicit OUTFILE pot.tadah (a configuration or task file, which
+ * the command line's excludes cannot see) is refused as -o is.
+ * Before the fix: a value equal to the default string counted as unset, so
+ * both modes silently wrote pot_edited.tadah / refit_edited.hpotarget /
+ * a_retargeted.hpotarget instead, and --in-place ran with OUTFILE
+ * pot.tadah. */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit and --retarget honour an explicit output name "
+                 "that is the default one",
+                 "[refit][edit][retarget][output_names]") {
+  using tadah::mlip::KeyOrigin;
+  using tadah::mlip::KeyProvenance;
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  tadah::mlip::engines::write_hpotarget("a.hpotarget", make_knot_pot(), 5.0);
+  const auto slurp = [](const std::string &f) {
+    std::ifstream is(f);
+    return std::string((std::istreambuf_iterator<char>(is)),
+                       std::istreambuf_iterator<char>());
+  };
+  const std::vector<std::string> all = {
+      "pot.tadah", "refit.hpotarget", "pot_edited.tadah",
+      "refit_edited.hpotarget", "a_retargeted.hpotarget"};
+  const auto clean = [&] {
+    for (const auto &f : all) fs::remove(f);
+  };
+  using Keys = std::vector<std::pair<std::string, std::string>>;
+  // `keys` set as `kind` (or added as the blueprint defaults `defaulted`
+  // names); the other keys are the configuration file's
+  const auto task_of = [](const Context &base, const Keys &keys,
+                          KeyOrigin::Kind kind,
+                          const std::vector<std::string> &defaulted = {}) {
+    Context c = base, set;
+    for (const auto &[k, v] : keys) {
+      c.add(k, v);
+      set.add(k, v);
+    }
+    Task task("refit", c);
+    task.setKeyProvenance(
+        kind == KeyOrigin::Kind::CommandLine
+            ? KeyProvenance(set, base, "edit.refit",
+                            KeyOrigin::Kind::ConfigFile, defaulted)
+            : KeyProvenance(Context(), defaulted.empty() ? c : base,
+                            "edit.refit", kind, defaulted));
+    return task;
+  };
+  Context edit;
+  edit.add("EDIT", std::string("in.tadah"));
+  edit.add("FUNC", std::string("phi"));
+  edit.add("ADD", 3.6);
+  Context retarget;
+  retarget.add("RETARGET", std::string("a.hpotarget"));
+  const Keys names = {{"OUTFILE", "pot.tadah"},
+                      {"HPOFILEOUT", "refit.hpotarget"}};
+  const Keys out_only = {{"OUTFILE", "pot.tadah"}};
+  for (const auto kind :
+       {KeyOrigin::Kind::CommandLine, KeyOrigin::Kind::ConfigFile}) {
+    INFO((kind == KeyOrigin::Kind::CommandLine ? "command line"
+                                               : "configuration file"));
+    clean();
+    Task e = task_of(edit, names, kind);
+    REQUIRE(RefitEngine().run(e) == EXIT_SUCCESS);
+    CHECK(fs::exists("pot.tadah"));
+    CHECK(fs::exists("refit.hpotarget"));
+    CHECK_FALSE(fs::exists("pot_edited.tadah"));
+    CHECK_FALSE(fs::exists("refit_edited.hpotarget"));
+    clean();
+    Task r = task_of(retarget, out_only, kind);
+    REQUIRE(RefitEngine().run(r) == EXIT_SUCCESS);
+    CHECK(fs::exists("pot.tadah"));
+    CHECK(slurp("pot.tadah").find("OPTIM") != std::string::npos);
+    CHECK_FALSE(fs::exists("a_retargeted.hpotarget"));
+  }
+  clean();
+  Task e = task_of(edit, names, KeyOrigin::Kind::ConfigFile,
+                   {"OUTFILE", "HPOFILEOUT"});
+  REQUIRE(RefitEngine().run(e) == EXIT_SUCCESS);
+  CHECK(fs::exists("pot_edited.tadah"));
+  CHECK(fs::exists("refit_edited.hpotarget"));
+  CHECK_FALSE(fs::exists("pot.tadah"));
+  Keys in_place = out_only;
+  in_place.push_back({"IN_PLACE", "true"});
+  Task ip = task_of(retarget, in_place, KeyOrigin::Kind::TaskFile);
+  CHECK_THROWS_WITH(RefitEngine().run(ip),
+                    "tadah refit --retarget: --in-place and -o are mutually "
+                    "exclusive.");
+}

@@ -271,3 +271,38 @@ TEST_CASE("M_BLR::get_param_file keeps the training FORCE, STRESS, ALPHA "
   CHECK(line_of("BETA") == Tokens{"2"});
   CHECK(lines.count("DBFILE") == 0);
 }
+
+/* Pins: neither M_KRR's nor M_BLR's potential records UNCERTAINTY, the
+ * switch of the train task that writes weights.tadah (tadah train
+ * --uncertainty): with UNCERTAINTY true in the model's context,
+ * get_param_file() has no UNCERTAINTY, nor has the potential
+ * TrainEngine::dumpPotFile writes from it.
+ * Before the fix: both potentials had UNCERTAINTY true (every potential
+ * carried the run's UNCERTAINTY), and `tadah train -c <potential>` read
+ * it as a request: a retrain with another OALGO was refused ("tadah train
+ * --uncertainty needs OALGO 3") with no --uncertainty given. */
+TEST_CASE("get_param_file does not record UNCERTAINTY", "[param_file]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  for (const auto &model : {kKRR, kBLR}) {
+    DYNAMIC_SECTION(model[0]) {
+      Context c = make_context(model, true, false);
+      c.add("UNCERTAINTY", "true");
+      pin_all_weights(c, ws);
+      Trainer tr(c, ws);
+      tr.provision_fixed_weights();
+      REQUIRE(stored(tr.context, "UNCERTAINTY") == "true");
+      const Context pot = tr.model->get_param_file();
+      CHECK_FALSE(pot.has_stored("UNCERTAINTY"));
+      const fs::path dir = fs::temp_directory_path() /
+                           ("tadah_unc_param_" + std::to_string(::getpid()));
+      fs::create_directories(dir);
+      const std::string f = (dir / (model[0] + ".tadah")).string();
+      tadah::mlip::engines::TrainEngine::dumpPotFile(f, pot);
+      const auto lines = read_pot_lines(f);
+      fs::remove_all(dir);
+      CHECK(lines.count("WEIGHTS") == 1);
+      CHECK(lines.count("UNCERTAINTY") == 0);
+    }
+  }
+}

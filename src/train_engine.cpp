@@ -8,6 +8,7 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/intercepts.h>
+#include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/load_transforms.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/dm/embf0.h>
@@ -63,6 +64,45 @@ void warn_noise_without_energies(const core::Context &param_file) {
       "E: `tadah predict --error` and `tadah properties pairwise --error` "
       "refuse it (every prediction has an energy). Its WCOV, and the "
       "standard deviations of --uncertainty, are those of the fit.");
+}
+// Whether the task asks for weights.tadah (--uncertainty, UNCERTAINTY
+// true). A potential given as the configuration (-c, a file with WEIGHTS:
+// the retrain route) recorded the UNCERTAINTY of the run that trained it --
+// tadah 1.5.x and 1.6.0 development builds wrote the key into every
+// potential, get_param_file no longer does -- and that is not a request: a
+// retrain with another OALGO was refused for it ("needs OALGO 3") although
+// no --uncertainty was given. --uncertainty on the command line, and
+// UNCERTAINTY true in a training configuration or a task file, are
+// requests. With @p warn, the ignored record is said (a WARNING).
+bool uncertainty_requested(const tadah::mlip::Task &task, bool warn) {
+  const core::Context &c = task.getContext();
+  if (!c.get<bool>("UNCERTAINTY")) return false;
+  const KeyProvenance *prov = task.getKeyProvenance();
+  if (!prov || !c.has_stored("WEIGHTS")) return true;
+  const KeyOrigin o = prov->origin("UNCERTAINTY");
+  if (o.kind != KeyOrigin::Kind::ConfigFile) return true;
+  if (warn)
+    core::Logger::instance().log(
+        core::LogLevel::WARNING,
+        "tadah train: the configuration file " + o.file + " is a potential "
+        "(it has WEIGHTS), and its UNCERTAINTY true is the record of the run "
+        "that trained it (tadah 1.5.x and 1.6.0 development builds wrote "
+        "UNCERTAINTY into every potential), not a request: it is ignored and "
+        "no weights.tadah is written. Give --uncertainty (OALGO 3) to write "
+        "the weights with their standard deviations.");
+  return false;
+}
+
+// " (UNCERTAINTY true: configuration file c.tadah)" when the request did
+// not come from the command line, else "".
+std::string uncertainty_source(const tadah::mlip::Task &task) {
+  const KeyProvenance *prov = task.getKeyProvenance();
+  if (!prov) return "";
+  const KeyOrigin o = prov->origin("UNCERTAINTY");
+  if (o.kind == KeyOrigin::Kind::CommandLine ||
+      o.kind == KeyOrigin::Kind::NotRecorded)
+    return "";
+  return " (UNCERTAINTY true: " + o.describe("UNCERTAINTY") + ")";
 }
 }  // namespace
 
@@ -157,10 +197,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // that computed no covariance (its noise variance undefined) is refused
   // before the potential is written (owner decision D8), with the reason
   // the model gives and what to change.
-  const bool uncertainty = context.get<bool>("UNCERTAINTY");
+  const bool uncertainty = uncertainty_requested(task, /*warn=*/true);
   if (uncertainty && !tr.model->has_covariance())
     throw std::runtime_error(
-        "tadah train --uncertainty: no weight covariance: " +
+        "tadah train --uncertainty" + uncertainty_source(task) +
+        ": no weight covariance: " +
         tr.model->covariance_unavailable() +
         ". No potential was written (train without --uncertainty to write "
         "it, without the weights' standard deviations).");
@@ -188,14 +229,16 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
   }
   // Only the SVD fit computes the weight covariance, and M_KRR
   // implementation 2 none: refused before any training or output.
-  if (context.get<bool>("UNCERTAINTY") && context.get<int>("OALGO") != 3)
+  const bool uncertainty = uncertainty_requested(task, /*warn=*/false);
+  if (uncertainty && context.get<int>("OALGO") != 3)
     throw std::runtime_error(
-        "tadah train --uncertainty needs OALGO 3: only the SVD fit (OALGO 3) "
+        "tadah train --uncertainty" + uncertainty_source(task) +
+        " needs OALGO 3: only the SVD fit (OALGO 3) "
         "computes the weight covariance; the configuration has OALGO " +
         std::to_string(context.get<int>("OALGO")) + ".");
-  if (context.get<bool>("UNCERTAINTY") && is_krr_implementation_2(context))
+  if (uncertainty && is_krr_implementation_2(context))
     throw std::runtime_error(
-        "tadah train --uncertainty: " +
+        "tadah train --uncertainty" + uncertainty_source(task) + ": " +
         tadah::models::krr_implementation2_without_covariance() +
         ", or train without --uncertainty.");
 }

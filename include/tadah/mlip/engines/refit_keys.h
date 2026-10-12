@@ -37,16 +37,54 @@ RefitMode read_refit_mode(const tadah::core::Context &c);
  *     got 'shape'" (the value in lower case). */
 bool read_refit_curve_objective(const tadah::core::Context &c);
 
-/** The REFIT_BASIS spellings tadah refit fits, one family each (another
- *  spelling is no family of the compact fitter; RefitEngine refuses it in
- *  REFIT_MODE compact and fits it dense as given, e.g. Gaussian):
+/** The REFIT_BASIS spellings tadah refit fits, one family each, as
+ *  models::basis_kind_from_name, the one table, which the fit reads too:
  *   - the one-sided knot families: Knot5, KNOT5, knot5, Knot3, KNOT3,
  *     knot3, KnotMix, KNOTMIX, knotmix, Mixed, MIXED;
- *   - Blip: Blip, blip;
- *   - Blip5: Blip5, BLIP5, blip5, M6. */
+ *   - Blip: Blip, BLIP, blip;
+ *   - Blip5: Blip5, BLIP5, blip5, M6;
+ *   - Gaussian (REFIT_MODE dense only, experimental: RefitEngine warns):
+ *     Gaussian, gaussian, BP, D2_BP.
+ *  Another spelling names no family: check_refit_basis refuses it. */
 bool refit_basis_is_knot_family(const std::string &basis);
-bool refit_basis_is_blip(const std::string &basis);   ///< see above
-bool refit_basis_is_blip5(const std::string &basis);  ///< see above
+bool refit_basis_is_blip(const std::string &basis);      ///< see above
+bool refit_basis_is_blip5(const std::string &basis);     ///< see above
+bool refit_basis_is_gaussian(const std::string &basis);  ///< see above
+
+/** Refuse a REFIT_BASIS of @p c that names no family (above), in either
+ *  REFIT_MODE, before the EAM file is read (RefitEngine::validate, run()):
+ *    "tadah refit: REFIT_BASIS 'Blipp' is no basis family of tadah refit:
+ *     Blip (Blip, BLIP, blip), Blip5 (...), the knot families Knot5, Knot3
+ *     and KnotMix (...), or, under REFIT_MODE dense only, the experimental
+ *     Gaussian (Gaussian, gaussian, BP, D2_BP)"
+ *  It was fitted as Blip (models::basis_kind_from_string was lenient) while
+ *  RefitEngine warned of the Gaussian basis. */
+void check_refit_basis(const tadah::core::Context &c);
+
+/** REFIT_LEVEL of @p c in any letter case: 'coarse', 'balanced' (the
+ *  default without the key), 'fine' or 'accurate', in lower case. Another
+ *  value throws std::runtime_error naming the four and the value as
+ *  written:
+ *    "tadah refit: REFIT_LEVEL must be 'coarse', 'balanced' (the default),
+ *     'fine' or 'accurate' (in any letter case), got 'acurate'"
+ *  (any other value fitted the balanced preset). */
+std::string read_refit_level(const tadah::core::Context &c);
+
+/** REFIT_PLACEMENT of @p c in any letter case: 'window' (the default
+ *  without the key) or 'uniform', in lower case. Another value throws:
+ *    "tadah refit: REFIT_PLACEMENT must be 'window' (the default) or
+ *     'uniform' (in any letter case), got 'unifrom'"
+ *  (any other value ran the window placement). */
+std::string read_refit_placement(const tadah::core::Context &c);
+
+/** Whether the configuration sets @p key: @p c stores it, and @p provenance,
+ *  when given, does not record it as a blueprint default the task factory
+ *  added (KeyOrigin::Default). The rule of every refit key check, and of the
+ *  output names of --edit and --retarget (an explicit -o pot.tadah is the
+ *  user's, the stored default pot.tadah is not). */
+bool refit_key_configured(const tadah::core::Context &c,
+                          const KeyProvenance *provenance,
+                          const std::string &key);
 
 /** The refusal of a top-level OPTIMIZER block, the grammar before the
  *  stage blocks, which neither REFIT_MODE reads: the migration text of
@@ -62,7 +100,12 @@ std::string top_level_optimizer_refusal();
  *  in refit_keys.cpp):
  *   - read by REFIT_MODE dense only (the dense fit and its basis
  *     escalation): REFIT_LEVEL, N2B, NRHO_BASIS, NF_BASIS,
- *     REFIT_MAX_ESCALATIONS, REFIT_PLACEMENT, REFIT_CONSTRAIN_F0;
+ *     REFIT_MAX_ESCALATIONS, REFIT_PLACEMENT, REFIT_CONSTRAIN_F0; and
+ *     REFIT_CONSTRAIN_F0, the F(0) pin of an EMBF0 FREE fit, only under
+ *     EMBF0 FREE (refused under EMBF0 ZERO, written or the default:
+ *     "tadah refit: REFIT_CONSTRAIN_F0 has no effect under EMBF0 ZERO (the
+ *     default): only EMBF0 FREE reads it; remove REFIT_CONSTRAIN_F0, or set
+ *     EMBF0 FREE");
  *   - read by REFIT_MODE compact only (the compact fitter and its stage
  *     pipeline): every REFIT_COMPACT_* key, REFIT_CURVE_WEIGHTING,
  *     REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,

@@ -843,6 +843,86 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
   }
 }
 
+// Pins: FIXINDEX/FIXWEIGHT with NORM true is refused when a model is
+// trained (M_BLR BF_Linear and M_KRR Kern_Linear, BIAS true, varied
+// compositions, FIXINDEX 1 / FIXWEIGHT -7.6): std::runtime_error naming
+// FIXINDEX/FIXWEIGHT and NORM true, the message tadah hpo refuses the
+// configuration with at startup. The fit pins the weights of the
+// normalised descriptors, and the conversion to raw-descriptor weights
+// moves a pinned intercept by the descriptor means times the weights.
+// Before the fix: both trained, and the written WEIGHTS[1] was not the
+// FIXWEIGHT value (-7.649 against -7.6 on Nb2Ta2 cells), nor its WCOV row
+// zero; tadah hpo refused the same file.
+TEST_CASE("FIXINDEX/FIXWEIGHT with NORM true is refused when a model is "
+          "trained", "[descriptors_calc][bias][norm][fixindex]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB db = make_db(kVaried, false, 350);
+  for (const auto &model : std::vector<std::vector<std::string>>{
+           {"M_KRR", "Kern_Linear"}, {"M_BLR", "BF_Linear"}}) {
+    DYNAMIC_SECTION(model[0] << " " << model[1]) {
+      Context c = make_context({"Nb", "Ta"}, true);
+      set_model(c, model[0], model[1]);
+      set(c, "NORM", "true");
+      c.add("FIXINDEX", "1");
+      c.add("FIXWEIGHT", -7.6);
+      Trainer tr(c, ws);
+      const std::string m = refusal_of([&] { tr.train(db); });
+      INFO(m);
+      CHECK(m.find("FIXINDEX/FIXWEIGHT is not supported with NORM true") !=
+            std::string::npos);
+      CHECK(m.find("Set NORM false") != std::string::npos);
+    }
+  }
+}
+
+// Pins: the remedies of the composition refusal (every structure 8 Nb +
+// 8 Ta, BIAS true) are those the configuration can take: under NORM false
+// BIAS false with explicit ESHIFT values or ESHIFT_ATOM, other
+// compositions, or FIXINDEX/FIXWEIGHT on the intercepts, and never
+// ESHIFT_DBATOM, whose least-squares fit of the species energies is
+// singular on the compositions the check refuses (ESHIFT 0 0, with a
+// WARNING); under NORM true (BF_Linear, which needs BIAS true there, and
+// FIXINDEX refused) other compositions or NORM false, and neither BIAS
+// false nor FIXINDEX.
+// Before the fix: every refusal said "Use BIAS false (ESHIFT_ATOM,
+// ESHIFT_DBATOM or ESHIFT remove a per-species reference energy), ... or
+// pin intercepts with FIXINDEX/FIXWEIGHT", under NORM true too.
+TEST_CASE("The composition refusal names only the remedies the "
+          "configuration can take",
+          "[descriptors_calc][bias][composition]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB fixed = make_db(std::vector<int>(10, 8), false, 650);
+  SECTION("NORM false") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+    CHECK(m.find("ESHIFT_DBATOM") == std::string::npos);
+    CHECK(m.find("Use BIAS false with explicit ESHIFT values") !=
+          std::string::npos);
+    CHECK(m.find("ESHIFT_ATOM") != std::string::npos);
+    CHECK(m.find("pin intercepts with FIXINDEX/FIXWEIGHT") !=
+          std::string::npos);
+  }
+  SECTION("NORM true") {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set(c, "NORM", "true");
+    Trainer tr(c, ws);
+    const std::string m = refusal_of([&] { tr.train(fixed); });
+    INFO(m);
+    CHECK(m.find("cannot determine") != std::string::npos);
+    CHECK(m.find("FIXINDEX") == std::string::npos);
+    CHECK(m.find("BIAS false") == std::string::npos);
+    CHECK(m.find("ESHIFT_DBATOM") == std::string::npos);
+    CHECK(m.find("add energy-weighted structures of other compositions") !=
+          std::string::npos);
+    CHECK(m.find("NORM false") != std::string::npos);
+  }
+}
+
 // Pins: the composition check reads FIXINDEX as the trainer does
 // (core::parse_fixindex): on data whose every structure is 8 Nb + 8 Ta
 // (ATOM Nb Ta, BIAS true), FIXINDEX given as separate values, '1 3' with

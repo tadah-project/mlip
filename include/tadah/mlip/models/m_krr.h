@@ -281,6 +281,10 @@ tadah::core::Context get_param_file() {
     // and STRESS: the potential records what its fit used (tadah predict's
     // -F/-S and pair_style tadah do not read them).
     remove_training_datasets(c);
+    // UNCERTAINTY is a switch of the train task that writes weights.tadah,
+    // not part of the model: a potential that recorded it (every one did)
+    // asked for --uncertainty when it was the configuration of a retrain.
+    if (c.has_stored("UNCERTAINTY")) c.remove("UNCERTAINTY");
 
     c.remove("MODEL");
     c.add("MODEL", label);
