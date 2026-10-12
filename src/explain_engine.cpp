@@ -1,4 +1,5 @@
 #include <tadah/mlip/engines/explain_engine.h>
+#include <tadah/mlip/engines/engine_factory.h>
 #include <tadah/core/context.h>
 #include <tadah/core/blueprint_parser.h>
 
@@ -207,6 +208,10 @@ int ExplainEngine::run(mlip::Task &task) {
   const auto named = command(tokens.size());
   if (named != taskMap.end()) {
     print_text(named->second.longDescription);
+    // A command this program was built without says so after its text.
+    const std::string not_built = EngineFactory::notBuiltMessage(named->first);
+    if (!not_built.empty()) std::cout << "\n" << not_built << ".\n";
+    std::cout.flush();
     printed = true;
   }
   if (tokens.size() == 1) {

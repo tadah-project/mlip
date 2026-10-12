@@ -4,6 +4,7 @@
 
 #include <tadah/core/blueprint_parser.h>
 #include <tadah/core/context.h>
+#include <tadah/mlip/engines/engine_factory.h>
 #include <tadah/mlip/engines/explain_engine.h>
 #include <tadah/mlip/task.h>
 
@@ -708,4 +709,32 @@ TEST_CASE("tadah explain: a name that is a command or a configuration key "
         train_alone + "\ntrain also names a widget of the test:\nwidget train\n");
   set_explain_hook({}, "");
   CHECK(explain("SETFL") == setfl_alone);
+}
+
+TEST_CASE("tadah explain: the text of a command this program was built "
+          "without ends with why",
+          "[explain]") {
+  /* Pins: after EngineFactory::registerNotBuilt("HPO", "tadah hpo needs a
+   * part this program was built without") (test_mlip has no HPO engine in
+   * any build), `tadah explain hpo` prints the command's long description
+   * (its first line, "Refine your model's architecture and hyperparameters
+   * using Tadah!'s nested", first), then a blank line and the message with
+   * a full stop as its last two lines; the text of `tadah explain
+   * data.split`, whose engine is never registered as not built, and of
+   * `tadah explain hpo.verbose`, an option of the command, do not have the
+   * message.
+   * Before the fix: does not compile (EngineFactory has no
+   * registerNotBuilt). */
+  const std::string msg = "tadah hpo needs a part this program was built without";
+  tadah::mlip::engines::EngineFactory::registerNotBuilt("HPO", msg);
+  const std::string out = explain("hpo");
+  INFO(out);
+  const auto lines = lines_of(out);
+  REQUIRE(lines.size() >= 3);
+  CHECK(lines.front() ==
+        "Refine your model's architecture and hyperparameters using Tadah!'s nested");
+  CHECK(lines[lines.size() - 2].empty());
+  CHECK(lines.back() == msg + ".");
+  CHECK(explain("data.split").find(msg) == std::string::npos);
+  CHECK(explain("hpo.verbose").find(msg) == std::string::npos);
 }

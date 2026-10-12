@@ -42,9 +42,16 @@ public:
   /**
    * @brief Executes scheduled tasks sequentially.
    *
+   * Before it runs any task it checks that each has an engine
+   * (engines::EngineFactory::require), so a task without one, such as a
+   * task the program was built without, is refused before an earlier task
+   * runs.
+   *
    * @return 0 when every task's engine returned 0; otherwise the status
    *         returned by the first failing engine, after which the
    *         remaining tasks are not run.
+   * @throws std::runtime_error what EngineFactory::require throws for the
+   *         first task without an engine.
    */
   int execute();
 
