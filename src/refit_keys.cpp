@@ -1,6 +1,8 @@
 #include <tadah/mlip/engines/refit_keys.h>
 
 #include <tadah/core/number_format.h>
+#include <tadah/models/descriptors/basis_kind.h>
+#include <tadah/models/descriptors/dm/embf0.h>
 
 #include <algorithm>
 #include <cctype>
@@ -213,25 +215,80 @@ std::string lower(std::string s) {
 // key is the configuration's).
 bool configured(const Context &c, const KeyProvenance *provenance,
                 const std::string &key) {
+  return refit_key_configured(c, provenance, key);
+}
+
+// The family a REFIT_BASIS spelling names (models::basis_kind_from_name, the
+// one table: the fit reads it too), or none.
+bool basis_is(const std::string &b, tadah::models::BasisKind kind) {
+  const auto k = tadah::models::basis_kind_from_name(b);
+  return k && *k == kind;
+}
+
+// A word key (REFIT_LEVEL, REFIT_PLACEMENT) in any letter case, one of
+// `allowed`, else refused naming them; `fallback` without the key.
+std::string word(const Context &c, const std::string &key,
+                 const std::vector<std::string> &allowed,
+                 const std::string &fallback) {
+  const std::optional<std::string> tok = single(c, key);
+  if (!tok) return fallback;
+  const std::string v = lower(*tok);
+  for (const std::string &a : allowed)
+    if (v == a) return v;
+  std::string list;
+  for (std::size_t i = 0; i < allowed.size(); ++i) {
+    list += (i == 0 ? "" : i + 1 == allowed.size() ? " or " : ", ") +
+            ("'" + allowed[i] + "'") +
+            (allowed[i] == fallback ? " (the default)" : "");
+  }
+  throw std::runtime_error(kWho + key + " must be " + list +
+                           " (in any letter case), got '" + *tok + "'");
+}
+
+}  // namespace
+
+bool refit_key_configured(const Context &c, const KeyProvenance *provenance,
+                          const std::string &key) {
   return c.has_stored(key) &&
          !(provenance &&
            provenance->origin(key).kind == KeyOrigin::Kind::Default);
 }
 
-}  // namespace
-
 bool refit_basis_is_knot_family(const std::string &b) {
-  return b == "Knot5" || b == "KNOT5" || b == "knot5" || b == "Knot3" ||
-         b == "KNOT3" || b == "knot3" || b == "KnotMix" || b == "KNOTMIX" ||
-         b == "knotmix" || b == "Mixed" || b == "MIXED";
+  return basis_is(b, tadah::models::BasisKind::Knot5);
 }
 
 bool refit_basis_is_blip(const std::string &b) {
-  return b == "Blip" || b == "blip";
+  return basis_is(b, tadah::models::BasisKind::Blip);
 }
 
 bool refit_basis_is_blip5(const std::string &b) {
-  return b == "Blip5" || b == "BLIP5" || b == "blip5" || b == "M6";
+  return basis_is(b, tadah::models::BasisKind::Blip5);
+}
+
+bool refit_basis_is_gaussian(const std::string &b) {
+  return basis_is(b, tadah::models::BasisKind::Gaussian);
+}
+
+void check_refit_basis(const Context &c) {
+  const std::optional<std::string> b = single(c, "REFIT_BASIS");
+  if (!b || tadah::models::basis_kind_from_name(*b)) return;
+  throw std::runtime_error(
+      kWho + "REFIT_BASIS '" + *b + "' is no basis family of tadah refit: "
+      "Blip (Blip, BLIP, blip), Blip5 (Blip5, BLIP5, blip5, M6), the knot "
+      "families Knot5, Knot3 and KnotMix (Knot5, KNOT5, knot5, Knot3, KNOT3, "
+      "knot3, KnotMix, KNOTMIX, knotmix, Mixed, MIXED), or, under REFIT_MODE "
+      "dense only, the experimental Gaussian (Gaussian, gaussian, BP, "
+      "D2_BP)");
+}
+
+std::string read_refit_level(const Context &c) {
+  return word(c, "REFIT_LEVEL", {"coarse", "balanced", "fine", "accurate"},
+              "balanced");
+}
+
+std::string read_refit_placement(const Context &c) {
+  return word(c, "REFIT_PLACEMENT", {"window", "uniform"}, "window");
 }
 
 RefitMode read_refit_mode(const Context &c) {
@@ -294,6 +351,19 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
   const bool curve = read_refit_curve_objective(c);
   if (mode == RefitMode::Dense) {
     if (curve) refuse("REFIT_OBJECTIVE curve");
+    // REFIT_CONSTRAIN_F0 is the F(0) pin of an EMBF0 FREE fit: under EMBF0
+    // ZERO (the default) F(0) = 0 by construction, and the key has no
+    // effect, true or false (it was accepted, false with a WARNING)
+    const std::optional<tadah::models::EmbF0Mode> embf0 =
+        tadah::models::stored_embf0(c);
+    if (embf0.value_or(tadah::models::EmbF0Mode::Zero) ==
+            tadah::models::EmbF0Mode::Zero &&
+        configured(c, provenance, "REFIT_CONSTRAIN_F0"))
+      throw std::runtime_error(
+          kWho + "REFIT_CONSTRAIN_F0 has no effect under EMBF0 ZERO" +
+          (embf0 ? "" : " (the default)") +
+          ": only EMBF0 FREE reads it; remove REFIT_CONSTRAIN_F0, or set "
+          "EMBF0 FREE");
     return;
   }
   // the knot-family keys under a Blip family (REFIT_BASIS as written; no

@@ -308,8 +308,11 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   // number, strictly and with its range; then whether this engine fits the
   // mode. run() repeats these before it reads the EAM file.
   const RefitMode mode = read_refit_mode(c);
+  check_refit_basis(c);
   check_refit_mode_keys(c, mode, task.getKeyProvenance());
   (void)read_refit_numbers(c);
+  (void)read_refit_level(c);
+  (void)read_refit_placement(c);
   require_fitter(c, mode, has_compact_fitter());
 }
 
@@ -331,8 +334,14 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // and whether this engine fits the mode, before the table is read, as in
   // validate().
   const RefitMode mode = read_refit_mode(c);
+  check_refit_basis(c);
   check_refit_mode_keys(c, mode, task.getKeyProvenance());
   const RefitNumbers nums = read_refit_numbers(c);
+  // REFIT_LEVEL and REFIT_PLACEMENT in any letter case, another value
+  // refused (any other value fitted the balanced preset / the window
+  // placement)
+  const std::string level = read_refit_level(c);
+  const std::string placement = read_refit_placement(c);
   require_fitter(c, mode, has_compact_fitter());
   const bool compact = (mode == RefitMode::Compact);
 
@@ -340,7 +349,6 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const std::string out_pot   = get_str(c, "OUTFILE", "pot.tadah");
   const std::string setfl_out = get_str(c, "SETFL_OUT", "refit.eam");
   const std::string hpo_out   = get_str(c, "HPOFILEOUT", "refit.hpotarget");
-  const std::string level     = get_str(c, "REFIT_LEVEL", "balanced");
   // Default basis: Knot5 in compact mode (the measured-best family: worst-
   // case |dCij| 1.6 GPa vs Blip's 2.3 across the 5 reference EAMs, every
   // E-V observable in tolerance); Blip in dense mode and when the compact
@@ -396,7 +404,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   cfg.n2b  = nums.n2b.value_or(cfg.n2b);
   cfg.nrho = nums.nrho.value_or(cfg.nrho);
   cfg.nF   = nums.nF.value_or(cfg.nF);
-  cfg.placement    = get_str(c, "REFIT_PLACEMENT", cfg.placement);
+  cfg.placement    = placement;
   cfg.reach_smin   = nums.reach_smin.value_or(cfg.reach_smin);
   cfg.reach_margin = nums.reach_margin.value_or(cfg.reach_margin);
   cfg.r_lo_frac    = nums.r_lo_frac.value_or(cfg.r_lo_frac);
@@ -409,11 +417,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   cfg.embf0_zero = (models::stored_embf0(c).value_or(models::EmbF0Mode::Zero) ==
                     models::EmbF0Mode::Zero);
   if (cfg.embf0_zero) {
-    if (!cfg.constrain_F0)  // the blueprint default is true: set by the user
-      core::Logger::instance().log(core::LogLevel::WARNING,
-          "tadah refit: REFIT_CONSTRAIN_F0 false has no effect under EMBF0 "
-          "ZERO — F(0) = 0 exactly by construction (zero-referenced "
-          "embedding). Use EMBF0 FREE for an unpinned raw fit.");
+    // (REFIT_CONSTRAIN_F0, which this fit does not read, was refused by the
+    // mode rule: check_refit_mode_keys)
     // The one constant the zero-referenced fit drops from every atom's energy.
     const double F0 = eam.F_tab(0.0);
     const std::string xs = core::to_string(F0);

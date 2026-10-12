@@ -47,14 +47,17 @@ void log_warn(const std::string &m) {
   core::Logger::instance().log(core::LogLevel::WARNING, m);
 }
 
-/** Output name policy: honour an explicitly-set key; otherwise use the safe
- *  `edited` default so the input is never silently clobbered. A value equal
- *  to the blueprint default string counts as "not set". */
-std::string pick_output(const Context &c, const std::string &key,
-                        const std::string &blueprint_default,
+/** Output name policy: honour an explicitly-set key -- set on the command
+ *  line or in a configuration or task file, whatever its value
+ *  (refit_key_configured: stored, and not the blueprint default the task
+ *  factory added); otherwise use the safe `edited` default so the input is
+ *  never silently clobbered. A value equal to the blueprint default string
+ *  counted as "not set", so -o pot.tadah wrote pot_edited.tadah. */
+std::string pick_output(const Context &c, const KeyProvenance *provenance,
+                        const std::string &key,
                         const std::string &edited_default) {
-  const std::string v = get_or(c, key, blueprint_default);
-  return v == blueprint_default ? edited_default : v;
+  return refit_key_configured(c, provenance, key) ? c.get<std::string>(key)
+                                                  : edited_default;
 }
 
 void guard_not_input(const std::string &out, const std::string &in,
@@ -296,9 +299,9 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   remove_weight_covariance(out);
 
   const std::string out_pot =
-      pick_output(c, "OUTFILE", "pot.tadah", "pot_edited.tadah");
-  const std::string out_hpo = pick_output(c, "HPOFILEOUT", "refit.hpotarget",
-                                          "refit_edited.hpotarget");
+      pick_output(c, provenance, "OUTFILE", "pot_edited.tadah");
+  const std::string out_hpo =
+      pick_output(c, provenance, "HPOFILEOUT", "refit_edited.hpotarget");
   guard_not_input(out_pot, in_pot,
                   "pass -o <name> to choose a different output name");
   TrainEngine::dumpPotFile(out_pot, out);
@@ -394,7 +397,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
 
   std::string out;
   if (in_place) {
-    if (get_or(c, "OUTFILE", "pot.tadah") != "pot.tadah")
+    if (refit_key_configured(c, provenance, "OUTFILE"))
       throw std::runtime_error(
           "tadah refit --retarget: --in-place and -o are mutually "
           "exclusive.");
@@ -408,7 +411,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
     const std::string derived =
         (p.parent_path() / (p.stem().string() + "_retargeted")).string() +
         p.extension().string();
-    out = pick_output(c, "OUTFILE", "pot.tadah", derived);
+    out = pick_output(c, provenance, "OUTFILE", derived);
     guard_not_input(out, in,
                     "pass --in-place to rewrite it, or -o with a different "
                     "name");
