@@ -84,3 +84,33 @@ TEST_CASE("TaskFactory: a comma or '+' between option values is refused, "
   INFO(index);
   CHECK(index.find("Invalid key-value pair") == std::string::npos);
 }
+
+/* Pins: an option whose values are names (the blueprint's names keys, such
+ * as ATOMPAIR) refuses a word with a comma or a '+' joined to the
+ * character before it, naming the separator and the names as separate
+ * words: '--atompair Ta,Nb' gives
+ *   "TaskFactory::createTasksFromInput - Invalid key-value pair: atompair
+ *    -> Ta,Nb ('Ta,Nb' separates values with ',', which is not a value
+ *    separator: give them as separate words, Ta Nb)"
+ * likewise '--atompair Ta+Nb' ('+'); '--atompair Ta Nb' passes the check.
+ * Before the fix: 'Ta,Nb' and 'Ta+Nb' were one STRING value each and
+ * passed the check ("no exception" here); '--atompair Ta Nb' passes as
+ * well (a pin). */
+TEST_CASE("TaskFactory: a comma or '+' in a name option is refused, naming "
+          "the separator",
+          "[task_factory][separators]") {
+  const std::string head =
+      "TaskFactory::createTasksFromInput - Invalid key-value pair: ";
+  CHECK(refusal("PROPERTIES.pairwise", {{"atompair", {"Ta,Nb"}}}) ==
+        head + "atompair -> Ta,Nb ('Ta,Nb' separates values with ',', which "
+               "is not a value separator: give them as separate words, Ta "
+               "Nb)");
+  CHECK(refusal("PROPERTIES.pairwise", {{"atompair", {"Ta+Nb"}}}) ==
+        head + "atompair -> Ta+Nb ('Ta+Nb' separates values with '+', which "
+               "is not a value separator: give them as separate words, Ta "
+               "Nb)");
+  const std::string pair =
+      refusal("PROPERTIES.pairwise", {{"atompair", {"Ta", "Nb"}}});
+  INFO(pair);
+  CHECK(pair.find("Invalid key-value pair") == std::string::npos);
+}
