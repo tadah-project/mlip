@@ -19,7 +19,7 @@ namespace tadah {
 namespace mlip {
 
 /** \brief The number n0 of intercept ("bias") vectors e_0 .. e_{n0-1}
- *  that the basis of a non-linear M_KRR model of @p ctx starts with: one
+ *  that the basis an M_KRR fit of @p ctx draws starts with: one
  *  per intercept column (ATOM species) with BIAS true, e_0 alone with BIAS
  *  false. */
 inline std::size_t n_intercept_basis_vectors(const tadah::core::Context &ctx) {
@@ -54,25 +54,28 @@ inline std::string intercept_basis_vectors_text(std::size_t n0) {
             std::to_string(n0 - 1) + ", one per ATOM species with BIAS true";
 }
 
-/** \brief The fewest basis vectors a non-linear M_KRR model takes, n0 + 1
+/** \brief The fewest basis vectors a fit that draws them takes (M_KRR
+ *  with a non-linear kernel, or implementation 2 with any kernel), n0 + 1
  *  (the n0 intercept vectors and one drawn from the @p what, e.g. "training
- *  AEDs"): "" when SBASIS @p s has them, else why not ("SBASIS 2: a
- *  non-linear M_KRR model needs at least 3 basis vectors (...). Set SBASIS
- *  to 3 or more."). Basis::check_sbasis and, before training,
- *  model_weight_count (weight_provisioning.h) refuse it. */
+ *  AEDs"): "" when SBASIS @p s has them, else why not ("SBASIS 2: the fit
+ *  needs at least 3 basis vectors (...). Set SBASIS to 3 or more.").
+ *  Basis::check_sbasis and, before training, checked_sbasis
+ *  (weight_provisioning.h) refuse it. */
 inline std::string sbasis_lower_bound_problem(std::size_t s, std::size_t n0,
                                               const std::string &what) {
   if (s >= n0 + 1) return "";
-  return "SBASIS " + std::to_string(s) + ": a non-linear M_KRR model needs "
+  return "SBASIS " + std::to_string(s) + ": the fit needs "
          "at least " + std::to_string(n0 + 1) + " basis vectors (" +
          intercept_basis_vectors_text(n0) + ", the others are drawn from the " +
          what + "). Set SBASIS to " + std::to_string(n0 + 1) + " or more.";
 }
 
-/** \brief The basis vectors of a non-linear M_KRR model.
+/** \brief The basis vectors of an M_KRR fit that draws them.
  *
- *  build_random_basis() (MODEL M_KRR <kernel> 1) and prep_basis_for_krr()
- *  (MODEL M_KRR <kernel> 2) build SBASIS basis vectors, the columns of b:
+ *  build_random_basis() (MODEL M_KRR <kernel> 1, a non-linear kernel) and
+ *  prep_basis_for_krr() (MODEL M_KRR <kernel> 2, every kernel, Kern_Linear
+ *  too: the vectors of its solve) build SBASIS basis vectors, the columns
+ *  of b:
  *  columns 0 .. n0-1 are the intercept ("bias") vectors e_0 .. e_{n0-1}
  *  (e_k = 1 in component k, 0 elsewhere; n_intercept_vectors(): one per
  *  ATOM species with BIAS true, e_0 alone with BIAS false), and columns

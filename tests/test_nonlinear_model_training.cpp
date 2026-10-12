@@ -44,6 +44,7 @@
 #include <tadah/mlip/design_matrix/design_matrix.h>
 #include <tadah/mlip/design_matrix/functions/kernels/dm_kern_rbf.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
+#include <tadah/mlip/models/basis.h>
 #include <tadah/mlip/models/m_krr.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/normaliser.h>
@@ -1630,3 +1631,93 @@ TEST_CASE("Non-linear KRR weights cannot be provisioned without training "
   }
 }
 
+
+/* Pins: M_KRR Kern_Linear implementation 2 (MODEL M_KRR Kern_Linear 2) with
+ * BIAS true on the six Ta cells (D2_Blip 3: DSIZE 4, one intercept vector
+ * e0), LAMBDA 0, SBASIS 3 and 4 (e0 and 2 or 3 drawn structures), NORM
+ * false and true: the model has DSIZE (4) weights, the descriptor weights
+ * of its basis vectors, and its potential (get_param_file) 4 WEIGHTS and no
+ * BASIS; loaded as `tadah predict` loads it (LoadedPotential), the
+ * potential predicts the energy of every drawn structure (Basis's draw of
+ * SBASIS - 1 of the 6 structures) to 1e-9 relative: the solve fits the
+ * energy per atom of each drawn structure at its mean descriptor exactly
+ * (LAMBDA 0, as many basis vectors as equations), and a linear model's
+ * energy of a structure is its atoms' count times its value at the mean
+ * descriptor.
+ * Before the fix: the model's weights were the SBASIS coefficients of the
+ * basis vectors: with SBASIS 3 the potential had 3 WEIGHTS (the REQUIRE on 4
+ * failed; `tadah predict` refused it), with SBASIS 4 = DSIZE the potential
+ * was loaded and predicted wrong energies (the coefficients taken for the
+ * descriptor weights), NORM true and false alike. */
+TEST_CASE("M_KRR Kern_Linear implementation 2 writes the descriptor weights "
+          "of its basis vectors",
+          "[krr][train2][potential_content]") {
+  PeriodicTable::initialize();
+  const ModelSpec spec{"M_KRR Kern_Linear 2", {"M_KRR", "Kern_Linear", "2"},
+                       {}, true};
+  for (const char *norm : {"false", "true"})
+    for (const char *sbasis : {"3", "4"})
+      DYNAMIC_SECTION("NORM " << norm << ", SBASIS " << sbasis) {
+        Context c = make_context(spec, /*bias=*/true);
+        set_key(c, "SBASIS", sbasis);
+        set_key(c, "NORM", norm);
+        Trained t(c);
+        REQUIRE_NOTHROW(t.train());
+        const std::size_t dsize = t.tr->context.get<std::size_t>("DSIZE");
+        REQUIRE(dsize == 4);
+        CHECK(t.tr->model->get_weights().size() == dsize);
+
+        Context pot = t.tr->model->get_param_file();
+        REQUIRE(pot.size("WEIGHTS") == dsize);
+        CHECK_FALSE(pot.has_stored("BASIS"));
+        pot.remove("DSIZE");  // as read from a file: DescriptorsCalc sets it
+        std::unique_ptr<LoadedPotential> loaded;
+        REQUIRE_NOTHROW(loaded = std::make_unique<LoadedPotential>(pot));
+        Context lc = loaded->ctx;
+        StructureDB pred;
+        REQUIRE_NOTHROW(pred = loaded->model->predict(lc, t.db, loaded->dc));
+
+        const std::size_t n_drawn = std::stoul(sbasis) - 1;  // e0 first
+        const std::vector<std::size_t> drawn =
+            tadah::mlip::Basis<DM_Function_Base &>::draw_candidates(
+                t.db.size(), n_drawn);
+        REQUIRE(drawn.size() == n_drawn);
+        for (std::size_t s : drawn) {
+          INFO("drawn structure " << s);
+          CHECK(pred(s).energy == Approx(t.db(s).energy).epsilon(1e-9));
+        }
+      }
+}
+
+/* Pins: the fit of M_KRR implementation 2 with SBASIS 1 on the six Ta cells
+ * (BIAS true, one intercept vector e0) is refused when it draws its basis
+ * (Basis::check_sbasis), naming "SBASIS 1", "needs at least 2 basis
+ * vectors" and the "training structures", for Kern_Linear and Kern_RBF
+ * alike, without the word "non-linear": implementation 2 draws the basis
+ * for its solve with every kernel, Kern_Linear too.
+ * Before the fix: the refusal said "a non-linear M_KRR model needs at least
+ * 2 basis vectors", for Kern_Linear as well. */
+TEST_CASE("M_KRR implementation 2 refuses SBASIS 1 without calling the "
+          "model non-linear",
+          "[krr][train2][basis]") {
+  PeriodicTable::initialize();
+  const ModelSpec specs[] = {
+      {"M_KRR Kern_Linear 2", {"M_KRR", "Kern_Linear", "2"}, {}, true},
+      {"M_KRR Kern_RBF 2", {"M_KRR", "Kern_RBF", "2"}, {"1.0"}, true}};
+  for (const ModelSpec &spec : specs) DYNAMIC_SECTION(spec.name) {
+    Context c = make_context(spec, /*bias=*/true);
+    set_key(c, "SBASIS", "1");
+    Trained t(c);
+    std::string m = "<no exception>";
+    try {
+      t.train();
+    } catch (const std::exception &e) {
+      m = e.what();
+    }
+    INFO(m);
+    CHECK(m.find("SBASIS 1") != std::string::npos);
+    CHECK(m.find("needs at least 2 basis vectors") != std::string::npos);
+    CHECK(m.find("training structures") != std::string::npos);
+    CHECK(m.find("non-linear") == std::string::npos);
+  }
+}
