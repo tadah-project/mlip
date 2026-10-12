@@ -7,6 +7,8 @@
 #include <tadah/mlip/engines/explain_engine.h>
 #include <tadah/mlip/task.h>
 
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -135,25 +137,31 @@ TEST_CASE("tadah explain: an option that names no command or no option of "
           "its command is an error",
           "[explain]") {
   /* Pins: ExplainEngine::run throws, naming what it did not find, for an
-   * option of an existing command that the command does not have ("tadah
-   * explain: refit has no option 'nosuchkey'", "tadah explain: data split
-   * has no option 'nokey'", "tadah explain: data has no subcommand or
-   * option 'nosuch'"), a single name that is no command ("tadah explain:
-   * no command 'bogus'") and more than three names ("tadah explain:
-   * 'a.b.c.d' is not <command>, <command>.<option> or
-   * <command>.<subcommand>.<option>"); it prints nothing.
+   * option of an existing command that the command does not have and that
+   * is no configuration key ("tadah explain: refit has no option
+   * 'nosuchkey', and it is no configuration key", "tadah explain: data
+   * split has no option 'nokey', and it is no configuration key", "tadah
+   * explain: data has no subcommand or option 'nosuch', and it is no
+   * configuration key"), a single name that is no command and no
+   * configuration key ("tadah explain: no command or configuration key
+   * 'bogus'") and more than three names ("tadah explain: 'a.b.c.d' is not
+   * <command>, <command>.<option> or <command>.<subcommand>.<option>"); it
+   * prints nothing. (Until `tadah explain` read the configuration keys, the
+   * messages ended at the option, "... has no option 'nosuchkey'", and the
+   * single name's was "tadah explain: no command 'bogus'".)
    * Before the fix: each returned EXIT_SUCCESS and printed nothing, so no
    * exception is thrown. (An unknown command with an option: the next test
    * case.) */
   for (const auto &[option, message] :
        std::vector<std::pair<std::string, std::string>>{
            {"refit.nosuchkey", "tadah explain: refit has no option "
-                               "'nosuchkey'"},
+                               "'nosuchkey', and it is no configuration key"},
            {"data.split.nokey", "tadah explain: data split has no option "
-                                "'nokey'"},
+                                "'nokey', and it is no configuration key"},
            {"data.nosuch", "tadah explain: data has no subcommand or option "
-                           "'nosuch'"},
-           {"bogus", "tadah explain: no command 'bogus'"},
+                           "'nosuch', and it is no configuration key"},
+           {"bogus", "tadah explain: no command or configuration key "
+                     "'bogus'"},
            {"a.b.c.d", "tadah explain: 'a.b.c.d' is not <command>, "
                        "<command>.<option> or <command>.<subcommand>.<option>"}}) {
     INFO(option);
@@ -190,13 +198,16 @@ TEST_CASE("tadah explain: explain_text_lines renders a long description as "
    * it left out, and '::' inside a literal block (the lines indented more
    * than the paragraph that opened it, and blank lines) or inside a line
    * kept: the lines below are literal_text_lines' for the same text.
-   * SETFL's long description (an option of no command, so not reachable
-   * through `tadah explain`): "A configuration with both descriptors and
+   * SETFL's long description (an option of no command, which `tadah
+   * explain SETFL` prints: the test case "a configuration key that is no
+   * option of a command ..."): "A configuration with both descriptors and
    * one setfl file:", a blank line, then its literal block indented by 4
    * ("    INIT2B    true" ... "    SETFL     Ta.eam.alloy", the last line);
-   * OPTIMIZER's: "Written inside a stage block, for example:" and "or, with
-   * an INNER block in EXPLORE:" with their blocks; no line of either ends
-   * with "::".
+   * OPTIMIZER's: its text, then "Written inside a stage block, for
+   * example:" and "or, with an INNER block in EXPLORE:" with their blocks;
+   * no line of either ends with "::". (Until OPTIMIZER's long description
+   * held its text, "Written inside a stage block, for example:" was its
+   * first line.)
    * Before the fix: explain_text_lines does not exist (the test does not
    * compile); the long description was printed as written, with RST's
    * '::'. */
@@ -228,10 +239,12 @@ TEST_CASE("tadah explain: explain_text_lines renders a long description as "
   {
     const auto lines =
         explain_text_lines(keys.at("OPTIMIZER").longDescription);
-    REQUIRE_FALSE(lines.empty());
-    CHECK(lines.front() == "Written inside a stage block, for example:");
-    CHECK(lines[1].empty());
-    CHECK(lines[2] == "    REFINE");
+    const std::size_t a =
+        line_at(lines, "Written inside a stage block, for example:");
+    REQUIRE(a + 2 < lines.size());
+    CHECK(a > 0);
+    CHECK(lines[a + 1].empty());
+    CHECK(lines[a + 2] == "    REFINE");
     CHECK(has_line(lines, "or, with an INNER block in EXPLORE:"));
     CHECK(lines.back() == "    ENDEXPLORE");
   }
@@ -274,4 +287,335 @@ TEST_CASE("tadah explain: each line of an example of several lines is "
   CHECK(found == 1);
   const std::string seed = explain("refit.refit_compact_seed");
   CHECK(seed.rfind("`tadah refit` compact mode: RNG seed", 0) == 0);
+}
+
+TEST_CASE("tadah explain: a configuration key that is no option of a "
+          "command is explained by its name, alone or after a command",
+          "[explain]") {
+  /* Pins: `tadah explain <KEY>`, a name that is no command, and `tadah
+   * explain <command>[.<subcommand>].<KEY>`, a name that is no option of
+   * the command, print the text of the configuration key (ALLOWED_KEYS, any
+   * letter case), explain_key_text of it: SETFL (as `setfl`, `SETFL`,
+   * `refit.setfl` and `data.split.setfl`), whose text rendering starts "A
+   * single-element setfl file" and has "A configuration with both
+   * descriptors and one setfl file:", a blank line and "    INIT2B    true";
+   * TYPE2B, ending with its examples of several lines, each line indented
+   * ("  D2_mJoin", "  D2_MIE 11 6 Ti Ti"); RHOFORM, EMBF0, NUMERIC,
+   * RCUT2B, RCUTMB and AMPGRIDMB after refit. A command, a subcommand and an
+   * option of the command come first: `refit.hpofileout` prints refit's own
+   * HPOFILEOUT text ("Output file name for the generated `tadah hpo`
+   * starter target file ..."), not the configuration key's ("Output file
+   * for the `tadah hpo` starter target ..."), and `data.merge` the
+   * subcommand, not the MERGE key.
+   * Before the fix: only the commands and their options were read, so
+   * SETFL threw "tadah explain: no command 'SETFL'", refit.setfl "tadah
+   * explain: refit has no option 'setfl'", data.split.setfl "tadah
+   * explain: data split has no option 'setfl'", and so on. */
+  const auto &keys = tadah::core::BlueprintParser::getKeysMapRef();
+  const std::string setfl = explain_key_text(keys.at("SETFL"));
+  for (const char *name :
+       {"setfl", "SETFL", "refit.setfl", "data.split.setfl", "refit.SETFL"}) {
+    INFO(name);
+    std::string out;
+    CHECK_NOTHROW(out = explain(name));
+    CHECK(out == setfl);
+  }
+  {
+    const auto lines = lines_of(setfl);
+    REQUIRE_FALSE(lines.empty());
+    CHECK(lines.front().rfind("A single-element setfl file", 0) == 0);
+    const std::size_t a = line_at(
+        lines, "A configuration with both descriptors and one setfl file:");
+    REQUIRE(a + 2 < lines.size());
+    CHECK(lines[a + 1].empty());
+    CHECK(lines[a + 2] == "    INIT2B    true");
+  }
+  {
+    std::string out;
+    CHECK_NOTHROW(out = explain("TYPE2B"));
+    CHECK(out == explain_key_text(keys.at("TYPE2B")));
+    const std::string tail =
+        "\nEXAMPLES: \n  D2_LJ Kr Kr\n  D2_mJoin\n  D2_MIE 11 6 Ti Ti\n"
+        "  D2_Blip 6 6 Ti Nb Nb Nb\n";
+    CHECK(out.size() > tail.size());
+    if (out.size() > tail.size())
+      CHECK(out.compare(out.size() - tail.size(), tail.size(), tail) == 0);
+  }
+  for (const char *key :
+       {"RHOFORM", "EMBF0", "NUMERIC", "RCUT2B", "RCUTMB", "AMPGRIDMB"}) {
+    INFO(key);
+    std::string lower = key;
+    for (auto &ch : lower)
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    std::string out;
+    CHECK_NOTHROW(out = explain("refit." + lower));
+    CHECK(out == explain_key_text(keys.at(key)));
+  }
+  CHECK(explain("refit.hpofileout")
+            .rfind("Output file name for the generated `tadah hpo` starter "
+                   "target file", 0) == 0);
+  CHECK(explain_key_text(keys.at("HPOFILEOUT"))
+            .rfind("Output file for the `tadah hpo` starter target", 0) == 0);
+  CHECK(explain("data.merge") ==
+        [] {
+          std::string out;
+          for (const auto &l : explain_text_lines(
+                   tadah::core::BlueprintParser::getTasksMapRef()
+                       .at("DATA.merge")
+                       .longDescription))
+            out += l + "\n";
+          return out;
+        }());
+}
+
+TEST_CASE("tadah explain: every configuration key `tadah refit --help` "
+          "names is explained after refit",
+          "[explain]") {
+  /* Pins: the help of tadah refit says `tadah explain refit.<key>` gives
+   * the full description of a configuration key it names. Every upper-case
+   * word of its long description that is a configuration key (ALLOWED_KEYS:
+   * EAM, RHOFORM, REFIT_MODE, EMBF0, NUMERIC, RCUT2B, ... in upper case;
+   * at least 30) is explained after refit as the key the help means:
+   * `tadah explain refit.<word in lower case>` prints refit's own option of
+   * that name (explain_key_text of it), and a word that is no option of
+   * tadah refit is one of the six the help names as such, RHOFORM, EMBF0,
+   * NUMERIC, RCUT2B, RCUTMB and AMPGRIDMB, printed as the configuration key.
+   * Every upper-case word with an underscore is a configuration key, the
+   * prefix of some written with '*' (REFIT_COMPACT_*, REFIT_CURVE_*,
+   * REFIT_*), or one of the names the help gives that are no keys (DM_REAM,
+   * a descriptor; TADAH_ENABLE_NFP and TADAH_ENABLE_CERES, build options).
+   * The keys inside a stage block are no configuration keys: the help names
+   * `tadah explain refit.optimizer` for ALGO and LIB (the next test case
+   * checks what it prints).
+   * Before the fix: the help wrote "OPT_EVERY, INSERT_TOPK and MERGE with a
+   * knot basis only" for REFIT_COMPACT_OPT_EVERY, REFIT_COMPACT_INSERT_TOPK
+   * and REFIT_COMPACT_MERGE: MERGE, no option of tadah refit, was explained
+   * after refit as the MERGE key of data dedup ("Merge deduplication
+   * results into one file."), OPT_EVERY and INSERT_TOPK are no keys, and
+   * the help did not name `tadah explain refit.optimizer`. (Before `tadah
+   * explain` read the configuration keys, RHOFORM, EMBF0, NUMERIC, RCUT2B,
+   * RCUTMB and AMPGRIDMB threw "tadah explain: refit has no option
+   * 'rhoform'" and so on.) */
+  const auto &keys = tadah::core::BlueprintParser::getKeysMapRef();
+  const auto &refit =
+      tadah::core::BlueprintParser::getTasksMapRef().at("REFIT");
+  const std::string &help = refit.longDescription;
+  // refit's own option whose name (the last part of its blueprint name) is
+  // `lower`, or nullptr
+  const auto option_of_refit =
+      [&](const std::string &lower) -> const tadah::core::BlueprintKey * {
+    const auto named = [&](const tadah::core::BlueprintKey &key) {
+      const std::size_t dot = key.keyName.rfind('.');
+      return key.keyName.substr(dot == std::string::npos ? 0 : dot + 1) ==
+             lower;
+    };
+    for (const auto &key : refit.blueprintKeys)
+      if (named(key)) return &key;
+    for (const auto &group : refit.groups)
+      for (const auto &key : group.blueprintKeys)
+        if (named(key)) return &key;
+    return nullptr;
+  };
+  // the upper-case words of the help (runs of letters, digits and '_' with
+  // a letter and no lower-case one), each once, with the character after it
+  std::vector<std::pair<std::string, char>> words;
+  for (std::size_t i = 0; i < help.size();) {
+    const auto word_char = [](char ch) {
+      return std::isalnum(static_cast<unsigned char>(ch)) || ch == '_';
+    };
+    if (!word_char(help[i])) {
+      ++i;
+      continue;
+    }
+    std::size_t j = i;
+    while (j < help.size() && word_char(help[j])) ++j;
+    const std::string w = help.substr(i, j - i);
+    const bool upper =
+        std::any_of(w.begin(), w.end(),
+                    [](char ch) {
+                      return std::isupper(static_cast<unsigned char>(ch));
+                    }) &&
+        std::none_of(w.begin(), w.end(), [](char ch) {
+          return std::islower(static_cast<unsigned char>(ch));
+        });
+    const char next = j < help.size() ? help[j] : '\0';
+    if (upper && std::find(words.begin(), words.end(),
+                           std::make_pair(w, next)) == words.end())
+      words.emplace_back(w, next);
+    i = j;
+  }
+  const std::vector<std::string> not_refit_options = {
+      "RHOFORM", "EMBF0", "NUMERIC", "RCUT2B", "RCUTMB", "AMPGRIDMB"};
+  const std::vector<std::string> no_keys = {"DM_REAM", "TADAH_ENABLE_NFP",
+                                            "TADAH_ENABLE_CERES"};
+  std::vector<std::string> named;
+  for (const auto &[w, next] : words) {
+    INFO("the help names " << w);
+    if (keys.count(w)) {
+      if (std::find(named.begin(), named.end(), w) != named.end()) continue;
+      named.push_back(w);
+      std::string lower = w;
+      for (auto &ch : lower)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      std::string out;
+      CHECK_NOTHROW(out = explain("refit." + lower));
+      if (const tadah::core::BlueprintKey *own = option_of_refit(lower)) {
+        CHECK(out == explain_key_text(*own));
+      } else {
+        CHECK(std::find(not_refit_options.begin(), not_refit_options.end(),
+                        w) != not_refit_options.end());
+        CHECK(out == explain_key_text(keys.at(w)));
+      }
+    } else if (w.find('_') != std::string::npos) {
+      if (next == '*') {
+        CHECK(w.back() == '_');
+        CHECK(std::any_of(keys.begin(), keys.end(), [&](const auto &k) {
+          return k.first.compare(0, w.size(), w) == 0;
+        }));
+      } else {
+        CHECK(std::find(no_keys.begin(), no_keys.end(), w) != no_keys.end());
+      }
+    }
+  }
+  INFO(named.size() << " keys named");
+  CHECK(named.size() >= 30);
+  for (const char *must : {"RHOFORM", "EMBF0", "NUMERIC", "RCUT2B", "RCUTMB",
+                           "AMPGRIDMB", "REFIT_MODE", "EAM",
+                           "REFIT_COMPACT_MERGE", "REFIT_COMPACT_OPT_EVERY",
+                           "REFIT_COMPACT_INSERT_TOPK", "OPTIMIZER"})
+    CHECK(std::find(named.begin(), named.end(), std::string(must)) !=
+          named.end());
+  CHECK(help.find("`tadah explain refit.optimizer`") != std::string::npos);
+}
+
+namespace {
+// `text` with every run of whitespace one space, none at either end.
+std::string squeezed(const std::string &text) {
+  std::string out;
+  bool space = false;
+  for (const char ch : text) {
+    if (std::isspace(static_cast<unsigned char>(ch))) {
+      space = !out.empty();
+      continue;
+    }
+    if (space) out += ' ';
+    space = false;
+    out += ch;
+  }
+  return out;
+}
+}  // namespace
+
+TEST_CASE("tadah explain: a stage block's text describes the keys of the "
+          "block before its layout",
+          "[explain]") {
+  /* Pins: `tadah explain refit.<block>` for the stage blocks OPTIMIZER,
+   * INIT, EXPLORE, REFINE and FUSE prints the block's text and then its
+   * layout: with whitespace squeezed the output contains the key's
+   * description (the summary the Configuration File page shows above the
+   * long description) and what the block takes: OPTIMIZER "`ALGO <name>`
+   * (required", "`LIB <name>` (required", "MAXEVAL, an integer from 1 to
+   * 2147483647", "A stopping criterion the block's ALGO does not read is an
+   * error", "FTOL_REL, FTOL_ABS, XTOL_REL and GTOL are finite numbers >=
+   * 0"; INIT "`<PHI|RHO|F> <MANUAL <mu> [<eta>] | XMIN | XMAX | YMIN | YMAX
+   * | SMAX | CMAX> [PIN]`" and "PIN freezes that position"; EXPLORE "Takes
+   * `MAX_ADD <n>` (max basis added per function)"; REFINE "per-rung
+   * high-precision local polish"; FUSE "Under REFIT_OBJECTIVE energy a joint
+   * refinement of all three functions"; and the line that opens the layout
+   * ("Written inside a stage block, for example:", "Written as a block,
+   * ...") comes after them. `tadah refit --help` sends ALGO and LIB here.
+   * Before the fix: the long description of each block held its layout
+   * only, which is what `tadah explain` printed, and the block's keys were
+   * in the description, which `tadah explain` does not print when a long
+   * description exists: the description and the key texts are not found,
+   * and the layout's line is the first. */
+  const auto &keys = tadah::core::BlueprintParser::getKeysMapRef();
+  const std::vector<std::pair<std::string, std::vector<std::string>>> blocks =
+      {{"OPTIMIZER",
+        {"`ALGO <name>` (required", "`LIB <name>` (required",
+         "MAXEVAL, an integer from 1 to 2147483647",
+         "A stopping criterion the block's ALGO does not read is an error",
+         "FTOL_REL, FTOL_ABS, XTOL_REL and GTOL are finite numbers >= 0",
+         "Written inside a stage block, for example:"}},
+       {"INIT",
+        {"`<PHI|RHO|F> <MANUAL <mu> [<eta>] | XMIN | XMAX | YMIN | YMAX | "
+         "SMAX | CMAX> [PIN]`",
+         "PIN freezes that position",
+         "Written as a block, one placement per line, for example:"}},
+       {"EXPLORE",
+        {"Takes `MAX_ADD <n>` (max basis added per function)",
+         "Written as a block, with an OPTIMIZER block inside"}},
+       {"REFINE",
+        {"per-rung high-precision local polish",
+         "Written as a block, with an OPTIMIZER block inside"}},
+       {"FUSE",
+        {"Under REFIT_OBJECTIVE energy a joint refinement of all three "
+         "functions",
+         "Written as a block, with an OPTIMIZER block inside"}}};
+  for (const auto &[key, texts] : blocks) {
+    std::string lower = key;
+    for (auto &ch : lower)
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    std::string out;
+    CHECK_NOTHROW(out = explain("refit." + lower));
+    const std::string flat = squeezed(out);
+    INFO(key << ":\n" << out);
+    const std::string description = squeezed(keys.at(key).description);
+    REQUIRE_FALSE(description.empty());
+    const std::size_t d = flat.find(description);
+    CHECK(d != std::string::npos);
+    std::size_t last = d == std::string::npos ? 0 : d;
+    for (const auto &text : texts) {
+      INFO(text);
+      const std::size_t at = flat.find(text);
+      CHECK(at != std::string::npos);
+      if (at == std::string::npos) continue;
+      CHECK(at >= last);  // in this order, the layout's line last
+      last = at;
+    }
+    const auto ls = lines_of(out);
+    REQUIRE_FALSE(ls.empty());
+    CHECK(ls.front().rfind("Written ", 0) != 0);
+  }
+}
+
+TEST_CASE("tadah explain: a subcommand is found in any letter case, before "
+          "a configuration key",
+          "[explain]") {
+  /* Pins: a command, a subcommand and an option are found in any letter
+   * case, the subcommand before a configuration key of the same name:
+   * `tadah explain data.MERGE`, `data.Merge` and `DATA.MERGE` print what
+   * `data.merge` prints, the merge subcommand ("Merge multiple dataset files
+   * into a single file."), not the MERGE configuration key ("Merge
+   * deduplication results into one file."); `data.SPLIT`,
+   * `DATA.SPLIT.EVEN` and `ANALYSIS.DATASET_STATS` print what `data.split`,
+   * `data.split.even` and `analysis.dataset_stats` print.
+   * Before the fix: a subcommand was matched in lower case only, so
+   * data.MERGE, data.Merge and DATA.MERGE printed the MERGE key, data.SPLIT
+   * threw "tadah explain: data has no subcommand or option 'SPLIT', and it
+   * is no configuration key", DATA.SPLIT.EVEN "tadah explain: DATA has no
+   * subcommand 'SPLIT'" and ANALYSIS.DATASET_STATS "tadah explain: ANALYSIS
+   * has no subcommand or option 'DATASET_STATS', and it is no configuration
+   * key". */
+  const std::string merge = explain("data.merge");
+  REQUIRE(merge.find("Merge multiple dataset files into a single file") !=
+          std::string::npos);
+  for (const char *name : {"data.MERGE", "data.Merge", "DATA.MERGE"}) {
+    INFO(name);
+    std::string out;
+    CHECK_NOTHROW(out = explain(name));
+    CHECK(out == merge);
+  }
+  for (const auto &[name, lower] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"data.SPLIT", "data.split"},
+           {"DATA.SPLIT.EVEN", "data.split.even"},
+           {"ANALYSIS.DATASET_STATS", "analysis.dataset_stats"}}) {
+    INFO(name);
+    const std::string expected = explain(lower);
+    REQUIRE_FALSE(expected.empty());
+    std::string out;
+    CHECK_NOTHROW(out = explain(name));
+    CHECK(out == expected);
+  }
 }

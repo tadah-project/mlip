@@ -8,7 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <boost/algorithm/string.hpp> // for boost::split
+#include <boost/algorithm/string.hpp> // boost::split, iequals
 
 namespace tadah {
 namespace mlip {
@@ -87,6 +87,19 @@ const core::BlueprintKey *find_option(const core::BlueprintTask &task,
   return nullptr;
 }
 
+// The configuration key named `name` (ALLOWED_KEYS, any letter case);
+// nullptr if none.
+const core::BlueprintKey *find_config_key(const std::string &name) {
+  const auto &keys = core::BlueprintParser::getKeysMapRef();
+  const auto it = keys.find(boost::to_upper_copy(name));
+  return it == keys.end() ? nullptr : &it->second;
+}
+
+void print_key(const core::BlueprintKey &key) {
+  std::cout << explain_key_text(key);
+  std::cout.flush();
+}
+
 void print_text(const std::string &text) {
   for (const auto &line : explain_text_lines(text)) std::cout << line << "\n";
   std::cout.flush();
@@ -161,31 +174,40 @@ int ExplainEngine::run(mlip::Task &task) {
                              "' is not <command>, <command>.<option> or "
                              "<command>.<subcommand>.<option>");
   const auto &taskMap = core::BlueprintParser::getTasksMapRef();
-  // The blueprint name of the command of the first n tokens (the first in
-  // upper case, as the tasks map has it).
+  // The command or subcommand the first n tokens name, in any letter case
+  // (as an option's name), or taskMap.end(): the tasks map writes a command
+  // in upper case and a subcommand in lower case ("DATA.merge"), and a
+  // subcommand matched in one case only let a configuration key of its name
+  // (MERGE) answer for data.MERGE.
   const auto command = [&](std::size_t n) {
-    std::string name = boost::to_upper_copy(tokens[0]);
+    std::string name = tokens[0];
     for (std::size_t i = 1; i < n; ++i) name += "." + tokens[i];
-    return name;
+    return std::find_if(taskMap.begin(), taskMap.end(), [&](const auto &t) {
+      return boost::iequals(t.first, name);
+    });
   };
   // The command or subcommand all the tokens name, if one.
   bool printed = false;
-  const auto named = taskMap.find(command(tokens.size()));
+  const auto named = command(tokens.size());
   if (named != taskMap.end()) {
     print_text(named->second.longDescription);
     printed = true;
   }
   if (tokens.size() == 1) {
-    if (!printed)
-      throw std::runtime_error("tadah explain: no command '" + tokens[0] +
-                               "'");
-    return EXIT_SUCCESS;
+    if (printed) return EXIT_SUCCESS;
+    // a configuration key, which no command need have as an option
+    if (const core::BlueprintKey *key = find_config_key(tokens[0])) {
+      print_key(*key);
+      return EXIT_SUCCESS;
+    }
+    throw std::runtime_error("tadah explain: no command or configuration "
+                             "key '" + tokens[0] + "'");
   }
   // An option of the command the tokens before the last name.
-  const auto owner = taskMap.find(command(tokens.size() - 1));
+  const auto owner = command(tokens.size() - 1);
   if (owner == taskMap.end()) {
     if (printed) return EXIT_SUCCESS;
-    if (taskMap.find(command(1)) == taskMap.end())
+    if (command(1) == taskMap.end())
       throw std::runtime_error("tadah explain: no command '" + tokens[0] +
                                "'");
     throw std::runtime_error("tadah explain: " + tokens[0] +
@@ -193,11 +215,15 @@ int ExplainEngine::run(mlip::Task &task) {
   }
   if (const core::BlueprintKey *key =
           find_option(owner->second, boost::to_lower_copy(tokens.back()))) {
-    std::cout << explain_key_text(*key);
-    std::cout.flush();
+    print_key(*key);
     return EXIT_SUCCESS;
   }
   if (printed) return EXIT_SUCCESS;
+  // a configuration key that is no option of the command
+  if (const core::BlueprintKey *key = find_config_key(tokens.back())) {
+    print_key(*key);
+    return EXIT_SUCCESS;
+  }
   std::string where = tokens[0];
   for (std::size_t i = 1; i + 1 < tokens.size(); ++i) where += " " + tokens[i];
   // <command>.<name> could have named a subcommand of a command that has one
@@ -210,7 +236,8 @@ int ExplainEngine::run(mlip::Task &task) {
   throw std::runtime_error("tadah explain: " + where + " has no " +
                            (has_subcommands ? "subcommand or option"
                                             : "option") +
-                           " '" + tokens.back() + "'");
+                           " '" + tokens.back() +
+                           "', and it is no configuration key");
 }
 
 void ExplainEngine::validate(const tadah::mlip::Task &task) {
