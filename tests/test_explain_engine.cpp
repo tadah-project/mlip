@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -618,4 +619,93 @@ TEST_CASE("tadah explain: a subcommand is found in any letter case, before "
     CHECK_NOTHROW(out = explain(name));
     CHECK(out == expected);
   }
+}
+
+TEST_CASE("tadah explain: a name that is no command and no configuration key "
+          "is asked of the application's explain hook",
+          "[explain][explain_hook]") {
+  /* Pins: an application sets one source of texts beyond MLIP's commands
+   * and configuration keys (set_explain_hook, with what its names are;
+   * tadah sets HPO's optimiser help, which MLIP does not depend on).
+   * `tadah explain <NAME>` asks it for a single name, as the user wrote
+   * it: for one that is no command and no configuration key what it writes
+   * is the text and the command succeeds ("WIDGET" and "widget", which this
+   * hook reads in any letter case); a name it does not know (false) is the
+   * error it was ("tadah explain: no command or configuration key
+   * 'bogus'"); an error it throws is the command's error; a command (train)
+   * or a configuration key (SETFL) that is not one of its own prints its
+   * text alone -- the hook is asked and adds nothing --; a dotted name is
+   * not asked; set_explain_hook({}, "") removes it.
+   * Before the fix: none compiles (set_explain_hook takes one argument, the
+   * hook), and the hook was not asked for train and SETFL (a command or a
+   * key answered first and alone, which hid an optimiser of the same name);
+   * before the hook, no text from outside MLIP could be reached. */
+  using tadah::mlip::engines::set_explain_hook;
+  const std::string train_alone = explain("train");
+  const std::string setfl_alone = explain("SETFL");
+  std::vector<std::string> asked;
+  set_explain_hook(
+      [&](const std::string &name, std::ostream &out) {
+        asked.push_back(name);
+        std::string upper = name;
+        for (auto &ch : upper)
+          ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (upper == "BROKEN") throw std::runtime_error("tadah explain: broken");
+        if (upper != "WIDGET") return false;
+        out << "widget text\n";
+        return true;
+      },
+      "a widget of the test");
+  CHECK(explain("WIDGET") == "widget text\n");
+  CHECK(explain("widget") == "widget text\n");
+  CHECK_THROWS_WITH(explain("bogus"),
+                    "tadah explain: no command or configuration key 'bogus'");
+  CHECK_THROWS_WITH(explain("BROKEN"), "tadah explain: broken");
+  CHECK(asked == std::vector<std::string>{"WIDGET", "widget", "bogus",
+                                          "BROKEN"});
+  asked.clear();
+  CHECK(explain("train") == train_alone);
+  CHECK(explain("SETFL") == setfl_alone);
+  CHECK(asked == std::vector<std::string>{"train", "SETFL"});
+  asked.clear();
+  CHECK_THROWS(explain("refit.widget"));
+  CHECK(asked.empty());
+  set_explain_hook({}, "");
+  CHECK_THROWS_WITH(explain("WIDGET"),
+                    "tadah explain: no command or configuration key 'WIDGET'");
+}
+
+TEST_CASE("tadah explain: a name that is a command or a configuration key "
+          "and one of the explain hook's prints both texts",
+          "[explain][explain_hook]") {
+  /* Pins: a single name with two meanings -- a configuration key (SETFL)
+   * or a command (train) that the application's hook also explains, as
+   * RANDOM is the data key and the ALGO of TADAH:RANDOM -- prints the
+   * command's or key's text, then a blank line, "<NAME> also names <what
+   * the hook's names are>:" and the hook's text: "SETFL also names a widget
+   * of the test:" and "widget SETFL"; "train also names a widget of the
+   * test:" and "widget train", the name as the user wrote it.
+   * Before the fix: does not compile (set_explain_hook takes one argument);
+   * the key's or command's text alone was printed and the hook was not
+   * asked, so `tadah explain RANDOM` printed the data key alone, although
+   * the optimiser table says `tadah explain <ALGO>` describes TADAH:RANDOM. */
+  using tadah::mlip::engines::set_explain_hook;
+  const std::string setfl_alone = explain("SETFL");
+  const std::string train_alone = explain("train");
+  set_explain_hook(
+      [](const std::string &name, std::ostream &out) {
+        std::string upper = name;
+        for (auto &ch : upper)
+          ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (upper != "SETFL" && upper != "TRAIN") return false;
+        out << "widget " << name << "\n";
+        return true;
+      },
+      "a widget of the test");
+  CHECK(explain("SETFL") ==
+        setfl_alone + "\nSETFL also names a widget of the test:\nwidget SETFL\n");
+  CHECK(explain("train") ==
+        train_alone + "\ntrain also names a widget of the test:\nwidget train\n");
+  set_explain_hook({}, "");
+  CHECK(explain("SETFL") == setfl_alone);
 }
