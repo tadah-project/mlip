@@ -116,8 +116,11 @@ public:
    *
    *  Set by build(stdb, norm, dc, wcopy): empty when dc reports no
    *  layout (DC_Base's default). Empty until that build runs; the
-   *  StDescriptorsDB overload leaves it as it is. Read by HPO's
-   *  per-iteration health monitor.
+   *  StDescriptorsDB overload leaves it as it is. HPO's per-iteration
+   *  health monitor does not read it: it computes the same layout,
+   *  f.phi_layout(dc.layout(ctx), ctx), for the weights of every
+   *  evaluation's model (M_BLR and M_KRR build a design matrix of their
+   *  own, and a FIXINDEX that pins every weight builds none).
    */
   ColumnLayout layout_;
   const ColumnLayout& layout() const { return layout_; }
