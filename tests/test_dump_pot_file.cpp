@@ -237,3 +237,49 @@ TEST_CASE("dumpPotFile writes no DBFILE: a potential records no training "
   CHECK(line_tokens(text, "WDBFILE") ==
         std::vector<std::string>{"1", "0.5"});
 }
+
+/* Pins: dumpPotFile (tadah train, tadah refit and refit --edit) writes no
+ * input of the run that made its context, whatever the context holds: no
+ * HPOTARGET and no VALIDATION line (the target and validation files of a
+ * tadah hpo run, which a best_pot.tadah used as a training configuration
+ * carried: HPOTARGET config.hpo, VALIDATION config.val), and no VERBOSE
+ * (1), NUMERIC (18), OUTFILE (out.tadah), AUDIT (warn), AUDIT_SAMPLE (64)
+ * or HEALTH_LOG (full) line; the model's settings and fit beside them stay
+ * (MODEL M_BLR BF_Linear, RCUT2B, the six WEIGHTS).
+ * Before the fix: the HPOTARGET, VALIDATION and AUDIT_SAMPLE lines were
+ * written ("HPOTARGET config.hpo", "VALIDATION config.val", "AUDIT_SAMPLE
+ * 64"); the other five were not (a pin of those). */
+TEST_CASE("dumpPotFile writes no input of the run: HPOTARGET, VALIDATION, "
+          "VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE, HEALTH_LOG",
+          "[train][dumpPotFile][potential_content]") {
+  DumpTempDir tmp;
+  auto &log = tadah::core::Logger::instance();
+  const auto old_level = log.getLogLevel();
+  Context pot = make_pot();
+  pot.add("HPOTARGET", "config.hpo");
+  pot.add("VALIDATION", "config.val");
+  pot.add("VERBOSE", 1);  // Context::add sets the Logger level: restored
+  pot.add("NUMERIC", 18);
+  pot.add("OUTFILE", "out.tadah");
+  pot.add("AUDIT", "warn");
+  pot.add("AUDIT_SAMPLE", 64);
+  pot.add("HEALTH_LOG", "full");
+  log.setLogLevel(old_level);
+  dump_capturing("pot.tadah", pot);
+
+  const std::string text = slurp("pot.tadah");
+  INFO(text);
+  for (const char *key : {"HPOTARGET", "VALIDATION", "VERBOSE", "NUMERIC",
+                          "OUTFILE", "AUDIT", "AUDIT_SAMPLE", "HEALTH_LOG"}) {
+    INFO("key " << key);
+    CHECK(line_tokens(text, key).empty());
+  }
+  CHECK(text.find("config.hpo") == std::string::npos);
+  CHECK(text.find("config.val") == std::string::npos);
+  CHECK(line_tokens(text, "MODEL") ==
+        std::vector<std::string>{"M_BLR", "BF_Linear"});
+  CHECK(line_tokens(text, "RCUT2B") ==
+        std::vector<std::string>{"5.29999999999999982"});
+  CHECK(line_tokens(text, "WEIGHTS").size() == kWeights.size());
+  log.setLogLevel(old_level);
+}

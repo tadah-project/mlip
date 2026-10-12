@@ -410,3 +410,47 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
   for (std::size_t k = 0; k < K; ++k)
     CHECK(w[k] == 0.5 + static_cast<double>(k));
 }
+
+/* Pins: each refusal of classify_weight_source (tadah hpo at startup) of a
+ * configuration without a training DBFILE ends with the advice every
+ * refusal of a configuration without one gives, "A potential records no
+ * DBFILE (no potential tadah writes has one): to train from one, add a
+ * DBFILE line to a copy of it (the Training page of the documentation,
+ * Retraining from a potential).", after its own reason: no FIXINDEX or
+ * FIXWEIGHT ("the model weights cannot be determined"; a potential used as
+ * the -c configuration as it is gets this one), FIXINDEX 2 of 5 weights
+ * ("every model weight must be pinned"), and M_KRR Kern_RBF ("draws its
+ * SBASIS basis vectors from the training data").
+ * Before the fix: each refusal ended with its own remedy ("... or pin every
+ * weight with FIXINDEX/FIXWEIGHT.", "... to search them).", "Provide a
+ * training DBFILE."), without the advice. */
+TEST_CASE("classify_weight_source: a refusal without a training DBFILE says "
+          "that a potential records none",
+          "[weight_provisioning][potential_content]") {
+  const std::string advice =
+      "A potential records no DBFILE (no potential tadah writes has one): "
+      "to train from one, add a DBFILE line to a copy of it (the Training "
+      "page of the documentation, Retraining from a potential).";
+  SECTION("no FIXINDEX or FIXWEIGHT") {
+    CHECK_THROWS_WITH(classify_weight_source(ctx_with(false, "", {}), kNCols),
+                      Catch::Contains("the model weights cannot be "
+                                      "determined") &&
+                          Catch::EndsWith(advice));
+  }
+  SECTION("pins that do not cover every weight") {
+    CHECK_THROWS_WITH(
+        classify_weight_source(ctx_with(false, "2", {0.5}), kNCols),
+        Catch::Contains("every model weight must be pinned") &&
+            Catch::EndsWith(advice));
+  }
+  SECTION("a basis drawn from the training data") {
+    Context c = ctx_with(false, "", {});
+    c.add("MODEL", "M_KRR");
+    c.add("MODEL", "Kern_RBF");
+    c.add("MODEL", 1);
+    CHECK_THROWS_WITH(classify_weight_source(c, kNCols),
+                      Catch::Contains("draws its SBASIS basis vectors from "
+                                      "the training data") &&
+                          Catch::EndsWith(advice));
+  }
+}
