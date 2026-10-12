@@ -106,15 +106,22 @@ void print_text(const std::string &text) {
   std::cout.flush();
 }
 
-// The application's source of further texts (set_explain_hook).
-ExplainHook &explain_hook() {
-  static ExplainHook hook;
+// The application's source of further texts, and what its names are
+// (set_explain_hook).
+struct RegisteredHook {
+  ExplainHook hook;
+  std::string what;
+};
+RegisteredHook &explain_hook() {
+  static RegisteredHook hook;
   return hook;
 }
 
 }  // namespace
 
-void set_explain_hook(ExplainHook hook) { explain_hook() = std::move(hook); }
+void set_explain_hook(ExplainHook hook, std::string what) {
+  explain_hook() = RegisteredHook{std::move(hook), std::move(what)};
+}
 
 std::vector<std::string> explain_text_lines(const std::string &text) {
   std::vector<std::string> lines = dedented_lines(text);
@@ -203,21 +210,29 @@ int ExplainEngine::run(mlip::Task &task) {
     printed = true;
   }
   if (tokens.size() == 1) {
-    if (printed) return EXIT_SUCCESS;
     // a configuration key, which no command need have as an option
-    if (const core::BlueprintKey *key = find_config_key(tokens[0])) {
-      print_key(*key);
-      return EXIT_SUCCESS;
+    if (!printed) {
+      if (const core::BlueprintKey *key = find_config_key(tokens[0])) {
+        print_key(*key);
+        printed = true;
+      }
     }
-    // a name the application explains (an optimiser of tadah hpo)
-    if (const ExplainHook &hook = explain_hook()) {
+    // a name the application explains (an optimiser of tadah hpo), after
+    // a command's or key's text of the same name: a name with two meanings
+    // prints both (RANDOM, the data key and TADAH:RANDOM)
+    const RegisteredHook &registered = explain_hook();
+    if (registered.hook) {
       std::ostringstream text;
-      if (hook(tokens[0], text)) {
+      if (registered.hook(tokens[0], text)) {
+        if (printed)
+          std::cout << "\n" << tokens[0] << " also names " << registered.what
+                    << ":\n";
         std::cout << text.str();
         std::cout.flush();
         return EXIT_SUCCESS;
       }
     }
+    if (printed) return EXIT_SUCCESS;
     throw std::runtime_error("tadah explain: no command or configuration "
                              "key '" + tokens[0] + "'");
   }

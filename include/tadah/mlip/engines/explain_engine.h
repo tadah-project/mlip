@@ -28,9 +28,14 @@ namespace engines {
  * explain refit.rhoform` print the text of a key that is no option of a
  * command; a command's own subcommand or option comes first (its text may
  * differ: data.MERGE is the merge subcommand, not the MERGE key). A single
- * name that is no command and no configuration key is asked of the
- * application's explain hook (set_explain_hook): tadah's prints the
- * optimisers of `tadah hpo` (ALGO, LIB:ALGO). It throws
+ * name is also asked of the application's explain hook (set_explain_hook):
+ * tadah's prints the optimisers of `tadah hpo` (ALGO, LIB:ALGO). A name
+ * that is no command and no configuration key prints the hook's text; one
+ * that is either prints that text, then, when the hook knows the name too,
+ * a blank line, "<NAME> also names <what the hook's names are>:" and the
+ * hook's text (`tadah explain RANDOM`: the data key RANDOM, then "RANDOM
+ * also names an optimiser of `tadah hpo`:" and TADAH:RANDOM's help). It
+ * throws
  * std::runtime_error, printing nothing, when the option names none of
  * these: "tadah explain: no command or configuration key 'bogus'", "tadah
  * explain: no command 'bogus'" (bogus.key: the first name of a dotted
@@ -51,13 +56,13 @@ public:
  * @brief A source of `tadah explain` texts beyond the commands and the
  *        configuration keys.
  *
- * Called with a single name, as the user wrote it, that names no command
- * and no configuration key. It writes the name's text to @p out and
- * returns true, or returns false when the name is not one of its own; it
- * may throw std::runtime_error, whose message is the command's error (a
- * name it knows of but cannot explain). The application sets it, so MLIP
- * needs no module it serves: tadah sets the optimiser help of HPO, or with
- * HPO not built one that says so.
+ * Called with a single name, as the user wrote it, after the text of a
+ * command or configuration key of that name if there is one. It writes the
+ * name's text to @p out and returns true, or returns false when the name
+ * is not one of its own; it may throw std::runtime_error, whose message is
+ * the command's error (a name it knows of but cannot explain). The
+ * application sets it, so MLIP needs no module it serves: tadah sets the
+ * optimiser help of HPO, or with HPO not built one that says so.
  */
 using ExplainHook =
     std::function<bool(const std::string &name, std::ostream &out)>;
@@ -65,8 +70,12 @@ using ExplainHook =
 /**
  * @brief Sets the hook ExplainEngine::run asks (see ExplainHook), replacing
  *        an earlier one; an empty function removes it.
+ *
+ * @p what says what the hook's names are, for the line that introduces its
+ * text after a command's or key's of the same name: "an optimiser of
+ * `tadah hpo`" gives "RANDOM also names an optimiser of `tadah hpo`:".
  */
-void set_explain_hook(ExplainHook hook);
+void set_explain_hook(ExplainHook hook, std::string what);
 
 /**
  * @brief The lines of a blueprint long description as `tadah explain`
