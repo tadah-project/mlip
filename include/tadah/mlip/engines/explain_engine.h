@@ -20,7 +20,9 @@ namespace engines {
  * `<command>.<subcommand>.<option>` (a subcommand is also written
  * `<command>.<subcommand>`), or `<KEY>`, each name in any letter case.
  * run() prints the long description of the command or subcommand it names
- * and the text of the option (explain_key_text). A last name that is no
+ * (followed, for one this program was built without, by a blank line and
+ * EngineFactory::notBuiltMessage with a full stop) and the text of the
+ * option (explain_key_text). A last name that is no
  * command, subcommand or option of its command is looked up among the
  * configuration keys (ALLOWED_KEYS), so `tadah explain SETFL` and `tadah
  * explain refit.rhoform` print the text of a key that is no option of a

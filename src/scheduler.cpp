@@ -27,6 +27,12 @@ void Scheduler::schedule() {
 }
 
 int Scheduler::execute() {
+  // Every task's engine first: a task this program has no engine for (one
+  // it was built without, such as hpo in a tadah without TADAH_ENABLE_NFP)
+  // is refused before an earlier task runs.
+  for (const auto &task : tasks_)
+    mlip::engines::EngineFactory::require(task.getTaskName());
+
   for (auto &task : tasks_) {
 
     core::Context context = task.getContext();
