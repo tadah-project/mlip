@@ -241,10 +241,9 @@ public:
     // With NORM the basis vectors are normalised descriptors: Kern_Linear's
     // weights go to the raw descriptors, as implementation 1's do
     // (train(desmat)), since its prediction does not normalise.
-    if (context.template get<bool>("NORM") &&
-      kernel.get_label()=="Kern_Linear") {
-      weights = convert_to_nweights(weights);
-    }
+    if (weights_on_raw_descriptors(context, kernel))
+      to_raw_descriptors(*this, norm,
+                         tadah::core::n_intercept_columns(context));
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
