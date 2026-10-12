@@ -95,6 +95,9 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
  * twice), a FIXWEIGHT value that is not a number, no DBFILE without any
  * pinning, a missing DBFILE with incomplete FIXINDEX coverage, or a
  * missing DBFILE for a model whose basis is drawn from the training data.
+ * Each refusal of a missing DBFILE ends with
+ * potential_has_no_datasets_advice() (training_datasets.h): a potential,
+ * which records none, is the likely configuration.
  *
  * @param ctx    training configuration
  * @param n_cols total number of model weights K (model_weight_count())

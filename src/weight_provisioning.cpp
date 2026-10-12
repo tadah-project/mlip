@@ -1,4 +1,5 @@
 #include <tadah/mlip/weight_provisioning.h>
+#include <tadah/mlip/training_datasets.h>
 
 #include <tadah/mlip/models/basis.h>
 
@@ -143,7 +144,8 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
     throw std::runtime_error(
         "No training DBFILE: M_KRR " + ctx.get<std::string>("MODEL", 1) +
         " draws its SBASIS basis vectors from the training data, and its "
-        "weights belong to them. Provide a training DBFILE.");
+        "weights belong to them. Provide a training DBFILE. " +
+        potential_has_no_datasets_advice());
   }
 
   if (!pinned) {
@@ -151,7 +153,8 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
       throw std::runtime_error(
           "No training DBFILE and no FIXINDEX/FIXWEIGHT: the model weights "
           "cannot be determined. Provide a DBFILE for least-squares "
-          "training, or pin every weight with FIXINDEX/FIXWEIGHT.");
+          "training, or pin every weight with FIXINDEX/FIXWEIGHT. " +
+          potential_has_no_datasets_advice());
     }
     return WeightSource::FullLS;
   }
@@ -165,7 +168,8 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
           format_uncovered(spec.indices, n_cols) +
           " have no training data to be fitted — add them to "
           "FIXINDEX/FIXWEIGHT (optionally with OPTIM FIXWEIGHT lines to "
-          "search them).");
+          "search them). " +
+          potential_has_no_datasets_advice());
     }
     return WeightSource::FixedOnlyNoData;
   }

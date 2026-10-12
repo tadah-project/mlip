@@ -68,8 +68,10 @@ void warn_noise_without_energies(const core::Context &param_file) {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
-  // One dataset listed twice would be fitted twice: refused before any
-  // file is read.
+  // The datasets to fit: a configuration without DBFILE (a potential, which
+  // records none, given as it is) is refused, saying how to retrain, before
+  // anything is read; one dataset listed twice would be fitted twice.
+  require_training_datasets(context);
   require_distinct_training_datasets(context);
   // The SBASIS of a fit that draws basis vectors (M_KRR with a non-linear
   // kernel, implementation 2 with any kernel), refused naming the model
@@ -214,18 +216,13 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
     core::Logger::instance().log(core::LogLevel::WARNING,
         outfile + ": " + digits_warning);
   core::Context modContext = context;
-  modContext.remove("VERBOSE");
-  modContext.remove("NUMERIC");
-  modContext.remove("OUTFILE");
-  // Audit / health-monitor knobs are runtime-only and not part of the
-  // trained model. The LAMMPS-side PairTadah parser does not register
-  // them, so leaving them in pot.tadah triggers an "Invalid key"
-  // error during pair_coeff and a downstream null-deref in calc_rho.
-  modContext.remove("AUDIT");
-  modContext.remove("HEALTH_LOG");
-  // A potential records no training data (a refit --edit potential is a
-  // copy of its input's context, which may be an M_BLR potential written
-  // with its DBFILE).
+  // A potential records the model's settings and its fit: neither the
+  // inputs of the run (VERBOSE, NUMERIC, OUTFILE, the AUDIT and HEALTH_LOG
+  // diagnostics, a tadah hpo run's HPOTARGET and VALIDATION, which a
+  // best_pot.tadah used as the configuration had) nor its training data
+  // (a refit --edit potential is a copy of its input's context, which may
+  // be an M_BLR potential written with its DBFILE).
+  remove_run_inputs(modContext);
   remove_training_datasets(modContext);
   tadah::models::normalise_embf0_key(modContext);
   // A DM_REAM potential must declare its density form (absent -> throws
