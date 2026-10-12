@@ -182,6 +182,10 @@ public:
     c.remove("MODEL");
     c.add("MODEL", label);
     c.add("MODEL", bf.get_label());
+    // UNCERTAINTY is a switch of the train task that writes weights.tadah,
+    // not part of the model: a potential that recorded it (every one did)
+    // asked for --uncertainty when it was the configuration of a retrain.
+    if (c.has_stored("UNCERTAINTY")) c.remove("UNCERTAINTY");
 
     if (c.contains("WEIGHTS")) {
       c.remove("WEIGHTS");
