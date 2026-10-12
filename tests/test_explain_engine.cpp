@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -618,4 +619,50 @@ TEST_CASE("tadah explain: a subcommand is found in any letter case, before "
     CHECK_NOTHROW(out = explain(name));
     CHECK(out == expected);
   }
+}
+
+TEST_CASE("tadah explain: a name that is no command and no configuration key "
+          "is asked of the application's explain hook",
+          "[explain][explain_hook]") {
+  /* Pins: an application sets one source of texts beyond MLIP's commands
+   * and configuration keys (set_explain_hook; tadah sets HPO's optimiser
+   * help, which MLIP does not depend on). `tadah explain <NAME>` asks it
+   * for a single name that is no command and no configuration key, as the
+   * user wrote it: what it writes is the text and the command succeeds
+   * ("WIDGET" and "widget", which this hook reads in any letter case); a
+   * name it does not know (false) is the error it was ("tadah explain: no
+   * command or configuration key 'bogus'"); an error it throws is the
+   * command's error; a command (train) or a configuration key (SETFL)
+   * answers first and the hook is not asked, nor is it for a dotted name;
+   * set_explain_hook({}) removes it.
+   * Before the fix: none compiles (set_explain_hook does not exist): no
+   * text from outside MLIP could be reached, so `tadah explain ALGO` was
+   * "tadah explain: no command or configuration key 'ALGO'". */
+  using tadah::mlip::engines::set_explain_hook;
+  std::vector<std::string> asked;
+  set_explain_hook([&](const std::string &name, std::ostream &out) {
+    asked.push_back(name);
+    std::string upper = name;
+    for (auto &ch : upper)
+      ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    if (upper == "BROKEN") throw std::runtime_error("tadah explain: broken");
+    if (upper != "WIDGET") return false;
+    out << "widget text\n";
+    return true;
+  });
+  CHECK(explain("WIDGET") == "widget text\n");
+  CHECK(explain("widget") == "widget text\n");
+  CHECK_THROWS_WITH(explain("bogus"),
+                    "tadah explain: no command or configuration key 'bogus'");
+  CHECK_THROWS_WITH(explain("BROKEN"), "tadah explain: broken");
+  CHECK(asked == std::vector<std::string>{"WIDGET", "widget", "bogus",
+                                          "BROKEN"});
+  asked.clear();
+  CHECK_FALSE(explain("train").empty());
+  CHECK_FALSE(explain("SETFL").empty());
+  CHECK_THROWS(explain("refit.widget"));
+  CHECK(asked.empty());
+  set_explain_hook({});
+  CHECK_THROWS_WITH(explain("WIDGET"),
+                    "tadah explain: no command or configuration key 'WIDGET'");
 }
