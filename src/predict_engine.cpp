@@ -88,9 +88,12 @@ int PredictEngine::run(mlip::Task &task) {
 
   // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, ZERO_COM_FORCE)
   // using the merged potContext, so the input dataset is reshaped to match
-  // what the model was trained on. NB: at predict time the model has already
-  // been trained, so derived sources (ESHIFT_ATOM, ESHIFT_DBATOM) are no-ops
-  // here, and the training-only weight knobs were removed above.
+  // what the model was trained on: EFILTER/FFILTER leave out the structures
+  // outside the training run's window, and the training-only weight knobs
+  // were removed above. The stamped ESHIFT is the explicit source, so an
+  // ESHIFT_ATOM / ESHIFT_DBATOM toggle the potential records as true only
+  // adds the multiple-sources WARNING; after --no-eshift removed ESHIFT, such
+  // a toggle derives the shift from the data predicted.
   apply_load_transforms(stdb, potContext);
 
   // The force and stress metrics leave out structures with force or stress

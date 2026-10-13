@@ -186,9 +186,13 @@ void apply_com_force_zero(StructureDB &stdb);
 
 /**
  * Stamp the resolved LSCALE / ESHIFT from @p report into a Context that will be
- * written into pot.tadah, so prediction can round-trip them. Other transforms
- * (EFILTER, FFILTER, WDBFILE, EWEIGHT_TEMP, ZERO_COM_FORCE) are training-time
- * only and are intentionally NOT stamped.
+ * written into pot.tadah, so prediction can round-trip them. The other
+ * transform keys (EFILTER, FFILTER, WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP,
+ * ZERO_COM_FORCE, and the ESHIFT_ATOM / ESHIFT_DBATOM toggles) are not stamped
+ * here: the potential records them as the training configuration set them.
+ * tadah predict re-applies EFILTER, FFILTER and ZERO_COM_FORCE to the data it
+ * predicts and removes WDBFILE, WDBFILE_AUTO and EWEIGHT_TEMP first
+ * (PredictEngine::run).
  */
 void stamp_into_param_file(tadah::core::Context &param_file,
                            const LoadTransformReport &report);
