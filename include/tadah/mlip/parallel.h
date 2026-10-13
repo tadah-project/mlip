@@ -74,9 +74,11 @@ const ParallelBackend& detail_parallel_backend();
  * kernels satisfy this by writing disjoint slots -- see the determinism note).
  *
  * Exceptions: every index runs; if any body threw, an exception is rethrown
- * after the loop -- under OpenMP the one of the lowest index (an exception may
- * not leave an OpenMP region: it would call std::terminate), and the one the
- * backend reports otherwise (HPO's pool: the first to be thrown). */
+ * after the loop -- without a backend the one of the lowest index (under
+ * OpenMP an exception may not leave an OpenMP region: it would call
+ * std::terminate; the serial loop of a build without OpenMP runs on past a
+ * failing index as well), and the one the backend reports otherwise (HPO's
+ * pool: the first to be thrown). */
 template <class Body>
 inline void parallel_for(std::size_t n, Body&& body) {
   if (has_parallel_backend()) {
@@ -97,7 +99,17 @@ inline void parallel_for(std::size_t n, Body&& body) {
   for (const auto& e : errors)
     if (e) std::rethrow_exception(e);
 #else
-  for (std::size_t i = 0; i < n; ++i) body(i);
+  // Serial, the same contract: every index runs, and the exception of the
+  // lowest failing one -- the first thrown -- is rethrown after the loop.
+  std::exception_ptr first;
+  for (std::size_t i = 0; i < n; ++i) {
+    try {
+      body(i);
+    } catch (...) {
+      if (!first) first = std::current_exception();
+    }
+  }
+  if (first) std::rethrow_exception(first);
 #endif
 }
 
