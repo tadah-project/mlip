@@ -143,6 +143,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     if (!w.empty())
       tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
   }
+  {
+    // FIXINDEX pinning every weight leaves the fit nothing to change (a
+    // refit potential retrained as it is): said before any dataset is read.
+    const std::string w = all_weights_pinned_warning(tr.context, *tr.fb);
+    if (!w.empty())
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
+  }
 
   // Load structures and provide feedback if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");

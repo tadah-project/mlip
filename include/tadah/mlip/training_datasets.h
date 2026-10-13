@@ -49,8 +49,12 @@ void remove_run_inputs(tadah::core::Context &pot);
  *  end with (require_training_datasets: tadah train; classify_weight_source
  *  and the refusal of a run without ATOM: tadah hpo): "A potential records
  *  no DBFILE (no potential tadah writes has one): to train from one, add a
- *  DBFILE line to a copy of it (the Training page of the documentation,
- *  Retraining from a potential)." */
+ *  DBFILE line to a copy of it; a potential of tadah refit or refit --edit
+ *  also pins every weight with its FIXINDEX and FIXWEIGHT lines, the seed
+ *  of a tadah hpo coefficient search, so delete them from the copy for the
+ *  fit to change the weights (the Training page of the documentation,
+ *  Retraining from a potential)." A fit whose FIXINDEX pins every weight
+ *  changes none (all_weights_pinned_warning, weight_provisioning.h). */
 std::string potential_has_no_datasets_advice();
 
 /** Refuses a training configuration without DBFILE (tadah train, which
