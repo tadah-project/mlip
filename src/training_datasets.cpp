@@ -41,7 +41,7 @@ void remove_training_datasets(tadah::core::Context &pot) {
 void remove_run_inputs(tadah::core::Context &pot) {
   for (const char *key : {"VERBOSE", "NUMERIC", "OUTFILE", "AUDIT",
                           "AUDIT_SAMPLE", "HEALTH_LOG", "HPOTARGET",
-                          "VALIDATION"})
+                          "VALIDATION", "UNCERTAINTY"})
     if (pot.has_stored(key)) pot.remove(key);
 }
 
