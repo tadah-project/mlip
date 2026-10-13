@@ -30,9 +30,13 @@ void remove_training_datasets(tadah::core::Context &pot);
  *  inputs of the run that wrote it. Removes from the potential context
  *  @p pot VERBOSE (the verbosity of the tool), NUMERIC and OUTFILE (the
  *  writer's settings; the digits are resolved before), AUDIT, AUDIT_SAMPLE
- *  and HEALTH_LOG (the run's diagnostics), and HPOTARGET and VALIDATION
- *  (the target and validation files of a tadah hpo run, which the run's
- *  journal names); every other key stays. TrainEngine::dumpPotFile (tadah
+ *  and HEALTH_LOG (the run's diagnostics), HPOTARGET and VALIDATION (the
+ *  target and validation files of a tadah hpo run, which the run's journal
+ *  names), and UNCERTAINTY (the train task's switch for weights.tadah,
+ *  which M_BLR's and M_KRR's get_param_file leave out too: refit --edit
+ *  writes a copy of its input's context, which a potential of tadah 1.5.x
+ *  or a 1.6.0 development build gives an UNCERTAINTY line); every other
+ *  key stays. TrainEngine::dumpPotFile (tadah
  *  train, tadah refit and refit --edit) and Tadah.HPO's
  *  PotHeaderWriter::write_potential_body (best_pot.tadah, the durable best,
  *  the BDUMP and DUMP archives) call it on the context they write, so no
@@ -49,8 +53,12 @@ void remove_run_inputs(tadah::core::Context &pot);
  *  end with (require_training_datasets: tadah train; classify_weight_source
  *  and the refusal of a run without ATOM: tadah hpo): "A potential records
  *  no DBFILE (no potential tadah writes has one): to train from one, add a
- *  DBFILE line to a copy of it (the Training page of the documentation,
- *  Retraining from a potential)." */
+ *  DBFILE line to a copy of it; a potential of tadah refit or refit --edit
+ *  also pins every weight with its FIXINDEX and FIXWEIGHT lines, the seed
+ *  of a tadah hpo coefficient search, so delete them from the copy for the
+ *  fit to change the weights (the Training page of the documentation,
+ *  Retraining from a potential)." A fit whose FIXINDEX pins every weight
+ *  changes none (all_weights_pinned_warning, weight_provisioning.h). */
 std::string potential_has_no_datasets_advice();
 
 /** Refuses a training configuration without DBFILE (tadah train, which

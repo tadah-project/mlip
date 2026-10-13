@@ -7,6 +7,7 @@
 #include <tadah/models/functions/function_base.h>
 
 #include <cstddef>
+#include <string>
 
 namespace tadah {
 namespace mlip {
@@ -104,6 +105,28 @@ std::size_t model_weight_count(const tadah::models::Function_Base &f,
  */
 WeightSource classify_weight_source(const tadah::core::Context &ctx,
                                     std::size_t n_cols);
+
+/** The WARNING of a training whose FIXINDEX and FIXWEIGHT pin every weight
+ *  (classify_weight_source() is WeightSource::AllFixedData): the fit
+ *  changes none of them (MODELS M_BLR_Train and M_KRR_Train skip the
+ *  regressor; under OALGO 3 it still gives the noise of the data about
+ *  them), so the potential written has the FIXWEIGHT values as its
+ *  WEIGHTS. "tadah train: FIXINDEX and FIXWEIGHT pin every weight (all K
+ *  of them), so the fit changes none: the WEIGHTS of the potential written
+ *  are the FIXWEIGHT values. tadah refit and refit --edit write FIXINDEX
+ *  and FIXWEIGHT for every weight of their potentials, the seed of a tadah
+ *  hpo coefficient search, and so does a tadah hpo run that pins every
+ *  weight in its best_pot.tadah: to fit the weights to the DBFILE data,
+ *  delete both lines from the training configuration (the Training page
+ *  of the documentation, Retraining from a potential)."; "" without
+ *  FIXINDEX and FIXWEIGHT or when a weight is left to fit. A warning, not a
+ *  refusal: such a training can be deliberate. TrainEngine::run logs it
+ *  before any dataset is read; tadah hpo pins every weight on purpose (its
+ *  coefficient search) and does not. Throws what model_weight_count() and
+ *  classify_weight_source() throw. @p ctx holds DSIZE (DescriptorsCalc
+ *  sets it) and the training DBFILE. */
+std::string all_weights_pinned_warning(const tadah::core::Context &ctx,
+                                       const tadah::models::Function_Base &f);
 
 /** Set the model weights directly from FIXINDEX/FIXWEIGHT — no training data.
  *

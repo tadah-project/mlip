@@ -177,6 +177,24 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
   return full_coverage ? WeightSource::AllFixedData : WeightSource::PartialLS;
 }
 
+std::string all_weights_pinned_warning(const tadah::core::Context &ctx,
+                                       const tadah::models::Function_Base &f) {
+  if (!ctx.has_stored("FIXINDEX") && !ctx.has_stored("FIXWEIGHT")) return "";
+  const std::size_t n_cols = model_weight_count(f, ctx);
+  if (classify_weight_source(ctx, n_cols) != WeightSource::AllFixedData)
+    return "";
+  return "tadah train: FIXINDEX and FIXWEIGHT pin every weight (all " +
+         std::to_string(n_cols) +
+         " of them), so the fit changes none: the WEIGHTS of the potential "
+         "written are the FIXWEIGHT values. tadah refit and refit --edit "
+         "write FIXINDEX and FIXWEIGHT for every weight of their potentials, "
+         "the seed of a tadah hpo coefficient search, and so does a tadah "
+         "hpo run that pins every weight in its best_pot.tadah: to fit the "
+         "weights to the DBFILE data, delete both lines from the training "
+         "configuration (the Training page of the documentation, Retraining "
+         "from a potential).";
+}
+
 void provision_fixed_weights(M_Tadah_Base &model,
                              const tadah::core::Context &ctx,
                              std::size_t n_cols) {

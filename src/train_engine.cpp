@@ -143,6 +143,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
     if (!w.empty())
       tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
   }
+  {
+    // FIXINDEX pinning every weight leaves the fit nothing to change (a
+    // refit potential retrained as it is): said before any dataset is read.
+    const std::string w = all_weights_pinned_warning(tr.context, *tr.fb);
+    if (!w.empty())
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING, w);
+  }
 
   // Load structures and provide feedback if verbose
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
@@ -262,7 +269,9 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   // A potential records the model's settings and its fit: neither the
   // inputs of the run (VERBOSE, NUMERIC, OUTFILE, the AUDIT and HEALTH_LOG
   // diagnostics, a tadah hpo run's HPOTARGET and VALIDATION, which a
-  // best_pot.tadah used as the configuration had) nor its training data
+  // best_pot.tadah used as the configuration had, the train task's
+  // UNCERTAINTY, which a 1.5.x potential edited by refit --edit has) nor its
+  // training data
   // (a refit --edit potential is a copy of its input's context, which may
   // be an M_BLR potential written with its DBFILE).
   remove_run_inputs(modContext);
