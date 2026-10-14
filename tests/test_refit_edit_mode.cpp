@@ -16,6 +16,7 @@
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -1325,38 +1326,120 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 /* Pins: refit --edit refuses an input whose training record cannot be
- * copied, naming the file and the line, and writes no edit: an opening
- * line "# --- training record (not read by tadah) ---" with no end line
- * after it (line 1 of open.tadah), and a line inside the block that is not
- * a comment (line 2 of keyline.tadah, "DBFILE x.db": a key line, which
- * every reader of the file reads).
- * Before the fix: both edits were written (exit 0): the block was a comment
- * nothing read, and the DBFILE key line was dropped. */
+ * copied, naming the file and the cause, and writes no edit:
+ *  - no end line, key lines after the record (open.tadah: the opening line,
+ *    "# DBFILE x.db", then the key lines from line 3: every writer puts the
+ *    key lines right after the record, so a potential whose end line was
+ *    deleted has this shape): "open.tadah: line 1 opens a training record
+ *    ('<opening line>') that no end line ('<end line>') closes before line
+ *    3, the first line after it that is not a comment: restore the end line
+ *    after the record, before line 3, or delete the record.", and not the
+ *    key-line refusal ("is not a comment: every reader ...", whose advice
+ *    would comment out line 3, a key line);
+ *  - no end line before the end of the file (eof.tadah: the key lines, then
+ *    the opening line and "# DBFILE x.db"): "eof.tadah: line <n> opens a
+ *    training record ('<opening line>') that no end line ('<end line>')
+ *    closes: restore the end line after the record, or delete the record.";
+ *  - a second opening line before the end line (twice_open.tadah: lines 1
+ *    and 3 open, line 5 ends): "twice_open.tadah: line 1 opens a training
+ *    record (...) that no end line (...) closes before line 3, which opens
+ *    another: restore the end line after the record, before line 3, ...";
+ *  - an end line without an opening line (no_open.tadah: "# DBFILE x.db",
+ *    the end line on line 2): "no_open.tadah: line 2 ends a training record
+ *    ('<end line>') that no opening line ('<opening line>') opens: restore
+ *    the opening line before the record, or delete the end line.";
+ *  - a key line inside the block (keyline.tadah: line 2, "DBFILE x.db",
+ *    between the opening line 1 and the end line 3): "keyline.tadah: line
+ *    2, inside the training record that line 1 opens and line 3 ends, is
+ *    not a comment: every reader of the potential reads it as a key. Begin
+ *    it with '#' if it belongs to the record, or move it after the end
+ *    line.", and not the missing-end-line refusal.
+ * Before the fix: open.tadah was refused as a key line inside the record
+ * ("open.tadah: line 3, inside the training record that line 1 opens, is
+ * not a comment: ... Begin each line of the record with '#', ...": line 3
+ * is its first key line), and this case passed on that message, which
+ * holds "line 1", "training record" and the end line as well; eof.tadah
+ * was refused as now (a pin of that part); twice_open.tadah and
+ * no_open.tadah were edited (exit 0: the second opening line was copied as
+ * a record line, and the record without its opening line was not copied);
+ * keyline.tadah's refusal named no end line ("that line 1 opens, is not a
+ * comment").
+ * Before the training record (MK's decision of 2026-10-14): every edit was
+ * written (exit 0). */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit refuses a training record without its end "
                  "line or with a key line inside",
                  "[refit][edit][potential_content][training_record]") {
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("plain.tadah", make_knot_pot());
-  SECTION("no end line") {
+  const std::string plain = slurp_file("plain.tadah");
+  const std::string open_quoted = "('" + kRecordOpen + "')";
+  const std::string end_quoted = "('" + kRecordEnd + "')";
+  SECTION("no end line, key lines after the record") {
     std::ofstream("open.tadah") << kRecordOpen << "\n# DBFILE x.db\n"
-                                << slurp_file("plain.tadah");
-    CHECK_THROWS_WITH(run_edit_capturing(edit_of("open.tadah", "o.tadah")),
-                      Catch::Contains("open.tadah") &&
-                          Catch::Contains("line 1") &&
-                          Catch::Contains("training record") &&
-                          Catch::Contains(kRecordEnd));
+                                << plain;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("open.tadah", "o.tadah")),
+        Catch::Contains("open.tadah: line 1 opens a training record " +
+                        open_quoted + " that no end line " + end_quoted +
+                        " closes before line 3, the first line after it "
+                        "that is not a comment: restore the end line after "
+                        "the record, before line 3, or delete the record.") &&
+            !Catch::Contains("is not a comment: every reader"));
     CHECK_FALSE(fs::exists("o.tadah"));
+  }
+  SECTION("no end line before the end of the file") {
+    std::ofstream("eof.tadah") << plain << kRecordOpen << "\n# DBFILE x.db\n";
+    const std::size_t opening =
+        std::count(plain.begin(), plain.end(), '\n') + 1;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("eof.tadah", "e.tadah")),
+        Catch::Contains("eof.tadah: line " + std::to_string(opening) +
+                        " opens a training record " + open_quoted +
+                        " that no end line " + end_quoted +
+                        " closes: restore the end line after the record, or "
+                        "delete the record."));
+    CHECK_FALSE(fs::exists("e.tadah"));
+  }
+  SECTION("a second opening line before the end line") {
+    std::ofstream("twice_open.tadah")
+        << kRecordOpen << "\n# DBFILE x.db\n"
+        << kRecordOpen << "\n# VERBOSE 0\n"
+        << kRecordEnd << "\n"
+        << plain;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("twice_open.tadah", "t.tadah")),
+        Catch::Contains("twice_open.tadah: line 1 opens a training record " +
+                        open_quoted + " that no end line " + end_quoted +
+                        " closes before line 3, which opens another: "
+                        "restore the end line after the record, before line "
+                        "3, or delete the record."));
+    CHECK_FALSE(fs::exists("t.tadah"));
+  }
+  SECTION("an end line without an opening line") {
+    std::ofstream("no_open.tadah") << "# DBFILE x.db\n"
+                                   << kRecordEnd << "\n"
+                                   << plain;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("no_open.tadah", "n.tadah")),
+        Catch::Contains("no_open.tadah: line 2 ends a training record " +
+                        end_quoted + " that no opening line " + open_quoted +
+                        " opens: restore the opening line before the record, "
+                        "or delete the end line."));
+    CHECK_FALSE(fs::exists("n.tadah"));
   }
   SECTION("a key line inside the block") {
     std::ofstream("keyline.tadah") << kRecordOpen << "\nDBFILE x.db\n"
                                    << kRecordEnd << "\n"
-                                   << slurp_file("plain.tadah");
-    CHECK_THROWS_WITH(run_edit_capturing(edit_of("keyline.tadah", "k.tadah")),
-                      Catch::Contains("keyline.tadah") &&
-                          Catch::Contains("line 2") &&
-                          Catch::Contains("training record") &&
-                          Catch::Contains("not a comment"));
+                                   << plain;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("keyline.tadah", "k.tadah")),
+        Catch::Contains("keyline.tadah: line 2, inside the training record "
+                        "that line 1 opens and line 3 ends, is not a "
+                        "comment: every reader of the potential reads it as "
+                        "a key. Begin it with '#' if it belongs to the "
+                        "record, or move it after the end line.") &&
+            !Catch::Contains("no end line"));
     CHECK_FALSE(fs::exists("k.tadah"));
   }
 }

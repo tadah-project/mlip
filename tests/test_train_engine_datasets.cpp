@@ -1,13 +1,14 @@
 // test_train_engine_datasets.cpp
 //
 // TrainEngine::run (tadah train, a TASK train of a task file) and its
-// training datasets: a potential has no DBFILE line (the DBFILE of the run
-// that wrote it is in its training record, a comment block no reader of a
-// potential reads), so `tadah train -c pot.tadah` without a DBFILE line is
-// the likely mistake on the documented retrain route; the configuration is
-// refused before any file is read, naming the key, saying that a potential
-// has no DBFILE line and how to retrain from one. The training record a
-// potential of tadah train carries: the run's own keys, a retrain's too.
+// training datasets: a potential has no DBFILE line (its training record, a
+// comment block no loader of a potential reads, lists the datasets of its
+// fit when there were any), so `tadah train -c pot.tadah` without a DBFILE
+// line is the likely mistake on the documented retrain route; the
+// configuration is refused before any file is read, naming the key, saying
+// that a potential has no DBFILE line and how to retrain from one. The
+// training record a potential of tadah train carries: the run's own keys, a
+// retrain's too.
 
 #include "catch2/catch.hpp"
 
@@ -82,14 +83,15 @@ struct ScratchCwd {
 /* The advice every refusal of a configuration without a training DBFILE
  * ends with (potential_has_no_datasets_advice). */
 const std::string kNoDatasetsAdvice =
-    "A potential has no DBFILE line (no potential tadah writes one; the "
-    "DBFILE of the run that wrote it is in its training record, a comment "
-    "block tadah does not read): to train from one, add a DBFILE line to a "
-    "copy of it; a potential of tadah refit or refit --edit also pins every "
-    "weight with its FIXINDEX and FIXWEIGHT lines, the seed of a tadah hpo "
-    "coefficient search, so delete them from the copy for the fit to change "
-    "the weights (the Training page of the documentation, Retraining from a "
-    "potential).";
+    "A potential has no DBFILE line (no potential tadah writes one; its "
+    "training record, the comment block above its key lines, lists the "
+    "datasets its weights were fitted to in a '# DBFILE' line when there "
+    "were any: a refit has none, and a potential of an earlier version has "
+    "no record): to train from one, add a DBFILE line to a copy of it; a "
+    "potential of tadah refit or refit --edit also pins every weight with "
+    "its FIXINDEX and FIXWEIGHT lines, the seed of a tadah hpo coefficient "
+    "search, so delete them from the copy for the fit to change the weights "
+    "(the Training page of the documentation, Retraining from a potential).";
 
 /* What TrainEngine::run throws for @p c, "" when it does not throw; what
  * it prints on std::cout (the Logger's lines) goes to @p printed. */
@@ -115,11 +117,12 @@ std::string train_error(const Context &c, std::string &printed) {
  * pot2.tadah) throws "The training configuration has no DBFILE: tadah train
  * fits the datasets it lists." followed by the advice every refusal of a
  * configuration without a training DBFILE gives (kNoDatasetsAdvice: a
- * potential has no DBFILE line, the DBFILE of the run that wrote it being
- * in its training record, which tadah does not read; add a DBFILE line to
- * a copy of it, and delete the FIXINDEX and FIXWEIGHT lines with which a
- * refit potential pins every weight), prints no "Key not found" line, and
- * writes no pot2.tadah.
+ * potential has no DBFILE line, its training record lists the datasets
+ * its weights were fitted to when there were any, which a refit and a
+ * potential of an earlier version have not; add a DBFILE line to a copy of
+ * it, and delete the FIXINDEX and FIXWEIGHT lines with which a refit
+ * potential pins every weight), prints no "Key not found" line, and writes
+ * no pot2.tadah.
  * Before the fix: the DBFILE read of find_unique_elements threw "Key not
  * found in the Context object: DBFILE", after the Logger's ERROR line
  * "Context::operator() -> Key not found: DBFILE".
@@ -130,7 +133,12 @@ std::string train_error(const Context &c, std::string &printed) {
  * Before the training record (MK's decision of 2026-10-14): the advice
  * began "A potential records no DBFILE (no potential tadah writes has
  * one): to train from one, ...", and the case was named "..., saying that
- * a potential records none". */
+ * a potential records none".
+ * Before the advice said when the record lists a DBFILE (review of the
+ * training record): it said "the DBFILE of the run that wrote it is in its
+ * training record, a comment block tadah does not read", which a refit
+ * potential, an hpo run's without training datasets and one of an earlier
+ * version contradict: this check fails. */
 TEST_CASE("TrainEngine::run refuses a configuration without DBFILE, saying "
           "that a potential has no DBFILE line",
           "[train][potential_content]") {
