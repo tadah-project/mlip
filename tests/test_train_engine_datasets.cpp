@@ -8,7 +8,9 @@
 // configuration is refused before any file is read, naming the key, saying
 // that a potential has no DBFILE line and how to retrain from one. The
 // training record a potential of tadah train carries: the run's own keys, a
-// retrain's too.
+// retrain's too, and the keys that prepared the training data (MK's
+// decision of 2026-10-14, option 2), which a retrain from a potential does
+// not take from it.
 
 #include "catch2/catch.hpp"
 
@@ -17,7 +19,10 @@
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/itask_input.h>
+#include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/task.h>
+#include <tadah/mlip/task_factory.h>
 
 #include <filesystem>
 #include <fstream>
@@ -26,6 +31,8 @@
 #include <sstream>
 #include <string>
 #include <unistd.h>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -291,8 +298,11 @@ TEST_CASE("TrainEngine::run warns when FIXINDEX pins every weight, so the "
 
 namespace {
 
-/* The opening and end lines of the training record of a potential file. */
-const std::string kRecordOpen = "# --- training record (not read by tadah) ---";
+/* The opening and end lines of the training record of a potential file.
+ * The opening line said "(not read by tadah)" before MK's decision of
+ * 2026-10-14 (option 2): refit --edit reads the block, to copy it. */
+const std::string kRecordOpen =
+    "# --- training record (no key is read from it) ---";
 const std::string kRecordEnd = "# --- end of training record ---";
 
 std::string slurp(const fs::path &p) {
@@ -378,7 +388,7 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * configuration had them), UNCERTAINTY false, VERBOSE 0, NUMERIC 9,
  * OUTFILE pot.tadah, AUDIT off, AUDIT_SAMPLE 64, HEALTH_LOG full -- writes
  * pot.tadah whose first line opens its training record ("# --- training
- * record (not read by tadah) ---"), then one "# KEY values" line per key
+ * record (no key is read from it) ---"), then one "# KEY values" line per key
  * in that order with the values as the configuration has them (./db1.tadah
  * not normalised; under NUMERIC 9, which governs the key lines only), then
  * "# --- end of training record ---", before the first key line; no key
@@ -388,7 +398,10 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * with none of the ten keys.
  * Before the fix: no training record: the ten keys were dropped from the
  * potential (the decision taken in MK's absence on 2026-10-12, replaced by
- * MK's of 2026-10-14). */
+ * MK's of 2026-10-14).
+ * Before the opening line was corrected (MK, 2026-10-14, option 2): it read
+ * "# --- training record (not read by tadah) ---", so no opening line is
+ * found and the REQUIRE stops the case. */
 TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
           "potential's training record, as written",
           "[train][potential_content][training_record]") {
@@ -451,7 +464,10 @@ TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
  * DBFILE only.
  * Before the fix: neither potential has a training record: the check of
  * pot1.tadah's record fails, and the REQUIRE of pot2.tadah's stops the case
- * before the WEIGHTS comparison. */
+ * before the WEIGHTS comparison.
+ * Before the opening line was corrected (MK, 2026-10-14, option 2): the
+ * same, the opening line being "# --- training record (not read by tadah)
+ * ---". */
 TEST_CASE("A retrain from a potential records the retrain's DBFILE, not "
           "the one of the potential",
           "[train][potential_content][training_record]") {
@@ -498,4 +514,478 @@ TEST_CASE("A retrain from a potential records the retrain's DBFILE, not "
   CHECK(slurp("pot2.tadah").find("db1.tadah") == std::string::npos);
   REQUIRE(pot_line("pot2.tadah", "WEIGHTS").size() == 2u);
   CHECK(pot_line("pot2.tadah", "WEIGHTS") == pot_line("pot3.tadah", "WEIGHTS"));
+}
+
+/* ---- the keys that prepared the training data (MK's decision of
+ * 2026-10-14, option 2): a potential's key lines are what is needed to use
+ * the model (the model keys, the resolved ESHIFT and LSCALE); EFILTER,
+ * FFILTER, ESHIFT_ATOM, ESHIFT_DBATOM, EWEIGHT_TEMP, ZERO_COM_FORCE,
+ * WDBFILE and WDBFILE_AUTO are written into its training record. */
+
+namespace {
+
+/* The keys that prepared the training data, in the order their transforms
+ * apply (apply_load_transforms) and the training record lists them. */
+const char *const kDatasetKeys[] = {"EFILTER",       "FFILTER",
+                                    "ESHIFT_ATOM",   "ESHIFT_DBATOM",
+                                    "EWEIGHT_TEMP",  "ZERO_COM_FORCE",
+                                    "WDBFILE",       "WDBFILE_AUTO"};
+
+/* potential_context(@p model) without its WEIGHTS: a training
+ * configuration, not a potential. */
+Context training_context_of(const std::string &model) {
+  Context c = potential_context(model);
+  c.remove("WEIGHTS");
+  return c;
+}
+
+using KV = std::unordered_map<std::string, std::vector<std::string>>;
+
+/* What TaskFactory gets from the command line: the task @p task (the
+ * blueprint name, "TRAIN") and its options keyed by the blueprint's
+ * lower-case key names ({"config", {"retrain.train"}}); with no task name
+ * and {"task", {file}}, `tadah --task file`. */
+struct CommandInput : tadah::mlip::ITaskInput {
+  std::string task;
+  KV kv;
+  CommandInput(std::string t, KV k) : task(std::move(t)), kv(std::move(k)) {}
+  std::string getTaskName() const override { return task; }
+  KV getKeyValueData() const override { return kv; }
+};
+
+/* What TaskFactory, and TrainEngine::run of each task it makes, throw for
+ * @p input, "" when they do not throw; std::cout goes to @p printed. */
+std::string train_input_error(const tadah::mlip::ITaskInput &input,
+                              std::string &printed) {
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  std::string what;
+  try {
+    std::vector<Task> tasks =
+        tadah::mlip::TaskFactory().createTasksFromInput(input);
+    for (Task &t : tasks) TrainEngine().run(t);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  std::cout.rdbuf(old_buf);
+  printed = captured.str();
+  return what;
+}
+
+/* Writes @p c to @p path as the key lines of a potential file. */
+void write_pot_file(const fs::path &path, const Context &c) {
+  std::ofstream os(path);
+  c.write_potential(os, 18);
+}
+
+}  // namespace
+
+/* Pins: TrainEngine::run of a training configuration (the Ta pair keys,
+ * M_BLR BF_Linear, no WEIGHTS) with DBFILE db1.tadah db2.tadah and every
+ * key that prepares the training data -- EFILTER -1 1 and FFILTER 100
+ * (which keep every structure), ESHIFT_DBATOM true, EWEIGHT_TEMP 300,
+ * ZERO_COM_FORCE true, WDBFILE 1 0.5, WDBFILE_AUTO 0.5 -- writes pot.tadah
+ * whose training record is "DBFILE db1.tadah db2.tadah", then those keys
+ * as the configuration has them, in that order, then "OUTFILE pot.tadah";
+ * no key line of any of the eight; and the ESHIFT line of the shift
+ * ESHIFT_DBATOM resolved (one value, not 0: the energies are not 0), the
+ * model's energy reference, a key line.
+ * Before the fix: the eight were key lines of the potential and the record
+ * listed DBFILE and OUTFILE alone, after the opening line "# --- training
+ * record (not read by tadah) ---": REQUIRE(r.found) stops the case. */
+TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
+          "into the training record, and the ESHIFT they resolved as a key "
+          "line",
+          "[train][potential_content][training_record][dataset_keys]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db1.tadah", -1.0);
+  write_ta_dataset(cwd.dir / "db2.tadah", -0.99);
+  Context c = training_context_of("M_BLR BF_Linear");
+  c.add("DBFILE", "db1.tadah");
+  c.add("DBFILE", "db2.tadah");
+  c.add("EFILTER", "-1");
+  c.add("EFILTER", "1");
+  c.add("FFILTER", "100");
+  c.add("ESHIFT_DBATOM", "true");
+  c.add("EWEIGHT_TEMP", "300");
+  c.add("ZERO_COM_FORCE", "true");
+  c.add("WDBFILE", "1");
+  c.add("WDBFILE", "0.5");
+  c.add("WDBFILE_AUTO", "0.5");
+  c.add("OUTFILE", "pot.tadah");
+  std::string printed;
+  const std::string what = train_error(c, printed);
+  INFO("thrown: " << what << "\nprinted:\n" << printed);
+  REQUIRE(what.empty());
+  INFO("pot.tadah:\n" << slurp("pot.tadah"));
+  const Record r = read_record("pot.tadah");
+  REQUIRE(r.found);
+  CHECK(r.closed);
+  CHECK(r.lines == std::vector<std::string>{
+                       "DBFILE db1.tadah db2.tadah", "EFILTER -1 1",
+                       "FFILTER 100", "ESHIFT_DBATOM true",
+                       "EWEIGHT_TEMP 300", "ZERO_COM_FORCE true",
+                       "WDBFILE 1 0.5", "WDBFILE_AUTO 0.5",
+                       "OUTFILE pot.tadah"});
+  for (const char *key : kDatasetKeys) {
+    INFO("key " << key);
+    CHECK(pot_line("pot.tadah", key).empty());
+  }
+  const std::vector<std::string> eshift = pot_line("pot.tadah", "ESHIFT");
+  REQUIRE(eshift.size() == 1u);
+  CHECK(std::stod(eshift[0]) != 0.0);
+  CHECK(pot_line("pot.tadah", "WEIGHTS").size() == 2u);
+}
+
+/* Pins: TrainEngine::run of a potential used as the configuration whose
+ * key lines include the keys that prepared the data of its own fit, as a
+ * potential of an earlier version has them -- the Ta pair potential
+ * (WEIGHTS 0.25 -0.5) with ESHIFT 0.001, ESHIFT_DBATOM true, EFILTER 5 6
+ * (it would drop every structure of the retrain: E/N is about -0.25 eV),
+ * EWEIGHT_TEMP 300, WDBFILE 1 1 (two values: the retrain has one dataset),
+ * WDBFILE_AUTO 0 and ZERO_COM_FORCE false -- and the DBFILE db.tadah of a
+ * retrain: none of the eight applies to the retrain:
+ *   - without a KeyProvenance (every key the configuration's): the retrain
+ *     trains (no "WDBFILE size" refusal, no structure dropped), prints the
+ *     WARNING "tadah train: the configuration is a potential (it has
+ *     WEIGHTS): its EFILTER 5 6, ESHIFT_DBATOM true, EWEIGHT_TEMP 300 and
+ *     WDBFILE 1 1 prepared the training data of the fit that wrote it, not
+ *     of this run, and are ignored (tadah keeps such keys in a potential's
+ *     training record, not as key lines). Give --efilter, --eweight-temp or
+ *     --wdbfile on the command line to apply one to this run. The
+ *     potential's ESHIFT, the energy reference of the model, is used: to
+ *     derive ESHIFT from the data of this run, delete the ESHIFT line and
+ *     set ESHIFT_ATOM or ESHIFT_DBATOM (the Training page of the
+ *     documentation, Retraining from a potential)." (WDBFILE_AUTO 0 and
+ *     ZERO_COM_FORCE false, their defaults, change nothing and are not
+ *     named), and no "Multiple ESHIFT sources" WARNING; pot2.tadah has the
+ *     potential's ESHIFT 0.001, a training record of DBFILE and OUTFILE
+ *     alone, and the WEIGHTS of a training configuration of the same keys
+ *     without the eight (pot3.tadah), token for token;
+ *   - `tadah train -c retrain.train --wdbfile 2` (TaskFactory and
+ *     TrainEngine::run), retrain.train being that potential as a file: the
+ *     command line's WDBFILE 2 applies to the retrain and is recorded
+ *     ("WDBFILE 2" after "DBFILE db.tadah" in pot2.tadah's record), the
+ *     file's other dataset keys are not read, and the WARNING is "tadah
+ *     train: the configuration file retrain.train is a potential (it has
+ *     WEIGHTS): its EFILTER 5 6, ESHIFT_DBATOM true and EWEIGHT_TEMP 300
+ *     prepared the training data of the fit that wrote it, not of this
+ *     run, and are ignored (tadah keeps such keys in a potential's
+ *     training record, not as key lines). Give --efilter or --eweight-temp
+ *     on the command line, or an EFILTER or EWEIGHT_TEMP line in a
+ *     configuration file that includes the potential with CONFIG, to apply
+ *     one to this run. The potential's ESHIFT, ..." (no WDBFILE: the run
+ *     gives its own).
+ * Before the fix: the potential's keys applied to the retrain: EFILTER 5 6
+ * dropped every structure, the WARNING "Multiple ESHIFT sources set;
+ * precedence: explicit > ATOM > DBATOM." was printed, and TrainEngine::run
+ * threw "ESHIFT size (1) does not match number of unique elements (0)."
+ * (no structure left, so no element for the ESHIFT value; the WDBFILE 1 1
+ * of two values for one dataset, applied later, was not reached): the
+ * REQUIRE stops each section.
+ * Before the run's own dataset keys of a configuration that includes a
+ * potential applied (review of the dataset keys): the second section built
+ * the KeyProvenance by hand, and the WARNING's advice was "Give --efilter
+ * or --eweight-temp on the command line to apply one to this run.", which
+ * a run of a task file cannot follow: the check of the WARNING fails. */
+TEST_CASE("TrainEngine::run of a potential used as the configuration "
+          "ignores the keys that prepared its own training data",
+          "[train][potential_content][retrain][dataset_keys]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  Context older = potential_context("M_BLR BF_Linear");
+  older.add("ESHIFT", "0.001");
+  older.add("ESHIFT_DBATOM", "true");
+  older.add("EFILTER", "5");
+  older.add("EFILTER", "6");
+  older.add("EWEIGHT_TEMP", "300");
+  older.add("WDBFILE", "1");
+  older.add("WDBFILE", "1");
+  older.add("WDBFILE_AUTO", "0");
+  older.add("ZERO_COM_FORCE", "false");
+  older.add("DBFILE", "db.tadah");
+  older.add("OUTFILE", "pot2.tadah");
+  std::string printed;
+  SECTION("no KeyProvenance") {
+    {
+      Context c3 = training_context_of("M_BLR BF_Linear");
+      c3.add("ESHIFT", "0.001");
+      c3.add("DBFILE", "db.tadah");
+      c3.add("OUTFILE", "pot3.tadah");
+      const std::string what = train_error(c3, printed);
+      INFO("pot3: thrown: " << what << "\nprinted:\n" << printed);
+      REQUIRE(what.empty());
+    }
+    const std::string what = train_error(older, printed);
+    INFO("pot2: thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK(printed.find(
+              "WARNING: tadah train: the configuration is a potential (it "
+              "has WEIGHTS): its EFILTER 5 6, ESHIFT_DBATOM true, "
+              "EWEIGHT_TEMP 300 and WDBFILE 1 1 prepared the training data "
+              "of the fit that wrote it, not of this run, and are ignored "
+              "(tadah keeps such keys in a potential's training record, not "
+              "as key lines). Give --efilter, --eweight-temp or --wdbfile on "
+              "the command line to apply one to this run. The potential's "
+              "ESHIFT, the energy reference of the model, is used: to derive "
+              "ESHIFT from the data of this run, delete the ESHIFT line and "
+              "set ESHIFT_ATOM or ESHIFT_DBATOM (the Training page of the "
+              "documentation, Retraining from a potential).") !=
+          std::string::npos);
+    CHECK(printed.find("Multiple ESHIFT sources") == std::string::npos);
+    INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
+    const std::vector<std::string> eshift = pot_line("pot2.tadah", "ESHIFT");
+    REQUIRE(eshift.size() == 1u);
+    CHECK(std::stod(eshift[0]) == 0.001);
+    CHECK(read_record("pot2.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot2.tadah"});
+    REQUIRE(pot_line("pot2.tadah", "WEIGHTS").size() == 2u);
+    CHECK(pot_line("pot2.tadah", "WEIGHTS") ==
+          pot_line("pot3.tadah", "WEIGHTS"));
+  }
+  SECTION("WDBFILE on the command line") {
+    write_pot_file("retrain.train", older);
+    const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
+                                       {"wdbfile", {"2"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK(printed.find(
+              "WARNING: tadah train: the configuration file retrain.train is "
+              "a potential (it has WEIGHTS): its EFILTER 5 6, ESHIFT_DBATOM "
+              "true and EWEIGHT_TEMP 300 prepared the training data of the "
+              "fit that wrote it, not of this run, and are ignored (tadah "
+              "keeps such keys in a potential's training record, not as key "
+              "lines). Give --efilter or --eweight-temp on the command line, "
+              "or an EFILTER or EWEIGHT_TEMP line in a configuration file "
+              "that includes the potential with CONFIG, to apply one to this "
+              "run. The potential's ESHIFT, the energy reference of the "
+              "model, is used: to derive ESHIFT from the data of this run, "
+              "delete the ESHIFT line and set ESHIFT_ATOM or ESHIFT_DBATOM "
+              "(the Training page of the documentation, Retraining from a "
+              "potential).") != std::string::npos);
+    CHECK(printed.find("WDBFILE 1 1") == std::string::npos);
+    INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
+    CHECK(read_record("pot2.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "WDBFILE 2",
+                                   "OUTFILE pot2.tadah"});
+    CHECK(pot_line("pot2.tadah", "WDBFILE").empty());
+  }
+}
+
+/* Pins: the keys that prepared the training data that a run's own
+ * configuration gives apply to a retrain from a potential it includes with
+ * CONFIG, and are recorded; only the potential's lines of them are not
+ * read. old.tadah is the Ta pair potential (WEIGHTS 0.25 -0.5) with the key
+ * lines of an earlier version: ESHIFT 0.001, ESHIFT_DBATOM true, EFILTER 5
+ * 6 (it would drop every structure: E/N is about -0.25 eV), EWEIGHT_TEMP
+ * 300, WDBFILE 1 1, WDBFILE_AUTO 0 and ZERO_COM_FORCE false; db1.tadah,
+ * db2.tadah and db3.tadah are three datasets (TaskFactory and
+ * TrainEngine::run, as `tadah --task` and `tadah train -c` run them):
+ *   - `tadah --task run.task`, its TASK train section "ZERO_COM_FORCE
+ *     true", "CONFIG old.tadah", "DBFILE db1.tadah db2.tadah db3.tadah",
+ *     "WDBFILE 1 0.001 1", "EFILTER -1 1", "OUTFILE pot2.tadah": trains;
+ *     pot2.tadah has the training record "DBFILE db1.tadah db2.tadah
+ *     db3.tadah", "EFILTER -1 1", "ZERO_COM_FORCE true", "WDBFILE 1 0.001
+ *     1", "OUTFILE pot2.tadah" (the line before CONFIG too: the potential's
+ *     ZERO_COM_FORCE false does not replace it), the potential's ESHIFT
+ *     0.001, and the WEIGHTS of a training configuration of the same keys
+ *     (pot3.tadah), token for token; the WARNING names the potential's
+ *     lines the run does not give itself: "tadah train: old.tadah, which
+ *     the task file run.task includes with CONFIG, is a potential (it has
+ *     WEIGHTS): its ESHIFT_DBATOM true and EWEIGHT_TEMP 300 prepared the
+ *     training data of the fit that wrote it, not of this run, and are
+ *     ignored (tadah keeps such keys in a potential's training record, not
+ *     as key lines). Write EWEIGHT_TEMP in the task file run.task to apply
+ *     it to this run. The potential's ESHIFT, the energy reference of the
+ *     model, is used: ... (the Training page of the documentation,
+ *     Retraining from a potential)."; no "Multiple ESHIFT sources";
+ *   - a TASK train section with none of them ("CONFIG old.tadah", "DBFILE
+ *     db1.tadah", "OUTFILE pot4.tadah": WDBFILE 1 1 has two values for its
+ *     one dataset): trains, and the WARNING names EFILTER 5 6,
+ *     ESHIFT_DBATOM true, EWEIGHT_TEMP 300 and WDBFILE 1 1, with "Write
+ *     EFILTER, EWEIGHT_TEMP or WDBFILE in the task file run.task to apply
+ *     one to this run.";
+ *   - `tadah train -c outer.train`, outer.train being "CONFIG old.tadah",
+ *     "DBFILE db1.tadah db2.tadah db3.tadah", "WDBFILE 1 0.001 1", "OUTFILE
+ *     pot5.tadah": pot5.tadah's record is "DBFILE db1.tadah db2.tadah
+ *     db3.tadah", "WDBFILE 1 0.001 1", "OUTFILE pot5.tadah", and the WARNING
+ *     "tadah train: old.tadah, which the configuration file outer.train
+ *     includes with CONFIG, is a potential (it has WEIGHTS): its EFILTER 5
+ *     6, ESHIFT_DBATOM true and EWEIGHT_TEMP 300 prepared ... Give --efilter
+ *     or --eweight-temp on the command line, or an EFILTER or EWEIGHT_TEMP
+ *     line in outer.train, to apply one to this run. ...".
+ * Before the fix: the CONFIG include mixed the potential's lines with the
+ * run's, and the run's keys of a configuration with WEIGHTS that were not
+ * command-line options were removed with the potential's: the first
+ * section's TaskFactory threw "Exceeded capacity for key: EFILTER" (the
+ * potential's two values were there), so the REQUIRE stops it; the second
+ * warned "tadah train: the task file run.task is a potential (it has
+ * WEIGHTS): ... Give --efilter, --eweight-temp or --wdbfile on the command
+ * line to apply one to this run. ..." (the task file called the potential,
+ * advice --task refuses): the WARNING check fails; the third's WDBFILE was
+ * 1 1 1 0.001 1 (the run's values after the potential's) and was removed
+ * with the WARNING "the configuration file outer.train is a potential ...":
+ * the record has no WDBFILE, and the checks fail. */
+TEST_CASE("A retrain from a potential included with CONFIG applies the "
+          "run's own keys that prepare the training data",
+          "[train][potential_content][retrain][dataset_keys][task_file]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db1.tadah", -1.0);
+  write_ta_dataset(cwd.dir / "db2.tadah", -0.99);
+  write_ta_dataset(cwd.dir / "db3.tadah", -0.98);
+  Context older = potential_context("M_BLR BF_Linear");
+  older.add("ESHIFT", "0.001");
+  older.add("ESHIFT_DBATOM", "true");
+  older.add("EFILTER", "5");
+  older.add("EFILTER", "6");
+  older.add("EWEIGHT_TEMP", "300");
+  older.add("WDBFILE", "1");
+  older.add("WDBFILE", "1");
+  older.add("WDBFILE_AUTO", "0");
+  older.add("ZERO_COM_FORCE", "false");
+  write_pot_file("old.tadah", older);
+  const std::string datasets = "db1.tadah db2.tadah db3.tadah";
+  const std::string eshift_advice =
+      " The potential's ESHIFT, the energy reference of the model, is used: "
+      "to derive ESHIFT from the data of this run, delete the ESHIFT line "
+      "and set ESHIFT_ATOM or ESHIFT_DBATOM (the Training page of the "
+      "documentation, Retraining from a potential).";
+  const CommandInput task_file("", {{"task", {"run.task"}}});
+  std::string printed;
+  SECTION("the task file's keys, after and before the CONFIG line") {
+    std::ofstream("run.task") << "TASK train\n"
+                                 "  ZERO_COM_FORCE true\n"
+                                 "  CONFIG old.tadah\n"
+                                 "  DBFILE " << datasets << "\n"
+                                 "  WDBFILE 1 0.001 1\n"
+                                 "  EFILTER -1 1\n"
+                                 "  OUTFILE pot2.tadah\n";
+    const std::string what = train_input_error(task_file, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
+    CHECK(read_record("pot2.tadah").lines ==
+          std::vector<std::string>{"DBFILE " + datasets, "EFILTER -1 1",
+                                   "ZERO_COM_FORCE true",
+                                   "WDBFILE 1 0.001 1",
+                                   "OUTFILE pot2.tadah"});
+    const std::vector<std::string> eshift = pot_line("pot2.tadah", "ESHIFT");
+    REQUIRE(eshift.size() == 1u);
+    CHECK(std::stod(eshift[0]) == 0.001);
+    CHECK(printed.find(
+              "WARNING: tadah train: old.tadah, which the task file run.task "
+              "includes with CONFIG, is a potential (it has WEIGHTS): its "
+              "ESHIFT_DBATOM true and EWEIGHT_TEMP 300 prepared the training "
+              "data of the fit that wrote it, not of this run, and are "
+              "ignored (tadah keeps such keys in a potential's training "
+              "record, not as key lines). Write EWEIGHT_TEMP in the task "
+              "file run.task to apply it to this run." + eshift_advice) !=
+          std::string::npos);
+    CHECK(printed.find("Multiple ESHIFT sources") == std::string::npos);
+    Context c3 = training_context_of("M_BLR BF_Linear");
+    c3.add("ESHIFT", "0.001");
+    for (const char *db : {"db1.tadah", "db2.tadah", "db3.tadah"})
+      c3.add("DBFILE", db);
+    c3.add("WDBFILE", "1 0.001 1");
+    c3.add("EFILTER", "-1 1");
+    c3.add("ZERO_COM_FORCE", "true");
+    c3.add("OUTFILE", "pot3.tadah");
+    const std::string what3 = train_error(c3, printed);
+    INFO("pot3: thrown: " << what3 << "\nprinted:\n" << printed);
+    REQUIRE(what3.empty());
+    REQUIRE(pot_line("pot2.tadah", "WEIGHTS").size() == 2u);
+    CHECK(pot_line("pot2.tadah", "WEIGHTS") ==
+          pot_line("pot3.tadah", "WEIGHTS"));
+  }
+  SECTION("a task file without such keys of its own") {
+    std::ofstream("run.task") << "TASK train\n"
+                                 "  CONFIG old.tadah\n"
+                                 "  DBFILE db1.tadah\n"
+                                 "  OUTFILE pot4.tadah\n";
+    const std::string what = train_input_error(task_file, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK(printed.find(
+              "WARNING: tadah train: old.tadah, which the task file run.task "
+              "includes with CONFIG, is a potential (it has WEIGHTS): its "
+              "EFILTER 5 6, ESHIFT_DBATOM true, EWEIGHT_TEMP 300 and WDBFILE "
+              "1 1 prepared the training data of the fit that wrote it, not "
+              "of this run, and are ignored (tadah keeps such keys in a "
+              "potential's training record, not as key lines). Write "
+              "EFILTER, EWEIGHT_TEMP or WDBFILE in the task file run.task to "
+              "apply one to this run." + eshift_advice) != std::string::npos);
+    CHECK(read_record("pot4.tadah").lines ==
+          std::vector<std::string>{"DBFILE db1.tadah", "OUTFILE pot4.tadah"});
+  }
+  SECTION("a configuration file that includes the potential") {
+    std::ofstream("outer.train") << "CONFIG old.tadah\n"
+                                    "DBFILE " << datasets << "\n"
+                                    "WDBFILE 1 0.001 1\n"
+                                    "OUTFILE pot5.tadah\n";
+    const CommandInput input("TRAIN", {{"config", {"outer.train"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    INFO("pot5.tadah:\n" << slurp("pot5.tadah"));
+    CHECK(read_record("pot5.tadah").lines ==
+          std::vector<std::string>{"DBFILE " + datasets, "WDBFILE 1 0.001 1",
+                                   "OUTFILE pot5.tadah"});
+    CHECK(printed.find(
+              "WARNING: tadah train: old.tadah, which the configuration file "
+              "outer.train includes with CONFIG, is a potential (it has "
+              "WEIGHTS): its EFILTER 5 6, ESHIFT_DBATOM true and EWEIGHT_TEMP "
+              "300 prepared the training data of the fit that wrote it, not "
+              "of this run, and are ignored (tadah keeps such keys in a "
+              "potential's training record, not as key lines). Give "
+              "--efilter or --eweight-temp on the command line, or an "
+              "EFILTER or EWEIGHT_TEMP line in outer.train, to apply one to "
+              "this run." + eshift_advice) != std::string::npos);
+  }
+}
+
+/* Pins: a potential used as the configuration without its ESHIFT line and
+ * with ESHIFT_DBATOM true (the documented way to derive ESHIFT from the
+ * data of a retrain: delete the ESHIFT line, set ESHIFT_ATOM or
+ * ESHIFT_DBATOM) derives the shift from the retrain's data: pot2.tadah's
+ * ESHIFT is that of a training configuration of the same keys with
+ * ESHIFT_DBATOM true (pot3.tadah), token for token, not the 0.001 of the
+ * potential, and no WARNING names ESHIFT_DBATOM.
+ * Before the fix: passes as well (a pin: the toggle beside no ESHIFT was
+ * read; the fix ignores a toggle of a potential only beside its ESHIFT). */
+TEST_CASE("TrainEngine::run of a potential without its ESHIFT line derives "
+          "ESHIFT from the retrain's data with ESHIFT_DBATOM",
+          "[train][potential_content][retrain][dataset_keys]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  std::string printed;
+  {
+    Context c3 = training_context_of("M_BLR BF_Linear");
+    c3.add("ESHIFT_DBATOM", "true");
+    c3.add("DBFILE", "db.tadah");
+    c3.add("OUTFILE", "pot3.tadah");
+    const std::string what = train_error(c3, printed);
+    INFO("pot3: thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+  }
+  Context c = potential_context("M_BLR BF_Linear");
+  c.add("ESHIFT_DBATOM", "true");
+  c.add("DBFILE", "db.tadah");
+  c.add("OUTFILE", "pot2.tadah");
+  const std::string what = train_error(c, printed);
+  INFO("pot2: thrown: " << what << "\nprinted:\n" << printed);
+  REQUIRE(what.empty());
+  CHECK(printed.find("ESHIFT_DBATOM true") == std::string::npos);
+  const std::vector<std::string> eshift = pot_line("pot2.tadah", "ESHIFT");
+  REQUIRE(eshift.size() == 1u);
+  CHECK(eshift == pot_line("pot3.tadah", "ESHIFT"));
+  CHECK(std::stod(eshift[0]) != 0.001);
 }

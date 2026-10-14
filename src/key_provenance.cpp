@@ -61,10 +61,11 @@ KeyProvenance::~KeyProvenance() = default;
 KeyProvenance::KeyProvenance(core::Context command_line, core::Context file,
                              std::string file_path,
                              KeyOrigin::Kind file_kind,
-                             std::vector<std::string> defaults)
+                             std::vector<std::string> defaults,
+                             std::vector<core::SkippedKeyLine> skipped)
     : command_line_(std::move(command_line)), file_(std::move(file)),
       file_path_(std::move(file_path)), file_kind_(file_kind),
-      defaults_(std::move(defaults)) {
+      skipped_(std::move(skipped)), defaults_(std::move(defaults)) {
   for (auto &k : defaults_) k = core::to_upper(k);
   std::sort(defaults_.begin(), defaults_.end());
   defaults_.erase(std::unique(defaults_.begin(), defaults_.end()),

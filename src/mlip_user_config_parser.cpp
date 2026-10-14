@@ -54,6 +54,27 @@ MLIPUserConfigParser::parse(const std::string& filename, bool mergeFlag) const
   return parseNamed(lines, mergeFlag, filename);
 }
 
+std::vector<std::pair<std::string, core::Context>>
+MLIPUserConfigParser::parse(
+    const std::string& filename, bool mergeFlag, const core::KeyLineRule& skip,
+    std::vector<std::vector<core::SkippedKeyLine>>& skipped) const
+{
+  std::ifstream infile(filename.c_str());
+  if (!infile.is_open()) {
+    throw std::runtime_error(
+      "MLIPUserConfigParser::parse(file): Cannot open file: " + filename
+    );
+  }
+
+  std::vector<std::string> lines;
+  std::string line;
+  while (std::getline(infile, line)) {
+    lines.push_back(line);
+  }
+
+  return parseNamed(lines, mergeFlag, filename, &skip, &skipped);
+}
+
 /**
  * @brief Parses a user config from lines, ensuring:
  *        - The first section is "GLOBAL" if it's non-empty (lines before any TASK).
@@ -68,10 +89,12 @@ MLIPUserConfigParser::parse(const std::vector<std::string>& lines, bool mergeFla
 }
 
 std::vector<std::pair<std::string, core::Context>>
-MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
-                                 bool mergeFlag,
-                                 const std::string& source) const
+MLIPUserConfigParser::parseNamed(
+    const std::vector<std::string>& lines, bool mergeFlag,
+    const std::string& source, const core::KeyLineRule* skip,
+    std::vector<std::vector<core::SkippedKeyLine>>* skipped) const
 {
+  if (skipped) skipped->clear();
   // Split into named sections: "GLOBAL" + each "TASK...." 
   const std::vector<Section> namedSections = splitSections(lines);
 
@@ -124,9 +147,17 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
     }
 
     // Parse the lines for this section to produce a Context. Its errors
-    // name the line of the input (and the input's file).
-    const core::Context ctx = backendParser_->parse(
-        sectionLines, namedSections[i].first_line, source);
+    // name the line of the input (and the input's file). Under a rule, the
+    // section is one file of it: the keys of its own lines decide.
+    core::Context ctx;
+    if (skip) {
+      skipped->emplace_back();
+      ctx = backendParser_->parse(sectionLines, namedSections[i].first_line,
+                                  source, *skip, skipped->back());
+    } else {
+      ctx = backendParser_->parse(sectionLines, namedSections[i].first_line,
+                                  source);
+    }
 
     // Put it in the vec
     resultVec.push_back(std::make_pair(sectionName, ctx));
@@ -135,6 +166,14 @@ MLIPUserConfigParser::parseNamed(const std::vector<std::string>& lines,
   // If mergeFlag is true, we do the final merges.
   if (mergeFlag) {
     mergeAllSections(resultVec);
+    // The lines of GLOBAL not stored belong to every TASK section too, as
+    // its keys do.
+    if (skipped && !resultVec.empty() && resultVec[0].first == "GLOBAL") {
+      const std::vector<core::SkippedKeyLine> global = (*skipped)[0];
+      for (std::size_t i = 1; i < skipped->size(); ++i)
+        (*skipped)[i].insert((*skipped)[i].begin(), global.begin(),
+                             global.end());
+    }
   }
 
   return resultVec;

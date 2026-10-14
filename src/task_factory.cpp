@@ -1,5 +1,6 @@
 #include <tadah/mlip/task_factory.h>
 #include <tadah/mlip/mlip_user_config_parser.h>
+#include <tadah/mlip/training_record.h>  // potential_dataset_key_line
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -141,14 +142,21 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // refused here, before any configuration file is read.
   if (!hasTask) (void)blueprint_task(taskInput.getTaskName());
   std::vector<std::pair<std::string, core::Context>> configVec;
+  // The lines of each section of configVec that its parse did not read.
+  std::vector<std::vector<core::SkippedKeyLine>> skippedVec;
   std::string taskFile;   // the --task file, for its error
   std::string baseContextConfigFile;  // the --config file, for KeyProvenance
   if (hasConfig || hasTask) {
     std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
     if (hasTask) taskFile = userFile;
     else baseContextConfigFile = userFile;
-    // parser returns a vec of <taskName, Context> so we can keep multiple tasks of the same type
-    configVec = parser_->parse(userFile, /*mergeFlag=*/true);
+    // parser returns a vec of <taskName, Context> so we can keep multiple
+    // tasks of the same type. A potential's lines of the keys that prepared
+    // the training data of its own fit are not read, wherever the file and
+    // its CONFIG includes put it (MK's decision of 2026-10-14, option 2):
+    // every other line, and the command line, is the run's.
+    configVec = parser_->parse(userFile, /*mergeFlag=*/true,
+                               potential_dataset_key_line, skippedVec);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
   }
 
@@ -173,6 +181,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     core::Context file;
     std::string file_path;
     KeyOrigin::Kind file_kind;
+    std::vector<core::SkippedKeyLine> skipped;  // the file's lines not read
   };
   std::vector<Sources> sources;
 
@@ -181,13 +190,14 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   if (configVec.empty() && !hasTask) {
     tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
     sources.push_back({baseContext, core::Context(), std::string(),
-                       KeyOrigin::Kind::ConfigFile});
+                       KeyOrigin::Kind::ConfigFile, {}});
   }
 
   if (hasTask) {
     // remove the GLOBAL section from the configVec for --task input
     if (!configVec.empty() && configVec.front().first == "GLOBAL") {
       configVec.erase(configVec.begin());
+      skippedVec.erase(skippedVec.begin());
     }
     // A task file without a TASK section has nothing to run: say so rather
     // than run nothing (or read the first element of an empty list).
@@ -199,13 +209,13 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     }
     // baseContext should be empty by now, we can ignore it.
     // iterate configVec and copy the contexts to the tasksResult
-    for (const auto &cv : configVec) {
-      const std::string &taskName = cv.first;
-      const core::Context &taskCtx = cv.second;
+    for (std::size_t i = 0; i < configVec.size(); ++i) {
+      const std::string &taskName = configVec[i].first;
+      const core::Context &taskCtx = configVec[i].second;
       // TODO only add the tasks allowed by the subcommand
       tasksResult.emplace_back(Task(taskName, taskCtx));
       sources.push_back({core::Context(), taskCtx, taskFile,
-                         KeyOrigin::Kind::TaskFile});
+                         KeyOrigin::Kind::TaskFile, skippedVec.at(i)});
     }
   } else if (hasConfig && !configVec.empty()) {
     const core::Context &globalCtx = configVec.front().second;
@@ -213,7 +223,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
     sources.push_back({baseContext, globalCtx,
                        baseContextConfigFile,
-                       KeyOrigin::Kind::ConfigFile});
+                       KeyOrigin::Kind::ConfigFile, skippedVec.front()});
 
   } 
 
@@ -272,7 +282,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     const Sources &src = sources.at(t);
     task.setKeyProvenance(KeyProvenance(src.command_line, src.file,
                                         src.file_path, src.file_kind,
-                                        std::move(defaulted)));
+                                        std::move(defaulted), src.skipped));
   }
 
   return tasksResult;
