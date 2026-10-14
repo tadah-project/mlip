@@ -96,14 +96,18 @@ std::string uncertainty_source(const tadah::mlip::Task &task) {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
-  // A potential's lines of the keys that prepared the data of its own fit,
-  // and its UNCERTAINTY line, are not read for this run (MK's decision of
-  // 2026-10-14, option 2; a potential of an earlier version has them as key
-  // lines): TaskFactory's parse skipped them wherever the configuration or
-  // task file has the potential (tadah train -c pot.tadah plus a DBFILE
-  // line, CONFIG pot.tadah in a file or a TASK train section), and the
-  // WARNING names them; a context without a KeyProvenance is taken as one
-  // file, and they are removed here. The run's own lines of them apply.
+  // A potential's lines of the keys of its training record but DBFILE --
+  // those that prepared the data of its own fit, UNCERTAINTY and the
+  // settings of the run that wrote it (VERBOSE, NUMERIC, OUTFILE, AUDIT,
+  // ...) -- are not read for this run (MK's decisions of 2026-10-14; a
+  // potential of an earlier version has them as key lines): TaskFactory's
+  // parse skipped them wherever the configuration or task file has the
+  // potential (tadah train -c pot.tadah plus a DBFILE line, CONFIG
+  // pot.tadah in a file or a TASK train section), and the WARNING names
+  // those tadah train reads; a context without a KeyProvenance is taken as
+  // one file, and the dataset keys and UNCERTAINTY are removed here (no
+  // parse stores a potential's run settings, so a program's own are kept).
+  // The run's own lines of them apply.
   {
     const std::string ignored = ignore_configuration_potential_lines(
         context, task.getKeyProvenance(), "train");

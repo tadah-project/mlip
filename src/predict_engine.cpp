@@ -30,6 +30,9 @@ namespace engines {
 int PredictEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
+  // No parse stores a run setting of a potential (core::run_setting_keys():
+  // VERBOSE, NUMERIC, OUTFILE, ...): a VERBOSE line of a potential of an
+  // earlier version sets no log level, predict's own -v applies throughout.
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
   tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
   // RHOFORM belongs to the potential: a DM_REAM potential without it throws
