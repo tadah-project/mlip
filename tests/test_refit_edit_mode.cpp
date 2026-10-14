@@ -149,6 +149,58 @@ double curve_maxdiff(const potedit::CurveView &a, const potedit::CurveView &b,
   return mx;
 }
 
+/* The opening and end lines of the training record of a potential file. */
+const std::string kRecordOpen = "# --- training record (not read by tadah) ---";
+const std::string kRecordEnd = "# --- end of training record ---";
+
+std::string slurp_file(const std::string &f) {
+  std::ifstream in(f);
+  return std::string(std::istreambuf_iterator<char>(in),
+                     std::istreambuf_iterator<char>());
+}
+
+/* The lines of the training record of the potential file @p f, without
+ * their leading "# ": empty when it has none. */
+std::vector<std::string> record_lines(const std::string &f) {
+  std::ifstream in(f);
+  std::vector<std::string> out;
+  bool in_block = false;
+  for (std::string l; std::getline(in, l);) {
+    if (!in_block) {
+      in_block = l == kRecordOpen;
+      continue;
+    }
+    if (l == kRecordEnd) break;
+    out.push_back(l.rfind("# ", 0) == 0 ? l.substr(2) : l);
+  }
+  return out;
+}
+
+/* The tokens after @p key on its key line of the file @p f (a comment
+ * line is not one); empty when there is none. */
+std::vector<std::string> key_line(const std::string &f, const std::string &key) {
+  std::ifstream in(f);
+  for (std::string l; std::getline(in, l);) {
+    std::istringstream ls(l);
+    std::string k;
+    if (!(ls >> k) || k != key) continue;
+    std::vector<std::string> v;
+    for (std::string t; ls >> t;) v.push_back(t);
+    return v;
+  }
+  return {};
+}
+
+Context edit_of(const std::string &in, const std::string &out) {
+  Context c;
+  c.add("EDIT", in);
+  c.add("FUNC", std::string("phi"));
+  c.add("ADD", 3.6);
+  c.add("OUTFILE", out);
+  c.add("HPOFILEOUT", out + ".hpotarget");
+  return c;
+}
+
 }  // namespace
 
 TEST_CASE_METHOD(PTFixture,
@@ -256,10 +308,16 @@ TEST_CASE_METHOD(PTFixture,
           std::string::npos);
     CHECK(log.find("only up to that rounding") != std::string::npos);
     CHECK(first_weight("out12.tadah") == "0.333333333333");
-    std::ifstream f("out12.tadah");
-    const std::string body((std::istreambuf_iterator<char>(f)),
-                           std::istreambuf_iterator<char>());
-    CHECK(body.find("NUMERIC") == std::string::npos);
+    // NUMERIC is no key line of the edit; the input's NUMERIC 12 key line
+    // (as a 1.5.0 tadah hpo potential has it) is listed in the edit's
+    // training record, after the line naming the input (owner decision,
+    // MK, 2026-10-14). Before the training record the check was that
+    // NUMERIC appears nowhere in out12.tadah; before the fix this fails:
+    // out12.tadah has no record.
+    CHECK(key_line("out12.tadah", "NUMERIC").empty());
+    CHECK(record_lines("out12.tadah") ==
+          std::vector<std::string>{
+              "edited by tadah refit --edit from in12.tadah", "NUMERIC 12"});
   }
   SECTION("a NUMERIC set for the run wins over the input's") {
     const std::string log = run_edit("in12.tadah", "out18.tadah", "18");
@@ -1183,61 +1241,6 @@ TEST_CASE_METHOD(PTFixture,
                     "exclusive.");
 }
 
-namespace {
-
-/* The opening and end lines of the training record of a potential file. */
-const std::string kRecordOpen = "# --- training record (not read by tadah) ---";
-const std::string kRecordEnd = "# --- end of training record ---";
-
-std::string slurp_file(const std::string &f) {
-  std::ifstream in(f);
-  return std::string(std::istreambuf_iterator<char>(in),
-                     std::istreambuf_iterator<char>());
-}
-
-/* The lines of the training record of the potential file @p f, without
- * their leading "# ": empty when it has none. */
-std::vector<std::string> record_lines(const std::string &f) {
-  std::ifstream in(f);
-  std::vector<std::string> out;
-  bool in_block = false;
-  for (std::string l; std::getline(in, l);) {
-    if (!in_block) {
-      in_block = l == kRecordOpen;
-      continue;
-    }
-    if (l == kRecordEnd) break;
-    out.push_back(l.rfind("# ", 0) == 0 ? l.substr(2) : l);
-  }
-  return out;
-}
-
-/* The tokens after @p key on its key line of the file @p f (a comment
- * line is not one); empty when there is none. */
-std::vector<std::string> key_line(const std::string &f, const std::string &key) {
-  std::ifstream in(f);
-  for (std::string l; std::getline(in, l);) {
-    std::istringstream ls(l);
-    std::string k;
-    if (!(ls >> k) || k != key) continue;
-    std::vector<std::string> v;
-    for (std::string t; ls >> t;) v.push_back(t);
-    return v;
-  }
-  return {};
-}
-
-Context edit_of(const std::string &in, const std::string &out) {
-  Context c;
-  c.add("EDIT", in);
-  c.add("FUNC", std::string("phi"));
-  c.add("ADD", 3.6);
-  c.add("OUTFILE", out);
-  c.add("HPOFILEOUT", out + ".hpotarget");
-  return c;
-}
-
-}  // namespace
 
 /* Pins: refit --edit of in.tadah -- the knot potential with the training
  * record "DBFILE train.db other.db", "VALIDATION config.val", "VERBOSE 0"
