@@ -69,42 +69,79 @@ TrainingRecord read_training_record(const std::string &path) {
   if (!in)
     throw std::runtime_error("Cannot read the training record of " + path +
                              ": the file cannot be opened.");
+  std::vector<std::string> lines;
+  for (std::string raw; std::getline(in, raw);) lines.push_back(rtrim(raw));
+  const std::string open_quoted =
+      "('" + std::string(kTrainingRecordOpen) + "')";
+  const std::string end_quoted = "('" + std::string(kTrainingRecordEnd) + "')";
+  // The refusal of the block that line @p opened_at opens and no end line
+  // closes.
+  const auto unclosed = [&](std::size_t opened_at) {
+    return path + ": line " + std::to_string(opened_at) + " opens a "
+           "training record " + open_quoted + " that no end line " +
+           end_quoted + " closes";
+  };
   TrainingRecord record;
-  std::size_t n = 0, opened_at = 0;
-  bool in_block = false;
-  for (std::string raw; std::getline(in, raw);) {
-    ++n;
-    const std::string line = rtrim(raw);
-    if (!in_block) {
-      if (line == kTrainingRecordOpen) {
-        in_block = true;
+  std::size_t opened_at = 0;  // the line opening the block; 0 outside one
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    const std::string &line = lines[i];
+    const std::size_t n = i + 1;
+    if (opened_at == 0) {
+      if (line == kTrainingRecordOpen)
         opened_at = n;
-      }
+      else if (line == kTrainingRecordEnd)
+        throw std::runtime_error(
+            path + ": line " + std::to_string(n) + " ends a training "
+            "record " + end_quoted + " that no opening line " + open_quoted +
+            " opens: restore the opening line before the record, or delete "
+            "the end line.");
       continue;
     }
     if (line == kTrainingRecordEnd) {
-      in_block = false;
+      opened_at = 0;
       continue;
     }
+    if (line == kTrainingRecordOpen)
+      throw std::runtime_error(
+          unclosed(opened_at) + " before line " + std::to_string(n) +
+          ", which opens another: restore the end line after the record, "
+          "before line " + std::to_string(n) + ", or delete the record.");
     const std::size_t first = line.find_first_not_of(" \t");
     if (first == std::string::npos) continue;  // a blank line
-    if (line[first] != '#')
+    if (line[first] != '#') {
+      // A line that is not a comment is inside the block only when an end
+      // line follows it before any opening line. Every writer puts the key
+      // lines right after the record, so without one the block has lost
+      // its end line and this is the potential's first key line.
+      std::size_t closed_at = 0;
+      for (std::size_t j = i + 1; j < lines.size(); ++j) {
+        if (lines[j] == kTrainingRecordOpen) break;
+        if (lines[j] == kTrainingRecordEnd) {
+          closed_at = j + 1;
+          break;
+        }
+      }
+      if (closed_at == 0)
+        throw std::runtime_error(
+            unclosed(opened_at) + " before line " + std::to_string(n) +
+            ", the first line after it that is not a comment: restore the "
+            "end line after the record, before line " + std::to_string(n) +
+            ", or delete the record.");
       throw std::runtime_error(
           path + ": line " + std::to_string(n) + ", inside the training "
-          "record that line " + std::to_string(opened_at) + " opens, is not "
-          "a comment: every reader of the potential reads it as a key. "
-          "Begin each line of the record with '#', or end the record ('" +
-          std::string(kTrainingRecordEnd) + "') before it.");
+          "record that line " + std::to_string(opened_at) + " opens and "
+          "line " + std::to_string(closed_at) + " ends, is not a comment: "
+          "every reader of the potential reads it as a key. Begin it with "
+          "'#' if it belongs to the record, or move it after the end line.");
+    }
     std::string text = line.substr(first + 1);
     if (!text.empty() && text[0] == ' ') text.erase(0, 1);
     if (!text.empty()) record.lines.push_back(text);
   }
-  if (in_block)
-    throw std::runtime_error(
-        path + ": line " + std::to_string(opened_at) + " opens a training "
-        "record ('" + std::string(kTrainingRecordOpen) + "') that no end "
-        "line ('" + std::string(kTrainingRecordEnd) + "') closes: restore "
-        "the end line after the record, or delete the record.");
+  if (opened_at != 0)
+    throw std::runtime_error(unclosed(opened_at) +
+                             ": restore the end line after the record, or "
+                             "delete the record.");
   return record;
 }
 

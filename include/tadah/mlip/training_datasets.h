@@ -21,9 +21,9 @@ namespace mlip {
  *  call it, so the context of a fitted potential -- the potential of a
  *  tadah hpo evaluation, which its PC_LAMMPS scripts run -- has no DBFILE,
  *  whichever the model. No potential file has a DBFILE key line either
- *  (write_potential_with_record, training_record.h): the DBFILE of the run
- *  that wrote it is in its training record, a comment block no reader of a
- *  potential reads. A potential retrains as a configuration with the
+ *  (write_potential_with_record, training_record.h): its training record,
+ *  a comment block no loader of a potential reads, lists the datasets of
+ *  its fit when there were any. A potential retrains as a configuration with the
  *  DBFILE of the retrain added (`tadah train -c pot.tadah` plus a DBFILE
  *  line), and its own dataset is never listed twice. */
 void remove_training_datasets(tadah::core::Context &pot);
@@ -31,13 +31,15 @@ void remove_training_datasets(tadah::core::Context &pot);
 /** The advice the refusals of a configuration without a training DBFILE
  *  end with (require_training_datasets: tadah train; classify_weight_source
  *  and the refusal of a run without ATOM: tadah hpo): "A potential has no
- *  DBFILE line (no potential tadah writes one; the DBFILE of the run that
- *  wrote it is in its training record, a comment block tadah does not
- *  read): to train from one, add a DBFILE line to a copy of it; a potential
- *  of tadah refit or refit --edit also pins every weight with its FIXINDEX
- *  and FIXWEIGHT lines, the seed of a tadah hpo coefficient search, so
- *  delete them from the copy for the fit to change the weights (the
- *  Training page of the documentation, Retraining from a potential)." A fit
+ *  DBFILE line (no potential tadah writes one; its training record, the
+ *  comment block above its key lines, lists the datasets its weights were
+ *  fitted to in a '# DBFILE' line when there were any: a refit has none,
+ *  and a potential of an earlier version has no record): to train from
+ *  one, add a DBFILE line to a copy of it; a potential of tadah refit or
+ *  refit --edit also pins every weight with its FIXINDEX and FIXWEIGHT
+ *  lines, the seed of a tadah hpo coefficient search, so delete them from
+ *  the copy for the fit to change the weights (the Training page of the
+ *  documentation, Retraining from a potential)." A fit
  *  whose FIXINDEX pins every weight changes none
  *  (all_weights_pinned_warning, weight_provisioning.h). */
 std::string potential_has_no_datasets_advice();

@@ -20,7 +20,8 @@ public:
   void validate(const tadah::mlip::Task &task) override;
   /** Writes @p context as the potential file @p outfile: its training
    *  record @p record (the keys of the run that wrote it, a comment block
-   *  no reader reads; nothing when it is empty), then the key lines of
+   *  no loader of a potential reads; nothing when it is empty), then the
+   *  key lines of
    *  @p context with NUMERIC significant digits (resolved from @p context)
    *  and without the keys of training_record_keys(), EMBF0 and RHOFORM
    *  normalised (write_potential_with_record). The record is its caller's:

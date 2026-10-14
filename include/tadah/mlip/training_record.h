@@ -23,12 +23,13 @@ class KeyProvenance;
  *      # VALIDATION config.val
  *      # --- end of training record ---
  *
- *  Every reader of a potential (core::CoreUserConfigParser: tadah predict,
- *  tadah train -c, tadah hpo -c, refit --edit, pair_style tadah) skips a
- *  line whose first non-blank character is '#', so the block is never
- *  read: a potential loads, predicts and retrains as one without it. Only
- *  refit --edit reads it, with read_training_record(), to copy it into the
- *  edit. */
+ *  Every loader of a potential (core::CoreUserConfigParser: tadah predict,
+ *  tadah train -c, tadah hpo -c, refit --edit's read of its input,
+ *  pair_style tadah) skips a line whose first non-blank character is '#',
+ *  so no key is read from the block: a potential loads, predicts and
+ *  retrains as one without it. refit --edit alone reads the block, with
+ *  read_training_record(), to copy it into the edit, and refuses an input
+ *  whose block is malformed. */
 
 /** The keys a potential file keeps only in its training record, in the
  *  order the record lists them: DBFILE (the training datasets), VALIDATION
@@ -83,9 +84,14 @@ void write_training_record(std::ostream &os, const TrainingRecord &record);
  *  block (or blocks, in order), without their leading '#' and the one
  *  blank after it; an empty record when the file has none (a potential
  *  of an earlier version). Throws std::runtime_error naming the file and
- *  the line when the file cannot be read, when an opening line has no end
- *  line after it, and when a line inside a block is not a comment (every
- *  reader of the file would read it as a key). refit --edit copies its
+ *  the lines when the file cannot be read; when an opening line has no end
+ *  line: another opening line, a line that is not a comment or the end of
+ *  the file comes first (the refusal names the opening line and that
+ *  line; every writer puts the key lines right after the record, so a
+ *  potential whose end line was deleted is refused naming its first key
+ *  line); when an end line has no opening line before it; and when a line
+ *  inside a block, between its opening and end lines, is not a comment
+ *  (every loader of the file reads it as a key). refit --edit copies its
  *  input's record with it. */
 TrainingRecord read_training_record(const std::string &path);
 

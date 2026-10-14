@@ -112,13 +112,13 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // The training record of this run (the potential's comment block): the
   // keys a potential does not use, as the configuration and the command
   // line gave them, taken before anything inserts a default. A retrain's
-  // configuration is a potential, whose own record is a comment never
-  // read: the record is the retrain's.
+  // configuration is a potential, whose own record is a comment the
+  // retrain does not read: the record is the retrain's.
   const TrainingRecord record =
       training_record(task.getContext(), task.getKeyProvenance());
   // The datasets to fit: a configuration without DBFILE (a potential, which
-  // records none, given as it is) is refused, saying how to retrain, before
-  // anything is read; one dataset listed twice would be fitted twice.
+  // has no DBFILE line, given as it is) is refused, saying how to retrain,
+  // before anything is read; one dataset listed twice would be fitted twice.
   require_training_datasets(context);
   require_distinct_training_datasets(context);
   // The SBASIS of a fit that draws basis vectors (M_KRR with a non-linear
