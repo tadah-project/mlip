@@ -151,16 +151,22 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   const double pct = read_optim_pct(c);
   const std::string in_pot = c.get<std::string>("EDIT");
 
+  // The input's lines of the keys of its training record but DBFILE --
+  // a potential an earlier version wrote has some: UNCERTAINTY, the keys
+  // that prepared its training data, its run's VERBOSE, NUMERIC, ... -- are
+  // not read (potential_line_not_read; no parse stores a run setting of a
+  // potential): the edit runs with its own verbosity and NUMERIC, and the
+  // lines go into the edit's record below.
   core::CoreUserConfigParser parser;
-  Context pot = parser.parse(in_pot);
+  std::vector<core::SkippedKeyLine> not_read;
+  Context pot = parser.parse(in_pot, potential_line_not_read, not_read);
   // The edit fits nothing: its weights are the input's, edited, so the
   // record of the fit that produced them -- the input's training record
   // and, for a potential an earlier version wrote, the keys of the record
   // among its key lines (its DBFILE, UNCERTAINTY, VERBOSE, ...: they are
   // not written as key lines, so they move into the record rather than
-  // being dropped) -- is the edit's, after a line naming the input. Taken
-  // before the run's NUMERIC replaces the input's below. The edit's own
-  // inputs (-o, -v, NUMERIC) are not added.
+  // being dropped) -- is the edit's, after a line naming the input. The
+  // edit's own inputs (-o, -v, NUMERIC) are not added.
   TrainingRecord record;
   record.lines.push_back("edited by tadah refit --edit from " + in_pot);
   {
@@ -173,7 +179,7 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
     }
     record.lines.insert(record.lines.end(), input.lines.begin(),
                         input.lines.end());
-    const TrainingRecord keys = training_record(pot);
+    const TrainingRecord keys = record_of_key_lines(pot, not_read);
     record.lines.insert(record.lines.end(), keys.lines.begin(),
                         keys.lines.end());
   }
@@ -190,14 +196,12 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   potedit::normalize_knot_rcut(pot, "tadah refit --edit");
 
   // NUMERIC shapes only the written file (significant digits; never
-  // written into it). A NUMERIC set for this run wins over one the input
-  // carries (every 1.5.0 `tadah hpo` pot has an auto-inserted NUMERIC 12);
-  // either is honoured, so below 17 the edit is exact only up to rounding.
+  // written into it): the run's own, as for every writer (the input's
+  // NUMERIC line -- every 1.5.0 `tadah hpo` pot has an auto-inserted
+  // NUMERIC 12 -- was not read). Below 17 the edit is exact only up to
+  // rounding.
   const std::optional<std::string> run_numeric = c.stored_value("NUMERIC");
-  if (run_numeric) {
-    pot.remove("NUMERIC");
-    pot.add("NUMERIC", *run_numeric);
-  }
+  if (run_numeric) pot.add("NUMERIC", *run_numeric);
   const core::PotDigits pot_digits = core::resolve_pot_digits(pot);
   const bool exact_output = pot_digits.digits >= core::kRoundTripDigits;
 
@@ -304,18 +308,12 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
 
   if (!exact_output) {
     const std::string n = std::to_string(pot_digits.digits);
-    log_warn(
-        "tadah refit --edit: NUMERIC " + n +
-        (run_numeric ? " (set for this run)" : " (carried by " + in_pot + ")") +
-        ": the edited potential is written with " + n +
-        " significant digits, so it predicts identically to the input only up "
-        "to that rounding. " +
-        (run_numeric
-             ? std::string("Omit NUMERIC (default 18, exact) for an exact "
-                           "edit.")
-             : "Delete the NUMERIC line from " + in_pot +
-                   " (1.5.0 `tadah hpo` pots carry an auto-inserted "
-                   "NUMERIC 12) and re-run for an exact edit."));
+    log_warn("tadah refit --edit: NUMERIC " + n +
+             " (set for this run): the edited potential is written with " +
+             n +
+             " significant digits, so it predicts identically to the input "
+             "only up to that rounding. Omit NUMERIC (default 18, exact) "
+             "for an exact edit.");
   }
 
   Context out = potedit::rebuild_pot_context(view);

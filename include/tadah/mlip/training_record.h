@@ -2,6 +2,7 @@
 #define TADAH_MLIP_TRAINING_RECORD_H
 
 #include <tadah/core/context.h>
+#include <tadah/core/iuser_config_parser.h>  // core::SkippedKeyLine
 
 #include <ostream>
 #include <set>
@@ -35,7 +36,14 @@ class KeyProvenance;
  *  so no key is read from the block: a potential loads, predicts and
  *  retrains as one without it. refit --edit alone reads the block, with
  *  read_training_record(), to copy it into the edit, and refuses an input
- *  whose block is malformed. */
+ *  whose block is malformed.
+ *
+ *  A potential of an earlier version has some of these keys as key lines.
+ *  Its lines of the keys of the record but DBFILE are not read by a later
+ *  run (keys_not_read_from_a_potential, potential_line_not_read), and no
+ *  parse stores its lines of the run settings among them
+ *  (core::run_setting_keys(): VERBOSE, NUMERIC, OUTFILE, ...), so no
+ *  program that loads it takes its verbosity or output from it. */
 
 /** The keys that prepared the training data, in the order their
  *  transforms apply (apply_load_transforms): EFILTER and FFILTER (which
@@ -53,10 +61,15 @@ class KeyProvenance;
 const std::vector<std::string> &dataset_preparation_keys();
 
 /** The keys whose lines in a potential a later run does not read
- *  (potential_line_not_read), in the order the notice names them: those
- *  of dataset_preparation_keys(), then UNCERTAINTY (the train task's switch
- *  for weights.tadah: the run that wrote the potential asked for it, not
- *  the run that reads it). */
+ *  (potential_line_not_read): every key of training_record_keys() but
+ *  DBFILE, in that order -- those of dataset_preparation_keys() (they
+ *  prepared the data of its own fit), VALIDATION, HPOTARGET, UNCERTAINTY,
+ *  VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG (settings
+ *  of the run that wrote it: its validation and target files, its switch
+ *  for weights.tadah, its verbosity, output and diagnostics; the run that
+ *  reads the potential has its own). DBFILE is read: a retrain adds its
+ *  DBFILE line to a copy of the potential. The run settings among them are
+ *  core::run_setting_keys(), which no parse stores from a potential. */
 const std::vector<std::string> &keys_not_read_from_a_potential();
 
 /** The keys a potential file keeps only in its training record, in the
@@ -94,26 +107,32 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
  *  the keys of keys_not_read_from_a_potential() are settings of the run
  *  that wrote it, not of this run, and are not read -- the keys that
  *  prepared the data of its fit (ESHIFT_ATOM and ESHIFT_DBATOM whether or
- *  not the file has ESHIFT) and UNCERTAINTY. No other key (DBFILE is read:
- *  a retrain adds its DBFILE line to a copy of the potential), and no line
- *  of a file without WEIGHTS: the lines of the task file, of a
- *  configuration file that includes the potential with CONFIG (before or
- *  after the CONFIG line) and the command line are the run's own, so a
- *  retrain works with any number of datasets and with the run's own
- *  filters, weights, ESHIFT toggle and UNCERTAINTY, whatever version wrote
- *  the potential. */
+ *  not the file has ESHIFT), VALIDATION, HPOTARGET, UNCERTAINTY, VERBOSE,
+ *  NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other key
+ *  (DBFILE is read: a retrain adds its DBFILE line to a copy of the
+ *  potential), and no line of a file without WEIGHTS: the lines of the task
+ *  file, of a configuration file that includes the potential with CONFIG
+ *  (before or after the CONFIG line) and the command line are the run's
+ *  own, so a retrain works with any number of datasets and with the run's
+ *  own filters, weights, ESHIFT toggle, UNCERTAINTY, verbosity, output and
+ *  validation, whatever version wrote the potential. */
 bool potential_line_not_read(const std::set<std::string> &file_keys,
                              const std::string &key);
 
 /** tadah train's and tadah hpo's notice for a configuration that is or
  *  includes a potential (TrainEngine::run, hpo_run_journaled), "" or a
  *  warning naming its lines of keys_not_read_from_a_potential() that were
- *  not read, are not at their blueprint default (a key at its default, such
- *  as the ZERO_COM_FORCE false every potential of an earlier tadah train
- *  has, means the same read or not) and are keys of the blueprint task
- *  @p task ("train" or "hpo": tadah hpo takes no UNCERTAINTY, so a seed's
- *  UNCERTAINTY line is not named), with the values; "tadah <task>" begins
- *  it.
+ *  not read, are not at their default (the blueprint task's default when
+ *  it has one, else the key's: a key at its default, such as the
+ *  ZERO_COM_FORCE false every potential of an earlier tadah train has, or
+ *  the VERBOSE 1 of a best_pot.tadah of an earlier tadah hpo, means the
+ *  same read or not) and are keys the run of the blueprint task @p task
+ *  ("train" or "hpo") reads: the task's keys and those of its input groups
+ *  (tadah hpo's VALIDATION and HPOTARGET), and NUMERIC, AUDIT, AUDIT_SAMPLE
+ *  and, for tadah hpo, HEALTH_LOG, which both read from any configuration
+ *  (tadah hpo takes no UNCERTAINTY or OUTFILE, tadah train no VALIDATION,
+ *  HPOTARGET or HEALTH_LOG: such a line is not named); with the values;
+ *  "tadah <task>" begins it.
  *   - With @p provenance (a task of TaskFactory, whose parse did not read
  *     those lines: potential_line_not_read): @p config is left as it is;
  *     the lines are those of KeyProvenance::skipped_key_lines() whose key
@@ -140,19 +159,34 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *     named in a sentence of its own, "Its UNCERTAINTY true asked the run
  *     that wrote it for weights.tadah, not this run, and is ignored too."
  *     (or, alone, "its UNCERTAINTY true asked the run that wrote it for
- *     weights.tadah, not this run, and is ignored (tadah keeps ...).");
- *     the advice names every key named, ESHIFT_ATOM, ESHIFT_DBATOM and
- *     UNCERTAINTY among them; and, when a toggle is named and @p config
- *     has ESHIFT, "The ESHIFT of the configuration, the energy reference
- *     of the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive
- *     ESHIFT from the data of this run, delete the ESHIFT line and give the
- *     run one of them" is its last sentence.
+ *     weights.tadah, not this run, and is ignored (tadah keeps ...)."), and
+ *     so are the run settings, "Its VERBOSE 2 and NUMERIC 12 were settings
+ *     of the run that wrote it, not of this run, and are ignored too." (or
+ *     first: "its OUTFILE old.tadah was a setting of the run that wrote
+ *     it, not of this run, and is ignored (tadah keeps ...).");
+ *     the advice names every key named, ESHIFT_ATOM, ESHIFT_DBATOM,
+ *     UNCERTAINTY and the run settings among them, and the options of
+ *     those the task has (tadah train has no --numeric: "Give --verbose on
+ *     the command line, or a VERBOSE or NUMERIC line in ..."); and, when a
+ *     toggle is named and @p config has ESHIFT, its last sentence says
+ *     that the ESHIFT overrules the toggles and how to drop it, by where it
+ *     came from: "The ESHIFT of the configuration, the energy reference of
+ *     the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT
+ *     from the data of this run, delete the ESHIFT line and give the run one
+ *     of them" for a line of a file, "The ESHIFT given with --eshift, ...:
+ *     to derive ESHIFT from the data of this run, leave out --eshift and
+ *     give the run one of them" for the option, and "... leave out
+ *     --eshift, delete the ESHIFT line and give the run one of them" when
+ *     the option replaced a line of the configuration.
  *   - Without @p provenance (a context a program built): @p config is taken
  *     as one file; when it has WEIGHTS, the keys potential_line_not_read
- *     selects by its keys are removed from it and named: "tadah train: the
- *     configuration is a potential (it has WEIGHTS): its ... Give
- *     --efilter or --wdbfile on the command line to apply one to this run
- *     (...)".
+ *     selects by its keys that a parse stores -- those of
+ *     dataset_preparation_keys() and UNCERTAINTY -- are removed from it and
+ *     named: "tadah train: the configuration is a potential (it has
+ *     WEIGHTS): its ... Give --efilter or --wdbfile on the command line to
+ *     apply one to this run (...)". Its run settings (VERBOSE, NUMERIC,
+ *     OUTFILE, ...: core::run_setting_keys()) are kept: no parse stores a
+ *     potential's, so they are the program's own.
  *  Call it before the record of the run is taken (training_record), so the
  *  record lists the run's own settings. */
 std::string ignore_configuration_potential_lines(
@@ -185,6 +219,18 @@ struct TrainingRecord {
  *  a default into the configuration. */
 TrainingRecord training_record(const core::Context &config,
                                const KeyProvenance *provenance = nullptr);
+
+/** The training record of the key lines of an older potential, which
+ *  refit --edit adds to the record it copies: one "KEY v1 v2 ..." line for
+ *  each key of training_record_keys() in that order, with the tokens
+ *  @p pot stores (its DBFILE: a parse reads it) or, for a key @p pot does
+ *  not store, the values of its lines in @p not_read (the lines the parse
+ *  of the potential did not read: potential_line_not_read and the run
+ *  settings no parse stores; the values of several lines of one key joined
+ *  in order). Empty for a potential tadah wrote (it has no such line). */
+TrainingRecord record_of_key_lines(
+    const core::Context &pot,
+    const std::vector<core::SkippedKeyLine> &not_read);
 
 /** The opening line of the block:
  *  "# --- training record (no key is read from it) ---" (no loader of a
