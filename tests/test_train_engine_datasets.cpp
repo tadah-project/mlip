@@ -1567,7 +1567,8 @@ TEST_CASE("TrainEngine::run refuses a DBFILE that lists one dataset twice, "
  * 2026-10-14): VALIDATION, HPOTARGET, VERBOSE, NUMERIC, OUTFILE, AUDIT,
  * AUDIT_SAMPLE and HEALTH_LOG were settings of the run that wrote it; a
  * potential of an earlier version has them as key lines (a 1.5.x
- * best_pot.tadah has VALIDATION, HPOTARGET, VERBOSE and NUMERIC). */
+ * best_pot.tadah has HPOTARGET, VERBOSE and NUMERIC, and VALIDATION when
+ * its run had a validation file). */
 
 namespace {
 
