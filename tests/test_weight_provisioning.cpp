@@ -413,12 +413,14 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
 
 /* Pins: each refusal of classify_weight_source (tadah hpo at startup) of a
  * configuration without a training DBFILE ends with the advice every
- * refusal of a configuration without one gives, "A potential records no
- * DBFILE (no potential tadah writes has one): to train from one, add a
- * DBFILE line to a copy of it; a potential of tadah refit or refit --edit
- * also pins every weight with its FIXINDEX and FIXWEIGHT lines, ..., so
- * delete them from the copy for the fit to change the weights (the
- * Training page of the documentation, Retraining from a potential).",
+ * refusal of a configuration without one gives, "A potential has no
+ * DBFILE line (no potential tadah writes one; the DBFILE of the run that
+ * wrote it is in its training record, a comment block tadah does not
+ * read): to train from one, add a DBFILE line to a copy of it; a potential
+ * of tadah refit or refit --edit also pins every weight with its FIXINDEX
+ * and FIXWEIGHT lines, ..., so delete them from the copy for the fit to
+ * change the weights (the Training page of the documentation, Retraining
+ * from a potential).",
  * after its own reason: no FIXINDEX or
  * FIXWEIGHT ("the model weights cannot be determined"; a potential used as
  * the -c configuration as it is gets this one), FIXINDEX 2 of 5 weights
@@ -429,17 +431,23 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
  * training DBFILE."), without the advice.
  * Before the advice named the pins (cross-lane review 2): it ended "add a
  * DBFILE line to a copy of it (the Training page ...)." -- a refit
- * potential so retrained fitted nothing: these checks fail. */
+ * potential so retrained fitted nothing: these checks fail.
+ * Before the training record (MK's decision of 2026-10-14): the advice
+ * began "A potential records no DBFILE (no potential tadah writes has
+ * one): to train from one, ...", and the case was named "..., says that a
+ * potential records none". */
 TEST_CASE("classify_weight_source: a refusal without a training DBFILE says "
-          "that a potential records none",
+          "that a potential has no DBFILE line",
           "[weight_provisioning][potential_content]") {
   const std::string advice =
-      "A potential records no DBFILE (no potential tadah writes has one): "
-      "to train from one, add a DBFILE line to a copy of it; a potential of "
-      "tadah refit or refit --edit also pins every weight with its FIXINDEX "
-      "and FIXWEIGHT lines, the seed of a tadah hpo coefficient search, so "
-      "delete them from the copy for the fit to change the weights (the "
-      "Training page of the documentation, Retraining from a potential).";
+      "A potential has no DBFILE line (no potential tadah writes one; the "
+      "DBFILE of the run that wrote it is in its training record, a comment "
+      "block tadah does not read): to train from one, add a DBFILE line to a "
+      "copy of it; a potential of tadah refit or refit --edit also pins "
+      "every weight with its FIXINDEX and FIXWEIGHT lines, the seed of a "
+      "tadah hpo coefficient search, so delete them from the copy for the "
+      "fit to change the weights (the Training page of the documentation, "
+      "Retraining from a potential).";
   SECTION("no FIXINDEX or FIXWEIGHT") {
     CHECK_THROWS_WITH(classify_weight_source(ctx_with(false, "", {}), kNCols),
                       Catch::Contains("the model weights cannot be "

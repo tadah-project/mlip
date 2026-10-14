@@ -1182,3 +1182,178 @@ TEST_CASE_METHOD(PTFixture,
                     "tadah refit --retarget: --in-place and -o are mutually "
                     "exclusive.");
 }
+
+namespace {
+
+/* The opening and end lines of the training record of a potential file. */
+const std::string kRecordOpen = "# --- training record (not read by tadah) ---";
+const std::string kRecordEnd = "# --- end of training record ---";
+
+std::string slurp_file(const std::string &f) {
+  std::ifstream in(f);
+  return std::string(std::istreambuf_iterator<char>(in),
+                     std::istreambuf_iterator<char>());
+}
+
+/* The lines of the training record of the potential file @p f, without
+ * their leading "# ": empty when it has none. */
+std::vector<std::string> record_lines(const std::string &f) {
+  std::ifstream in(f);
+  std::vector<std::string> out;
+  bool in_block = false;
+  for (std::string l; std::getline(in, l);) {
+    if (!in_block) {
+      in_block = l == kRecordOpen;
+      continue;
+    }
+    if (l == kRecordEnd) break;
+    out.push_back(l.rfind("# ", 0) == 0 ? l.substr(2) : l);
+  }
+  return out;
+}
+
+/* The tokens after @p key on its key line of the file @p f (a comment
+ * line is not one); empty when there is none. */
+std::vector<std::string> key_line(const std::string &f, const std::string &key) {
+  std::ifstream in(f);
+  for (std::string l; std::getline(in, l);) {
+    std::istringstream ls(l);
+    std::string k;
+    if (!(ls >> k) || k != key) continue;
+    std::vector<std::string> v;
+    for (std::string t; ls >> t;) v.push_back(t);
+    return v;
+  }
+  return {};
+}
+
+Context edit_of(const std::string &in, const std::string &out) {
+  Context c;
+  c.add("EDIT", in);
+  c.add("FUNC", std::string("phi"));
+  c.add("ADD", 3.6);
+  c.add("OUTFILE", out);
+  c.add("HPOFILEOUT", out + ".hpotarget");
+  return c;
+}
+
+}  // namespace
+
+/* Pins: refit --edit of in.tadah -- the knot potential with the training
+ * record "DBFILE train.db other.db", "VALIDATION config.val", "VERBOSE 0"
+ * above its key lines -- writes out.tadah whose training record is "edited
+ * by tadah refit --edit from in.tadah" followed by the input's three lines
+ * (the edit fits nothing: its weights are the input's, edited, so the
+ * input's record still describes them); an edit of out.tadah (twice.tadah)
+ * lists both "edited by" lines, newest first, then the three lines; and
+ * out.tadah reads back (CoreUserConfigParser) to the context, key by key,
+ * of the edit of the same potential without the record (plain_out.tadah):
+ * the record is no key of the edit.
+ * Before the fix: neither edit had a training record (no potential had
+ * one; the decision taken in MK's absence on 2026-10-12, replaced by MK's
+ * of 2026-10-14). */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit copies the training record of its input and "
+                 "names the input",
+                 "[refit][edit][potential_content][training_record]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("plain.tadah", make_knot_pot());
+  std::ofstream("in.tadah") << kRecordOpen << "\n"
+                            << "# DBFILE train.db other.db\n"
+                            << "# VALIDATION config.val\n"
+                            << "# VERBOSE 0\n"
+                            << kRecordEnd << "\n"
+                            << slurp_file("plain.tadah");
+  run_edit_capturing(edit_of("in.tadah", "out.tadah"));
+  INFO("out.tadah:\n" << slurp_file("out.tadah"));
+  CHECK(record_lines("out.tadah") ==
+        std::vector<std::string>{"edited by tadah refit --edit from in.tadah",
+                                 "DBFILE train.db other.db",
+                                 "VALIDATION config.val", "VERBOSE 0"});
+  run_edit_capturing(edit_of("out.tadah", "twice.tadah"));
+  CHECK(record_lines("twice.tadah") ==
+        std::vector<std::string>{
+            "edited by tadah refit --edit from out.tadah",
+            "edited by tadah refit --edit from in.tadah",
+            "DBFILE train.db other.db", "VALIDATION config.val",
+            "VERBOSE 0"});
+  for (const char *key : {"DBFILE", "VALIDATION", "VERBOSE"}) {
+    INFO("key " << key);
+    CHECK(key_line("out.tadah", key).empty());
+    CHECK(key_line("twice.tadah", key).empty());
+  }
+  run_edit_capturing(edit_of("plain.tadah", "plain_out.tadah"));
+  const Context out = tadah::core::CoreUserConfigParser().parse("out.tadah");
+  const Context plain =
+      tadah::core::CoreUserConfigParser().parse("plain_out.tadah");
+  CHECK(out.storage_snapshot() == plain.storage_snapshot());
+}
+
+/* Pins: refit --edit of a potential that has DBFILE, UNCERTAINTY and
+ * VERBOSE key lines and no training record (as tadah 1.5.x and 1.6.0
+ * development builds wrote them: the knot potential with "DBFILE old.db",
+ * "UNCERTAINTY true" and "VERBOSE 0" appended, old.tadah) writes the edit
+ * without those key lines and with the training record "edited by tadah
+ * refit --edit from old.tadah", "DBFILE old.db", "UNCERTAINTY true",
+ * "VERBOSE 0": the input's keys are kept in the record, not dropped.
+ * Before the fix: the key lines were dropped (a pin of that part) and the
+ * edit had no record. */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit of an older potential keeps its DBFILE, "
+                 "UNCERTAINTY and VERBOSE in the edit's training record",
+                 "[refit][edit][potential_content][training_record]") {
+  ScopedTempDir tmp;
+  const auto level = tadah::core::Logger::instance().getLogLevel();
+  TrainEngine::dumpPotFile("plain.tadah", make_knot_pot());
+  std::ofstream("old.tadah") << slurp_file("plain.tadah")
+                             << "DBFILE old.db\nUNCERTAINTY true\n"
+                                "VERBOSE 0\n";
+  run_edit_capturing(edit_of("old.tadah", "old_out.tadah"));
+  tadah::core::Logger::instance().setLogLevel(level);  // VERBOSE 0 was read
+  INFO("old_out.tadah:\n" << slurp_file("old_out.tadah"));
+  CHECK(record_lines("old_out.tadah") ==
+        std::vector<std::string>{"edited by tadah refit --edit from old.tadah",
+                                 "DBFILE old.db", "UNCERTAINTY true",
+                                 "VERBOSE 0"});
+  for (const char *key : {"DBFILE", "UNCERTAINTY", "VERBOSE"}) {
+    INFO("key " << key);
+    CHECK(key_line("old_out.tadah", key).empty());
+  }
+}
+
+/* Pins: refit --edit refuses an input whose training record cannot be
+ * copied, naming the file and the line, and writes no edit: an opening
+ * line "# --- training record (not read by tadah) ---" with no end line
+ * after it (line 1 of open.tadah), and a line inside the block that is not
+ * a comment (line 2 of keyline.tadah, "DBFILE x.db": a key line, which
+ * every reader of the file reads).
+ * Before the fix: both edits were written (exit 0): the block was a comment
+ * nothing read, and the DBFILE key line was dropped. */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit refuses a training record without its end "
+                 "line or with a key line inside",
+                 "[refit][edit][potential_content][training_record]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("plain.tadah", make_knot_pot());
+  SECTION("no end line") {
+    std::ofstream("open.tadah") << kRecordOpen << "\n# DBFILE x.db\n"
+                                << slurp_file("plain.tadah");
+    CHECK_THROWS_WITH(run_edit_capturing(edit_of("open.tadah", "o.tadah")),
+                      Catch::Contains("open.tadah") &&
+                          Catch::Contains("line 1") &&
+                          Catch::Contains("training record") &&
+                          Catch::Contains(kRecordEnd));
+    CHECK_FALSE(fs::exists("o.tadah"));
+  }
+  SECTION("a key line inside the block") {
+    std::ofstream("keyline.tadah") << kRecordOpen << "\nDBFILE x.db\n"
+                                   << kRecordEnd << "\n"
+                                   << slurp_file("plain.tadah");
+    CHECK_THROWS_WITH(run_edit_capturing(edit_of("keyline.tadah", "k.tadah")),
+                      Catch::Contains("keyline.tadah") &&
+                          Catch::Contains("line 2") &&
+                          Catch::Contains("training record") &&
+                          Catch::Contains("not a comment"));
+    CHECK_FALSE(fs::exists("k.tadah"));
+  }
+}
