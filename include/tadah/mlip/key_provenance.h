@@ -2,6 +2,7 @@
 #define TADAH_MLIP_KEY_PROVENANCE_H
 
 #include <tadah/core/context.h>
+#include <tadah/core/iuser_config_parser.h>  // core::SkippedKeyLine
 
 #include <string>
 #include <vector>
@@ -60,10 +61,15 @@ public:
    * @param file_path    That file, as given ("" when there is none).
    * @param file_kind    ConfigFile or TaskFile.
    * @param defaults     The keys added as blueprint defaults (upper case).
+   * @param skipped      The key lines of the file, or of a file it
+   *                     includes, that its parse did not read (TaskFactory:
+   *                     a potential's lines of the keys that prepared the
+   *                     training data, potential_dataset_key_line).
    */
   KeyProvenance(core::Context command_line, core::Context file,
                 std::string file_path, KeyOrigin::Kind file_kind,
-                std::vector<std::string> defaults);
+                std::vector<std::string> defaults,
+                std::vector<core::SkippedKeyLine> skipped = {});
 
   KeyProvenance(const KeyProvenance &);
   KeyProvenance(KeyProvenance &&);
@@ -74,11 +80,26 @@ public:
   /** The origin of @p key (any letter case) in the task's context. */
   KeyOrigin origin(const std::string &key) const;
 
+  /** The configuration or task file, as given ("" when there is none). */
+  const std::string &file_path() const { return file_path_; }
+  /** ConfigFile (-c/--config) or TaskFile (--task). */
+  KeyOrigin::Kind file_kind() const { return file_kind_; }
+  /** The key lines of the file, or of a file it includes with CONFIG, that
+   *  its parse did not read, in the order read: for a task of TaskFactory,
+   *  a potential's lines of the keys that prepared the training data
+   *  (potential_dataset_key_line, training_record.h). Their keys are not
+   *  in the task's context unless another line or the command line gives
+   *  them. */
+  const std::vector<core::SkippedKeyLine> &skipped_key_lines() const {
+    return skipped_;
+  }
+
 private:
   core::Context command_line_;
   core::Context file_;
   std::string file_path_;
   KeyOrigin::Kind file_kind_ = KeyOrigin::Kind::ConfigFile;
+  std::vector<core::SkippedKeyLine> skipped_;
   /* Sorted and unique. (A std::set member here made GCC 13.3's LTO stop
    * with an internal compiler error while linking test_mlip.) */
   std::vector<std::string> defaults_;

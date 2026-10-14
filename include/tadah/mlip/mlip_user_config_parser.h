@@ -100,6 +100,22 @@ public:
   std::vector<std::pair<std::string, core::Context>>
   parse(const std::vector<std::string>& lines, bool merge = true) const;
 
+  /**
+   * @brief parse(filename, merge) that does not store the key lines
+   *        @p skip selects (IUserConfigParser::parse with a KeyLineRule).
+   *
+   * Each section is read under the rule by the keys of its own lines (the
+   * lines above the first TASK line are one file of the rule, each TASK
+   * section another; a file a CONFIG line includes is judged by its own
+   * lines). @p skipped gets one list per section returned, in the same
+   * order: the lines of that section, and of the files it includes, that
+   * were not stored. With @p merge, the GLOBAL section's lines come first in
+   * the list of each TASK section, as its keys are merged into it.
+   */
+  std::vector<std::pair<std::string, core::Context>>
+  parse(const std::string& filename, bool merge, const core::KeyLineRule& skip,
+        std::vector<std::vector<core::SkippedKeyLine>>& skipped) const;
+
 private:
   // const core::IUserConfigParser* backendParser_; ///< The backend parser used for key/value pairs.
   // bool ownsBackend_; std::shared_ptr<core::IUserConfigParser> backendParser_; 
@@ -125,7 +141,10 @@ std::shared_ptr<core::IUserConfigParser> backendParser_;
    */
   std::vector<std::pair<std::string, core::Context>>
   parseNamed(const std::vector<std::string>& lines, bool merge,
-             const std::string& source) const;
+             const std::string& source,
+             const core::KeyLineRule* skip = nullptr,
+             std::vector<std::vector<core::SkippedKeyLine>>* skipped =
+                 nullptr) const;
 
   /**
    * @brief Splits lines into named sections based on "TASK" delimiter.
