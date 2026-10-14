@@ -391,17 +391,24 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * record (no key is read from it) ---"), then one "# KEY values" line per key
  * in that order with the values as the configuration has them (./db1.tadah
  * not normalised; under NUMERIC 9, which governs the key lines only), then
- * "# --- end of training record ---", before the first key line; no key
- * line of any of the ten; and the file parses (CoreUserConfigParser, the
- * reader of tadah predict, tadah train -c, tadah hpo -c and pair_style
- * tadah) to the same context, key by key, as the file without the block,
- * with none of the ten keys.
+ * "# --- end of training record ---", before the first key line -- every
+ * key but UNCERTAINTY: the configuration has WEIGHTS, so its UNCERTAINTY
+ * false is the potential's line, which a run does not read (the rule of
+ * TaskFactory's parse; a context without a KeyProvenance is one file), and
+ * the record lists the nine others; no key line of any of the ten; and the
+ * file parses (CoreUserConfigParser, the reader of tadah predict, tadah
+ * train -c, tadah hpo -c and pair_style tadah) to the same context, key by
+ * key, as the file without the block, with none of the ten keys.
  * Before the fix: no training record: the ten keys were dropped from the
  * potential (the decision taken in MK's absence on 2026-10-12, replaced by
  * MK's of 2026-10-14).
  * Before the opening line was corrected (MK, 2026-10-14, option 2): it read
  * "# --- training record (not read by tadah) ---", so no opening line is
- * found and the REQUIRE stops the case. */
+ * found and the REQUIRE stops the case.
+ * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
+ * line of a potential: the potential's UNCERTAINTY false was read as the
+ * run's and the record listed "UNCERTAINTY false" after "HPOTARGET
+ * config.hpo" (this case pinned it): the record check fails. */
 TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
           "potential's training record, as written",
           "[train][potential_content][training_record]") {
@@ -435,9 +442,8 @@ TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
   CHECK(r.lines == std::vector<std::string>{
                        "DBFILE ./db1.tadah ./db2.tadah",
                        "VALIDATION config.val", "HPOTARGET config.hpo",
-                       "UNCERTAINTY false", "VERBOSE 0", "NUMERIC 9",
-                       "OUTFILE pot.tadah", "AUDIT off", "AUDIT_SAMPLE 64",
-                       "HEALTH_LOG full"});
+                       "VERBOSE 0", "NUMERIC 9", "OUTFILE pot.tadah",
+                       "AUDIT off", "AUDIT_SAMPLE 64", "HEALTH_LOG full"});
   for (const char *key : kRecordKeys) {
     INFO("key " << key);
     CHECK(pot_line("pot.tadah", key).empty());
