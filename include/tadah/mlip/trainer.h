@@ -20,8 +20,8 @@ class Trainer {
   public:
     /** \brief The configuration @p c without what a fit writes: WEIGHTS,
      *  BASIS (the basis vectors of a non-linear kernel), NMEAN, NSTDEV and
-     *  the weight covariance (WCOV, WNOISE, and SIGMA of Tadah! 1.0.0 to
-     *  1.5.0 and the 1.6.0 development builds). A training configuration
+     *  the weight covariance (WCOV, WNOISE, and the SIGMA of a potential
+     *  of an earlier version of Tadah!). A training configuration
      *  may be a potential (`tadah train -c pot.tadah`, a `tadah hpo -c`
      *  seed); the fit replaces all of these, so a model built for training
      *  reads none of them. */

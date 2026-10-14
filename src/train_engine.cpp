@@ -32,7 +32,9 @@ namespace engines {
 namespace {
 // EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
 // ESHIFT the model then has no free per-atom constant, which matters when the
-// reference energies are absolute (e.g. DFT totals).
+// reference energies are absolute (e.g. DFT totals). The toggles are named
+// with their options: a retrain's configuration is a potential, whose own
+// toggle line is not read (potential_line_not_read).
 void hint_embf0_reference(const Trainer &tr,
                           const LoadTransformReport &report) {
   if (!tr.DCS.dmb) return;
@@ -43,11 +45,12 @@ void hint_embf0_reference(const Trainer &tr,
       tadah::core::LogLevel::WARNING,
       "HINT: EMBF0 ZERO fixes the DM_REAM isolated-atom energy at 0 and the "
       "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
-      "reference energies are absolute (e.g. DFT totals), set ESHIFT_ATOM, "
-      "ESHIFT_DBATOM or ESHIFT (compatible with EAMFAST), or BIAS true "
-      "(disables EAMFAST; its intercept columns, one per ATOM species, "
-      "precede the descriptor weights, so FIXINDEX/FIXWEIGHT indices "
-      "shift).");
+      "reference energies are absolute (e.g. DFT totals), set ESHIFT or give "
+      "the run ESHIFT_ATOM or ESHIFT_DBATOM (--eshift-atom, --eshift-dbatom: "
+      "a potential's own line of them is not read), all compatible with "
+      "EAMFAST, or BIAS true (disables EAMFAST; its intercept columns, one "
+      "per ATOM species, precede the descriptor weights, so "
+      "FIXINDEX/FIXWEIGHT indices shift).");
 }
 // A WNOISE without E (a fit without energies of a non-zero weight): every
 // --error prediction has an energy, so predict --error refuses the
@@ -66,32 +69,16 @@ void warn_noise_without_energies(const core::Context &param_file) {
       "refuse it (every prediction has an energy). Its WCOV, and the "
       "standard deviations of --uncertainty, are those of the fit.");
 }
-// Whether the task asks for weights.tadah (--uncertainty, UNCERTAINTY
-// true). A potential given as the configuration (-c, a file with WEIGHTS:
-// the retrain route) recorded the UNCERTAINTY of the run that trained it --
-// tadah 1.5.x and 1.6.0 development builds wrote the key into every
-// potential, get_param_file no longer does -- and that is not a request: a
-// retrain with another OALGO was refused for it ("needs OALGO 3") although
-// no --uncertainty was given. --uncertainty on the command line, and
-// UNCERTAINTY true in a training configuration or a task file, are
-// requests. With @p warn, the ignored record is said (a WARNING).
-bool uncertainty_requested(const tadah::mlip::Task &task, bool warn) {
-  const core::Context &c = task.getContext();
-  if (!c.get<bool>("UNCERTAINTY")) return false;
-  const KeyProvenance *prov = task.getKeyProvenance();
-  if (!prov || !c.has_stored("WEIGHTS")) return true;
-  const KeyOrigin o = prov->origin("UNCERTAINTY");
-  if (o.kind != KeyOrigin::Kind::ConfigFile) return true;
-  if (warn)
-    core::Logger::instance().log(
-        core::LogLevel::WARNING,
-        "tadah train: the configuration file " + o.file + " is a potential "
-        "(it has WEIGHTS), and its UNCERTAINTY true is the record of the run "
-        "that trained it (tadah 1.5.x and 1.6.0 development builds wrote "
-        "UNCERTAINTY into every potential), not a request: it is ignored and "
-        "no weights.tadah is written. Give --uncertainty (OALGO 3) to write "
-        "the weights with their standard deviations.");
-  return false;
+// Whether the run asks for weights.tadah (--uncertainty, UNCERTAINTY
+// true), read from @p run_config: the task's configuration after
+// ignore_configuration_potential_lines. A potential's own UNCERTAINTY line
+// (one an earlier version wrote into every potential, or one added to a
+// copy) was not read for this run (TaskFactory's parse skipped it; a
+// context without a KeyProvenance has it removed), so what is left is the
+// run's own: --uncertainty, or a line of the task file or of a
+// configuration file without WEIGHTS.
+bool uncertainty_requested(const core::Context &run_config) {
+  return run_config.get<bool>("UNCERTAINTY");
 }
 
 // " (UNCERTAINTY true: configuration file c.tadah)" when the request did
@@ -109,17 +96,17 @@ std::string uncertainty_source(const tadah::mlip::Task &task) {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
-  // A potential's lines of the keys that prepared the data of its own fit
-  // are not read for this run (MK's decision of 2026-10-14, option 2; a
-  // potential of an earlier version has them as key lines): TaskFactory's
-  // parse skipped them wherever the configuration or task file has the
-  // potential (tadah train -c pot.tadah plus a DBFILE line, CONFIG
-  // pot.tadah in a file or a TASK train section), and the WARNING names
-  // them; a context without a KeyProvenance is taken as one file, and they
-  // are removed here. The run's own lines of them apply.
+  // A potential's lines of the keys that prepared the data of its own fit,
+  // and its UNCERTAINTY line, are not read for this run (MK's decision of
+  // 2026-10-14, option 2; a potential of an earlier version has them as key
+  // lines): TaskFactory's parse skipped them wherever the configuration or
+  // task file has the potential (tadah train -c pot.tadah plus a DBFILE
+  // line, CONFIG pot.tadah in a file or a TASK train section), and the
+  // WARNING names them; a context without a KeyProvenance is taken as one
+  // file, and they are removed here. The run's own lines of them apply.
   {
-    const std::string ignored = ignore_configuration_dataset_keys(
-        context, task.getKeyProvenance(), "tadah train");
+    const std::string ignored = ignore_configuration_potential_lines(
+        context, task.getKeyProvenance(), "train");
     if (!ignored.empty())
       core::Logger::instance().log(core::LogLevel::WARNING, ignored);
   }
@@ -228,7 +215,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // that computed no covariance (its noise variance undefined) is refused
   // before the potential is written (owner decision D8), with the reason
   // the model gives and what to change.
-  const bool uncertainty = uncertainty_requested(task, /*warn=*/true);
+  const bool uncertainty = uncertainty_requested(context);
   if (uncertainty && !tr.model->has_covariance())
     throw std::runtime_error(
         "tadah train --uncertainty" + uncertainty_source(task) +
@@ -259,8 +246,12 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
         "TrainEngine requires INIT2B or/and INITMB parameters to be set");
   }
   // Only the SVD fit computes the weight covariance, and M_KRR
-  // implementation 2 none: refused before any training or output.
-  const bool uncertainty = uncertainty_requested(task, /*warn=*/false);
+  // implementation 2 none: refused before any training or output. The
+  // request is the run's own (run() applies the same rule, and warns).
+  core::Context run_config = context;
+  (void)ignore_configuration_potential_lines(run_config,
+                                             task.getKeyProvenance(), "train");
+  const bool uncertainty = uncertainty_requested(run_config);
   if (uncertainty && context.get<int>("OALGO") != 3)
     throw std::runtime_error(
         "tadah train --uncertainty" + uncertainty_source(task) +

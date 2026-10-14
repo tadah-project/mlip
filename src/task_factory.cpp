@@ -1,6 +1,6 @@
 #include <tadah/mlip/task_factory.h>
 #include <tadah/mlip/mlip_user_config_parser.h>
-#include <tadah/mlip/training_record.h>  // potential_dataset_key_line
+#include <tadah/mlip/training_record.h>  // potential_line_not_read
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -152,11 +152,12 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     else baseContextConfigFile = userFile;
     // parser returns a vec of <taskName, Context> so we can keep multiple
     // tasks of the same type. A potential's lines of the keys that prepared
-    // the training data of its own fit are not read, wherever the file and
-    // its CONFIG includes put it (MK's decision of 2026-10-14, option 2):
-    // every other line, and the command line, is the run's.
+    // the training data of its own fit, and its UNCERTAINTY line, are not
+    // read, wherever the file and its CONFIG includes put it (MK's decision
+    // of 2026-10-14, option 2): every other line, and the command line, is
+    // the run's.
     configVec = parser_->parse(userFile, /*mergeFlag=*/true,
-                               potential_dataset_key_line, skippedVec);
+                               potential_line_not_read, skippedVec);
     hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
   }
 

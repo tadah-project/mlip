@@ -198,12 +198,17 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
      << "# validation data the loss is measured on. See the Tadah docs (HPO).\n";
   // EMBF0 ZERO (DM_REAM default; an absent key reads as ZERO): F(0) = 0, so
   // with the refit pot's BIAS false the model has no per-atom constant.
+  // <config> is the refit potential (it has WEIGHTS), whose ESHIFT_ATOM and
+  // ESHIFT_DBATOM lines a run does not read (potential_line_not_read): the
+  // run's own toggle derives the shift; an ESHIFT line of <config> is read.
   if (tadah::models::context_has_ream(pot) &&
       tadah::models::stored_embf0(pot).value_or(
           tadah::models::EmbF0Mode::Zero) == tadah::models::EmbF0Mode::Zero)
     os << "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no\n"
        << "# per-atom energy constant. For absolute reference energies (e.g.\n"
-       << "# DFT totals) add ESHIFT_ATOM, ESHIFT_DBATOM or ESHIFT to <config>.\n"
+       << "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an\n"
+       << "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not\n"
+       << "# read), or add an ESHIFT line to <config>.\n"
        << "# (Not BIAS true: its intercept columns, one per ATOM species,\n"
        << "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM\n"
        << "# FIXWEIGHT lines below index.)\n";

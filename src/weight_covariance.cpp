@@ -35,9 +35,9 @@ std::string why_no_covariance(const tadah::core::Context &c) {
            tadah::models::krr_implementation2_without_covariance() +
            ", and retrain the potential.";
   return kNoCovariance + ". An OALGO 3 fit writes them, so the potential is "
-         "one of these: a potential of Tadah! 1.0.0 to 1.5.0 or a 1.6.0 "
-         "development build, whose SIGMA is ignored (it was computed with a "
-         "transposed formula): retrain it; the potential of a fit with no "
+         "one of these: a potential of an earlier version of Tadah!, whose "
+         "SIGMA is ignored (it was computed with a transposed formula): "
+         "retrain it; the potential of a fit with no "
          "more observations (rows with a non-zero weight) than effective "
          "weights, whose noise variance is undefined (`tadah train` warned "
          "'no weight covariance'): add data with a non-zero weight and "

@@ -10,6 +10,7 @@
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/refit_modes.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -1008,4 +1009,46 @@ TEST_CASE_METHOD(PTFixture,
           EXIT_SUCCESS);
   CHECK(slurp("o.hpotarget") == slurp("s.hpotarget"));
   CHECK(slurp("o.hpotarget").find("# RHOFORM") == std::string::npos);
+}
+
+/* Pins: the hpotarget of a DM_REAM potential under EMBF0 ZERO (the
+ * make_ream_blip5_pot("SIGNED") potential, which has no EMBF0 line and so
+ * reads as ZERO) carries the note, as consecutive lines,
+ *   "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no"
+ *   "# per-atom energy constant. For absolute reference energies (e.g."
+ *   "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an"
+ *   "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not"
+ *   "# read), or add an ESHIFT line to <config>."
+ *   "# (Not BIAS true: its intercept columns, one per ATOM species,"
+ *   "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM"
+ *   "# FIXWEIGHT lines below index.)"
+ * and no line advising to add ESHIFT_ATOM or ESHIFT_DBATOM to <config>:
+ * <config> is the refit potential plus a DBFILE line, a file with WEIGHTS,
+ * whose toggle lines tadah hpo does not read.
+ * Before the fix: the note said "# DFT totals) add ESHIFT_ATOM,
+ * ESHIFT_DBATOM or ESHIFT to <config>.", advice that applies no shift (the
+ * toggle line is not read, with a WARNING saying so): the sequence is not
+ * found. */
+TEST_CASE_METHOD(PTFixture,
+                 "write_hpotarget: the EMBF0 ZERO note says how tadah hpo "
+                 "derives a per-atom reference energy",
+                 "[retarget][embf0]") {
+  ScopedTempDir tmp;
+  write_hpotarget("z.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
+  const std::vector<std::string> lines = read_lines("z.hpotarget");
+  const std::vector<std::string> note = {
+      "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no",
+      "# per-atom energy constant. For absolute reference energies (e.g.",
+      "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an",
+      "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not",
+      "# read), or add an ESHIFT line to <config>.",
+      "# (Not BIAS true: its intercept columns, one per ATOM species,",
+      "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM",
+      "# FIXWEIGHT lines below index.)"};
+  INFO("z.hpotarget:\n" << slurp("z.hpotarget"));
+  const auto first = std::find(lines.begin(), lines.end(), note[0]);
+  REQUIRE(first != lines.end());
+  REQUIRE(static_cast<std::size_t>(lines.end() - first) >= note.size());
+  CHECK(std::vector<std::string>(first, first + note.size()) == note);
+  CHECK(slurp("z.hpotarget").find("add ESHIFT_ATOM") == std::string::npos);
 }

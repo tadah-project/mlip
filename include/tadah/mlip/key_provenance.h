@@ -64,7 +64,8 @@ public:
    * @param skipped      The key lines of the file, or of a file it
    *                     includes, that its parse did not read (TaskFactory:
    *                     a potential's lines of the keys that prepared the
-   *                     training data, potential_dataset_key_line).
+   *                     training data and its UNCERTAINTY line,
+   *                     potential_line_not_read).
    */
   KeyProvenance(core::Context command_line, core::Context file,
                 std::string file_path, KeyOrigin::Kind file_kind,
@@ -86,10 +87,10 @@ public:
   KeyOrigin::Kind file_kind() const { return file_kind_; }
   /** The key lines of the file, or of a file it includes with CONFIG, that
    *  its parse did not read, in the order read: for a task of TaskFactory,
-   *  a potential's lines of the keys that prepared the training data
-   *  (potential_dataset_key_line, training_record.h). Their keys are not
-   *  in the task's context unless another line or the command line gives
-   *  them. */
+   *  a potential's lines of the keys that prepared the training data and
+   *  its UNCERTAINTY line (potential_line_not_read, training_record.h).
+   *  Their keys are not in the task's context unless another line or the
+   *  command line gives them. */
   const std::vector<core::SkippedKeyLine> &skipped_key_lines() const {
     return skipped_;
   }
