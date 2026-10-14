@@ -32,7 +32,9 @@ namespace engines {
 namespace {
 // EMBF0 ZERO pins the DM_REAM isolated-atom energy at 0. Without BIAS or an
 // ESHIFT the model then has no free per-atom constant, which matters when the
-// reference energies are absolute (e.g. DFT totals).
+// reference energies are absolute (e.g. DFT totals). The toggles are named
+// with their options: a retrain's configuration is a potential, whose own
+// toggle line is not read (potential_line_not_read).
 void hint_embf0_reference(const Trainer &tr,
                           const LoadTransformReport &report) {
   if (!tr.DCS.dmb) return;
@@ -43,11 +45,12 @@ void hint_embf0_reference(const Trainer &tr,
       tadah::core::LogLevel::WARNING,
       "HINT: EMBF0 ZERO fixes the DM_REAM isolated-atom energy at 0 and the "
       "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
-      "reference energies are absolute (e.g. DFT totals), set ESHIFT_ATOM, "
-      "ESHIFT_DBATOM or ESHIFT (compatible with EAMFAST), or BIAS true "
-      "(disables EAMFAST; its intercept columns, one per ATOM species, "
-      "precede the descriptor weights, so FIXINDEX/FIXWEIGHT indices "
-      "shift).");
+      "reference energies are absolute (e.g. DFT totals), set ESHIFT or give "
+      "the run ESHIFT_ATOM or ESHIFT_DBATOM (--eshift-atom, --eshift-dbatom: "
+      "a potential's own line of them is not read), all compatible with "
+      "EAMFAST, or BIAS true (disables EAMFAST; its intercept columns, one "
+      "per ATOM species, precede the descriptor weights, so "
+      "FIXINDEX/FIXWEIGHT indices shift).");
 }
 // A WNOISE without E (a fit without energies of a non-zero weight): every
 // --error prediction has an energy, so predict --error refuses the

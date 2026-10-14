@@ -119,7 +119,10 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *     the lines are those of KeyProvenance::skipped_key_lines() whose key
  *     the run does not give itself (no line of its configuration or task
  *     file, no command-line option: a key it gives applies instead, and is
- *     not named), named per potential file:
+ *     not named) -- nor, for a line of ESHIFT_ATOM or ESHIFT_DBATOM, the
+ *     other toggle set true (the two choose one thing, the source of the
+ *     shift, and exclude each other: the run's own toggle is its choice) --
+ *     named per potential file:
  *     "tadah train: the configuration file pot.train is a potential (it
  *     has WEIGHTS): its EFILTER 5 6 and WDBFILE 1 1 prepared the training
  *     data of the fit that wrote it, not of this run, and are ignored

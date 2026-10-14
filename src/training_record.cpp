@@ -236,23 +236,52 @@ std::string article(const std::string &key) {
              : "a";
 }
 
+/* Whether the run gives @p key itself: on the command line, or on a line
+ * of the task file or of a configuration file without WEIGHTS (the parse
+ * reads no line of a potential's keys of keys_not_read_from_a_potential(),
+ * so such an origin is the run's own). */
+bool run_gives(const KeyProvenance &provenance, const std::string &key) {
+  const KeyOrigin::Kind kind = provenance.origin(key).kind;
+  return kind == KeyOrigin::Kind::CommandLine ||
+         kind == KeyOrigin::Kind::ConfigFile ||
+         kind == KeyOrigin::Kind::TaskFile;
+}
+
+/* The ESHIFT toggle that is not @p key, "" when @p key is not a toggle. */
+std::string other_toggle(const std::string &key) {
+  if (key == "ESHIFT_ATOM") return "ESHIFT_DBATOM";
+  if (key == "ESHIFT_DBATOM") return "ESHIFT_ATOM";
+  return "";
+}
+
 /* The notice of the lines TaskFactory's parse did not read
  * (KeyProvenance::skipped_key_lines), per potential file: those of the
- * keys @p taken (the task's) only; @p eshift as for ignored_keys_notice. */
+ * keys @p taken (the task's) only, the run's configuration @p config (the
+ * parse's result: the run's own values); @p eshift as for
+ * ignored_keys_notice. A line is left out when the run gives its key
+ * itself (the run's own value applies), and a toggle's line also when the
+ * run sets the other toggle true: the two choose one thing, the source of
+ * the shift, and exclude each other, so the run's own toggle is its
+ * choice (and adding the potential's would set both: "Multiple ESHIFT
+ * sources set"). */
 std::string skipped_lines_notice(const KeyProvenance &provenance,
+                                 const core::Context &config,
                                  const std::string &who,
                                  const std::set<std::string> &taken,
                                  bool eshift) {
+  const auto run_sets_true = [&](const std::string &key) {
+    return run_gives(provenance, key) && config.has_stored(key) &&
+           config.get<bool>(key);
+  };
   // The potential files, in the order their lines were read, and their
   // keys the run does not give itself, not at their default.
   std::vector<std::string> sources;
   std::vector<std::vector<IgnoredKey>> per_source;
   for (const core::SkippedKeyLine &line : provenance.skipped_key_lines()) {
-    const KeyOrigin::Kind kind = provenance.origin(line.key).kind;
-    if (kind == KeyOrigin::Kind::CommandLine ||
-        kind == KeyOrigin::Kind::ConfigFile ||
-        kind == KeyOrigin::Kind::TaskFile)
-      continue;  // the run's own value applies
+    if (run_gives(provenance, line.key)) continue;  // the run's own applies
+    const std::string other = other_toggle(line.key);
+    if (!other.empty() && run_sets_true(other))
+      continue;  // the run's own toggle chose the source of the shift
     auto at = std::find(sources.begin(), sources.end(), line.source);
     if (at == sources.end()) {
       sources.push_back(line.source);
@@ -325,7 +354,7 @@ std::string ignore_configuration_potential_lines(
   const std::set<std::string> taken = task_keys(task);
   const bool eshift = config.has_stored("ESHIFT") && config.size("ESHIFT") > 0;
   if (provenance)
-    return skipped_lines_notice(*provenance, who, taken, eshift);
+    return skipped_lines_notice(*provenance, config, who, taken, eshift);
   // A context a program built: one file.
   std::set<std::string> keys;
   for (const auto &kv : config.storage_snapshot())
