@@ -248,6 +248,21 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(vo.F.zero_ref);
 }
 
+/* Pins: refit --edit takes NUMERIC from its own run only: an input with no
+ * NUMERIC is edited exactly, with no NUMERIC message; an input potential with
+ * the key line "NUMERIC 12" (a 1.5.0 tadah hpo best_pot.tadah has one) is
+ * edited exactly too -- its NUMERIC, a setting of the run that wrote it, is
+ * not read: no NUMERIC message, the first weight of out12.tadah is 1/3
+ * read back exactly -- and the line moves into the edit's training record
+ * ("edited by tadah refit --edit from in12.tadah", "NUMERIC 12"), no key
+ * line of it; an input with "VERBOSE 2" is edited at the run's log level
+ * (WARNING: no INFO line "added a basis function" is printed) and its
+ * record lists "VERBOSE 2"; a NUMERIC set for the run applies.
+ * Before the fix: the input's NUMERIC 12 was honoured ("NUMERIC 12 (carried
+ * by in12.tadah)", the edit written with 12 significant digits, the first
+ * weight 0.333333333333; this case pinned that), and the input's VERBOSE 2
+ * set the log level to INFO for the edit (its INFO lines printed): the
+ * NUMERIC and INFO checks fail. */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit: NUMERIC is honoured and the messages say when "
                  "the edit is not exact", "[refit][edit][numeric][lossless]") {
@@ -305,13 +320,10 @@ TEST_CASE_METHOD(PTFixture,
     const Context out = tadah::core::CoreUserConfigParser().parse("out.tadah");
     CHECK(out.get<double>("WEIGHTS", 0) == 1.0 / 3.0);
   }
-  SECTION("NUMERIC 12 carried by the input: honoured, warning names it") {
+  SECTION("NUMERIC 12 of the input: not read, the edit is exact") {
     const std::string log = run_edit("in12.tadah", "out12.tadah", nullptr);
-    CHECK(log.find("NUMERIC 12 (carried by in12.tadah)") != std::string::npos);
-    CHECK(log.find("Delete the NUMERIC line from in12.tadah") !=
-          std::string::npos);
-    CHECK(log.find("only up to that rounding") != std::string::npos);
-    CHECK(first_weight("out12.tadah") == "0.333333333333");
+    CHECK(log.find("NUMERIC") == std::string::npos);
+    CHECK(std::stod(first_weight("out12.tadah")) == 1.0 / 3.0);
     // NUMERIC is no key line of the edit; the input's NUMERIC 12 key line
     // (as a 1.5.0 tadah hpo potential has it) is listed in the edit's
     // training record, after the line naming the input (owner decision,
@@ -322,6 +334,20 @@ TEST_CASE_METHOD(PTFixture,
     CHECK(record_lines("out12.tadah") ==
           std::vector<std::string>{
               "edited by tadah refit --edit from in12.tadah", "NUMERIC 12"});
+  }
+  SECTION("VERBOSE 2 of the input: the edit runs at its own level") {
+    {
+      std::ofstream app("in_v2.tadah");
+      std::ifstream src("in.tadah");
+      app << src.rdbuf() << "VERBOSE 2\n";
+    }
+    const std::string log = run_edit("in_v2.tadah", "out_v2.tadah", nullptr);
+    CHECK(log.find("added a basis function") == std::string::npos);
+    CHECK(log.find("INFO:") == std::string::npos);
+    CHECK(key_line("out_v2.tadah", "VERBOSE").empty());
+    CHECK(record_lines("out_v2.tadah") ==
+          std::vector<std::string>{
+              "edited by tadah refit --edit from in_v2.tadah", "VERBOSE 2"});
   }
   SECTION("a NUMERIC set for the run wins over the input's") {
     const std::string log = run_edit("in12.tadah", "out18.tadah", "18");

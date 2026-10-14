@@ -614,3 +614,109 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
     CHECK(p.file_kind() == Kind::ConfigFile);
   }
 }
+
+/* Pins: the one list of the keys whose lines a run does not read from a
+ * potential, keys_not_read_from_a_potential(), is the training record's,
+ * training_record_keys(), without DBFILE (which a retrain adds to a copy of
+ * the potential), in its order: the keys that prepared the training data,
+ * VALIDATION, HPOTARGET, UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE, AUDIT,
+ * AUDIT_SAMPLE and HEALTH_LOG; potential_line_not_read selects each of the
+ * eight run settings in a file whose key lines give WEIGHTS and none in a
+ * file without WEIGHTS, DBFILE in neither; and TaskFactory's parse of
+ * `tadah train -c pot` (pot: ATOM, WEIGHTS and the eight lines of the run
+ * that wrote it, VERBOSE 2 among them) stores none of the eight but the
+ * blueprint defaults it adds itself (VERBOSE 1 and OUTFILE pot.tadah,
+ * origin Default), lists the eight lines in skipped_key_lines() (lines 3 to
+ * 10) and leaves the log level at WARNING, where tadah starts a run (the
+ * default it adds sets none); a configuration file that includes pot with
+ * CONFIG keeps its own VERBOSE 0 and OUTFILE mine.tadah (origin
+ * ConfigFile).
+ * Before the fix: the list had the dataset keys and UNCERTAINTY only, the
+ * rule selected none of the eight, and the parse read them as the run's
+ * (VERBOSE 2 set the level to INFO, OUTFILE old.tadah was the task's, no
+ * line skipped; the included potential's VERBOSE 2 replaced the outer
+ * file's VERBOSE 0 before it): the list, rule, has_stored, skipped and
+ * level checks fail. */
+TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
+          "settings, and lists them",
+          "[key_provenance][task_factory][training_record][run_settings]") {
+  using tadah::mlip::keys_not_read_from_a_potential;
+  using tadah::mlip::potential_line_not_read;
+  using tadah::mlip::training_record_keys;
+  const std::vector<std::string> expected = {
+      "EFILTER",     "FFILTER",      "ESHIFT_ATOM", "ESHIFT_DBATOM",
+      "EWEIGHT_TEMP", "ZERO_COM_FORCE", "WDBFILE",   "WDBFILE_AUTO",
+      "VALIDATION",  "HPOTARGET",    "UNCERTAINTY", "VERBOSE",
+      "NUMERIC",     "OUTFILE",      "AUDIT",       "AUDIT_SAMPLE",
+      "HEALTH_LOG"};
+  CHECK(keys_not_read_from_a_potential() == expected);
+  std::vector<std::string> record = training_record_keys();
+  REQUIRE_FALSE(record.empty());
+  CHECK(record.front() == "DBFILE");
+  record.erase(record.begin());
+  CHECK(keys_not_read_from_a_potential() == record);
+
+  const std::set<std::string> pot_keys = {"ATOM", "WEIGHTS"};
+  const char *const settings[] = {"VALIDATION", "HPOTARGET", "VERBOSE",
+                                  "NUMERIC",    "OUTFILE",   "AUDIT",
+                                  "AUDIT_SAMPLE", "HEALTH_LOG"};
+  for (const char *k : settings) {
+    INFO("key " << k);
+    CHECK(potential_line_not_read(pot_keys, k));
+    CHECK_FALSE(potential_line_not_read({"ATOM", "DBFILE"}, k));
+  }
+  CHECK_FALSE(potential_line_not_read(pot_keys, "DBFILE"));
+
+  const LogLevelGuard level;
+  const ProvFile pot("rs_pot", "ATOM Ta\n"                // 1
+                               "WEIGHTS 0.25 -0.5\n"      // 2
+                               "VALIDATION config.val\n"  // 3
+                               "HPOTARGET config.hpo\n"   // 4
+                               "VERBOSE 2\n"              // 5
+                               "NUMERIC 12\n"             // 6
+                               "OUTFILE old.tadah\n"      // 7
+                               "AUDIT warn\n"             // 8
+                               "AUDIT_SAMPLE 2\n"         // 9
+                               "HEALTH_LOG full\n");      // 10
+  SECTION("the potential as the configuration file") {
+    tadah::core::Logger::instance().setLogLevel(
+        tadah::core::LogLevel::WARNING);  // where tadah starts a run
+    const auto tasks = make_tasks("TRAIN", {{"config", {pot.path}}});
+    REQUIRE(tasks.size() == 1);
+    CHECK(tadah::core::Logger::instance().getLogLevel() ==
+          tadah::core::LogLevel::WARNING);
+    const Context &c = tasks[0].getContext();
+    for (const char *k : {"VALIDATION", "HPOTARGET", "NUMERIC", "AUDIT",
+                          "AUDIT_SAMPLE", "HEALTH_LOG"}) {
+      INFO("key " << k);
+      CHECK_FALSE(c.has_stored(k));
+    }
+    CHECK(c("VERBOSE") == std::vector<std::string>{"1"});
+    CHECK(c("OUTFILE") == std::vector<std::string>{"pot.tadah"});
+    const KeyProvenance &p = provenance_of(tasks[0]);
+    CHECK(p.origin("VERBOSE").kind == Kind::Default);
+    CHECK(p.origin("OUTFILE").kind == Kind::Default);
+    CHECK(skipped_of(p) ==
+          std::vector<std::string>{
+              pot.path + ":3 VALIDATION config.val",
+              pot.path + ":4 HPOTARGET config.hpo", pot.path + ":5 VERBOSE 2",
+              pot.path + ":6 NUMERIC 12", pot.path + ":7 OUTFILE old.tadah",
+              pot.path + ":8 AUDIT warn", pot.path + ":9 AUDIT_SAMPLE 2",
+              pot.path + ":10 HEALTH_LOG full"});
+  }
+  SECTION("a configuration file that includes the potential") {
+    const ProvFile outer("rs_outer", "VERBOSE 0\n"
+                                     "CONFIG " + pot.path + "\n"
+                                     "OUTFILE mine.tadah\n");
+    const auto tasks = make_tasks("TRAIN", {{"config", {outer.path}}});
+    REQUIRE(tasks.size() == 1);
+    const Context &c = tasks[0].getContext();
+    CHECK(c("VERBOSE") == std::vector<std::string>{"0"});
+    CHECK(c("OUTFILE") == std::vector<std::string>{"mine.tadah"});
+    CHECK_FALSE(c.has_stored("NUMERIC"));
+    const KeyProvenance &p = provenance_of(tasks[0]);
+    CHECK(p.origin("VERBOSE").kind == Kind::ConfigFile);
+    CHECK(p.origin("OUTFILE").kind == Kind::ConfigFile);
+    CHECK(skipped_of(p).size() == 8u);
+  }
+}

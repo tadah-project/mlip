@@ -685,6 +685,10 @@ TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
  *     or EWEIGHT_TEMP line in a configuration file that includes the
  *     potential with CONFIG, to apply one to this run. The ESHIFT of the
  *     configuration, ..." (no WDBFILE: the run gives its own).
+ * Each -c run of a file with WEIGHTS gives its output file with -o (the
+ * potN.tadah named): a potential's OUTFILE line is not read (before the fix
+ * that reads no run setting of a potential the copies had an OUTFILE line
+ * instead).
  * Before the fix: the potential's keys applied to the retrain: EFILTER 5 6
  * dropped every structure, the WARNING "Multiple ESHIFT sources set;
  * precedence: explicit > ATOM > DBATOM." was printed, and TrainEngine::run
@@ -767,7 +771,8 @@ TEST_CASE("TrainEngine::run of a potential used as the configuration "
   SECTION("WDBFILE on the command line") {
     write_pot_file("retrain.train", older);
     const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
-                                       {"wdbfile", {"2"}}});
+                                       {"wdbfile", {"2"}},
+                                       {"outfile", {"pot2.tadah"}}});
     const std::string what = train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
@@ -1039,6 +1044,10 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
  *     pot6.tadah's training record is "DBFILE db.tadah", "OUTFILE
  *     pot6.tadah" (the potential's lines are not the run's), and no WARNING
  *     (the two are at their defaults).
+ * Each -c run of a file with WEIGHTS gives its output file with -o (the
+ * potN.tadah named): a potential's OUTFILE line is not read (before the fix
+ * that reads no run setting of a potential the copies had an OUTFILE line
+ * instead).
  * Before the fix: a toggle of a potential without an ESHIFT line was read:
  * the first two sections derived ESHIFT from the retrain's data (pot2.tadah
  * and pot7.tadah have an ESHIFT line) and printed no WARNING about it; the
@@ -1109,9 +1118,9 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
     Context copy = potential_context("M_BLR BF_Linear");
     copy.add("ESHIFT_DBATOM", "true");
     copy.add("DBFILE", "db.tadah");
-    copy.add("OUTFILE", "pot7.tadah");
     write_pot_file("copy.train", copy);
-    const CommandInput input("TRAIN", {{"config", {"copy.train"}}});
+    const CommandInput input("TRAIN", {{"config", {"copy.train"}},
+                                       {"outfile", {"pot7.tadah"}}});
     const std::string what = train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
@@ -1135,11 +1144,11 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
     write_pot_file("rederive.tadah", base);
     Context re = base;
     re.add("DBFILE", "db.tadah");
-    re.add("OUTFILE", "pot4.tadah");
     write_pot_file("rederive.train", re);
     {
       const CommandInput input("TRAIN", {{"config", {"rederive.train"}},
-                                         {"eshift_dbatom", {"true"}}});
+                                         {"eshift_dbatom", {"true"}},
+                                         {"outfile", {"pot4.tadah"}}});
       const std::string what = train_input_error(input, printed);
       INFO("--eshift-dbatom: thrown: " << what << "\nprinted:\n" << printed);
       REQUIRE(what.empty());
@@ -1165,10 +1174,10 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
       Context copy = potential_context("M_BLR BF_Linear");
       copy.add("ESHIFT_ATOM", "true");
       copy.add("DBFILE", "db.tadah");
-      copy.add("OUTFILE", "pot9.tadah");
       write_pot_file("atom.train", copy);
       const CommandInput input("TRAIN", {{"config", {"atom.train"}},
-                                         {"eshift_dbatom", {"true"}}});
+                                         {"eshift_dbatom", {"true"}},
+                                         {"outfile", {"pot9.tadah"}}});
       const std::string what = train_input_error(input, printed);
       INFO("atom.train --eshift-dbatom: thrown: " << what << "\nprinted:\n"
                                                   << printed);
@@ -1185,10 +1194,10 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
       Context copy = potential_context("M_BLR BF_Linear");
       copy.add("ESHIFT_DBATOM", "true");
       copy.add("DBFILE", "db.tadah");
-      copy.add("OUTFILE", "pot10.tadah");
       write_pot_file("dbatom.train", copy);
       const CommandInput input("TRAIN", {{"config", {"dbatom.train"}},
-                                         {"eshift_atom", {"true"}}});
+                                         {"eshift_atom", {"true"}},
+                                         {"outfile", {"pot10.tadah"}}});
       const std::string what = train_input_error(input, printed);
       INFO("dbatom.train --eshift-atom: thrown: " << what << "\nprinted:\n"
                                                   << printed);
@@ -1232,9 +1241,9 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
     old.add("ESHIFT_ATOM", "false");
     old.add("ESHIFT_DBATOM", "false");
     old.add("DBFILE", "db.tadah");
-    old.add("OUTFILE", "pot6.tadah");
     write_pot_file("old.train", old);
-    const CommandInput input("TRAIN", {{"config", {"old.train"}}});
+    const CommandInput input("TRAIN", {{"config", {"old.train"}},
+                                       {"outfile", {"pot6.tadah"}}});
     const std::string what = train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
@@ -1302,8 +1311,8 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  *     weights.tadah, pot3.tadah's record is "DBFILE db.tadah",
  *     "UNCERTAINTY true", "OUTFILE pot3.tadah", and no WARNING calls a file
  *     a potential;
- *   - `tadah train -c retrain.train`, retrain.train being old3.tadah with
- *     "UNCERTAINTY true", "DBFILE db.tadah" and "OUTFILE pot4.tadah": no
+ *   - `tadah train -c retrain.train -o pot4.tadah`, retrain.train being
+ *     old3.tadah with "UNCERTAINTY true" and "DBFILE db.tadah": no
  *     weights.tadah, the record "DBFILE db.tadah", "OUTFILE pot4.tadah",
  *     the WARNING "tadah train: the configuration file retrain.train is a
  *     potential (it has WEIGHTS): its UNCERTAINTY true asked the run that
@@ -1315,9 +1324,9 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  *     the record "DBFILE db.tadah", "UNCERTAINTY true", "OUTFILE
  *     pot5.tadah", no WARNING (a pin: --uncertainty was a request before
  *     the fix too);
- *   - `tadah train -c both.train`, both.train being the potential (OALGO
- *     1) with "EFILTER -9 9", "UNCERTAINTY true", "DBFILE db.tadah" and
- *     "OUTFILE pot7.tadah": no weights.tadah, the record "DBFILE db.tadah",
+ *   - `tadah train -c both.train -o pot7.tadah`, both.train being the
+ *     potential (OALGO 1) with "EFILTER -9 9", "UNCERTAINTY true" and
+ *     "DBFILE db.tadah": no weights.tadah, the record "DBFILE db.tadah",
  *     "OUTFILE pot7.tadah", and the one WARNING "tadah train: the
  *     configuration file both.train is a potential (it has WEIGHTS): its
  *     EFILTER -9 9 prepared the training data of the fit that wrote it, not
@@ -1336,6 +1345,10 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  *     on the command line to apply it to this run (...)." printed once
  *     (validate applies the rule to a copy of the configuration and prints
  *     nothing).
+ * Each -c run of a file with WEIGHTS gives its output file with -o (the
+ * potN.tadah named): a potential's OUTFILE line is not read (before the fix
+ * that reads no run setting of a potential the copies had an OUTFILE line
+ * instead).
  * Before the fix: UNCERTAINTY was a request unless it came from the
  * configuration file of a context with WEIGHTS: the task file's section was
  * refused by validate ("tadah train --uncertainty (UNCERTAINTY true: task
@@ -1412,10 +1425,10 @@ TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
     Context copy = potential_with_oalgo("M_BLR BF_Linear", 3);
     copy.add("UNCERTAINTY", "true");
     copy.add("DBFILE", "db.tadah");
-    copy.add("OUTFILE", "pot4.tadah");
     write_pot_file("retrain.train", copy);
     {
-      const CommandInput input("TRAIN", {{"config", {"retrain.train"}}});
+      const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
+                                         {"outfile", {"pot4.tadah"}}});
       const std::string what = validated_train_input_error(input, printed);
       INFO("thrown: " << what << "\nprinted:\n" << printed);
       REQUIRE(what.empty());
@@ -1453,9 +1466,9 @@ TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
     copy.add("EFILTER", "-9 9");
     copy.add("UNCERTAINTY", "true");
     copy.add("DBFILE", "db.tadah");
-    copy.add("OUTFILE", "pot7.tadah");
     write_pot_file("both.train", copy);
-    const CommandInput input("TRAIN", {{"config", {"both.train"}}});
+    const CommandInput input("TRAIN", {{"config", {"both.train"}},
+                                       {"outfile", {"pot7.tadah"}}});
     const std::string what = validated_train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
@@ -1546,4 +1559,271 @@ TEST_CASE("TrainEngine::run refuses a DBFILE that lists one dataset twice, "
         "records the DBFILE it was trained on: remove that line from a "
         "potential used as the training configuration.");
   CHECK_FALSE(fs::exists("pot.tadah"));
+}
+
+/* ---- the run settings of a potential (completing MK's rule of
+ * 2026-10-14): VALIDATION, HPOTARGET, VERBOSE, NUMERIC, OUTFILE, AUDIT,
+ * AUDIT_SAMPLE and HEALTH_LOG were settings of the run that wrote it; a
+ * potential of an earlier version has them as key lines (a 1.5.x
+ * best_pot.tadah has VALIDATION, HPOTARGET, VERBOSE and NUMERIC). */
+
+namespace {
+
+/* The key lines of the run settings of a potential of an earlier version,
+ * one of each. */
+const char *const kOldRunSettings = "VALIDATION config.val\n"
+                                    "HPOTARGET config.hpo\n"
+                                    "VERBOSE 2\n"
+                                    "NUMERIC 12\n"
+                                    "OUTFILE old_out.tadah\n"
+                                    "AUDIT warn\n"
+                                    "AUDIT_SAMPLE 2\n"
+                                    "HEALTH_LOG full\n";
+
+/* The Ta pair potential (WEIGHTS) with DBFILE db.tadah, written to @p path,
+ * followed by @p extra (key lines). */
+void write_retrain_copy(const fs::path &path, const std::string &extra) {
+  Context c = potential_context("M_BLR BF_Linear");
+  c.add("DBFILE", "db.tadah");
+  write_pot_file(path, c);
+  std::ofstream(path, std::ios::app) << extra;
+}
+
+}  // namespace
+
+/* Pins: a retrain reads none of a potential's run settings; the run's own
+ * apply and are recorded (TaskFactory, then TrainEngine::run, the Logger at
+ * WARNING before each run). db.tadah is one dataset; old.train is the Ta
+ * pair potential with "DBFILE db.tadah" and the key lines VALIDATION
+ * config.val, HPOTARGET config.hpo, VERBOSE 2, NUMERIC 12, OUTFILE
+ * old_out.tadah, AUDIT warn, AUDIT_SAMPLE 2, HEALTH_LOG full; base.train the
+ * same without the eight lines:
+ *   - `tadah train -c old.train`: writes pot.tadah (the default OUTFILE),
+ *     not old_out.tadah; the Logger is at WARNING after the run (where it
+ *     was: the run gives no VERBOSE) and printed no INFO line; no NUMERIC
+ *     WARNING
+ *     ("NUMERIC 12 limits"); pot.tadah's WEIGHTS are those of `tadah train
+ *     -c base.train -o base.tadah`, token for token (18 digits); its record
+ *     is "DBFILE db.tadah" alone; and the one WARNING is "tadah train: the
+ *     configuration file old.train is a potential (it has WEIGHTS): its
+ *     VERBOSE 2, NUMERIC 12, OUTFILE old_out.tadah, AUDIT warn and
+ *     AUDIT_SAMPLE 2 were settings of the run that wrote it, not of this
+ *     run, and are ignored (tadah keeps such keys in a potential's training
+ *     record, not as key lines). Give --verbose or --outfile on the command
+ *     line, or a VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a
+ *     configuration file that includes the potential with CONFIG, to apply
+ *     one to this run (the Training page of the documentation, Retraining
+ *     from a potential)." -- VALIDATION, HPOTARGET and HEALTH_LOG, which
+ *     tadah train does not read, are not named;
+ *   - `tadah train -c outer.train`, outer.train being "VERBOSE 1", "CONFIG
+ *     old.train", "NUMERIC 17", "OUTFILE mine.tadah", "AUDIT_SAMPLE 3": the
+ *     run's own apply (mine.tadah, the Logger at WARNING after the run) and
+ *     are recorded ("DBFILE db.tadah", "VERBOSE 1", "NUMERIC 17", "OUTFILE
+ *     mine.tadah", "AUDIT_SAMPLE 3"); the potential's AUDIT warn alone is
+ *     named: "tadah train: old.train, which the configuration file
+ *     outer.train includes with CONFIG, is a potential (it has WEIGHTS):
+ *     its AUDIT warn was a setting of the run that wrote it, not of this
+ *     run, and is ignored (...). Give an AUDIT line in outer.train to apply
+ *     it to this run (...).";
+ *   - `tadah train -c v1.train`, the potential with the "VERBOSE 1" every
+ *     1.5.x best_pot.tadah of a run at the default verbosity has: no
+ *     WARNING calls it a potential (VERBOSE 1 is the default) and the
+ *     record is "DBFILE db.tadah" (the line is not the run's).
+ * Before the fix: the eight lines were read as the run's: old.train wrote
+ * old_out.tadah at VERBOSE 2 (the REQUIRE on pot.tadah stops the first
+ * section); outer.train's run wrote old_out.tadah too (the CONFIG line put
+ * the potential's OUTFILE first and the run's own line was appended after
+ * it), its VERBOSE 1 replaced by the potential's VERBOSE 2 (INFO lines
+ * printed; the REQUIRE on mine.tadah stops the section); and v1.train's
+ * record listed "VERBOSE 1" as the run's: the record check fails. */
+TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
+          "apply",
+          "[train][potential_content][retrain][run_settings]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  auto &log = tadah::core::Logger::instance();
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  write_retrain_copy("old.train", kOldRunSettings);
+  std::string printed;
+  SECTION("the potential as the configuration") {
+    write_retrain_copy("base.train", "");
+    {
+      const CommandInput input("TRAIN", {{"config", {"base.train"}},
+                                         {"outfile", {"base.tadah"}}});
+      const std::string what = train_input_error(input, printed);
+      INFO("base.train: thrown: " << what << "\nprinted:\n" << printed);
+      REQUIRE(what.empty());
+    }
+    log.setLogLevel(tadah::core::LogLevel::WARNING);
+    const CommandInput input("TRAIN", {{"config", {"old.train"}}});
+    const std::string what = train_input_error(input, printed);
+    const auto level = log.getLogLevel();
+    log.setLogLevel(tadah::core::LogLevel::WARNING);
+    INFO("old.train: thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK_FALSE(fs::exists("old_out.tadah"));
+    REQUIRE(fs::exists("pot.tadah"));
+    INFO("pot.tadah:\n" << slurp("pot.tadah"));
+    CHECK(level == tadah::core::LogLevel::WARNING);
+    CHECK(printed.find("INFO:") == std::string::npos);
+    CHECK(printed.find("NUMERIC 12 limits") == std::string::npos);
+    REQUIRE(pot_line("pot.tadah", "WEIGHTS").size() == 2u);
+    CHECK(pot_line("pot.tadah", "WEIGHTS") ==
+          pot_line("base.tadah", "WEIGHTS"));
+    CHECK(read_record("pot.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah"});
+    const std::string warning =
+        "WARNING: tadah train: the configuration file old.train is a "
+        "potential (it has WEIGHTS): its VERBOSE 2, NUMERIC 12, OUTFILE "
+        "old_out.tadah, AUDIT warn and AUDIT_SAMPLE 2 were settings of the "
+        "run that wrote it, not of this run, and are ignored (tadah keeps "
+        "such keys in a potential's training record, not as key lines). "
+        "Give --verbose or --outfile on the command line, or a VERBOSE, "
+        "NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a configuration "
+        "file that includes the potential with CONFIG, to apply one to this "
+        "run (the Training page of the documentation, Retraining from a "
+        "potential).";
+    CHECK(printed.find(warning) != std::string::npos);
+    CHECK(printed.find("VALIDATION") == std::string::npos);
+    CHECK(printed.find("HPOTARGET") == std::string::npos);
+    CHECK(printed.find("HEALTH_LOG") == std::string::npos);
+  }
+  SECTION("the run's own in a file that includes the potential") {
+    std::ofstream("outer.train") << "VERBOSE 1\n"
+                                    "CONFIG old.train\n"
+                                    "NUMERIC 17\n"
+                                    "OUTFILE mine.tadah\n"
+                                    "AUDIT_SAMPLE 3\n";
+    const CommandInput input("TRAIN", {{"config", {"outer.train"}}});
+    const std::string what = train_input_error(input, printed);
+    const auto level = log.getLogLevel();
+    log.setLogLevel(tadah::core::LogLevel::WARNING);
+    INFO("outer.train: thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    REQUIRE(fs::exists("mine.tadah"));
+    INFO("mine.tadah:\n" << slurp("mine.tadah"));
+    CHECK(level == tadah::core::LogLevel::WARNING);
+    CHECK(read_record("mine.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "VERBOSE 1",
+                                   "NUMERIC 17", "OUTFILE mine.tadah",
+                                   "AUDIT_SAMPLE 3"});
+    CHECK(printed.find(
+              "WARNING: tadah train: old.train, which the configuration file "
+              "outer.train includes with CONFIG, is a potential (it has "
+              "WEIGHTS): its AUDIT warn was a setting of the run that wrote "
+              "it, not of this run, and is ignored (tadah keeps such keys in "
+              "a potential's training record, not as key lines). Give an "
+              "AUDIT line in outer.train to apply it to this run (the "
+              "Training page of the documentation, Retraining from a "
+              "potential).") != std::string::npos);
+  }
+  SECTION("an earlier version's VERBOSE at its default") {
+    write_retrain_copy("v1.train", "VERBOSE 1\n");
+    const CommandInput input("TRAIN", {{"config", {"v1.train"}},
+                                       {"outfile", {"v1.tadah"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("v1.train: thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK(printed.find("is a potential") == std::string::npos);
+    CHECK(read_record("v1.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE v1.tadah"});
+  }
+}
+
+/* Pins: the WARNING naming a potential's ESHIFT toggle words its advice by
+ * where the run's ESHIFT came from (TaskFactory, then TrainEngine::run;
+ * copy.train is the Ta pair potential with "ESHIFT_DBATOM true" and
+ * "DBFILE db.tadah", no ESHIFT line; copy2.train the same with "ESHIFT
+ * 0.02"):
+ *   - `tadah train -c copy.train --eshift 0.01 -o e1.tadah`: e1.tadah's
+ *     ESHIFT is 0.01 and the WARNING names ESHIFT_DBATOM true and ends
+ *     "Give --eshift-dbatom on the command line, or an ESHIFT_DBATOM line in
+ *     a configuration file that includes the potential with CONFIG, to
+ *     apply it to this run. The ESHIFT given with --eshift, the energy
+ *     reference of the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to
+ *     derive ESHIFT from the data of this run, leave out --eshift and give
+ *     the run one of them (the Training page of the documentation,
+ *     Retraining from a potential)." (there is no ESHIFT line to delete);
+ *   - `tadah train -c copy2.train --eshift 0.01 -o e2.tadah`: ESHIFT 0.01
+ *     and the sentence "... to derive ESHIFT from the data of this run,
+ *     leave out --eshift, delete the ESHIFT line and give the run one of
+ *     them (...)": both set the shift;
+ *   - `tadah train -c copy2.train -o e3.tadah`: ESHIFT 0.02 and the sentence
+ *     as it was: "The ESHIFT of the configuration, the energy reference of
+ *     the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT
+ *     from the data of this run, delete the ESHIFT line and give the run one
+ *     of them (...)" (a pin).
+ * Before the fix: both --eshift runs said "The ESHIFT of the configuration
+ * ... delete the ESHIFT line and give the run one of them", though copy.train
+ * has no ESHIFT line and --eshift would still set the shift: the first two
+ * CHECKs of the sentence fail. */
+TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
+          "the run's ESHIFT by where it came from",
+          "[train][potential_content][retrain][dataset_keys][eshift]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  write_retrain_copy("copy.train", "ESHIFT_DBATOM true\n");
+  write_retrain_copy("copy2.train", "ESHIFT 0.02\nESHIFT_DBATOM true\n");
+  const std::string named =
+      "its ESHIFT_DBATOM true prepared the training data of the fit that "
+      "wrote it, not of this run, and is ignored (tadah keeps such keys in a "
+      "potential's training record, not as key lines). Give --eshift-dbatom "
+      "on the command line, or an ESHIFT_DBATOM line in a configuration file "
+      "that includes the potential with CONFIG, to apply it to this run. ";
+  const std::string tail =
+      " (the Training page of the documentation, Retraining from a "
+      "potential).";
+  std::string printed;
+  SECTION("--eshift, no ESHIFT line") {
+    const CommandInput input("TRAIN", {{"config", {"copy.train"}},
+                                       {"eshift", {"0.01"}},
+                                       {"outfile", {"e1.tadah"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    REQUIRE(pot_line("e1.tadah", "ESHIFT").size() == 1u);
+    CHECK(std::stod(pot_line("e1.tadah", "ESHIFT")[0]) == 0.01);
+    CHECK(printed.find(named +
+                       "The ESHIFT given with --eshift, the energy reference "
+                       "of the model, overrules ESHIFT_ATOM and "
+                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
+                       "run, leave out --eshift and give the run one of them" +
+                       tail) != std::string::npos);
+  }
+  SECTION("--eshift over an ESHIFT line") {
+    const CommandInput input("TRAIN", {{"config", {"copy2.train"}},
+                                       {"eshift", {"0.01"}},
+                                       {"outfile", {"e2.tadah"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    REQUIRE(pot_line("e2.tadah", "ESHIFT").size() == 1u);
+    CHECK(std::stod(pot_line("e2.tadah", "ESHIFT")[0]) == 0.01);
+    CHECK(printed.find(named +
+                       "The ESHIFT given with --eshift, the energy reference "
+                       "of the model, overrules ESHIFT_ATOM and "
+                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
+                       "run, leave out --eshift, delete the ESHIFT line and "
+                       "give the run one of them" +
+                       tail) != std::string::npos);
+  }
+  SECTION("an ESHIFT line") {
+    const CommandInput input("TRAIN", {{"config", {"copy2.train"}},
+                                       {"outfile", {"e3.tadah"}}});
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    REQUIRE(pot_line("e3.tadah", "ESHIFT").size() == 1u);
+    CHECK(std::stod(pot_line("e3.tadah", "ESHIFT")[0]) == 0.02);
+    CHECK(printed.find(named +
+                       "The ESHIFT of the configuration, the energy reference "
+                       "of the model, overrules ESHIFT_ATOM and "
+                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
+                       "run, delete the ESHIFT line and give the run one of "
+                       "them" +
+                       tail) != std::string::npos);
+  }
 }
