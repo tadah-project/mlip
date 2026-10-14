@@ -12,53 +12,34 @@
 namespace tadah {
 namespace mlip {
 
-/** What a potential records: the model's settings and its fit, not the
- *  data it was fitted to. Removes DBFILE, the training datasets, from the
- *  potential context @p pot; every other key stays (ALPHA and BETA, the
- *  evidence approximation's starting guesses or the values a LAMBDA -1 fit
- *  found, WDBFILE, the weight of each dataset, ...). M_BLR::get_param_file
- *  and M_KRR::get_param_file (the potential of a fit: tadah train, tadah
- *  hpo) and TrainEngine::dumpPotFile (the files of tadah train, tadah
- *  refit and refit --edit, whose potential is a copy of its input's) call
- *  it, so no potential tadah writes has DBFILE, whichever the model. A
- *  potential retrains as a configuration with the DBFILE of the retrain
- *  added (`tadah train -c pot.tadah` plus a DBFILE line), and its own
- *  dataset is never listed twice. */
+/** The model's settings and its fit, not the data it was fitted to:
+ *  removes DBFILE, the training datasets, from the potential context
+ *  @p pot; every other key stays (ALPHA and BETA, the evidence
+ *  approximation's starting guesses or the values a LAMBDA -1 fit found,
+ *  WDBFILE, the weight of each dataset, ...). M_BLR::get_param_file and
+ *  M_KRR::get_param_file (the potential of a fit: tadah train, tadah hpo)
+ *  call it, so the context of a fitted potential -- the potential of a
+ *  tadah hpo evaluation, which its PC_LAMMPS scripts run -- has no DBFILE,
+ *  whichever the model. No potential file has a DBFILE key line either
+ *  (write_potential_with_record, training_record.h): the DBFILE of the run
+ *  that wrote it is in its training record, a comment block no reader of a
+ *  potential reads. A potential retrains as a configuration with the
+ *  DBFILE of the retrain added (`tadah train -c pot.tadah` plus a DBFILE
+ *  line), and its own dataset is never listed twice. */
 void remove_training_datasets(tadah::core::Context &pot);
-
-/** What a potential records: the model's settings and its fit, not these
- *  inputs of the run that wrote it. Removes from the potential context
- *  @p pot VERBOSE (the verbosity of the tool), NUMERIC and OUTFILE (the
- *  writer's settings; the digits are resolved before), AUDIT, AUDIT_SAMPLE
- *  and HEALTH_LOG (the run's diagnostics), HPOTARGET and VALIDATION (the
- *  target and validation files of a tadah hpo run, which the run's journal
- *  names), and UNCERTAINTY (the train task's switch for weights.tadah,
- *  which M_BLR's and M_KRR's get_param_file leave out too: refit --edit
- *  writes a copy of its input's context, which a potential of tadah 1.5.x
- *  or a 1.6.0 development build gives an UNCERTAINTY line); every other
- *  key stays. TrainEngine::dumpPotFile (tadah
- *  train, tadah refit and refit --edit) and Tadah.HPO's
- *  PotHeaderWriter::write_potential_body (best_pot.tadah, the durable best,
- *  the BDUMP and DUMP archives) call it on the context they write, so no
- *  potential file tadah writes has these keys; the context of a tadah hpo
- *  evaluation keeps them, and the models the run builds from it (the
- *  PC_LAMMPS potential among them) take the run's VERBOSE. A potential that
- *  has them (written before) still loads. tadah predict and pair_style
- *  tadah read none of them except VERBOSE: parsing a VERBOSE line sets the
- *  Tadah log level of the process (core::Context::add), and the models
- *  built from the file take its verbosity. */
-void remove_run_inputs(tadah::core::Context &pot);
 
 /** The advice the refusals of a configuration without a training DBFILE
  *  end with (require_training_datasets: tadah train; classify_weight_source
- *  and the refusal of a run without ATOM: tadah hpo): "A potential records
- *  no DBFILE (no potential tadah writes has one): to train from one, add a
- *  DBFILE line to a copy of it; a potential of tadah refit or refit --edit
- *  also pins every weight with its FIXINDEX and FIXWEIGHT lines, the seed
- *  of a tadah hpo coefficient search, so delete them from the copy for the
- *  fit to change the weights (the Training page of the documentation,
- *  Retraining from a potential)." A fit whose FIXINDEX pins every weight
- *  changes none (all_weights_pinned_warning, weight_provisioning.h). */
+ *  and the refusal of a run without ATOM: tadah hpo): "A potential has no
+ *  DBFILE line (no potential tadah writes one; the DBFILE of the run that
+ *  wrote it is in its training record, a comment block tadah does not
+ *  read): to train from one, add a DBFILE line to a copy of it; a potential
+ *  of tadah refit or refit --edit also pins every weight with its FIXINDEX
+ *  and FIXWEIGHT lines, the seed of a tadah hpo coefficient search, so
+ *  delete them from the copy for the fit to change the weights (the
+ *  Training page of the documentation, Retraining from a potential)." A fit
+ *  whose FIXINDEX pins every weight changes none
+ *  (all_weights_pinned_warning, weight_provisioning.h). */
 std::string potential_has_no_datasets_advice();
 
 /** Refuses a training configuration without DBFILE (tadah train, which

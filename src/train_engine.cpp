@@ -20,6 +20,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/training_datasets.h>
+#include <tadah/mlip/training_record.h>
 #include <tadah/mlip/weight_covariance.h>
 #include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/m_krr_core.h>
@@ -108,6 +109,13 @@ std::string uncertainty_source(const tadah::mlip::Task &task) {
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
+  // The training record of this run (the potential's comment block): the
+  // keys a potential does not use, as the configuration and the command
+  // line gave them, taken before anything inserts a default. A retrain's
+  // configuration is a potential, whose own record is a comment never
+  // read: the record is the retrain's.
+  const TrainingRecord record =
+      training_record(task.getContext(), task.getKeyProvenance());
   // The datasets to fit: a configuration without DBFILE (a potential, which
   // records none, given as it is) is refused, saying how to retrain, before
   // anything is read; one dataset listed twice would be fitted twice.
@@ -218,7 +226,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::core::Context param_file = tr.model->get_param_file();
   stamp_into_param_file(param_file, report);
   warn_noise_without_energies(param_file);
-  dumpPotFile(context.get<std::string>("OUTFILE"), param_file);
+  dumpPotFile(context.get<std::string>("OUTFILE"), param_file, record);
 
   // The weights and their standard deviations (weights.tadah)
   if (uncertainty) {
@@ -254,28 +262,31 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
 
 
 // helper function to dump the potential file
-void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &context) {
+void TrainEngine::dumpPotFile(const std::string &outfile,
+                              const core::Context &context,
+                              const TrainingRecord &record) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Saving parameters to file: " + outfile);
   // NUMERIC = significant digits of the numbers written below; absent ->
-  // 18 (exact round trip). Looked up without default insertion, and never
-  // written into the potential itself (write_potential skips it).
+  // 18 (exact round trip). Looked up without default insertion, and never a
+  // key line of the potential (write_potential skips it; the training
+  // record lists the run's NUMERIC).
   const core::PotDigits pd = core::resolve_pot_digits(context);
   const std::string digits_warning = core::pot_digits_warning(pd);
   if (!digits_warning.empty())
     core::Logger::instance().log(core::LogLevel::WARNING,
         outfile + ": " + digits_warning);
   core::Context modContext = context;
-  // A potential records the model's settings and its fit: neither the
-  // inputs of the run (VERBOSE, NUMERIC, OUTFILE, the AUDIT and HEALTH_LOG
+  // The key lines are the model's settings and its fit: neither the inputs
+  // of the run (VERBOSE, NUMERIC, OUTFILE, the AUDIT and HEALTH_LOG
   // diagnostics, a tadah hpo run's HPOTARGET and VALIDATION, which a
   // best_pot.tadah used as the configuration had, the train task's
-  // UNCERTAINTY, which a 1.5.x potential edited by refit --edit has) nor its
-  // training data
-  // (a refit --edit potential is a copy of its input's context, which may
-  // be an M_BLR potential written with its DBFILE).
-  remove_run_inputs(modContext);
-  remove_training_datasets(modContext);
+  // UNCERTAINTY, which a 1.5.x potential edited by refit --edit has) nor
+  // its training data (a refit --edit potential is a copy of its input's
+  // context, which may be an M_BLR potential written with its DBFILE):
+  // write_potential_with_record leaves out the keys of
+  // training_record_keys() and writes the record of the run above the key
+  // lines instead.
   tadah::models::normalise_embf0_key(modContext);
   // A DM_REAM potential must declare its density form (absent -> throws
   // before the file is opened, so nothing is written); the key is
@@ -287,7 +298,7 @@ void TrainEngine::dumpPotFile(const std::string &outfile, const core::Context &c
   if (!outstream.is_open())
     throw std::runtime_error("Cannot open the potential file " + outfile +
                              " for writing.");
-  modContext.write_potential(outstream, pd.digits);
+  write_potential_with_record(outstream, modContext, record, pd.digits);
   outstream << std::endl;
   outstream.close();
   if (!outstream)

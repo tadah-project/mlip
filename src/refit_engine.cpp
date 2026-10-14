@@ -4,6 +4,7 @@
 #include <tadah/mlip/engines/refit_log.h>
 #include <tadah/mlip/engines/refit_modes.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/training_record.h>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -324,6 +325,12 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     return run_refit_retarget(c, task.getKeyProvenance());
   if (c.contains("EDIT") && c.size("EDIT") > 0)
     return run_refit_edit(c, task.getKeyProvenance());
+
+  // The training record of pot.tadah: the keys a potential does not use,
+  // as the refit's configuration and command line gave them (its OUTFILE,
+  // VERBOSE, NUMERIC), taken before anything inserts a default.
+  const TrainingRecord record =
+      training_record(task.getContext(), task.getKeyProvenance());
 
   // ---- RHOFORM: the density form fitted, self-tested and written ----
   // Mandatory in the configuration (no default, never inserted); checked
@@ -674,7 +681,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     pot.remove("NUMERIC");
     pot.add("NUMERIC", *numeric);
   }
-  TrainEngine::dumpPotFile(out_pot, pot);
+  TrainEngine::dumpPotFile(out_pot, pot, record);
 
   // ---- write the round-trip setfl from the NATIVE fitted functions ----
   eam.write_setfl(setfl_out, out_grid,
