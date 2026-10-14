@@ -288,12 +288,18 @@ TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
  * before the potential-content fix records the DBFILE it was trained on),
  * and keeps the settings of the fit beside it: ALPHA 0.25, BETA 4 and
  * WDBFILE 1 0.5 (the per-dataset weights, which a retrain listing the same
- * datasets in the same order reads as the first fit did).
+ * datasets in the same order reads as the first fit did). Given no
+ * training record (the record is its caller's, from the run's
+ * configuration: TrainEngine::run, RefitEngine::run, run_refit_edit), it
+ * writes none, so db1.tadah appears nowhere in the file.
  * Before the fix: the DBFILE line was written (`DBFILE db1.tadah
  * db2.tadah`), so the potential, used as a training configuration with the
- * DBFILE lines of the retrain added, listed the datasets twice. */
-TEST_CASE("dumpPotFile writes no DBFILE: a potential records no training "
-          "data",
+ * DBFILE lines of the retrain added, listed the datasets twice.
+ * Before the training record (MK's decision of 2026-10-14): passes as well
+ * (a pin); the case was named "dumpPotFile writes no DBFILE: a potential
+ * records no training data". */
+TEST_CASE("dumpPotFile writes no DBFILE line: the DBFILE of its context is "
+          "no key of the potential",
           "[train][dumpPotFile][potential_content]") {
   DumpTempDir tmp;
   Context pot = make_pot();
@@ -316,18 +322,25 @@ TEST_CASE("dumpPotFile writes no DBFILE: a potential records no training "
 }
 
 /* Pins: dumpPotFile (tadah train, tadah refit and refit --edit) writes no
- * input of the run that made its context, whatever the context holds: no
- * HPOTARGET and no VALIDATION line (the target and validation files of a
- * tadah hpo run, which a best_pot.tadah used as a training configuration
- * carried: HPOTARGET config.hpo, VALIDATION config.val), and no VERBOSE
- * (1), NUMERIC (18), OUTFILE (out.tadah), AUDIT (warn), AUDIT_SAMPLE (64)
- * or HEALTH_LOG (full) line; the model's settings and fit beside them stay
- * (MODEL M_BLR BF_Linear, RCUT2B, the six WEIGHTS).
+ * key line of an input of the run that made its context, whatever the
+ * context holds: no HPOTARGET and no VALIDATION line (the target and
+ * validation files of a tadah hpo run, which a best_pot.tadah used as a
+ * training configuration carried: HPOTARGET config.hpo, VALIDATION
+ * config.val), and no VERBOSE (1), NUMERIC (18), OUTFILE (out.tadah),
+ * AUDIT (warn), AUDIT_SAMPLE (64) or HEALTH_LOG (full) line; the model's
+ * settings and fit beside them stay (MODEL M_BLR BF_Linear, RCUT2B, the
+ * six WEIGHTS). Given no training record (its caller's, from the run's
+ * configuration), it writes none: config.hpo and config.val appear
+ * nowhere in the file.
  * Before the fix: the HPOTARGET, VALIDATION and AUDIT_SAMPLE lines were
  * written ("HPOTARGET config.hpo", "VALIDATION config.val", "AUDIT_SAMPLE
- * 64"); the other five were not (a pin of those). */
-TEST_CASE("dumpPotFile writes no input of the run: HPOTARGET, VALIDATION, "
-          "VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE, HEALTH_LOG",
+ * 64"); the other five were not (a pin of those).
+ * Before the training record (MK's decision of 2026-10-14): passes as well
+ * (a pin); the case was named "dumpPotFile writes no input of the run:
+ * ...". */
+TEST_CASE("dumpPotFile writes no key line of the run's inputs: HPOTARGET, "
+          "VALIDATION, VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE, "
+          "HEALTH_LOG",
           "[train][dumpPotFile][potential_content]") {
   DumpTempDir tmp;
   auto &log = tadah::core::Logger::instance();
@@ -363,7 +376,8 @@ TEST_CASE("dumpPotFile writes no input of the run: HPOTARGET, VALIDATION, "
 
 /* Pins: dumpPotFile writes no UNCERTAINTY line, whatever its context holds:
  * UNCERTAINTY is a switch of the train task (weights.tadah), not part of
- * the model, and a potential does not record it. A context with
+ * the model, and no key of a potential (a potential's training record, a
+ * comment block, lists the value of the run that wrote it). A context with
  * UNCERTAINTY true -- refit --edit copies its input's context, and a
  * potential of tadah 1.5.x or a 1.6.0 development build has the line --
  * is written without it; the model's settings and fit stay (MODEL, the six
@@ -372,9 +386,12 @@ TEST_CASE("dumpPotFile writes no input of the run: HPOTARGET, VALIDATION, "
  * and M_KRR's get_param_file removed, so refit --edit of such a potential
  * wrote "UNCERTAINTY true" (lanes/D/tmp/review/training-verify/unc: edited
  * twice, the line kept; the retrain then warned that 1.5.x and development
- * builds wrote it). */
-TEST_CASE("dumpPotFile writes no UNCERTAINTY: a potential does not record "
-          "the switch of the run",
+ * builds wrote it).
+ * Before the training record (MK's decision of 2026-10-14): passes as well
+ * (a pin); the case was named "dumpPotFile writes no UNCERTAINTY: a
+ * potential does not record the switch of the run". */
+TEST_CASE("dumpPotFile writes no UNCERTAINTY line: the switch of the run "
+          "is no key of the potential",
           "[train][dumpPotFile][potential_content][uncertainty]") {
   DumpTempDir tmp;
   Context pot = make_pot();

@@ -17,6 +17,7 @@
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/training_record.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
@@ -152,6 +153,30 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
 
   core::CoreUserConfigParser parser;
   Context pot = parser.parse(in_pot);
+  // The edit fits nothing: its weights are the input's, edited, so the
+  // record of the fit that produced them -- the input's training record
+  // and, for a potential an earlier version wrote, the keys of the record
+  // among its key lines (its DBFILE, UNCERTAINTY, VERBOSE, ...: they are
+  // not written as key lines, so they move into the record rather than
+  // being dropped) -- is the edit's, after a line naming the input. Taken
+  // before the run's NUMERIC replaces the input's below. The edit's own
+  // inputs (-o, -v, NUMERIC) are not added.
+  TrainingRecord record;
+  record.lines.push_back("edited by tadah refit --edit from " + in_pot);
+  {
+    TrainingRecord input;
+    try {
+      input = read_training_record(in_pot);
+    } catch (const std::exception &e) {
+      throw std::runtime_error(std::string("tadah refit --edit: ") +
+                               e.what());
+    }
+    record.lines.insert(record.lines.end(), input.lines.begin(),
+                        input.lines.end());
+    const TrainingRecord keys = training_record(pot);
+    record.lines.insert(record.lines.end(), keys.lines.begin(),
+                        keys.lines.end());
+  }
   // EMBF0 and RHOFORM are properties of the potential (its weights and
   // amplitudes were fitted in them): a value in the configuration that
   // differs from the potential's is a conflict, as in tadah predict. Only
@@ -304,7 +329,7 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
       pick_output(c, provenance, "HPOFILEOUT", "refit_edited.hpotarget");
   guard_not_input(out_pot, in_pot,
                   "pass -o <name> to choose a different output name");
-  TrainEngine::dumpPotFile(out_pot, out);
+  TrainEngine::dumpPotFile(out_pot, out, record);
   write_hpotarget(out_hpo, out, pct);
   log_info("tadah refit --edit: wrote pot=" + out_pot +
            " hpotarget=" + out_hpo);

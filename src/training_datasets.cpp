@@ -38,21 +38,17 @@ void remove_training_datasets(tadah::core::Context &pot) {
   if (pot.has_stored("DBFILE")) pot.remove("DBFILE");
 }
 
-void remove_run_inputs(tadah::core::Context &pot) {
-  for (const char *key : {"VERBOSE", "NUMERIC", "OUTFILE", "AUDIT",
-                          "AUDIT_SAMPLE", "HEALTH_LOG", "HPOTARGET",
-                          "VALIDATION", "UNCERTAINTY"})
-    if (pot.has_stored(key)) pot.remove(key);
-}
-
 std::string potential_has_no_datasets_advice() {
-  return "A potential records no DBFILE (no potential tadah writes has "
-         "one): to train from one, add a DBFILE line to a copy of it; a "
-         "potential of tadah refit or refit --edit also pins every weight "
-         "with its FIXINDEX and FIXWEIGHT lines, the seed of a tadah hpo "
-         "coefficient search, so delete them from the copy for the fit to "
-         "change the weights (the Training page of the documentation, "
-         "Retraining from a potential).";
+  return "A potential has no DBFILE line (no potential tadah writes one; "
+         "its training record, the comment block above its key lines, lists "
+         "the datasets its weights were fitted to in a '# DBFILE' line when "
+         "there were any: a refit has none, and a potential of an earlier "
+         "version has no record): to train from one, add a DBFILE line to a "
+         "copy of it; a potential of tadah refit or refit --edit also pins "
+         "every weight with its FIXINDEX and FIXWEIGHT lines, the seed of a "
+         "tadah hpo coefficient search, so delete them from the copy for "
+         "the fit to change the weights (the Training page of the "
+         "documentation, Retraining from a potential).";
 }
 
 void require_training_datasets(const tadah::core::Context &ctx) {
