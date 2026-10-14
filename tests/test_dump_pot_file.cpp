@@ -286,18 +286,23 @@ TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
  * (whose potential is a copy of its input's context), writes no DBFILE line
  * for a context with DBFILE db1.tadah db2.tadah (an M_BLR potential written
  * before the potential-content fix records the DBFILE it was trained on),
- * and keeps the settings of the fit beside it: ALPHA 0.25, BETA 4 and
- * WDBFILE 1 0.5 (the per-dataset weights, which a retrain listing the same
- * datasets in the same order reads as the first fit did). Given no
- * training record (the record is its caller's, from the run's
- * configuration: TrainEngine::run, RefitEngine::run, run_refit_edit), it
- * writes none, so db1.tadah appears nowhere in the file.
+ * and keeps the settings of the fit beside it: ALPHA 0.25 and BETA 4; no
+ * WDBFILE line either for its WDBFILE 1 0.5, the per-dataset weights of the
+ * training data, which a potential keeps in its training record only (MK's
+ * decision of 2026-10-14, option 2). Given no training record (the record
+ * is its caller's, from the run's configuration: TrainEngine::run,
+ * RefitEngine::run, run_refit_edit), it writes none, so db1.tadah appears
+ * nowhere in the file.
  * Before the fix: the DBFILE line was written (`DBFILE db1.tadah
  * db2.tadah`), so the potential, used as a training configuration with the
  * DBFILE lines of the retrain added, listed the datasets twice.
  * Before the training record (MK's decision of 2026-10-14): passes as well
  * (a pin); the case was named "dumpPotFile writes no DBFILE: a potential
- * records no training data". */
+ * records no training data".
+ * Before the dataset keys moved into the record (MK, 2026-10-14, option 2):
+ * the case pinned the key line "WDBFILE 1 0.5" (a retrain listing the same
+ * datasets in the same order read it as the first fit did): its WDBFILE
+ * check fails. */
 TEST_CASE("dumpPotFile writes no DBFILE line: the DBFILE of its context is "
           "no key of the potential",
           "[train][dumpPotFile][potential_content]") {
@@ -317,8 +322,7 @@ TEST_CASE("dumpPotFile writes no DBFILE line: the DBFILE of its context is "
   CHECK(text.find("db1.tadah") == std::string::npos);
   CHECK(line_tokens(text, "ALPHA") == std::vector<std::string>{"0.25"});
   CHECK(line_tokens(text, "BETA") == std::vector<std::string>{"4"});
-  CHECK(line_tokens(text, "WDBFILE") ==
-        std::vector<std::string>{"1", "0.5"});
+  CHECK(line_tokens(text, "WDBFILE").empty());
 }
 
 /* Pins: dumpPotFile (tadah train, tadah refit and refit --edit) writes no

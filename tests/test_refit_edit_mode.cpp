@@ -150,8 +150,11 @@ double curve_maxdiff(const potedit::CurveView &a, const potedit::CurveView &b,
   return mx;
 }
 
-/* The opening and end lines of the training record of a potential file. */
-const std::string kRecordOpen = "# --- training record (not read by tadah) ---";
+/* The opening and end lines of the training record of a potential file.
+ * The opening line said "(not read by tadah)" before MK's decision of
+ * 2026-10-14 (option 2): refit --edit reads the block, to copy it. */
+const std::string kRecordOpen =
+    "# --- training record (no key is read from it) ---";
 const std::string kRecordEnd = "# --- end of training record ---";
 
 std::string slurp_file(const std::string &f) {
@@ -1255,7 +1258,10 @@ TEST_CASE_METHOD(PTFixture,
  * the record is no key of the edit.
  * Before the fix: neither edit had a training record (no potential had
  * one; the decision taken in MK's absence on 2026-10-12, replaced by MK's
- * of 2026-10-14). */
+ * of 2026-10-14).
+ * Before the opening line was corrected (MK, 2026-10-14, option 2): the
+ * edit's opening line was "# --- training record (not read by tadah) ---"
+ * and in.tadah's (this one) was not recognised: refused at its end line. */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit copies the training record of its input and "
                  "names the input",
@@ -1299,9 +1305,21 @@ TEST_CASE_METHOD(PTFixture,
  * "UNCERTAINTY true" and "VERBOSE 0" appended, old.tadah) writes the edit
  * without those key lines and with the training record "edited by tadah
  * refit --edit from old.tadah", "DBFILE old.db", "UNCERTAINTY true",
- * "VERBOSE 0": the input's keys are kept in the record, not dropped.
+ * "VERBOSE 0": the input's keys are kept in the record, not dropped. The
+ * same for the keys that prepared the training data, which such a
+ * potential has as key lines (old_data.tadah: "ESHIFT_ATOM true", "EFILTER
+ * -9 -1", "WDBFILE 1 0.5" and "ZERO_COM_FORCE false" appended, as tadah
+ * 1.5.x wrote every key of its training configuration): the edit's record
+ * is "edited by tadah refit --edit from old_data.tadah", "EFILTER -9 -1",
+ * "ESHIFT_ATOM true", "ZERO_COM_FORCE false", "WDBFILE 1 0.5" (the order of
+ * the record), with no key line of them.
  * Before the fix: the key lines were dropped (a pin of that part) and the
- * edit had no record. */
+ * edit had no record.
+ * Before the dataset keys moved into the record (MK, 2026-10-14, option 2):
+ * old_data.tadah's edit kept the four as key lines and its record had the
+ * "edited by" line alone; the opening line of both records read
+ * "(not read by tadah)", so record_lines found none (the record checks fail
+ * for old_out.tadah too). */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit of an older potential keeps its DBFILE, "
                  "UNCERTAINTY and VERBOSE in the edit's training record",
@@ -1322,6 +1340,21 @@ TEST_CASE_METHOD(PTFixture,
   for (const char *key : {"DBFILE", "UNCERTAINTY", "VERBOSE"}) {
     INFO("key " << key);
     CHECK(key_line("old_out.tadah", key).empty());
+  }
+  std::ofstream("old_data.tadah") << slurp_file("plain.tadah")
+                                  << "ESHIFT_ATOM true\nEFILTER -9 -1\n"
+                                     "WDBFILE 1 0.5\nZERO_COM_FORCE false\n";
+  run_edit_capturing(edit_of("old_data.tadah", "old_data_out.tadah"));
+  INFO("old_data_out.tadah:\n" << slurp_file("old_data_out.tadah"));
+  CHECK(record_lines("old_data_out.tadah") ==
+        std::vector<std::string>{
+            "edited by tadah refit --edit from old_data.tadah",
+            "EFILTER -9 -1", "ESHIFT_ATOM true", "ZERO_COM_FORCE false",
+            "WDBFILE 1 0.5"});
+  for (const char *key :
+       {"ESHIFT_ATOM", "EFILTER", "WDBFILE", "ZERO_COM_FORCE"}) {
+    INFO("key " << key);
+    CHECK(key_line("old_data_out.tadah", key).empty());
   }
 }
 
@@ -1348,6 +1381,12 @@ TEST_CASE_METHOD(PTFixture,
  *    the end line on line 2): "no_open.tadah: line 2 ends a training record
  *    ('<end line>') that no opening line ('<opening line>') opens: restore
  *    the opening line before the record, or delete the end line.";
+ *  - the opening line as it read before its correction (old_open.tadah:
+ *    "# --- training record (not read by tadah) ---", "# DBFILE x.db", the
+ *    end line on line 3): "old_open.tadah: line 3 ends a training record
+ *    ('<end line>') that no opening line ('<opening line>') opens: restore
+ *    the opening line before the record, or delete the end line." (no
+ *    shipped potential has that line);
  *  - a key line inside the block (keyline.tadah: line 2, "DBFILE x.db",
  *    between the opening line 1 and the end line 3): "keyline.tadah: line
  *    2, inside the training record that line 1 opens and line 3 ends, is
@@ -1365,7 +1404,13 @@ TEST_CASE_METHOD(PTFixture,
  * keyline.tadah's refusal named no end line ("that line 1 opens, is not a
  * comment").
  * Before the training record (MK's decision of 2026-10-14): every edit was
- * written (exit 0). */
+ * written (exit 0).
+ * Before the opening line was corrected (MK, 2026-10-14, option 2): every
+ * section fails. The opening line of the files of the case was no opening
+ * line: open.tadah and eof.tadah were edited (exit 0); twice_open.tadah,
+ * no_open.tadah and keyline.tadah were refused at their end line, quoting
+ * the opening line "(not read by tadah)", whose quote the checks do not
+ * hold; old_open.tadah, whose opening line it was, was edited. */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit refuses a training record without its end "
                  "line or with a key line inside",
@@ -1427,6 +1472,22 @@ TEST_CASE_METHOD(PTFixture,
                         " opens: restore the opening line before the record, "
                         "or delete the end line."));
     CHECK_FALSE(fs::exists("n.tadah"));
+  }
+  SECTION("the opening line before its correction") {
+    // "(not read by tadah)": no writer of this version writes it, and no
+    // shipped potential has it.
+    std::ofstream("old_open.tadah")
+        << "# --- training record (not read by tadah) ---\n"
+        << "# DBFILE x.db\n"
+        << kRecordEnd << "\n"
+        << plain;
+    CHECK_THROWS_WITH(
+        run_edit_capturing(edit_of("old_open.tadah", "oo.tadah")),
+        Catch::Contains("old_open.tadah: line 3 ends a training record " +
+                        end_quoted + " that no opening line " + open_quoted +
+                        " opens: restore the opening line before the record, "
+                        "or delete the end line."));
+    CHECK_FALSE(fs::exists("oo.tadah"));
   }
   SECTION("a key line inside the block") {
     std::ofstream("keyline.tadah") << kRecordOpen << "\nDBFILE x.db\n"
