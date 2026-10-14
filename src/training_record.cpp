@@ -11,6 +11,7 @@
 #include <fstream>
 #include <map>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -188,9 +189,22 @@ struct TaskKeys {
   std::map<std::string, std::vector<std::string>> defaults;  // the task's
 };
 
+/* The blueprint name of the task @p task as a user writes it: its command
+ * upper case, then its subcommand ("train" -> "TRAIN", "analysis
+ * check_bounds" -> "ANALYSIS.check_bounds", the name TaskFactory gives a
+ * TASK line). */
+std::string blueprint_task_name(const std::string &task) {
+  std::istringstream words(task);
+  std::string name, word;
+  while (words >> word)
+    name += name.empty() ? core::to_upper(word) : "." + word;
+  return name;
+}
+
 TaskKeys task_keys(const std::string &task) {
   const auto &tasks = core::BlueprintParser::getTasksMapRef();
-  const auto found = tasks.find(core::to_upper(task));
+  const std::string name = blueprint_task_name(task);
+  const auto found = tasks.find(name);
   if (found == tasks.end())
     throw std::invalid_argument(
         "ignore_configuration_potential_lines: no blueprint task '" + task +
@@ -205,7 +219,7 @@ TaskKeys task_keys(const std::string &task) {
   for (const auto &k : found->second.blueprintKeys) add(k);
   for (const auto &g : found->second.groups)
     for (const auto &k : g.blueprintKeys) add(k);
-  const std::string up = core::to_upper(task);
+  const std::string &up = name;
   if (up == "TRAIN" || up == "HPO")
     for (const char *key : {"NUMERIC", "AUDIT", "AUDIT_SAMPLE"})
       t.read.insert(key);
@@ -496,6 +510,61 @@ std::string ignore_configuration_potential_lines(
                " to this run";
       },
       eshift);
+}
+
+std::string missing_run_setting(const std::string &task,
+                                const std::string &key,
+                                const std::string &what,
+                                const KeyProvenance *provenance) {
+  const bool task_file =
+      provenance && provenance->file_kind() == KeyOrigin::Kind::TaskFile;
+  const std::string top = provenance ? provenance->file_path() : "";
+  // The potential files whose lines of the key the parse did not read, in
+  // the order read, with those lines ("HPOTARGET config.hpo").
+  std::vector<std::string> sources;
+  std::vector<std::vector<std::string>> lines;
+  if (provenance)
+    for (const core::SkippedKeyLine &line : provenance->skipped_key_lines()) {
+      if (line.key != key) continue;
+      auto at = std::find(sources.begin(), sources.end(), line.source);
+      if (at == sources.end()) {
+        sources.push_back(line.source);
+        lines.emplace_back();
+        at = sources.end() - 1;
+      }
+      lines[at - sources.begin()].push_back(key_values(line.key, line.values));
+    }
+  // A section that is a potential: its own line of the key is not read.
+  const bool section_is_potential =
+      task_file &&
+      std::find(sources.begin(), sources.end(), top) != sources.end();
+  const std::string a_line = article(key) + " " + key + " line";
+  std::string s = "tadah " + task + ": no " + key + ": name " + what + " with ";
+  if (task_file) {
+    s += section_is_potential
+             ? a_line + " above the first TASK line of the task file " + top +
+                   "."
+             : a_line + " in the TASK " + task + " section of the task file " +
+                   top + ", or above its first TASK line.";
+  } else {
+    const TaskKeys t = task_keys(task);
+    const std::string option = option_of(key);
+    if (t.options.count(key) && !option.empty()) s += option + ", or with ";
+    s += a_line + " in a configuration file without WEIGHTS.";
+  }
+  for (std::size_t f = 0; f < sources.size(); ++f) {
+    const std::string potential =
+        task_file && sources[f] == top
+            ? "The TASK " + task + " section of the task file " + top
+            : sources[f];
+    s += " " + potential + " is a potential (it has WEIGHTS): its " +
+         listed(lines[f], "and") +
+         (lines[f].size() == 1
+              ? " line was a setting of the run that wrote it and is not read."
+              : " lines were settings of the run that wrote it and are not "
+                "read.");
+  }
+  return s;
 }
 
 void remove_training_record_keys(core::Context &pot) {

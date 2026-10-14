@@ -8,6 +8,7 @@
 #include <tadah/core/logger.h>
 #include <tadah/mlip/check_bounds.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/training_record.h>
 
 namespace tadah {
 namespace mlip {
@@ -21,11 +22,19 @@ void AnalysisCheckBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
 
 int AnalysisCheckBoundsEngine::run(tadah::mlip::Task& task) {
   auto& taskCtx = task.getContext();
-  if (!taskCtx.contains("HPOTARGET")) {
-    throw std::runtime_error(
-        "analysis check_bounds: HPOTARGET is required (set HPOTARGET in "
-        "config or pass via the CLI).");
-  }
+  // A seed potential's lines of the keys of its training record but DBFILE
+  // were not read (TaskFactory's parse: potential_line_not_read; a tadah hpo
+  // seed of an earlier version has HPOTARGET, VERBOSE and NUMERIC lines):
+  // the WARNING names those check_bounds reads, HPOTARGET and VERBOSE.
+  const std::string ignored = ignore_configuration_potential_lines(
+      taskCtx, task.getKeyProvenance(), "analysis check_bounds");
+  if (!ignored.empty())
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::WARNING,
+                                        ignored);
+  if (!taskCtx.has_stored("HPOTARGET"))
+    throw std::runtime_error(missing_run_setting(
+        "analysis check_bounds", "HPOTARGET", "the hpotarget file",
+        task.getKeyProvenance()));
   if (!taskCtx.contains("DBFILE")) {
     throw std::runtime_error(
         "analysis check_bounds: at least one DBFILE must be configured.");

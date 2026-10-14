@@ -119,20 +119,24 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
 bool potential_line_not_read(const std::set<std::string> &file_keys,
                              const std::string &key);
 
-/** tadah train's and tadah hpo's notice for a configuration that is or
- *  includes a potential (TrainEngine::run, hpo_run_journaled), "" or a
+/** The notice of tadah train, tadah hpo and tadah analysis check_bounds for
+ *  a configuration that is or includes a potential (TrainEngine::run,
+ *  hpo_run_journaled, AnalysisCheckBoundsEngine::run), "" or a
  *  warning naming its lines of keys_not_read_from_a_potential() that were
  *  not read, are not at their default (the blueprint task's default when
  *  it has one, else the key's: a key at its default, such as the
  *  ZERO_COM_FORCE false every potential of an earlier tadah train has, or
  *  the VERBOSE 1 of a best_pot.tadah of an earlier tadah hpo, means the
  *  same read or not) and are keys the run of the blueprint task @p task
- *  ("train" or "hpo") reads: the task's keys and those of its input groups
- *  (tadah hpo's VALIDATION and HPOTARGET), and NUMERIC, AUDIT, AUDIT_SAMPLE
- *  and, for tadah hpo, HEALTH_LOG, which both read from any configuration
- *  (tadah hpo takes no UNCERTAINTY or OUTFILE, tadah train no VALIDATION,
- *  HPOTARGET or HEALTH_LOG: such a line is not named); with the values;
- *  "tadah <task>" begins it.
+ *  reads (the task as a user writes it, "train", "hpo" or "analysis
+ *  check_bounds": the blueprint task "ANALYSIS.check_bounds"): the task's
+ *  keys and those of its input groups (tadah hpo's VALIDATION and
+ *  HPOTARGET), and, for tadah train and tadah hpo, NUMERIC, AUDIT,
+ *  AUDIT_SAMPLE and, for tadah hpo, HEALTH_LOG, which both read from any
+ *  configuration (tadah hpo takes no UNCERTAINTY or OUTFILE, tadah train no
+ *  VALIDATION, HPOTARGET or HEALTH_LOG, check_bounds only HPOTARGET and
+ *  VERBOSE: such a line is not named); with the values; "tadah <task>"
+ *  begins it.
  *   - With @p provenance (a task of TaskFactory, whose parse did not read
  *     those lines: potential_line_not_read): @p config is left as it is;
  *     the lines are those of KeyProvenance::skipped_key_lines() whose key
@@ -192,6 +196,33 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
 std::string ignore_configuration_potential_lines(
     core::Context &config, const KeyProvenance *provenance,
     const std::string &task);
+
+/** The refusal of a run of @p task (as ignore_configuration_potential_lines
+ *  takes it: "hpo", "analysis check_bounds") whose configuration has no
+ *  @p key, a setting the run needs that names @p what ("the hpotarget
+ *  file"); "tadah <task>: no <key>: " begins it. It says where the run's own
+ *  goes, by where its keys came from (@p provenance; nullptr: a context a
+ *  program built):
+ *   - a task file (KeyOrigin::Kind::TaskFile; a run of a task file takes no
+ *     command-line option): "name the hpotarget file with an HPOTARGET line
+ *     in the TASK hpo section of the task file run.task, or above its first
+ *     TASK line." -- "with an HPOTARGET line above the first TASK line of
+ *     the task file run.task." when a line the parse did not read is the
+ *     task file's own (the section is a potential, whose lines of the key
+ *     are not read);
+ *   - otherwise (tadah hpo -c, which the CLI gives --hpotarget, a program's
+ *     context): "name the hpotarget file with --hpotarget, or with an
+ *     HPOTARGET line in a configuration file without WEIGHTS." (the option
+ *     only when the task has one).
+ *  Each potential file whose line of @p key its parse did not read
+ *  (KeyProvenance::skipped_key_lines) adds a sentence: "old.tadah is a
+ *  potential (it has WEIGHTS): its HPOTARGET config.hpo line was a setting
+ *  of the run that wrote it and is not read." ("The TASK hpo section of the
+ *  task file run.task is a potential ..." for the section). */
+std::string missing_run_setting(const std::string &task,
+                                const std::string &key,
+                                const std::string &what,
+                                const KeyProvenance *provenance);
 
 /** Removes every key of training_record_keys() from @p pot. */
 void remove_training_record_keys(core::Context &pot);
