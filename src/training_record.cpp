@@ -1,6 +1,7 @@
 #include <tadah/mlip/training_record.h>
 
 #include <tadah/core/blueprint_parser.h>
+#include <tadah/core/utils.h>
 #include <tadah/mlip/key_provenance.h>
 
 #include <algorithm>
@@ -23,6 +24,15 @@ const std::vector<std::string> &dataset_preparation_keys() {
   static const std::vector<std::string> keys = {
       "EFILTER",      "FFILTER",        "ESHIFT_ATOM", "ESHIFT_DBATOM",
       "EWEIGHT_TEMP", "ZERO_COM_FORCE", "WDBFILE",     "WDBFILE_AUTO"};
+  return keys;
+}
+
+const std::vector<std::string> &keys_not_read_from_a_potential() {
+  static const std::vector<std::string> keys = [] {
+    std::vector<std::string> k = dataset_preparation_keys();
+    k.push_back("UNCERTAINTY");
+    return k;
+  }();
   return keys;
 }
 
@@ -128,16 +138,11 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
          "predicted.";
 }
 
-bool potential_dataset_key_line(const std::set<std::string> &file_keys,
-                                const std::string &key) {
+bool potential_line_not_read(const std::set<std::string> &file_keys,
+                             const std::string &key) {
   if (!file_keys.count("WEIGHTS")) return false;
-  const std::vector<std::string> &data = dataset_preparation_keys();
-  if (std::find(data.begin(), data.end(), key) == data.end()) return false;
-  // Without ESHIFT a toggle is the only source of the shift: the way to
-  // derive it from the data of a retrain.
-  if (key == "ESHIFT_ATOM" || key == "ESHIFT_DBATOM")
-    return file_keys.count("ESHIFT") > 0;
-  return true;
+  const std::vector<std::string> &keys = keys_not_read_from_a_potential();
+  return std::find(keys.begin(), keys.end(), key) != keys.end();
 }
 
 namespace {
@@ -148,41 +153,69 @@ struct IgnoredKey {
   std::vector<std::string> values;
 };
 
+/* The keys of the blueprint task @p task ("train", "hpo"), upper case. */
+std::set<std::string> task_keys(const std::string &task) {
+  const auto &tasks = core::BlueprintParser::getTasksMapRef();
+  const auto found = tasks.find(core::to_upper(task));
+  if (found == tasks.end())
+    throw std::invalid_argument(
+        "ignore_configuration_potential_lines: no blueprint task '" + task +
+        "'");
+  std::set<std::string> keys;
+  for (const auto &k : found->second.blueprintKeys) {
+    const std::size_t dot = k.keyName.rfind('.');
+    keys.insert(core::to_upper(
+        dot == std::string::npos ? k.keyName : k.keyName.substr(dot + 1)));
+  }
+  return keys;
+}
+
 /* The sentences of the notice for the keys @p ignored (in the order of
- * dataset_preparation_keys(), none at its default) of the potential
+ * keys_not_read_from_a_potential(), none at its default) of the potential
  * @p subject ("the configuration file pot.train"); @p advice(keys,
- * options) says where the run's own go (keys: the named keys that are not
- * toggles; options: their command-line options), "" for none. */
+ * options) says where the run's own go (keys: the named keys; options:
+ * their command-line options), "" for none; @p eshift: whether the run's
+ * configuration has ESHIFT, which overrules a toggle the run gives. */
 template <class Advice>
 std::string ignored_keys_notice(const std::string &who,
                                 const std::string &subject,
                                 const std::vector<IgnoredKey> &ignored,
-                                Advice advice) {
-  std::vector<std::string> named, keys, options;
+                                Advice advice, bool eshift) {
+  std::vector<std::string> prepared, keys, options;
+  std::string uncertainty;  // "UNCERTAINTY true", "" when not named
   bool toggle_named = false;
   for (const IgnoredKey &k : ignored) {
-    named.push_back(key_values(k.key, k.values));
-    if (k.key == "ESHIFT_ATOM" || k.key == "ESHIFT_DBATOM") {
-      toggle_named = true;
-      continue;
-    }
     keys.push_back(k.key);
     if (!option_of(k.key).empty()) options.push_back(option_of(k.key));
+    if (k.key == "UNCERTAINTY") {
+      uncertainty = key_values(k.key, k.values);
+      continue;
+    }
+    prepared.push_back(key_values(k.key, k.values));
+    if (k.key == "ESHIFT_ATOM" || k.key == "ESHIFT_DBATOM") toggle_named = true;
   }
-  std::string s = who + ": " + subject +
-                  " is a potential (it has WEIGHTS): its " +
-                  listed(named, "and") +
-                  " prepared the training data of the fit that wrote it, "
-                  "not of this run, and " +
-                  (named.size() == 1 ? "is" : "are") + " ignored " +
-                  kRecordNote + ".";
-  const std::string where = keys.empty() ? std::string() : advice(keys, options);
+  std::string s = who + ": " + subject + " is a potential (it has WEIGHTS): ";
+  const std::string asked =
+      " asked the run that wrote it for weights.tadah, not this run, and is "
+      "ignored";
+  if (!prepared.empty()) {
+    s += "its " + listed(prepared, "and") +
+         " prepared the training data of the fit that wrote it, not of this "
+         "run, and " +
+         (prepared.size() == 1 ? "is" : "are") + " ignored " + kRecordNote +
+         ".";
+    if (!uncertainty.empty()) s += " Its " + uncertainty + asked + " too.";
+  } else {
+    s += "its " + uncertainty + asked + " " + kRecordNote + ".";
+  }
+  const std::string where = advice(keys, options);
   if (!where.empty()) s += " " + where;
-  if (toggle_named) {
+  if (toggle_named && eshift) {
     if (!where.empty()) s += ".";
-    s += " The potential's ESHIFT, the energy reference of the model, is "
-         "used: to derive ESHIFT from the data of this run, delete the "
-         "ESHIFT line and set ESHIFT_ATOM or ESHIFT_DBATOM";
+    s += " The ESHIFT of the configuration, the energy reference of the "
+         "model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT "
+         "from the data of this run, delete the ESHIFT line and give the run "
+         "one of them";
   }
   // The advice and the toggle sentence end without their period.
   return s + " (the Training page of the documentation, Retraining from a "
@@ -192,9 +225,11 @@ std::string ignored_keys_notice(const std::string &who,
 /* "it" or "one": what a run applies of the @p n keys an advice names. */
 std::string one_of(std::size_t n) { return n == 1 ? "it" : "one"; }
 
-/* "an" or "a" before the key @p key read letter by letter ("an EFILTER",
- * "an FFILTER", "a WDBFILE"). */
+/* "an" or "a" before the key @p key: a key that begins with UN is read as
+ * the word it is ("an UNCERTAINTY"), any other letter by letter ("an
+ * EFILTER", "an FFILTER", "a WDBFILE"). */
 std::string article(const std::string &key) {
+  if (key.rfind("UN", 0) == 0) return "an";
   const std::string vowel_sounds = "AEFHILMNORSX";
   return !key.empty() && vowel_sounds.find(key[0]) != std::string::npos
              ? "an"
@@ -202,9 +237,12 @@ std::string article(const std::string &key) {
 }
 
 /* The notice of the lines TaskFactory's parse did not read
- * (KeyProvenance::skipped_key_lines), per potential file. */
+ * (KeyProvenance::skipped_key_lines), per potential file: those of the
+ * keys @p taken (the task's) only; @p eshift as for ignored_keys_notice. */
 std::string skipped_lines_notice(const KeyProvenance &provenance,
-                                 const std::string &who) {
+                                 const std::string &who,
+                                 const std::set<std::string> &taken,
+                                 bool eshift) {
   // The potential files, in the order their lines were read, and their
   // keys the run does not give itself, not at their default.
   std::vector<std::string> sources;
@@ -231,7 +269,7 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
                        line.values.end());
     }
   }
-  const std::vector<std::string> &order = dataset_preparation_keys();
+  const std::vector<std::string> &order = keys_not_read_from_a_potential();
   const std::string &top = provenance.file_path();
   const bool task_file = provenance.file_kind() == KeyOrigin::Kind::TaskFile;
   std::string out;
@@ -239,7 +277,8 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
     std::vector<IgnoredKey> ignored;
     for (const std::string &key : order)
       for (const IgnoredKey &k : per_source[f])
-        if (k.key == key && !at_blueprint_default(k.key, k.values))
+        if (k.key == key && taken.count(k.key) &&
+            !at_blueprint_default(k.key, k.values))
           ignored.push_back(k);
     if (ignored.empty()) continue;
     const std::string &file = sources[f];
@@ -270,7 +309,8 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
       if (!options.empty()) a += ",";
       return a + " to apply " + one_of(keys.size()) + " to this run";
     };
-    const std::string notice = ignored_keys_notice(who, subject, ignored, advice);
+    const std::string notice =
+        ignored_keys_notice(who, subject, ignored, advice, eshift);
     out += (out.empty() ? "" : " ") + notice;
   }
   return out;
@@ -278,20 +318,25 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
 
 }  // namespace
 
-std::string ignore_configuration_dataset_keys(
+std::string ignore_configuration_potential_lines(
     core::Context &config, const KeyProvenance *provenance,
-    const std::string &who) {
-  if (provenance) return skipped_lines_notice(*provenance, who);
+    const std::string &task) {
+  const std::string who = "tadah " + task;
+  const std::set<std::string> taken = task_keys(task);
+  const bool eshift = config.has_stored("ESHIFT") && config.size("ESHIFT") > 0;
+  if (provenance)
+    return skipped_lines_notice(*provenance, who, taken, eshift);
   // A context a program built: one file.
   std::set<std::string> keys;
   for (const auto &kv : config.storage_snapshot())
     if (!kv.second.empty()) keys.insert(kv.first);
   std::vector<IgnoredKey> ignored;
-  for (const std::string &key : dataset_preparation_keys()) {
-    if (!config.has_stored(key) || !potential_dataset_key_line(keys, key))
+  for (const std::string &key : keys_not_read_from_a_potential()) {
+    if (!config.has_stored(key) || !potential_line_not_read(keys, key))
       continue;
     const std::vector<std::string> tokens = config(key);
-    if (!at_blueprint_default(key, tokens)) ignored.push_back({key, tokens});
+    if (taken.count(key) && !at_blueprint_default(key, tokens))
+      ignored.push_back({key, tokens});
     config.remove(key);
   }
   if (ignored.empty()) return "";
@@ -303,7 +348,8 @@ std::string ignore_configuration_dataset_keys(
         return "Give " + listed(options, "or") +
                " on the command line to apply " + one_of(names.size()) +
                " to this run";
-      });
+      },
+      eshift);
 }
 
 void remove_training_record_keys(core::Context &pot) {
