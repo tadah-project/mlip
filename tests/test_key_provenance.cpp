@@ -521,10 +521,11 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
 
 /* Pins: the rule of the parse of a run's configuration,
  * potential_dataset_key_line(file_keys, key): a key that prepared the
- * training data, in a file whose key lines give WEIGHTS (a potential), is
- * not read -- ESHIFT_ATOM and ESHIFT_DBATOM only when the file gives ESHIFT
- * too; no other key (ESHIFT, LSCALE, DBFILE, WEIGHTS), and no key of a file
- * without WEIGHTS. TaskFactory parses every -c and --task file under it,
+ * training data, and UNCERTAINTY, in a file whose key lines give WEIGHTS
+ * (a potential), is not read -- ESHIFT_ATOM and ESHIFT_DBATOM whether or
+ * not the file gives ESHIFT; no other key (ESHIFT, LSCALE, DBFILE,
+ * WEIGHTS), and no key of a file without WEIGHTS. TaskFactory parses every
+ * -c and --task file under it,
  * and the task's KeyProvenance lists the lines it did not read:
  *   - `tadah --task run.task`, its lines above the first TASK line
  *     "WDBFILE 2", its TASK train section "CONFIG pot", "EFILTER -1 1",
@@ -539,7 +540,11 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
  *   - `tadah train -c pot`: no EFILTER and no WDBFILE in the context, the
  *     same four lines skipped, file_path() pot, file_kind() ConfigFile.
  * Before the fix: does not compile (no potential_dataset_key_line, no
- * KeyProvenance::skipped_key_lines, file_path or file_kind). */
+ * KeyProvenance::skipped_key_lines, file_path or file_kind).
+ * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
+ * line of a potential: a toggle was read from a potential without ESHIFT
+ * (CHECK_FALSE pinned it) and UNCERTAINTY from any file: the toggle checks
+ * on pot_keys and the UNCERTAINTY check fail. */
 TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
           "the keys that prepared the training data, and lists them",
           "[key_provenance][task_factory][dataset_keys]") {
@@ -552,10 +557,11 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
     CHECK(potential_dataset_key_line(pot_keys, k));
     CHECK_FALSE(potential_dataset_key_line({"ATOM", "DBFILE"}, k));
   }
-  for (const char *k : {"ESHIFT_ATOM", "ESHIFT_DBATOM"}) {
+  for (const char *k : {"ESHIFT_ATOM", "ESHIFT_DBATOM", "UNCERTAINTY"}) {
     INFO("key " << k);
-    CHECK_FALSE(potential_dataset_key_line(pot_keys, k));
+    CHECK(potential_dataset_key_line(pot_keys, k));
     CHECK(potential_dataset_key_line(pot_eshift, k));
+    CHECK_FALSE(potential_dataset_key_line({"ATOM", "DBFILE"}, k));
   }
   for (const char *k : {"ESHIFT", "LSCALE", "DBFILE", "WEIGHTS"}) {
     INFO("key " << k);

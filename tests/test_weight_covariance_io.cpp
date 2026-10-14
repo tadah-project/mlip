@@ -225,6 +225,28 @@ TEST_CASE("read_weight_covariance says why a potential has no covariance",
   }
 }
 
+/* Pins: the refusal of an OALGO 3 potential (M_BLR BF_Linear) without WCOV
+ * and WNOISE says, of the potentials with only SIGMA, exactly "a potential
+ * of an earlier version of Tadah!, whose SIGMA is ignored (it was computed
+ * with a transposed formula): retrain it;" (an OALGO 3 potential of an
+ * earlier version has SIGMA), and names no development stage
+ * ("development").
+ * Before the fix: it said "a potential of Tadah! 1.0.0 to 1.5.0 or a 1.6.0
+ * development build, whose SIGMA is ignored ...": both checks fail. */
+TEST_CASE("read_weight_covariance: an OALGO 3 potential with SIGMA only is "
+          "one of an earlier version",
+          "[weight_covariance]") {
+  Context c;
+  c.add("OALGO", 3);
+  c.add("MODEL", "M_BLR BF_Linear");
+  const std::string m = refusal(c, 2);
+  INFO(m);
+  CHECK(m.find("a potential of an earlier version of Tadah!, whose SIGMA is "
+               "ignored (it was computed with a transposed formula): retrain "
+               "it;") != std::string::npos);
+  CHECK(m.find("development") == std::string::npos);
+}
+
 /* Pins: require_noise_of refuses every prediction of a covariance whose
  * WNOISE has no E (the fit had no energies with a non-zero weight): every
  * prediction has an energy, so energies alone and forces with F are both
