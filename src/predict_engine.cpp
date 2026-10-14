@@ -13,9 +13,15 @@
 #include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/design_matrix/functions/dm_function_base.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
+#include <tadah/mlip/training_record.h>
+#include <tadah/core/blueprint_parser.h>
+#include <tadah/core/utils.h>
 #include <tadah/models/dc_selector.h>
 #include <tadah/models/eam/pot_curve_edit.h>
+#include <algorithm>
 #include <iostream>
+#include <string>
+#include <vector>
 
 namespace tadah {
 namespace mlip {
@@ -29,7 +35,38 @@ int PredictEngine::run(mlip::Task &task) {
   // RHOFORM belongs to the potential: a DM_REAM potential without it throws
   // whatever the task says (the task never supplies it through the merge).
   tadah::models::check_rhoform_precedence(potContext, taskContext, pot_file);
+  // The keys that prepared the training data (EFILTER, FFILTER, the ESHIFT
+  // toggles, the weights, ZERO_COM_FORCE) are not the potential's: a
+  // potential of an earlier version has them as key lines, and they are
+  // ignored (MK's decision of 2026-10-14, option 2). The potential's LSCALE
+  // and ESHIFT, the model's length scale and energy reference, stay.
+  {
+    const std::string ignored =
+        ignore_potential_dataset_keys(potContext, pot_file);
+    if (!ignored.empty())
+      core::Logger::instance().log(core::LogLevel::INFO, ignored);
+  }
   potContext  = tadah::core::Context::merge(potContext, taskContext);
+  // Of those keys, the data predicted is prepared only with the ones
+  // tadah predict has an option for (EFILTER, FFILTER, ZERO_COM_FORCE): a
+  // TASK predict of a task file may hold the others (WDBFILE, WDBFILE_AUTO,
+  // EWEIGHT_TEMP, ESHIFT_ATOM, ESHIFT_DBATOM), which weight the training
+  // set or derive a shift from the data, and are not predict's.
+  {
+    std::vector<std::string> predict_keys;
+    for (const auto &bpKey :
+         core::BlueprintParser::getTasksMapRef().at("PREDICT").blueprintKeys) {
+      const std::size_t dot = bpKey.keyName.rfind('.');
+      predict_keys.push_back(core::to_upper(
+          dot == std::string::npos ? bpKey.keyName
+                                   : bpKey.keyName.substr(dot + 1)));
+    }
+    for (const std::string &key : dataset_preparation_keys())
+      if (std::find(predict_keys.begin(), predict_keys.end(), key) ==
+              predict_keys.end() &&
+          potContext.has_stored(key))
+        potContext.remove(key);
+  }
 
   // Honour --no-lscale / --no-eshift cancellation flags by removing the
   // corresponding keys from the merged context BEFORE apply_load_transforms
@@ -45,13 +82,6 @@ int PredictEngine::run(mlip::Task &task) {
     core::Logger::instance().log(core::LogLevel::INFO,
         "--no-eshift: ignoring ESHIFT recorded in pot.tadah.");
   }
-
-  // The training-only weight knobs a potential records with the rest of its
-  // training configuration (WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP) are not
-  // re-applied to the data predicted: they reweighted the training set, and
-  // the weights of the data predicted are their own.
-  for (const char *key : {"WDBFILE", "WDBFILE_AUTO", "EWEIGHT_TEMP"})
-    potContext.remove(key);
 
   // Knot-family refit pots: RCUT2B/RCUTMB are derived from the largest knot
   // — correct a stale stated value (warns) before the descriptors and the
@@ -86,14 +116,12 @@ int PredictEngine::run(mlip::Task &task) {
     }
   }
 
-  // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, ZERO_COM_FORCE)
-  // using the merged potContext, so the input dataset is reshaped to match
-  // what the model was trained on: EFILTER/FFILTER leave out the structures
-  // outside the training run's window, and the training-only weight knobs
-  // were removed above. The stamped ESHIFT is the explicit source, so an
-  // ESHIFT_ATOM / ESHIFT_DBATOM toggle the potential records as true only
-  // adds the multiple-sources WARNING; after --no-eshift removed ESHIFT, such
-  // a toggle derives the shift from the data predicted.
+  // Apply load-time transforms using the merged potContext: the
+  // potential's LSCALE and ESHIFT (or predict's --lscale / --eshift), so
+  // the data predicted is at the model's length scale and energy reference,
+  // and the filters predict was given (--efilter, --ffilter,
+  // --zero-com-force). No shift is derived from the data predicted: after
+  // --no-eshift the reference energies are compared as they are.
   apply_load_transforms(stdb, potContext);
 
   // The force and stress metrics leave out structures with force or stress
