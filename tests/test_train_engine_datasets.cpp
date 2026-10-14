@@ -18,11 +18,13 @@
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/engines/analysis_check_bounds_engine.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/itask_input.h>
 #include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/task.h>
 #include <tadah/mlip/task_factory.h>
+#include <tadah/mlip/training_record.h>
 
 #include <filesystem>
 #include <fstream>
@@ -1825,5 +1827,273 @@ TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
                        "run, delete the ESHIFT line and give the run one of "
                        "them" +
                        tail) != std::string::npos);
+  }
+}
+
+namespace {
+
+/* The notice ignore_configuration_potential_lines gives the tadah hpo task
+ * TaskFactory makes of `tadah hpo -c @p config --hpotarget config.hpo`. */
+std::string hpo_notice_of(const std::string &config) {
+  const CommandInput input("HPO", {{"config", {config}},
+                                   {"hpotarget", {"config.hpo"}}});
+  std::vector<Task> tasks =
+      tadah::mlip::TaskFactory().createTasksFromInput(input);
+  REQUIRE(tasks.size() == 1u);
+  return tadah::mlip::ignore_configuration_potential_lines(
+      tasks[0].getContext(), tasks[0].getKeyProvenance(), "hpo");
+}
+
+}  // namespace
+
+/* Pins: the WARNING of a potential's run settings reads a key that begins
+ * with a consonant and a vowel as a word ("a NUMERIC", "a HEALTH_LOG"), and
+ * tadah hpo, which reads AUDIT, AUDIT_SAMPLE and HEALTH_LOG from any
+ * configuration (its pre-flight audit and the health monitor of its
+ * evaluations) though it has no option of them, names them (TaskFactory;
+ * each file is the Ta pair potential with "DBFILE db.tadah" and the lines
+ * named):
+ *   - `tadah train -c n12.train -o n12.tadah` (TrainEngine::run), n12.train
+ *     with "NUMERIC 12" and "HEALTH_LOG full": the WARNING "tadah train:
+ *     the configuration file n12.train is a potential (it has WEIGHTS): its
+ *     NUMERIC 12 was a setting of the run that wrote it, not of this run,
+ *     and is ignored (tadah keeps such keys in a potential's training
+ *     record, not as key lines). Give a NUMERIC line in a configuration
+ *     file that includes the potential with CONFIG to apply it to this run
+ *     (the Training page of the documentation, Retraining from a
+ *     potential)." (tadah train has no --numeric and reads no HEALTH_LOG,
+ *     which is not named);
+ *   - the tadah hpo task of `-c hl.tadah --hpotarget config.hpo`, hl.tadah
+ *     with "HEALTH_LOG full": ignore_configuration_potential_lines gives
+ *     "tadah hpo: the configuration file hl.tadah is a potential (it has
+ *     WEIGHTS): its HEALTH_LOG full was a setting ... Give a HEALTH_LOG line
+ *     in a configuration file that includes the potential with CONFIG to
+ *     apply it to this run (...).";
+ *   - the same of ha.tadah, with "AUDIT warn", "AUDIT_SAMPLE 2" and
+ *     "HEALTH_LOG full": "... its AUDIT warn, AUDIT_SAMPLE 2 and HEALTH_LOG
+ *     full were settings ... Give an AUDIT, AUDIT_SAMPLE or HEALTH_LOG line
+ *     in a configuration file that includes the potential with CONFIG to
+ *     apply one to this run (...).".
+ * Before the fix: the run settings were not among the keys of a potential
+ * whose lines a run does not read: the lines were the run's, no WARNING
+ * called n12.train a potential and the hpo notices were empty, so every
+ * CHECK of a notice fails. Each part of the fix this case pins, taken back
+ * alone (shown by mutation): the earlier article() table, "an" before every
+ * key that begins with A, E, F, H, I, L, M, N, O, R, S or X, gave "Give an
+ * NUMERIC line" and "Give an HEALTH_LOG line" (the CHECKs of those two
+ * notices fail); the keys tadah train and tadah hpo read without NUMERIC,
+ * AUDIT, AUDIT_SAMPLE and HEALTH_LOG (the task's keys and its groups'
+ * alone) gave no WARNING for n12.train and empty hpo notices (the three
+ * CHECKs of a notice fail). */
+TEST_CASE("The WARNING of a potential's run settings says 'a NUMERIC' and 'a "
+          "HEALTH_LOG', and tadah hpo names AUDIT, AUDIT_SAMPLE and "
+          "HEALTH_LOG",
+          "[train][hpo][potential_content][retrain][run_settings]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  const std::string record_note =
+      " (tadah keeps such keys in a potential's training record, not as key "
+      "lines). ";
+  const std::string tail =
+      " (the Training page of the documentation, Retraining from a "
+      "potential).";
+  SECTION("tadah train: a NUMERIC") {
+    write_retrain_copy("n12.train", "NUMERIC 12\nHEALTH_LOG full\n");
+    const CommandInput input("TRAIN", {{"config", {"n12.train"}},
+                                       {"outfile", {"n12.tadah"}}});
+    std::string printed;
+    const std::string what = train_input_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    CHECK(printed.find(
+              "WARNING: tadah train: the configuration file n12.train is a "
+              "potential (it has WEIGHTS): its NUMERIC 12 was a setting of "
+              "the run that wrote it, not of this run, and is ignored" +
+              record_note +
+              "Give a NUMERIC line in a configuration file that includes the "
+              "potential with CONFIG to apply it to this run" + tail) !=
+          std::string::npos);
+    CHECK(printed.find("HEALTH_LOG") == std::string::npos);
+  }
+  SECTION("tadah hpo: a HEALTH_LOG") {
+    write_retrain_copy("hl.tadah", "HEALTH_LOG full\n");
+    CHECK(hpo_notice_of("hl.tadah") ==
+          "tadah hpo: the configuration file hl.tadah is a potential (it has "
+          "WEIGHTS): its HEALTH_LOG full was a setting of the run that wrote "
+          "it, not of this run, and is ignored" + record_note +
+          "Give a HEALTH_LOG line in a configuration file that includes the "
+          "potential with CONFIG to apply it to this run" + tail);
+  }
+  SECTION("tadah hpo: AUDIT, AUDIT_SAMPLE and HEALTH_LOG") {
+    write_retrain_copy("ha.tadah",
+                       "AUDIT warn\nAUDIT_SAMPLE 2\nHEALTH_LOG full\n");
+    CHECK(hpo_notice_of("ha.tadah") ==
+          "tadah hpo: the configuration file ha.tadah is a potential (it has "
+          "WEIGHTS): its AUDIT warn, AUDIT_SAMPLE 2 and HEALTH_LOG full were "
+          "settings of the run that wrote it, not of this run, and are "
+          "ignored" + record_note +
+          "Give an AUDIT, AUDIT_SAMPLE or HEALTH_LOG line in a configuration "
+          "file that includes the potential with CONFIG to apply one to this "
+          "run" + tail);
+  }
+}
+
+namespace {
+
+/* What TaskFactory, and AnalysisCheckBoundsEngine::run of each task it
+ * makes, throw for @p input, "" when they do not throw; std::cout goes to
+ * @p printed. */
+std::string check_bounds_error(const tadah::mlip::ITaskInput &input,
+                               std::string &printed) {
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  std::string what;
+  try {
+    std::vector<Task> tasks =
+        tadah::mlip::TaskFactory().createTasksFromInput(input);
+    for (Task &t : tasks)
+      (void)tadah::mlip::engines::AnalysisCheckBoundsEngine().run(t);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  std::cout.rdbuf(old_buf);
+  printed = captured.str();
+  tadah::core::Logger::instance().setLogLevel(tadah::core::LogLevel::WARNING);
+  return what;
+}
+
+}  // namespace
+
+/* Pins: tadah analysis check_bounds reads none of a seed potential's run
+ * settings: it names those it reads (HPOTARGET and VERBOSE, its keys) in a
+ * WARNING and refuses a run without HPOTARGET, naming where the run's own
+ * goes by where its keys came from (TaskFactory, then
+ * AnalysisCheckBoundsEngine::run; old_best.tadah is the Ta pair potential
+ * with "DBFILE db.tadah" and the key lines HPOTARGET config.hpo,
+ * VALIDATION config.val, VERBOSE 2 and NUMERIC 12 of a 1.5.x tadah hpo
+ * seed):
+ *   - `tadah analysis check_bounds -c old_best.tadah` throws "tadah analysis
+ *     check_bounds: no HPOTARGET: name the hpotarget file with --hpotarget,
+ *     or with an HPOTARGET line in a configuration file without WEIGHTS.
+ *     old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET
+ *     config.hpo line was a setting of the run that wrote it and is not
+ *     read.", after the WARNING "tadah analysis check_bounds: the
+ *     configuration file old_best.tadah is a potential (it has WEIGHTS):
+ *     its HPOTARGET config.hpo and VERBOSE 2 were settings of the run that
+ *     wrote it, not of this run, and are ignored (...). Give --hpotarget or
+ *     --verbose on the command line, or an HPOTARGET or VERBOSE line in a
+ *     configuration file that includes the potential with CONFIG, to apply
+ *     one to this run (...)." (check_bounds reads no VALIDATION or NUMERIC,
+ *     which are not named);
+ *   - with --hpotarget config.hpo (one OPTIM line) it runs, and the WARNING
+ *     names VERBOSE 2 alone ("its VERBOSE 2 was a setting ... Give
+ *     --verbose on the command line, or a VERBOSE line in a configuration
+ *     file that includes the potential with CONFIG, to apply it to this
+ *     run");
+ *   - `tadah --task run.task`, its TASK analysis check_bounds section
+ *     "CONFIG old_best.tadah", throws "tadah analysis check_bounds: no
+ *     HPOTARGET: name the hpotarget file with an HPOTARGET line in the TASK
+ *     analysis check_bounds section of the task file run.task, or above its
+ *     first TASK line. old_best.tadah is a potential (it has WEIGHTS): its
+ *     HPOTARGET config.hpo line was a setting of the run that wrote it and
+ *     is not read." (no --hpotarget: a run of a task file takes no
+ *     command-line option);
+ *   - `-c plain.tadah`, a configuration without WEIGHTS and without
+ *     HPOTARGET: "tadah analysis check_bounds: no HPOTARGET: name the
+ *     hpotarget file with --hpotarget, or with an HPOTARGET line in a
+ *     configuration file without WEIGHTS." (no potential, no sentence on
+ *     one).
+ * Before the fix: no WARNING named a line of old_best.tadah, and every run
+ * without HPOTARGET threw "analysis check_bounds: HPOTARGET is required
+ * (set HPOTARGET in config or pass via the CLI).": every CHECK of a
+ * refusal or a WARNING fails. (On v1-dev the parse stored old_best.tadah's
+ * HPOTARGET line and the -c run used it.) */
+TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
+          "potential, names them, and refuses a run without HPOTARGET "
+          "naming where it goes",
+          "[check_bounds][potential_content][run_settings]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  write_retrain_copy("old_best.tadah",
+                     "HPOTARGET config.hpo\nVALIDATION config.val\n"
+                     "VERBOSE 2\nNUMERIC 12\n");
+  std::ofstream("config.hpo") << "OPTIM CGRID2B (1) 2.5 2.7\n";
+  const std::string not_read =
+      " old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET "
+      "config.hpo line was a setting of the run that wrote it and is not "
+      "read.";
+  const std::string tail =
+      " (the Training page of the documentation, Retraining from a "
+      "potential).";
+  std::string printed;
+  SECTION("-c old_best.tadah") {
+    const CommandInput input("ANALYSIS.check_bounds",
+                             {{"config", {"old_best.tadah"}}});
+    const std::string what = check_bounds_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    CHECK(what ==
+          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
+          "file with --hpotarget, or with an HPOTARGET line in a "
+          "configuration file without WEIGHTS." + not_read);
+    CHECK(printed.find(
+              "WARNING: tadah analysis check_bounds: the configuration file "
+              "old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET "
+              "config.hpo and VERBOSE 2 were settings of the run that wrote "
+              "it, not of this run, and are ignored (tadah keeps such keys "
+              "in a potential's training record, not as key lines). Give "
+              "--hpotarget or --verbose on the command line, or an HPOTARGET "
+              "or VERBOSE line in a configuration file that includes the "
+              "potential with CONFIG, to apply one to this run" + tail) !=
+          std::string::npos);
+    CHECK(printed.find("VALIDATION") == std::string::npos);
+    CHECK(printed.find("NUMERIC") == std::string::npos);
+  }
+  SECTION("-c old_best.tadah --hpotarget config.hpo") {
+    const CommandInput input("ANALYSIS.check_bounds",
+                             {{"config", {"old_best.tadah"}},
+                              {"hpotarget", {"config.hpo"}}});
+    const std::string what = check_bounds_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    CHECK(what.empty());
+    CHECK(printed.find(
+              "WARNING: tadah analysis check_bounds: the configuration file "
+              "old_best.tadah is a potential (it has WEIGHTS): its VERBOSE 2 "
+              "was a setting of the run that wrote it, not of this run, and "
+              "is ignored (tadah keeps such keys in a potential's training "
+              "record, not as key lines). Give --verbose on the command "
+              "line, or a VERBOSE line in a configuration file that includes "
+              "the potential with CONFIG, to apply it to this run" + tail) !=
+          std::string::npos);
+    CHECK(printed.find("HPOTARGET") == std::string::npos);
+  }
+  SECTION("a task file") {
+    std::ofstream("run.task") << "TASK analysis check_bounds\n"
+                                 "  CONFIG old_best.tadah\n";
+    const CommandInput input("", {{"task", {"run.task"}}});
+    const std::string what = check_bounds_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    CHECK(what ==
+          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
+          "file with an HPOTARGET line in the TASK analysis check_bounds "
+          "section of the task file run.task, or above its first TASK "
+          "line." + not_read);
+  }
+  SECTION("a configuration without WEIGHTS") {
+    Context plain = training_context_of("M_BLR BF_Linear");
+    plain.add("DBFILE", "db.tadah");
+    write_pot_file("plain.tadah", plain);
+    const CommandInput input("ANALYSIS.check_bounds",
+                             {{"config", {"plain.tadah"}}});
+    const std::string what = check_bounds_error(input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    CHECK(what ==
+          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
+          "file with --hpotarget, or with an HPOTARGET line in a "
+          "configuration file without WEIGHTS.");
+    CHECK(printed.find("is a potential") == std::string::npos);
   }
 }
