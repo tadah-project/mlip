@@ -159,6 +159,7 @@ constexpr ModeKey kModeKeys[] = {
     {"REFIT_CURVE_DERIV_WEIGHT", RefitMode::Compact, false},
     {"REFIT_CURVE_WEIGHTING", RefitMode::Compact, false},
     {"REFIT_CURVE_RELAX", RefitMode::Compact, false},
+    {"REFIT_COMPONENT_ITERATIONS", RefitMode::Compact, false},
     {"INIT", RefitMode::Compact, true},
     {"EXPLORE", RefitMode::Compact, true},
     {"REFINE", RefitMode::Compact, true},
@@ -350,6 +351,16 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
     if (k.mode != mode && configured(c, provenance, k.key))
       refuse(k.block ? std::string("the ") + k.key + " block"
                      : std::string(k.key));
+  // the iteration limit of the component compact fit (DM_Embed blocks),
+  // which a configuration without blocks (the compact ladder) does not run
+  if (c.blocks("DESCRIPTOR").empty() &&
+      configured(c, provenance, "REFIT_COMPONENT_ITERATIONS"))
+    throw std::runtime_error(
+        kWho + "REFIT_COMPONENT_ITERATIONS has no effect without DESCRIPTOR "
+        "blocks: only the compact fit of DM_Embed components reads it (the "
+        "compact ladder's budgets are the MAXEVAL of its stage blocks); "
+        "remove REFIT_COMPONENT_ITERATIONS, or declare the many-body term "
+        "as a DESCRIPTOR block");
   const bool curve = read_refit_curve_objective(c);
   if (mode == RefitMode::Dense) {
     if (curve) refuse("REFIT_OBJECTIVE curve");
@@ -499,6 +510,8 @@ RefitNumbers read_refit_numbers(const Context &c) {
   set(n.curve_deriv_weight,
       real(c, "REFIT_CURVE_DERIV_WEIGHT", Range::NonNegative));
   set(n.curve_relax, real(c, "REFIT_CURVE_RELAX", Range::UpToOne));
+  set(n.component_iterations,
+      integer(c, "REFIT_COMPONENT_ITERATIONS", 1, kIntMax));
   return n;
 }
 

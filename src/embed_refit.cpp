@@ -37,6 +37,15 @@ void validate_embed_refit(const core::Context &c) {
     if (c.has_stored(key))
       bad(std::string(key) + " conflicts with component blocks; declare the "
                              "setting in its component");
+  // A component fit fits the basis its block declares: it does not
+  // escalate (the dense fit's escalation grows the global NRHO_BASIS and
+  // NF_BASIS counts, which component grids replace).
+  if (c.has_stored("REFIT_MAX_ESCALATIONS"))
+    bad("REFIT_MAX_ESCALATIONS has no effect with component blocks: a "
+        "component fit does not escalate its basis; its size is the "
+        "component's DENSITY and EMBEDDING CENTRES (CENTRES AUTO <count>, or "
+        "an explicit grid), so remove REFIT_MAX_ESCALATIONS and give the "
+        "component more functions there");
   if (c.has_stored("REFIT_PAIR_BASIS"))
     (void)models::basis_kind_from_string(
         c.get<std::string>("REFIT_PAIR_BASIS"));

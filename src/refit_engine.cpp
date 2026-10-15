@@ -305,6 +305,10 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
     (void)read_optim_pct(c);
     return;
   }
+  // A refit of an EAM file reads none of the options of --edit and
+  // --retarget (--func, --pct, --rcut2b, --rcutmb, ...): one set in its
+  // configuration is refused, as each mode refuses the other's.
+  validate_refit_mode_keys(c, task.getKeyProvenance());
   if (!c.contains("EAM") || c.size("EAM") == 0) {
     throw std::runtime_error(
         "RefitEngine requires an input EAM file: declare `EAM <file>` in the "
@@ -337,6 +341,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     return run_refit_retarget(c, task.getKeyProvenance());
   if (c.contains("EDIT") && c.size("EDIT") > 0)
     return run_refit_edit(c, task.getKeyProvenance());
+  validate_refit_mode_keys(c, task.getKeyProvenance());
 
   // The training record of pot.tadah: the keys a potential does not use,
   // as the refit's configuration and command line gave them (its OUTFILE,
