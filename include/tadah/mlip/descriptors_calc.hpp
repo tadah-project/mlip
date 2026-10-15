@@ -58,7 +58,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c):
   }
   if (c.get<bool>("INITMB")) {
     cm = CM(c.get<double>("RCUTMBMAX"));
-    if (!context.contains("RCTYPEMB")) {
+    if (!many_body_components() && !context.contains("RCTYPEMB")) {
       context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }
@@ -87,7 +87,7 @@ DescriptorsCalc<D2,DM,C2,CM>::DescriptorsCalc(tadah::core::Context &c, T1 &d2, T
     }
   }
   if (c.get<bool>("INITMB")) {
-    if (!context.contains("RCTYPEMB")) {
+    if (!many_body_components() && !context.contains("RCTYPEMB")) {
       context.add("RCTYPEMB",cm.label());
       dm.set_fcut(&cm,false);
     }

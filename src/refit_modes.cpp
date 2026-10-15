@@ -410,14 +410,16 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
   // --set 'KEY(i)=lo,hi'
   if (has(c, "SET")) {
     static const std::regex set_re(
-        R"(^([A-Za-z0-9_]+)\s*\(\s*(\d+)\s*\)\s*=\s*([^,]+),(.+)$)");
+        R"(^([A-Za-z0-9_.]+)\s*\(\s*(\d+)\s*\)\s*=\s*([^,]+),(.+)$)");
     for (std::size_t i = 0; i < c.size("SET"); ++i) {
       const std::string tok = c.get<std::string>("SET", i);
       std::smatch m;
       if (!std::regex_match(tok, m, set_re))
         throw std::runtime_error(
             "tadah refit --retarget: cannot parse --set token '" + tok +
-            "' — expected 'KEY(i)=lo,hi' (e.g. --set 'CGRID2B(3)=2.1,2.4').");
+            "' — expected 'KEY(i)=lo,hi', KEY an OPTIM key or component path "
+            "of the file (e.g. --set 'CGRID2B(3)=2.1,2.4' or "
+            "'EAM.DENSITY.CENTRES(2)=2.4,2.6').");
       RetargetOptions::SetOverride s;
       s.key = m[1].str();
       std::transform(s.key.begin(), s.key.end(), s.key.begin(),

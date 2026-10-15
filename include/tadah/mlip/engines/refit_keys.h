@@ -110,7 +110,10 @@ std::string top_level_optimizer_refusal();
  *     pipeline): every REFIT_COMPACT_* key, REFIT_CURVE_WEIGHTING,
  *     REFIT_CURVE_RELAX, REFIT_CURVE_DERIV_WEIGHT, the INIT, EXPLORE,
  *     REFINE and FUSE blocks, and REFIT_OBJECTIVE curve (REFIT_OBJECTIVE
- *     energy passes in both);
+ *     energy passes in both); and REFIT_COMPONENT_ITERATIONS, the
+ *     iteration limit of the compact fit of DM_Embed components, only with
+ *     DESCRIPTOR blocks ("tadah refit: REFIT_COMPONENT_ITERATIONS has no
+ *     effect without DESCRIPTOR blocks: ...");
  *   - read by the knot families only, in compact mode (the compact fitter
  *     applies them to the one-sided knot kinds): REFIT_COMPACT_MERGE,
  *     REFIT_COMPACT_OPT_EVERY and REFIT_COMPACT_INSERT_TOPK, refused when
@@ -234,6 +237,8 @@ struct RefitNumbers {
   double share = 0.5;              ///< REFIT_COMPACT_SHARE, > 0
   double curve_deriv_weight = 0.0; ///< REFIT_CURVE_DERIV_WEIGHT, >= 0
   double curve_relax = 0.05;       ///< REFIT_CURVE_RELAX, in (0, 1]
+  // REFIT_MODE compact, DESCRIPTOR blocks (the component compact fit)
+  int component_iterations = 60;   ///< REFIT_COMPONENT_ITERATIONS, 1..INT_MAX
 };
 
 /** Read the refit configuration numbers of @p c. A real number takes the

@@ -157,6 +157,14 @@ class DescriptorsCalc: public DC_Base {
         void calc(const Structure &st, StDescriptors &std) const;
         void calc_dimer(const Structure &st, StDescriptors &std) const;
         void common_constructor();
+        /* The many-body term is DM_Embed components (DESCRIPTOR blocks):
+         * their CUTOFF blocks are the many-body cutoffs, so the constructors
+         * neither add the legacy RCTYPEMB key (the potential would carry a
+         * 'RCTYPEMB Cut_Dummy' line contradicting the blocks) nor replace
+         * the descriptor's own cutoff with the calculator's. */
+        bool many_body_components() const {
+          return !context.blocks("DESCRIPTOR").empty();
+        }
 
         /* BIAS true: the number of intercept columns (N = size(ATOM)) and
          * the intercept column of each Z; set by every constructor. */

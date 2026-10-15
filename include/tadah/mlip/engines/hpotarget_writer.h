@@ -90,6 +90,13 @@ void emit_optim_group(std::ostream &os, const std::string &key,
  *  MONOTONE. */
 std::string rhoform_bounds_line(tadah::models::RhoForm form);
 
+/** \brief The parsed comment a starter target records for the knot centres
+ *  of a DM_Embed density with CUTOFF TYPE NONE, whose knots end within the
+ *  fixed RADIUS: "# <ID>.DENSITY.CENTRES knot-support cap: RADIUS = <R>
+ *  (...)". The boxes of those centres end at R (on the bound grid, at most
+ *  R), and --retarget, which sees only the file, reads the cap from it. */
+std::string knot_support_cap_line(const std::string &path, double radius);
+
 /** \brief Scalar variant used for the RCUT2B/RCUTMB lines. */
 void emit_optim_scalar(std::ostream &os, const std::string &key, double v,
                        double pct, double lo_clamp, bool commented = false);
@@ -107,6 +114,11 @@ void emit_optim_group_pair(std::ostream &os, const std::string &ckey,
                            bool commented, double w, double rcut);
 
 /** \brief Write a full hpotarget starter file from a refit pot Context.
+ *  The named parameters of each DM_Embed component (COMPONENT_PARAMETER
+ *  lines and their commented OPTIM groups) follow the pair section under a
+ *  header of their own, "# ---- <ID> component (DM_Embed) density and
+ *  embedding shape ----"; a zero-referenced embedding is noted as
+ *  REFERENCE ZERO (a component's key) or EMBF0 ZERO (a DM_REAM term's).
  *  RCUT2B/RCUTMB are read from the pot; for KNOT channels the commented
  *  `# OPTIM RCUT*` scalar is replaced by an explanatory comment (the
  *  effective cutoff is the largest knot — vary CGRID* instead). A pot with

@@ -165,6 +165,34 @@ TEST_CASE("DM_Embed train write read predict retains energies forces and stresse
   }
 }
 
+/* Pins: a Trainer whose many-body term is a DM_Embed component (a DESCRIPTOR
+ * block, no RCTYPEMB) writes a potential without the legacy key RCTYPEMB
+ * (whose cutoff is the block's CUTOFF), and its descriptor keeps the
+ * component's own smooth cutoff. Before the fix DescriptorsCalc added
+ * 'RCTYPEMB Cut_Dummy' to the trainer's context, so every potential the
+ * trainer wrote (tadah train, tadah hpo's best_pot.tadah) carried it next to
+ * a block with TYPE Cut_Poly, and it replaced the descriptor's cutoff by the
+ * calculator's Cut_Dummy. */
+TEST_CASE("A DM_Embed trainer writes no legacy many-body cutoff key",
+          "[unified-dm][train]") {
+  PeriodicTable::initialize();auto c=make_context("M_BLR","BF_Linear","1");
+  for(const char *key:{"TYPEMB","RCTYPEMB","RCUTMB"})c.remove(key);
+  c.add("INITMB",true);
+  tadah::models::EmbedSpec spec;spec.id="ta";spec.pairs={"Ta","Ta"};
+  spec.form=tadah::models::RhoForm::NonNeg;spec.cutoff="Cut_Poly";spec.radius=6;
+  spec.density.basis=tadah::models::EmbedBasis::WendlandC4;
+  spec.density.centres={2.2,3.2};spec.density.scales={0.6,0.7};spec.density.amplitudes={0.4,0.2};
+  spec.embedding.basis=tadah::models::EmbedBasis::Gaussian;
+  spec.embedding.centres={0,0.5,1};spec.embedding.scales={2,2,2};
+  c.append_block(tadah::models::embed_block(spec));
+  MLIPWorkspaceManager workspace;Trainer trainer(c,workspace);auto db=training_db();trainer.train(db);
+  CHECK(trainer.DCS.dmb->capabilities().has_real_cutoff);
+  const auto pot=trainer.get_param_file();
+  CHECK_FALSE(pot.has_stored("RCTYPEMB"));
+  CHECK(pot.blocks("DESCRIPTOR").size()==1);
+  CHECK(tadah::models::embed_specs(pot).at(0).cutoff=="Cut_Poly");
+}
+
 /* Pins: retraining from a potential (the potential of an OALGO 3 fit used
  * as the configuration, three times in a row) writes one WCOV of N*N+1 =
  * 10 values (DSIZE 3) and one WNOISE (E and F, 4 tokens), equal bit for bit

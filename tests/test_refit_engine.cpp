@@ -199,7 +199,7 @@ TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves
   ScopedTempDir tmp;
   write_synth_eam("source.eam","bcc",3.2);
   std::istringstream input(
-    "EAM source.eam\nREFIT_MODE dense\nREFIT_MAX_ESCALATIONS 0\n"
+    "EAM source.eam\nREFIT_MODE dense\n"
     "DESCRIPTOR ta DM_Embed\nPAIRS Cu Cu\nDENSITY\nBASIS WendlandC4\n"
     "FORM NONNEG\nCENTRES AUTO 12\nWIDTHS AUTO\nAMPLITUDES AUTO\n"
     "CUTOFF\nTYPE Cut_Poly\nRADIUS AUTO\nENDCUTOFF\nENDDENSITY\n"
@@ -1880,4 +1880,175 @@ TEST_CASE_METHOD(PTFixture,"Refit pair basis cannot silently override a shared l
   Context c;c.add("EAM","unused.eam");c.add("REFIT_MODE","dense");c.add("RHOFORM","SIGNED");
   c.add("REFIT_BASIS","Blip");c.add("REFIT_PAIR_BASIS","Blip5");Task task("refit",c);
   REQUIRE_THROWS(RefitEngine().validate(task));
+}
+
+// ---- component (DESCRIPTOR) refits: keys the component fit does not read --
+
+namespace {
+// The dense component refit of source.eam (synth bcc) of the AUTO test
+// above, with `extra` key lines before the block.
+Context component_refit_config(const std::string &extra = "",
+                               const std::string &form = "NONNEG") {
+  std::istringstream input(
+    "EAM source.eam\nREFIT_MODE dense\n" + extra +
+    "DESCRIPTOR ta DM_Embed\nPAIRS Cu Cu\nDENSITY\nBASIS WendlandC4\n"
+    "FORM " + form + "\nCENTRES AUTO 12\nWIDTHS AUTO\nAMPLITUDES AUTO\n"
+    "CUTOFF\nTYPE Cut_Poly\nRADIUS AUTO\nENDCUTOFF\nENDDENSITY\n"
+    "EMBEDDING\nBASIS Gaussian\nCENTRES AUTO 20\nWIDTHS AUTO\n"
+    "REFERENCE ZERO\nENDEMBEDDING\nENDDESCRIPTOR\n");
+  return tadah::core::CoreUserConfigParser().parse(input);
+}
+// A task of `c` whose every key came from the configuration file.
+Task config_file_task(const Context &c) {
+  Task task("refit", c);
+  task.setKeyProvenance(tadah::mlip::KeyProvenance(
+      Context{}, c, "refit.config", tadah::mlip::KeyOrigin::Kind::ConfigFile,
+      {}));
+  return task;
+}
+}  // namespace
+
+/* Pins: a refit configuration with DESCRIPTOR blocks that sets
+ * REFIT_CONSTRAIN_F0, RHOFORM or EMBF0 itself (a ConfigFile key, not a
+ * default the task factory added) is refused naming the key: the setting
+ * belongs to the component (its REFERENCE, its FORM). The UDM-009 fix
+ * removes the injected defaults by provenance; this pins the other half,
+ * which no test covered (a refit_inputs() that dropped ConfigFile keys too
+ * passed every test). */
+TEST_CASE_METHOD(PTFixture,
+                 "DM_Embed refit refuses an explicit setting the component owns",
+                 "[unified-dm][refit][validation]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  for (const char *line : {"REFIT_CONSTRAIN_F0 false\n", "RHOFORM SIGNED\n",
+                           "EMBF0 FREE\n"}) {
+    CAPTURE(line);
+    const Context c = component_refit_config(line);
+    const std::string key = std::string(line).substr(0, std::string(line).find(' '));
+    REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(c)),
+                        Catch::Contains(key + " conflicts with component blocks"));
+  }
+}
+
+/* Pins: REFIT_MAX_ESCALATIONS with DESCRIPTOR blocks is refused, naming the
+ * component counts as what sets the basis: a component fit does not escalate
+ * its basis. Before the fix it was accepted and had no effect, and a fit
+ * above tolerance advised raising it. */
+TEST_CASE_METHOD(PTFixture,
+                 "DM_Embed refit refuses REFIT_MAX_ESCALATIONS",
+                 "[unified-dm][refit][validation]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  const Context c = component_refit_config("REFIT_MAX_ESCALATIONS 3\n");
+  REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(c)),
+                      Catch::Contains("REFIT_MAX_ESCALATIONS") &&
+                      Catch::Contains("CENTRES AUTO <count>"));
+}
+
+/* Pins: REFIT_COMPONENT_ITERATIONS, the iteration limit of the component
+ * compact fit, is refused under REFIT_MODE dense (the mode rule) and in a
+ * configuration without DESCRIPTOR blocks (no component fit reads it).
+ * Before the fix the key did not exist. */
+TEST_CASE_METHOD(PTFixture,
+                 "REFIT_COMPONENT_ITERATIONS is read by the component compact fit only",
+                 "[unified-dm][refit][validation]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  REQUIRE_THROWS_WITH(
+      RefitEngine().validate(config_file_task(
+          component_refit_config("REFIT_COMPONENT_ITERATIONS 50\n"))),
+      Catch::Contains("REFIT_COMPONENT_ITERATIONS has no effect under "
+                      "REFIT_MODE dense"));
+  Context legacy = dense_refit_context("source.eam");
+  legacy.remove("REFIT_MODE");
+  legacy.add("REFIT_MODE", std::string("compact"));
+  for (const char *k : {"REFIT_LEVEL", "REFIT_MAX_ESCALATIONS"}) legacy.remove(k);
+  legacy.remove("REFIT_BASIS");
+  legacy.add("REFIT_BASIS", std::string("Blip5"));
+  legacy.add("REFIT_COMPONENT_ITERATIONS", 50);
+  REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(legacy)),
+                      Catch::Contains("REFIT_COMPONENT_ITERATIONS") &&
+                      Catch::Contains("DESCRIPTOR"));
+}
+
+/* Pins: a refit configuration (no --retarget) that sets a key of
+ * --retarget (RETARGET_RCUT2B, RETARGET_RCUTMB, RETARGET_RHOFORM, PCT,
+ * SET) is refused naming --retarget, as --edit and --retarget refuse the
+ * keys of the other mode. Before the fix the plain refit path did not look
+ * at them: --rcut2b 4.5 on a refit exited 0 and changed nothing. */
+TEST_CASE_METHOD(PTFixture,
+                 "A refit refuses the keys of --retarget",
+                 "[refit][validation]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  for (const char *k : {"RETARGET_RCUT2B", "RETARGET_RCUTMB"}) {
+    CAPTURE(k);
+    Context c = dense_refit_context("source.eam");
+    c.add(k, 4.5);
+    REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(c)),
+                        Catch::Contains(std::string(k) + " key requires --retarget"));
+    Context comp = component_refit_config();
+    comp.add(k, 4.5);
+    REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(comp)),
+                        Catch::Contains(std::string(k) + " key requires --retarget"));
+  }
+}
+
+/* Pins: the log of a component refit describes the fit that ran: the
+ * density form line names the component's FORM (the potential has no
+ * RHOFORM line), the embedding window line names [0, rhomax], the window
+ * the component fit fits F on, and a fit above tolerance names the
+ * component counts and grids as the remedy, not REFIT_MAX_ESCALATIONS or
+ * NRHO_BASIS/NF_BASIS (which the component fit refuses). Before the fix the
+ * log said 'the potential declares RHOFORM NONNEG', 'embedding fit window
+ * rho <= <rho_reach>' and advised 'raise REFIT_MAX_ESCALATIONS, pin a
+ * larger N2B/NRHO_BASIS/NF_BASIS'. */
+TEST_CASE_METHOD(PTFixture,
+                 "DM_Embed refit log names the component fit's form window and remedy",
+                 "[unified-dm][refit][log]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  const RefitOutputs out = run_refit(component_refit_config(
+      "REFIT_TOL_AMBIENT 1e-9\nREFIT_TOL_COMPRESSED 1e-9\n"));
+  INFO(out.log);
+  CHECK(out.log.find("declares RHOFORM") == std::string::npos);
+  CHECK(out.log.find("the density component TA declares FORM NONNEG") !=
+        std::string::npos);
+  CHECK(out.log.find("embedding fit window rho <=") == std::string::npos);
+  CHECK(out.log.find("embedding fit window [0, ") != std::string::npos);
+  CHECK(out.log.find("still above tolerance") != std::string::npos);
+  CHECK(out.log.find("REFIT_MAX_ESCALATIONS") == std::string::npos);
+  CHECK(out.log.find("NRHO_BASIS") == std::string::npos);
+  CHECK(out.log.find("CENTRES AUTO <count>") != std::string::npos);
+}
+
+/* Pins: a dense REFIT_BASIS Gaussian refit says that it writes the smooth
+ * cutoff Cut_Poly for the pair function and the density (the written
+ * potential has RCTYPE2B Cut_Poly and density CUTOFF TYPE Cut_Poly: a DM_Embed
+ * Gaussian density needs a smooth spatial cutoff), in its WARNING, not that
+ * a hard cutoff truncates the Gaussian tail; and its density form line names
+ * the component's FORM. Before the fix the WARNING claimed a hard cutoff and
+ * the Cut_Poly choice was an INFO line. */
+TEST_CASE_METHOD(PTFixture,
+                 "Gaussian refit states the smooth cutoff it writes",
+                 "[unified-dm][refit][log]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  Context c = dense_refit_context("source.eam");
+  c.remove("REFIT_BASIS");
+  c.add("REFIT_BASIS", std::string("Gaussian"));
+  c.remove("REFIT_MAX_ESCALATIONS");
+  c.add("REFIT_MAX_ESCALATIONS", 0);
+  c.remove("REFIT_TOL_AMBIENT");
+  c.add("REFIT_TOL_AMBIENT", 1e6);
+  c.remove("REFIT_TOL_COMPRESSED");
+  c.add("REFIT_TOL_COMPRESSED", 1e6);
+  const RefitOutputs out = run_refit(c);
+  INFO(out.log);
+  CHECK(out.log.find("hard cutoff truncates") == std::string::npos);
+  CHECK(out.log.find("written with the smooth cutoff Cut_Poly") !=
+        std::string::npos);
+  const Context pot = tadah::core::CoreUserConfigParser().parse("pot.tadah");
+  CHECK(pot.get<std::string>("RCTYPE2B") == "Cut_Poly");
+  CHECK(tadah::models::embed_specs(pot).at(0).cutoff == "Cut_Poly");
 }
