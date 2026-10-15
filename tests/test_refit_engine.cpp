@@ -461,7 +461,8 @@ std::vector<std::pair<double, double>> ampgrid_bounds(const std::string &f) {
   std::vector<std::pair<double, double>> out;
   std::ifstream in(f);
   for (std::string line; std::getline(in, line);) {
-    const auto p = line.find("OPTIM AMPGRIDMB (");
+    auto p = line.find("OPTIM AMPGRIDMB (");
+    if(p==std::string::npos && line.find(".DENSITY.AMPLITUDES (")!=std::string::npos)p=line.find("OPTIM ");
     if (p == std::string::npos) continue;
     std::istringstream ls(line.substr(line.find(')', p) + 1));
     double lo, hi;
@@ -545,16 +546,16 @@ TEST_CASE_METHOD(PTFixture,
     // the written potential loads in its form
     Context pot = tadah::core::CoreUserConfigParser().parse("pot.tadah");
     pot.add("VERBOSE", 0);
-    tadah::models::DM_REAM dm(pot);
-    CHECK(dm.density().form == f);
+    tadah::models::DC_Selector descriptor(pot);
+    const auto component=tadah::models::embed_specs(pot).at(0);
+    CHECK(component.form == f);
     // the hpotarget: non-negative AMPGRIDMB boxes under the positive forms,
     // recorded in the parsed header line
     const std::string hpo = slurp("refit.hpotarget");
     const bool positive = tadah::models::rhoform_is_positive(f);
-    CHECK((hpo.find(tadah::mlip::engines::rhoform_bounds_line(
-               tadah::models::RhoForm::NonNeg)) != std::string::npos) ==
-          (f == tadah::models::RhoForm::NonNeg));
-    CHECK((hpo.find("# RHOFORM ") != std::string::npos) == positive);
+    const auto marker="# COMPONENT_PARAMETER "+tadah::core::to_upper(component.id)+".DENSITY.AMPLITUDES ";
+    CHECK((hpo.find(marker+"NONNEG")!=std::string::npos)==positive);
+    CHECK((hpo.find(marker+"FREE")!=std::string::npos)==!positive);
     const auto bounds = ampgrid_bounds("refit.hpotarget");
     REQUIRE(bounds.size() == out.amps.size());
     if (positive) {
