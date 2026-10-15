@@ -76,16 +76,13 @@ protected:
    *  REFIT_MODE compact is refused. */
   virtual bool has_compact_fitter() const;
 
-  /** Compact-mode hook, called only when has_compact_fitter(). Returns true
-   *  when it produced a fit (refit filled, self-test computed), false when
-   *  the fitter declines this table, having logged a WARNING that says why:
-   *  run() then fits it in dense mode. HPO's engine declines no table: it
-   *  returns true or throws (a reachability analysis whose r_reach is below
-   *  the table's dr, which run()'s crystal gate refuses, is
-   *  std::logic_error), so with it run() never falls back to the dense fit.
-   *  The base throws std::logic_error (it has no compact fitter, and run()
-   *  refuses compact mode before calling it). */
-  virtual bool compact_fit(const tadah::core::Context &c,
+  /** Compact-mode hook, called only when has_compact_fitter(): fits the
+   *  table, filling `refit` and the self-test `st`, or throws. run() has no
+   *  other fit for REFIT_MODE compact: a hook that returns without a fit is
+   *  std::logic_error there (it fitted the table in dense mode when a hook
+   *  returned false). The base throws std::logic_error (it has no compact
+   *  fitter, and run() refuses compact mode before calling it). */
+  virtual void compact_fit(const tadah::core::Context &c,
                            const models::EAMSetflIO &eam,
                            models::EAMRefitConfig &cfg,
                            std::unique_ptr<models::EAMRefit> &refit,

@@ -221,7 +221,7 @@ bool RefitEngine::has_compact_fitter() const {
   return false;  // the HPO engine overrides this hook and compact_fit()
 }
 
-bool RefitEngine::compact_fit(const tadah::core::Context &,
+void RefitEngine::compact_fit(const tadah::core::Context &,
                               const models::EAMSetflIO &,
                               models::EAMRefitConfig &,
                               std::unique_ptr<models::EAMRefit> &,
@@ -358,10 +358,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const std::string hpo_out   = get_str(c, "HPOFILEOUT", "refit.hpotarget");
   // Default basis: Knot5 in compact mode (the measured-best family: worst-
   // case |dCij| 1.6 GPa vs Blip's 2.3 across the 5 reference EAMs, every
-  // E-V observable in tolerance); Blip in dense mode and when the compact
-  // fitter declines the table (below). An EXPLICIT REFIT_BASIS always wins
-  // (an explicit knot family in a dense fit is a hard error rather than a
-  // silent substitution).
+  // E-V observable in tolerance); Blip in dense mode. An EXPLICIT
+  // REFIT_BASIS always wins (an explicit knot family in a dense fit is a
+  // hard error rather than a silent substitution).
   std::string basis = get_str(c, "REFIT_BASIS", "");
   const bool basis_user_set = !basis.empty();
   if (!basis_user_set)
@@ -383,13 +382,16 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   //      normalised to lower case on read, so FCC/BCC/HCP are accepted;
   //      anything else (or a0<=0, e.g. a "NONE 0.0" header) is a hard stop with
   //      a fix hint rather than a silently-skipped self-test. The crystal's
-  //      nearest neighbours at the strongest compression the refit tests
-  //      (a/a0 = REFIT_REACH_SMIN) must also be at least the table's dr apart,
-  //      so the reachability analysis' r_reach is >= dr > 0. Shared by dense
-  //      and compact modes (compact_fit runs later).
+  //      nearest neighbours must lie below the table's cutoff at a0 (a
+  //      crystal without a pair within rcut has no interaction), and at the
+  //      strongest compression the refit tests (a/a0 = REFIT_REACH_SMIN) be
+  //      at least the table's dr apart, so the reachability analysis'
+  //      r_reach lies in [dr, rcut). Shared by dense and compact modes
+  //      (compact_fit runs later).
   models::eam_lattice::require_crystal_on_grid(
       eam.lattice_raw(), eam.lattice_param(),
-      nums.reach_smin.value_or(models::EAMRefitConfig().reach_smin), eam.dr());
+      nums.reach_smin.value_or(models::EAMRefitConfig().reach_smin), eam.dr(),
+      eam.rcut());
 
   // ---- the refit.eam grid (OUTPUT_GRID_SCALE), before any fitting: a
   //      scale whose point counts a setfl table cannot have is refused here,
@@ -487,7 +489,6 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   SelfTest st;
 
   // ---- compact mode (optimised blip centres/widths; HPO engine hook) ----
-  bool fitted = false;
   if (compact) {
     // The compact fitter must optimise the SAME family the receiving
     // EAMRefit evaluates/serialises, else the pot's evaluation basis would
@@ -498,28 +499,25 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "tadah refit: REFIT_MODE compact supports REFIT_BASIS Blip, "
           "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
           "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
-    // (require_fitter refused compact mode without a compact fitter.)
-    // false: the fitter declined this table and said why in a WARNING; the
-    // dense fit runs instead (HPO's engine declines no table).
-    fitted = compact_fit(c, eam, cfg, refit_ptr, st);
-    if (!fitted && !basis_user_set) {
-      cfg.basis = "Blip";  // defaulted Knot5 has no dense path
-      core::Logger::instance().log(core::LogLevel::WARNING,
-          "tadah refit: defaulted basis falls back Knot5 -> Blip for the "
-          "dense path (set REFIT_BASIS explicitly to control this).");
-    }
+    // (require_fitter refused compact mode without a compact fitter.) The
+    // hook fits the table or throws: there is no dense fit to fall back on.
+    compact_fit(c, eam, cfg, refit_ptr, st);
+    if (!refit_ptr)
+      throw std::logic_error(
+          "tadah refit: internal error: the compact fitter returned without "
+          "a fit (RefitEngine::compact_fit fills the fit and its self-test, "
+          "or throws); this is a bug, please report it");
   }
 
-  // (cfg.basis, not basis_knotfam: a defaulted Knot5 fell back to Blip)
-  if (!fitted && refit_basis_is_knot_family(cfg.basis))
+  if (!compact && basis_knotfam)
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
         "compact on an HPO (Ceres) build — the one-sided knot families have "
         "no dense windowed-LSQ path. Use REFIT_BASIS Blip/Blip5 for dense "
         "mode.");
 
-  if (!fitted && !basis_blip && !basis_blip5)  // dense + Gaussian: demoted
-                                               // (knot families threw above)
+  if (!compact && !basis_blip && !basis_blip5)  // dense + Gaussian: demoted
+                                                // (knot families threw above)
     core::Logger::instance().log(core::LogLevel::WARNING,
         "tadah refit: REFIT_BASIS '" + cfg.basis + "' is EXPERIMENTAL and "
         "UNVALIDATED for refit (no LAMMPS faithfulness battery has gated "
@@ -528,14 +526,14 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "families.");
 
   RefitLog dlog;
-  if (!fitted) {
+  if (!compact) {
     dlog.open(get_str(c, "REFIT_LOG", "refit_opt.log"), /*append=*/false);
     dlog.raw("# tadah refit optimisation log (dense windowed-LSQ path)");
     dlog.line("input " + eam_path + "  element=" + eam.element() +
               "  basis=" + cfg.basis + "  mode=dense  rhoform=" +
               models::rhoform_name(cfg.rho_form));
   }
-  if (!fitted)
+  if (!compact)
   for (int attempt = 0; ; ++attempt) {
     refit_ptr = std::make_unique<models::EAMRefit>(eam, cfg);
     refit_ptr->fit();
@@ -582,9 +580,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // (the lattice is guaranteed recognised by the crystal gate above). The
   // compact fit always fits on the reachable windows; REFIT_PLACEMENT and
   // the small uniform tail basis are the dense fit's.
-  if (fitted || cfg.placement != "uniform") {
+  if (compact || cfg.placement != "uniform") {
     core::Logger::instance().log(core::LogLevel::WARNING,
-        fitted ? "tadah refit: fit windows (reachability-driven):"
+        compact ? "tadah refit: fit windows (reachability-driven):"
                : "tadah refit: windowed basis placement (reachability-driven):");
     core::Logger::instance().log(core::LogLevel::WARNING,
         "  reachable pair distances r >= " + core::to_string(refit.r_reach(), 4) +
@@ -593,9 +591,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     core::Logger::instance().log(core::LogLevel::WARNING,
         "  embedding fit window rho <= " + core::to_string(refit.rho_reach(), 4) +
         " (table rhomax=" + core::to_string(eam.rhomax(), 4) +
-        (fitted ? ")" : "; the unreachable tail keeps a small uniform basis)"));
+        (compact ? ")" : "; the unreachable tail keeps a small uniform basis)"));
     core::Logger::instance().log(core::LogLevel::WARNING,
-        fitted ? "  (control: REFIT_REACH_SMIN, REFIT_REACH_MARGIN)"
+        compact ? "  (control: REFIT_REACH_SMIN, REFIT_REACH_MARGIN)"
                : "  (control: REFIT_PLACEMENT window|uniform, REFIT_REACH_SMIN, "
                  "REFIT_REACH_MARGIN)");
     if (refit.rho_reach() >= 0.999 * eam.rhomax())
@@ -666,7 +664,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     if (1000.0 * st.mx_a > tol_amb || 1000.0 * st.mx_c > tol_cmp ||
         std::fabs(1000.0 * (st.e_fit - st.e_orig)) > tol_amb) {
       core::Logger::instance().log(core::LogLevel::WARNING,
-          fitted ? "  WARNING: still above tolerance — raise "
+          compact ? "  WARNING: still above tolerance — raise "
                    "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis), "
                    "or relax REFIT_TOL_* if this regime is irrelevant for "
                    "your use."
@@ -733,7 +731,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
       // uniform fits one uniform basis on the whole range (rho_reach 0).
       os << "F   " << 0.0 << " " << eam.rhomax() << " " << 0.0 << " "
          << refit.fit_window_rho_hi()
-         << (fitted ? "  # above fit_window_hi the setfl carries the ORIGINAL "
+         << (compact ? "  # above fit_window_hi the setfl carries the ORIGINAL "
                       "table (offset-matched); control: REFIT_REACH_SMIN, "
                       "REFIT_REACH_MARGIN\n"
              : cfg.placement == "uniform"
