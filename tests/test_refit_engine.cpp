@@ -3,6 +3,8 @@
 // that hard-errors on an unspecified / unsupported lattice. The EAM is written
 // from smooth analytic phi/rho/F so the test needs no checked-in binary fixture.
 #include "catch2/catch.hpp"
+#include <tadah/models/descriptors/dm/embed_spec.h>
+#include <tadah/models/dc_selector.h>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -152,6 +154,15 @@ RefitOutputs run_refit(const Context &c) {
     if (key == "AMPGRIDMB")
       while (ls >> tok) out.amps.push_back(std::stod(tok));
   }
+  {
+    auto context=tadah::core::CoreUserConfigParser().parse("pot.tadah");
+    auto specs=tadah::models::embed_specs(context);
+    if(!specs.empty()) {
+      out.embf0=tadah::models::embf0_name(specs[0].reference);
+      out.rhoform=tadah::models::rhoform_name(specs[0].form);
+      out.amps=specs[0].density.amplitudes;
+    }
+  }
   tadah::models::EAMSetflIO setfl;
   setfl.read_setfl("refit.eam");
   out.setfl_F0 = setfl.frho().at(0);
@@ -179,6 +190,32 @@ Context dense_refit_context(const std::string &eam_file,
   c.add("REFIT_TOL_COMPRESSED", 20.0);
   c.add("REFIT_MAX_ESCALATIONS", 2);
   return c;
+}
+
+TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves independent families",
+                 "[unified-dm][refit]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam","bcc",3.2);
+  std::istringstream input(
+    "EAM source.eam\nREFIT_MODE dense\nREFIT_MAX_ESCALATIONS 0\n"
+    "DESCRIPTOR ta DM_Embed\nPAIRS Cu Cu\nDENSITY\nBASIS WendlandC4\n"
+    "FORM NONNEG\nCENTRES AUTO 12\nWIDTHS AUTO\nAMPLITUDES AUTO\n"
+    "CUTOFF\nTYPE Cut_Poly\nRADIUS AUTO\nENDCUTOFF\nENDDENSITY\n"
+    "EMBEDDING\nBASIS Gaussian\nCENTRES AUTO 20\nWIDTHS AUTO\n"
+    "REFERENCE ZERO\nENVELOPE\nTYPE Smoothstep2\nCUTOFF 2\nENDENVELOPE\n"
+    "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  auto c=tadah::core::CoreUserConfigParser().parse(input);
+  tadah::mlip::KeyProvenance provenance(Context{},c,"refit.config",tadah::mlip::KeyOrigin::Kind::ConfigFile,{"REFIT_CONSTRAIN_F0"});
+  c.add("REFIT_CONSTRAIN_F0",false);Task task("refit",c);task.setKeyProvenance(provenance);
+  RefitEngine engine; REQUIRE_NOTHROW(engine.validate(task));
+  REQUIRE(engine.run(task)==EXIT_SUCCESS);
+  auto pot=tadah::core::CoreUserConfigParser().parse("pot.tadah");
+  auto specs=tadah::models::embed_specs(pot);
+  REQUIRE(specs.size()==1);
+  REQUIRE(specs[0].density.basis==tadah::models::EmbedBasis::WendlandC4);
+  REQUIRE(specs[0].embedding.basis==tadah::models::EmbedBasis::Gaussian);
+  REQUIRE(specs[0].density.centres.size()==12);
+  REQUIRE(specs[0].radius==5);
 }
 
 // The REFIT_MODE compact counterpart of dense_refit_context: a bump basis,
@@ -425,7 +462,8 @@ std::vector<std::pair<double, double>> ampgrid_bounds(const std::string &f) {
   std::vector<std::pair<double, double>> out;
   std::ifstream in(f);
   for (std::string line; std::getline(in, line);) {
-    const auto p = line.find("OPTIM AMPGRIDMB (");
+    auto p = line.find("OPTIM AMPGRIDMB (");
+    if(p==std::string::npos && line.find(".DENSITY.AMPLITUDES (")!=std::string::npos)p=line.find("OPTIM ");
     if (p == std::string::npos) continue;
     std::istringstream ls(line.substr(line.find(')', p) + 1));
     double lo, hi;
@@ -553,16 +591,16 @@ TEST_CASE_METHOD(PTFixture,
     // the written potential loads in its form
     Context pot = tadah::core::CoreUserConfigParser().parse("pot.tadah");
     pot.add("VERBOSE", 0);
-    tadah::models::DM_REAM dm(pot);
-    CHECK(dm.density().form == f);
+    tadah::models::DC_Selector descriptor(pot);
+    const auto component=tadah::models::embed_specs(pot).at(0);
+    CHECK(component.form == f);
     // the hpotarget: non-negative AMPGRIDMB boxes under the positive forms,
     // recorded in the parsed header line
     const std::string hpo = slurp("refit.hpotarget");
     const bool positive = tadah::models::rhoform_is_positive(f);
-    CHECK((hpo.find(tadah::mlip::engines::rhoform_bounds_line(
-               tadah::models::RhoForm::NonNeg)) != std::string::npos) ==
-          (f == tadah::models::RhoForm::NonNeg));
-    CHECK((hpo.find("# RHOFORM ") != std::string::npos) == positive);
+    const auto marker="# COMPONENT_PARAMETER "+tadah::core::to_upper(component.id)+".DENSITY.AMPLITUDES ";
+    CHECK((hpo.find(marker+"NONNEG")!=std::string::npos)==positive);
+    CHECK((hpo.find(marker+"FREE")!=std::string::npos)==!positive);
     const auto bounds = ampgrid_bounds("refit.hpotarget");
     REQUIRE(bounds.size() == out.amps.size());
     if (positive) {
@@ -1723,4 +1761,10 @@ TEST_CASE_METHOD(PTFixture,
                                         {"REFIT_CONSTRAIN_F0"}));
     CHECK_NOTHROW(RefitEngine().validate(task));
   }
+}
+
+TEST_CASE_METHOD(PTFixture,"Refit pair basis cannot silently override a shared legacy basis", "[unified-dm][refit][validation]") {
+  Context c;c.add("EAM","unused.eam");c.add("REFIT_MODE","dense");c.add("RHOFORM","SIGNED");
+  c.add("REFIT_BASIS","Blip");c.add("REFIT_PAIR_BASIS","Blip5");Task task("refit",c);
+  REQUIRE_THROWS(RefitEngine().validate(task));
 }

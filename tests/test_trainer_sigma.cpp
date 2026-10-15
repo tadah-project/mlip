@@ -22,6 +22,9 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/core/core_user_config_parser.h>
+#include <tadah/models/descriptors/dm/embed_spec.h>
+#include <sstream>
 
 #include <array>
 #include <cmath>
@@ -130,6 +133,37 @@ void set_key(Context &c, const std::string &key, const std::string &value) {
 }
 
 }  // namespace
+
+TEST_CASE("DM_Embed train write read predict retains energies forces and stresses", "[unified-dm][train]") {
+  PeriodicTable::initialize();auto c=make_context("M_BLR","BF_Linear","1");
+  for(const char *key:{"TYPEMB","RCTYPEMB","RCUTMB"})c.remove(key);
+  c.add("INITMB",true);c.add("STRESS",true);
+  tadah::models::EmbedSpec spec;spec.id="ta";spec.pairs={"Ta","Ta"};
+  spec.form=tadah::models::RhoForm::NonNeg;spec.cutoff="Cut_Poly";spec.radius=6;
+  spec.density.basis=tadah::models::EmbedBasis::WendlandC4;
+  spec.density.centres={2.2,3.2};spec.density.scales={0.6,0.7};spec.density.amplitudes={0.4,0.2};
+  spec.embedding.basis=tadah::models::EmbedBasis::Gaussian;
+  spec.embedding.centres={0,0.5,1};spec.embedding.scales={2,2,2};
+  c.append_block(tadah::models::embed_block(spec));
+  MLIPWorkspaceManager workspace;Trainer trainer(c,workspace);auto db=training_db();trainer.train(db);
+  auto pot=trainer.get_param_file();
+  auto reference=trainer.model->predict(pot,db,trainer.dc);
+  std::ostringstream text;pot.write_potential(text,18);
+  std::istringstream input(text.str());auto loaded=tadah::core::CoreUserConfigParser().parse(input);
+  tadah::models::DC_Selector selector(loaded);
+  tadah::mlip::DescriptorsCalc<> dc(loaded,*selector.d2b,*selector.dmb,*selector.c2b,*selector.cmb);
+  std::unique_ptr<tadah::mlip::DM_Function_Base> fb(tadah::core::factory<tadah::mlip::DM_Function_Base,const Context&>(loaded.get<std::string>("MODEL",1),loaded));
+  std::unique_ptr<tadah::mlip::M_Tadah_Base> model(tadah::core::factory<tadah::mlip::M_Tadah_Base,tadah::mlip::DM_Function_Base&,Context&>(loaded.get<std::string>("MODEL"),*fb,loaded));
+  auto predicted=model->predict(loaded,db,dc);
+  REQUIRE(predicted.size()==reference.size());
+  for(std::size_t i=0;i<reference.size();++i) {
+    REQUIRE(predicted(i).energy==Approx(reference(i).energy).margin(1e-11));
+    for(std::size_t a=0;a<reference(i).natoms();++a)for(std::size_t k=0;k<3;++k)
+      REQUIRE(predicted(i).atoms[a].force[k]==Approx(reference(i).atoms[a].force[k]).margin(1e-11));
+    for(std::size_t a=0;a<3;++a)for(std::size_t b=0;b<3;++b)
+      REQUIRE(predicted(i).stress(a,b)==Approx(reference(i).stress(a,b)).margin(1e-11));
+  }
+}
 
 /* Pins: retraining from a potential (the potential of an OALGO 3 fit used
  * as the configuration, three times in a row) writes one WCOV of N*N+1 =

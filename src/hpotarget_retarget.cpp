@@ -38,7 +38,7 @@ struct OptimLine {
 };
 
 const std::regex kOptimRe(
-    R"(^(\s*)(#\s*)?OPTIM\s+([A-Za-z0-9_]+)\s*\(\s*(\d+)\s*\)\s+(\S+)\s+(\S+)\s*$)");
+    R"(^(\s*)(#\s*)?OPTIM\s+([A-Za-z0-9_.]+)\s*\(\s*(\d+)\s*\)\s+(\S+)\s+(\S+)\s*$)");
 const std::regex kHeaderPctRe(R"(Bounds are \+-([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)%)");
 const std::regex kGroupHeaderRe(
     R"(^(#\s*)([A-Za-z0-9_]+)(\s+\(\+-)([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(%.*)$)");
@@ -65,6 +65,11 @@ std::string pct_str(double p) {
 }
 
 bool group_positive_only(const std::string &key, bool &known) {
+  if(key.find('.')!=std::string::npos) {
+    const auto leaf=tadah::core::to_upper(key.substr(key.find_last_of('.')+1));
+    known=leaf=="CENTRES" || leaf=="AMPLITUDES" || leaf=="ETA" || leaf=="WIDTHS" || leaf=="RADIUS" || leaf=="CUTOFF";
+    return leaf=="ETA" || leaf=="WIDTHS" || leaf=="RADIUS" || leaf=="CUTOFF";
+  }
   for (const auto &s : hpotarget_group_specs()) {
     if (key == s.key) {
       known = true;
@@ -80,6 +85,12 @@ bool group_positive_only(const std::string &key, bool &known) {
 RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
                                         const RetargetOptions &opts) {
   RetargetReport rep;
+  std::set<std::string> nonnegative_components;
+  for(const auto &line:lines) {
+    std::istringstream in(line);std::string comment,marker,path,rule;
+    if(in>>comment>>marker>>path>>rule && comment=="#" && marker=="COMPONENT_PARAMETER" && rule=="NONNEG")
+      nonnegative_components.insert(tadah::core::to_upper(path));
+  }
 
   // ---- the density form (writer-recorded header line, or --rhoform) ----
   // Under NONNEG/MONOTONE the AMPGRIDMB boxes are non-negative: a lo-clamped
@@ -189,7 +200,8 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
            (key == "CGRIDMB" && bump_w.count("MB"));
   };
 
-  auto nonneg_key = [&form](const std::string &key) {
+  auto nonneg_key = [&form,&nonnegative_components](const std::string &key) {
+    if(nonnegative_components.count(tadah::core::to_upper(key)))return true;
     return tadah::models::optim_key_lower_bound(key, form) ==
            tadah::models::OptimLowerBound::NonNegative;
   };

@@ -21,6 +21,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
+#include <tadah/models/eam/embed_edit.h>
 
 namespace tadah {
 namespace mlip {
@@ -204,6 +205,22 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   if (run_numeric) pot.add("NUMERIC", *run_numeric);
   const core::PotDigits pot_digits = core::resolve_pot_digits(pot);
   const bool exact_output = pot_digits.digits >= core::kRoundTripDigits;
+
+  if(!pot.blocks("DESCRIPTOR").empty() && core::to_upper(c.get<std::string>("FUNC"))!="PHI") {
+    const auto channel=core::to_upper(c.get<std::string>("FUNC"));
+    if(channel!="RHO" && channel!="F")throw std::runtime_error("DM_Embed edit FUNC must be phi, rho or F");
+    auto out=models::edit_embed_potential(pot,channel=="RHO",c.get<double>(has(c,"ADD")?"ADD":"REMOVE"),
+      has(c,"REMOVE"),has(c,"ETA")?std::optional<double>(c.get<double>("ETA")):std::nullopt,
+      has(c,"DEG")?std::optional<int>(c.get<int>("DEG")):std::nullopt);
+    remove_weight_covariance(out);
+    const auto out_pot=pick_output(c,provenance,"OUTFILE","pot_edited.tadah");
+    const auto out_hpo=pick_output(c,provenance,"HPOFILEOUT","refit_edited.hpotarget");
+    guard_not_input(out_pot,in_pot,"pass -o <name> to choose a different output name");
+    TrainEngine::dumpPotFile(out_pot,out,record);write_hpotarget(out_hpo,out,pct);
+    if(has(c,"REMOVE"))log_warn("DM_Embed basis removal refits the remaining coefficients; revalidate the potential");
+    log_info("tadah refit --edit: wrote pot="+out_pot+" hpotarget="+out_hpo);
+    return EXIT_SUCCESS;
+  }
 
   potedit::PotEAMView view = potedit::parse_pot_view(pot);
   if (view.mb == potedit::MBKind::Ream) {

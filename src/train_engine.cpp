@@ -43,7 +43,7 @@ void hint_embf0_reference(const Trainer &tr,
   if (tr.DCS.bias > 0 || !report.eshift.empty()) return;
   tadah::core::Logger::instance().log(
       tadah::core::LogLevel::WARNING,
-      "HINT: EMBF0 ZERO fixes the DM_REAM isolated-atom energy at 0 and the "
+      std::string("HINT: ")+(tr.context.blocks("DESCRIPTOR").empty()?"EMBF0 ZERO":"REFERENCE ZERO")+" fixes the "+tr.DCS.dmb->label()+" isolated-atom energy at 0 and the "
       "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
       "reference energies are absolute (e.g. DFT totals), set ESHIFT or give "
       "the run ESHIFT_ATOM or ESHIFT_DBATOM (--eshift-atom, --eshift-dbatom: "
