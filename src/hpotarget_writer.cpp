@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
@@ -74,6 +75,13 @@ OptimBound optim_group_bound(double val, double pct, double floor,
 std::string rhoform_bounds_line(models::RhoForm form) {
   return std::string("# RHOFORM ") + models::rhoform_name(form) +
          ": AMPGRIDMB bounds are non-negative (lo = max(0, v - d))";
+}
+
+std::string knot_support_cap_line(const std::string &path, double radius) {
+  return "# " + path + " knot-support cap: RADIUS = " +
+         core::format_roundtrip(radius) +
+         " (CUTOFF TYPE NONE: every knot ends within RADIUS, so the knot "
+         "boxes end there)";
 }
 
 namespace {
@@ -190,8 +198,13 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   if (tadah::models::context_has_ream(pot))
     form = tadah::models::require_rhoform(pot, "tadah refit (hpotarget)");
   const auto components=tadah::models::embed_specs(pot);
+  const bool ream=tadah::models::context_has_ream(pot);
   bool zero_reference=!components.empty() && std::all_of(components.begin(),components.end(),[](const auto &s){return s.reference==tadah::models::EmbF0Mode::Zero;});
-  if(tadah::models::context_has_ream(pot))zero_reference=(components.empty() || zero_reference) && tadah::models::stored_embf0(pot).value_or(tadah::models::EmbF0Mode::Zero)==tadah::models::EmbF0Mode::Zero;
+  if(ream)zero_reference=(components.empty() || zero_reference) && tadah::models::stored_embf0(pot).value_or(tadah::models::EmbF0Mode::Zero)==tadah::models::EmbF0Mode::Zero;
+  // The zero reference is named by the potential's own keys: a DM_REAM
+  // term's EMBF0, a DM_Embed component's EMBEDDING REFERENCE.
+  const std::string zero_name=components.empty()?"EMBF0 ZERO"
+                             :ream?"EMBF0 ZERO and REFERENCE ZERO":"REFERENCE ZERO";
   std::ofstream os(path);
   if (!os)
     throw std::runtime_error("tadah refit: cannot open the hpotarget file " +
@@ -207,7 +220,7 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   // ESHIFT_DBATOM lines a run does not read (potential_line_not_read): the
   // run's own toggle derives the shift; an ESHIFT line of <config> is read.
   if (zero_reference)
-    os << "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no\n"
+    os << "# " << zero_name << ": F(0) = 0 exactly, so with BIAS false the model has no\n"
        << "# per-atom energy constant. For absolute reference energies (e.g.\n"
        << "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an\n"
        << "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not\n"
@@ -293,12 +306,6 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   };
 
   os << "# ---- pair function (two-body) shape ----\n";
-  for(const auto &binding:tadah::models::embed_bindings(pot)) {
-    const bool amplitude=binding.path.find(".AMPLITUDES")!=std::string::npos;
-    os<<"# COMPONENT_PARAMETER "<<binding.path<<" "<<(binding.positive?(amplitude?"NONNEG":"POSITIVE"):"FREE")<<"\n";
-    emit_optim_group(os,binding.path,binding.values,pct,binding.positive && !amplitude,true,
-      binding.positive && amplitude?tadah::models::OptimLowerBound::NonNegative:tadah::models::OptimLowerBound::Free);
-  }
   const auto w2b = bump_gate("2B", "RCUT2B");
   emit_rcut("2B", "RCUT2B", w2b);
   // Knot families carry NO width keys (eta is a pure gauge — the pot has
@@ -311,6 +318,49 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   } else {
     emit_optim_group(os, "CGRID2B", read_vec("CGRID2B"), pct, false, true);
     emit_optim_group(os, "SGRID2B", read_vec("SGRID2B"), pct, true, true);
+  }
+
+  // ---- DM_Embed components: their named parameters, one section each ----
+  // A knot density under CUTOFF TYPE NONE must end within its fixed RADIUS
+  // (every knot <= RADIUS): a box constraint of each knot centre alone, so
+  // the boxes end at RADIUS (the top on the bound grid, at most RADIUS),
+  // recorded in a parsed comment --retarget keeps. Bump channels keep
+  // full-width boxes: their support c + w/eta couples two parameters,
+  // which tadah hpo's per-candidate support gate checks.
+  {
+    const auto bindings=tadah::models::embed_bindings(pot);
+    for(const auto &spec:components) {
+      const std::string id=tadah::core::to_upper(spec.id);
+      os<<"# ---- "<<id<<" component (DM_Embed) density and embedding shape ----\n";
+      const bool knot_cap=spec.density.basis==tadah::models::EmbedBasis::Knot5 &&
+                          tadah::core::to_upper(spec.cutoff)=="NONE";
+      const std::string centres=id+".DENSITY.CENTRES";
+      if(knot_cap) os<<knot_support_cap_line(centres,spec.radius)<<"\n";
+      for(const auto &binding:bindings) {
+        if(tadah::core::to_upper(binding.owner)!=id) continue;
+        const bool amplitude=binding.path.find(".AMPLITUDES")!=std::string::npos;
+        os<<"# COMPONENT_PARAMETER "<<binding.path<<" "<<(binding.positive?(amplitude?"NONNEG":"POSITIVE"):"FREE")<<"\n";
+        const bool positive_only=binding.positive && !amplitude;
+        const auto lower=binding.positive && amplitude?tadah::models::OptimLowerBound::NonNegative:tadah::models::OptimLowerBound::Free;
+        if(!(knot_cap && binding.path==centres)) {
+          emit_optim_group(os,binding.path,binding.values,pct,positive_only,true,lower);
+          continue;
+        }
+        if(binding.values.empty()) continue;
+        const double floor=group_floor_of(binding.values);
+        emit_group_header(os,binding.path,binding.values.size(),pct,true);
+        for(std::size_t i=0;i<binding.values.size();++i) {
+          auto b=optim_group_bound(binding.values[i],pct,floor,positive_only,lower);
+          b.hi=std::min(b.hi,quantize_optim_down(spec.radius,b.q));
+          if(!(b.hi>b.lo))
+            throw std::runtime_error("tadah refit: knot "+std::to_string(i+1)+" of "+centres+" at "+
+              core::format_roundtrip(binding.values[i])+" is not inside the component's RADIUS "+
+              core::format_roundtrip(spec.radius)+" (CUTOFF TYPE NONE)");
+          emit_group_line(os,binding.path,i,b,true);
+        }
+        os<<"\n";
+      }
+    }
   }
 
   // Pure two-body potentials carry no many-body keys at all — skip the
