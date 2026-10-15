@@ -52,17 +52,37 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
       const std::string channel=types[1]=="EMBEDDING"?"EMBEDDING":"DENSITY";
       const auto count=descriptor->component_basis_size(channel);
       if(count) {
+        // The component functions (DM_Embed, DM_REAM) with the meaning of
+        // the radial curves below: the bare functions; --rescale tapers
+        // them by the channel's spatial cutoff (the product rule under
+        // --derivative); Y appends a block with the cutoff (its derivative
+        // under --derivative). An embedding has no spatial cutoff.
+        const bool rescale=singleContext.get<bool>("RESCALE");
+        double probe_fc=0,probe_dfc=0;
+        const bool has_cutoff=descriptor->component_cutoff(channel,0,probe_fc,probe_dfc);
+        if(rescale && !has_cutoff)
+          throw std::runtime_error("tadah analysis bfunc: --rescale tapers radial functions by their spatial cutoff, and the "+
+            core::to_lower(channel)+" functions of "+descriptor->label()+" have none (the embedding's argument is a density); "
+            "remove --rescale");
         std::vector<std::size_t> indices;
         if(singleContext.has_stored("INDEX")) indices=core::parse_one_based_indices(singleContext("INDEX"),count,"tadah analysis bfunc","component basis");
         else for(std::size_t j=1;j<=count;++j) indices.push_back(j);
         auto range=core::linspace(singleContext.get<double>("RANGE",0),singleContext.get<double>("RANGE",1),singleContext.get<std::size_t>("RANGE",2));
         const bool derivative=singleContext.get<bool>("DERIVATIVE");
-        const bool cutoff=types[1]=="Y" || singleContext.get<bool>("RESCALE");
-        oss<<std::setprecision(singleContext.get<int>("NUMERIC"));
+        const auto numeric=singleContext.get<std::size_t>("NUMERIC");
+        auto write=[&](double q,double v) {
+          oss<<std::fixed<<std::setprecision(numeric)<<std::setw(numeric+5)<<q<<"    "
+             <<std::setw(numeric+5)<<v<<std::endl;
+        };
         for(auto index:indices) {
-          for(double q:range) {double v,d;descriptor->component_basis_curve(channel,index-1,q,cutoff,v,d);oss<<q<<" "<<(derivative?d:v)<<"\n";}
-          oss<<"\n\n";
+          for(double q:range) {double v,d;descriptor->component_basis_curve(channel,index-1,q,rescale,v,d);write(q,derivative?d:v);}
+          oss<<std::endl;
         }
+        if(types[1]=="Y") {
+          for(double q:range) {double fc=0,dfc=0;descriptor->component_cutoff(channel,q,fc,dfc);write(q,derivative?dfc:fc);}
+          oss<<std::endl;
+        }
+        oss<<std::endl;
         continue;
       }
     }
