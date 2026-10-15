@@ -6,6 +6,8 @@
 #include <tadah/mlip/engines/analysis_bfunc_engine.h>
 #include <tadah/mlip/task.h>
 #include <tadah/models/descriptors/dm/embed_spec.h>
+#include <tadah/models/cutoffs.h>
+#include <cmath>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -75,5 +77,21 @@ TEST_CASE("DM_Embed retarget recognizes named paths and component nonnegative am
     std::istringstream in(line.substr(2));std::string optim,key,index;double lo,hi;
     in>>optim>>key>>index>>lo>>hi;
     REQUIRE(lo>=0);if(key.find("WIDTHS")!=std::string::npos)REQUIRE(lo>0);
+  }
+}
+
+TEST_CASE("Knot basis analysis accepts absent scales mixed degrees and cutoff product rule", "[unified-dm][analysis][legacy]") {
+  Temp temp;core::Context c;
+  c.add("ATOM","Ta");c.add("VERBOSE",0);c.add("INITMB",false);c.add("INIT2B",true);
+  c.add("TYPE2B","D2_Knot5 2 0 Ta Ta");c.add("CGRID2B","3 4");c.add("KDEG2B","3 5");
+  c.add("RCTYPE2B","Cut_Poly");c.add("RCUT2B",6);c.add("TYPE","2B");
+  c.add("RANGE","2 2.5 2");c.add("DERIVATIVE",true);c.add("RESCALE",true);c.add("NUMERIC",17);
+  c.add("OUTFILE","knot.dat");mlip::Task task("analysis.bfunc",c);
+  REQUIRE(mlip::engines::AnalysisBfuncEngine().run(task)==0);
+  double radius=6;models::Cut_Poly cutoff(radius);std::ifstream in("knot.dat");
+  for(int degree:{3,5})for(double x:{2.0,2.5}) {
+    const double centre=degree==3?3:4,t=centre-x;
+    double q,v;REQUIRE(bool(in>>q>>v));REQUIRE(q==x);
+    REQUIRE(v==Approx(-degree*std::pow(t,degree-1)*cutoff.calc(x)+std::pow(t,degree)*cutoff.calc_prime(x)).margin(1e-12));
   }
 }
