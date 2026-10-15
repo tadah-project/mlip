@@ -41,7 +41,12 @@ const std::regex kOptimRe(
     R"(^(\s*)(#\s*)?OPTIM\s+([A-Za-z0-9_.]+)\s*\(\s*(\d+)\s*\)\s+(\S+)\s+(\S+)\s*$)");
 const std::regex kHeaderPctRe(R"(Bounds are \+-([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)%)");
 const std::regex kGroupHeaderRe(
-    R"(^(#\s*)([A-Za-z0-9_]+)(\s+\(\+-)([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(%.*)$)");
+    R"(^(#\s*)([A-Za-z0-9_.]+)(\s+\(\+-)([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(%.*)$)");
+// The knot-support cap the writer records for the knot centres of a DM_Embed
+// density with CUTOFF TYPE NONE (knot_support_cap_line):
+// `# TA.DENSITY.CENTRES knot-support cap: RADIUS = 4 (...)`.
+const std::regex kKnotCapRe(
+    R"(^#\s*([A-Za-z0-9_.]+)\s+knot-support cap:\s*RADIUS\s*=\s*(\S+).*$)");
 // The bump-support contract the writer records next to a bump channel's
 // commented RCUT scalar: `# RCUT2B bump-support contract: w = 3 (...)`.
 // Files without it (knot channels, pre-contract emissions) get no capping.
@@ -86,10 +91,68 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
                                         const RetargetOptions &opts) {
   RetargetReport rep;
   std::set<std::string> nonnegative_components;
+  std::set<std::string> component_ids;  // the IDs of COMPONENT_PARAMETER paths
+  std::string amplitude_paths;          // their <ID>.DENSITY.AMPLITUDES
   for(const auto &line:lines) {
     std::istringstream in(line);std::string comment,marker,path,rule;
-    if(in>>comment>>marker>>path>>rule && comment=="#" && marker=="COMPONENT_PARAMETER" && rule=="NONNEG")
-      nonnegative_components.insert(tadah::core::to_upper(path));
+    if(!(in>>comment>>marker>>path>>rule) || comment!="#" || marker!="COMPONENT_PARAMETER") continue;
+    path=tadah::core::to_upper(path);
+    if(rule=="NONNEG") nonnegative_components.insert(path);
+    const std::string id=path.substr(0,path.find('.'));
+    if(component_ids.insert(id).second)
+      amplitude_paths+=(amplitude_paths.empty()?"":", ")+id+".DENSITY.AMPLITUDES";
+  }
+  // The knot-support caps (writer-recorded): path -> RADIUS.
+  std::map<std::string, double> knot_cap;
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    std::smatch m;
+    if (!std::regex_match(lines[i], m, kKnotCapRe)) continue;
+    double r = 0.0;
+    if (!tadah::core::parse_decimal_finite(m[2].str(), r) || !(r > 0.0))
+      throw std::runtime_error("retarget: line " + std::to_string(i + 1) +
+                               ": the knot-support cap '" + lines[i] +
+                               "' names no positive RADIUS.");
+    knot_cap[tadah::core::to_upper(m[1].str())] = r;
+  }
+
+  // --rhoform and --rcutmb name the legacy many-body keys (AMPGRIDMB,
+  // RCUTMB): on a file whose many-body parameters are DM_Embed components
+  // only, they have nothing to act on. The form of a component is its FORM,
+  // recorded in the COMPONENT_PARAMETER rule of <ID>.DENSITY.AMPLITUDES;
+  // its radius is the CUTOFF RADIUS, the path <ID>.DENSITY.CUTOFF.RADIUS.
+  if (!component_ids.empty()) {
+    bool legacy_amplitudes = false, legacy_density = false;
+    for (const auto &l : lines) {
+      std::smatch m;
+      if (!std::regex_match(l, m, kOptimRe)) continue;
+      const std::string key = tadah::core::to_upper(m[3].str());
+      legacy_amplitudes |= key == "AMPGRIDMB";
+      legacy_density |= key == "CGRIDMB" || key == "SGRIDMB" || key == "RCUTMB";
+    }
+    std::string radius_paths;
+    for (const auto &id : component_ids)
+      radius_paths += (radius_paths.empty() ? "" : ", ") + id +
+                      ".DENSITY.CUTOFF.RADIUS";
+    if (opts.rhoform && !legacy_amplitudes)
+      throw std::runtime_error(
+          std::string("retarget: --rhoform ") +
+          tadah::models::rhoform_name(*opts.rhoform) +
+          " has nothing to act on in this file: its density amplitudes are "
+          "the DM_Embed component path(s) " + amplitude_paths + ", whose "
+          "form is the component's FORM (the DENSITY FORM line of the "
+          "potential's block), recorded in their COMPONENT_PARAMETER rule "
+          "(NONNEG for FORM NONNEG or MONOTONE, FREE for SIGNED), and there "
+          "is no AMPGRIDMB group; retarget without --rhoform, or write the "
+          "target from a potential of that FORM (tadah refit --edit).");
+    if (opts.rcut_override.count("MB") && !legacy_density)
+      throw std::runtime_error(
+          "retarget: --rcutmb has nothing to act on in this file: its "
+          "many-body parameters are DM_Embed component paths, and a "
+          "component's radius is its CUTOFF RADIUS, the path(s) " +
+          radius_paths + " (set RADIUS in the potential's block, or search "
+          "it with an OPTIM line on that path when its CUTOFF TYPE is not "
+          "NONE); there is no CGRIDMB, SGRIDMB or RCUTMB group; retarget "
+          "without --rcutmb.");
   }
 
   // ---- the density form (writer-recorded header line, or --rhoform) ----
@@ -306,7 +369,9 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     // (lo can be clamped), RCUT scalars, and bump-contract CGRID groups (hi
     // can be capped by the bump-support rule) — those need the
     // rule-consistency check + one-sided recovery below.
-    const bool is_bump_cgrid = bump_cgrid_key(key);
+    const auto cap = knot_cap.find(tadah::core::to_upper(key));
+    const bool is_capped = cap != knot_cap.end();
+    const bool is_bump_cgrid = bump_cgrid_key(key) || is_capped;
     if (!positive_only && !nonneg && !is_rcut && !is_bump_cgrid) continue;
     const auto gp = group_pct.find(key);
     const double pct = gp != group_pct.end() ? gp->second : hdr_pct;
@@ -352,12 +417,17 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
         if (p * std::fabs(v) < floor) v = ol->hi - floor;  // floor branch
       }
       if (nonneg) v = std::max(0.0, v);  // a non-negative amplitude
-      v = quantize_optim(v, optim_bound_quantum(v, std::max(p * std::fabs(v),
-                                                            floor)));
+      const double qv = optim_bound_quantum(v, std::max(p * std::fabs(v),
+                                                        floor));
+      v = quantize_optim(v, qv);
       ol->centre = v;
       // lo = 0 in a non-negative group is the clamp the file's RHOFORM line
       // declares (lo = max(0, v - d)): recovered without a warning
       if (nonneg && ol->lo == 0.0) continue;
+      // hi at the knot-support cap is the cap the file declares
+      if (is_capped && from_lo &&
+          ol->hi == quantize_optim_down(cap->second, qv))
+        continue;
       rep.warnings.push_back(
           "OPTIM " + ol->key + " (" + std::to_string(ol->index) +
           "): bounds inconsistent with the +-" + pct_str(pct) +
@@ -422,6 +492,17 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       if (positive_only && lo <= 0.0) lo = std::max(1e-6, 0.5 * std::fabs(v));
       if (nonneg && lo < 0.0) lo = 0.0;  // the writer's lo = max(0, v - d)
       if (hi <= lo) hi = lo + std::max(floor, 1e-6);
+      // the writer's knot-support cap: the box ends at RADIUS
+      if (const auto cap = knot_cap.find(tadah::core::to_upper(ol.key));
+          cap != knot_cap.end()) {
+        hi = std::min(hi, quantize_optim_down(cap->second, q));
+        if (!(hi > lo))
+          throw std::runtime_error(
+              "retarget: OPTIM " + ol.key + " (" + std::to_string(ol.index) +
+              "): the knot centre " + sci8(v) + " is not inside the "
+              "knot-support cap RADIUS = " + sci8(cap->second) +
+              " the file declares.");
+      }
     }
     ol.lo = lo;
     ol.hi = hi;
