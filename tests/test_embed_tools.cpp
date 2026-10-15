@@ -95,3 +95,15 @@ TEST_CASE("Knot basis analysis accepts absent scales mixed degrees and cutoff pr
     REQUIRE(v==Approx(-degree*std::pow(t,degree-1)*cutoff.calc(x)+std::pow(t,degree)*cutoff.calc_prime(x)).margin(1e-12));
   }
 }
+
+TEST_CASE("DM_Embed embedding removal supports negative right-active knots and envelopes", "[unified-dm][edit]") {
+  Temp temp;auto c=potential();auto s=models::embed_specs(c).at(0);
+  s.embedding.basis=models::EmbedBasis::Knot5;s.embedding.centres={-5,-4,-3};s.embedding.scales.clear();s.embedding.degrees={5,5,5};
+  c.replace_blocks({models::embed_block(s)});
+  {std::ofstream out("negative.tadah");c.write_potential(out,18);}
+  core::Context command;command.add("EDIT","negative.tadah");command.add("FUNC","F");command.add("REMOVE",-3);
+  command.add("OUTFILE","removed.tadah");command.add("HPOFILEOUT","removed.hpo");
+  REQUIRE(mlip::engines::run_refit_edit(command)==0);
+  auto saved=core::CoreUserConfigParser().parse("removed.tadah");
+  REQUIRE(models::embed_specs(saved).at(0).embedding.centres.size()==2);
+}
