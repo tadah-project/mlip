@@ -456,6 +456,50 @@ std::pair<std::string, std::string> refit_error(const Context &c) {
 }
 }  // namespace
 
+/* Pins: the crystal gate of RefitEngine::run() refuses, before any fitting,
+ * a lattice constant whose crystal the table cannot describe: the
+ * synthetic fcc table whose element line gives a0 = 1e-323 (a subnormal,
+ * which the setfl reader reads; dr = 0.0125313 A), whose nearest
+ * neighbours are 5e-324 A apart at the default REFIT_REACH_SMIN 0.75, is
+ * refused with "tadah refit: the lattice constant of the EAM header, a0 =
+ * 1e-323 A, puts the nearest neighbours of the fcc crystal 5e-324 A apart
+ * at the strongest compression the refit tests (a/a0 = REFIT_REACH_SMIN
+ * 0.75), less than the step of the table's radial grid, dr = 0.0125313 A:
+ * ... set the equilibrium lattice constant, in Angstrom." and writes no
+ * pot.tadah; with REFIT_REACH_SMIN 0.1 the message says 0 A and 0.1.
+ * Before the fix: the gate asked for a known lattice and a0 > 0 only, so
+ * the dense refit ran (its crystal sums enumerated no neighbour: ceil(rcut
+ * / a) does not fit an int) and wrote pot.tadah: no exception. */
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine refuses a lattice constant whose crystal's "
+                 "nearest neighbours at REFIT_REACH_SMIN are less than the "
+                 "table's dr apart",
+                 "[refit][engine][integration]") {
+  const std::string tail =
+      " less than the step of the table's radial grid, dr = 0.0125313 A: "
+      "the table describes no pair distance of that crystal. Edit the "
+      "element line of the setfl file (`<Z> <mass> <a0> <lattice>`): set "
+      "the equilibrium lattice constant, in Angstrom.";
+  for (const char *smin : {"", "0.1"}) {
+    INFO("REFIT_REACH_SMIN '" << smin << "'");
+    ScopedTempDir tmp;
+    write_synth_eam("synth_tiny.eam.alloy", "fcc", 1e-323);
+    Context c = dense_refit_context("synth_tiny.eam.alloy");
+    if (*smin) c.add("REFIT_REACH_SMIN", std::stod(smin));
+    const auto [what, logged] = refit_error(c);
+    INFO(logged);
+    CHECK(what ==
+          std::string("tadah refit: the lattice constant of the EAM header, "
+                      "a0 = 1e-323 A, puts the nearest neighbours of the fcc "
+                      "crystal ") +
+              (*smin ? "0" : "5e-324") +
+              " A apart at the strongest compression the refit tests (a/a0 "
+              "= REFIT_REACH_SMIN " +
+              (*smin ? "0.1" : "0.75") + ")," + tail);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+  }
+}
+
 TEST_CASE_METHOD(PTFixture,
                  "RefitEngine: RHOFORM is mandatory in the refit configuration",
                  "[refit][engine][rhoform]") {

@@ -382,9 +382,14 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   //      window) needs a recognised ground-state lattice. The setfl label is
   //      normalised to lower case on read, so FCC/BCC/HCP are accepted;
   //      anything else (or a0<=0, e.g. a "NONE 0.0" header) is a hard stop with
-  //      a fix hint rather than a silently-skipped self-test. Shared by dense
+  //      a fix hint rather than a silently-skipped self-test. The crystal's
+  //      nearest neighbours at the strongest compression the refit tests
+  //      (a/a0 = REFIT_REACH_SMIN) must also be at least the table's dr apart,
+  //      so the reachability analysis' r_reach is >= dr > 0. Shared by dense
   //      and compact modes (compact_fit runs later).
-  models::eam_lattice::require_crystal(eam.lattice_raw(), eam.lattice_param());
+  models::eam_lattice::require_crystal_on_grid(
+      eam.lattice_raw(), eam.lattice_param(),
+      nums.reach_smin.value_or(models::EAMRefitConfig().reach_smin), eam.dr());
 
   // ---- the refit.eam grid (OUTPUT_GRID_SCALE), before any fitting: a
   //      scale whose point counts a setfl table cannot have is refused here,
@@ -494,8 +499,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
           "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
     // (require_fitter refused compact mode without a compact fitter.)
-    // false: the fitter could not fit this table and said why in a WARNING;
-    // the dense fit runs instead.
+    // false: the fitter declined this table and said why in a WARNING; the
+    // dense fit runs instead (HPO's engine declines no table).
     fitted = compact_fit(c, eam, cfg, refit_ptr, st);
     if (!fitted && !basis_user_set) {
       cfg.basis = "Blip";  // defaulted Knot5 has no dense path
