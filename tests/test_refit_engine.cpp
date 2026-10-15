@@ -4,6 +4,7 @@
 // from smooth analytic phi/rho/F so the test needs no checked-in binary fixture.
 #include "catch2/catch.hpp"
 #include <tadah/models/descriptors/dm/embed_spec.h>
+#include <tadah/models/dc_selector.h>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
