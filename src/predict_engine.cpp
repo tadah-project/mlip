@@ -41,7 +41,7 @@ int PredictEngine::run(mlip::Task &task) {
   // The keys that prepared the training data (EFILTER, FFILTER, the ESHIFT
   // toggles, the weights, ZERO_COM_FORCE) are not the potential's: a
   // potential of an earlier version has them as key lines, and they are
-  // ignored (MK's decision of 2026-10-14, option 2). The potential's LSCALE
+  // ignored. The potential's LSCALE
   // and ESHIFT, the model's length scale and energy reference, stay.
   {
     const std::string ignored =

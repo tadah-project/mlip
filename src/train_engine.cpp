@@ -99,8 +99,8 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // A potential's lines of the keys of its training record but DBFILE --
   // those that prepared the data of its own fit, UNCERTAINTY and the
   // settings of the run that wrote it (VERBOSE, NUMERIC, OUTFILE, AUDIT,
-  // ...) -- are not read for this run (MK's decisions of 2026-10-14; a
-  // potential of an earlier version has them as key lines): TaskFactory's
+  // ...) -- are not read for this run (a potential of an earlier version
+  // has them as key lines): TaskFactory's
   // parse skipped them wherever the configuration or task file has the
   // potential (tadah train -c pot.tadah plus a DBFILE line, CONFIG
   // pot.tadah in a file or a TASK train section), and the WARNING names
@@ -190,7 +190,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // for hard refusal-to-launch via the AUDIT context key. Reads
   // dataset stats (cheap — same NN list) and walks every configured
   // descriptor's meta() to flag ρ-collapse and out-of-range parameter
-  // combinations (Phase 5 of the bound-validation pipeline).
+  // combinations (part of the bound-validation pipeline).
   {
     AuditMode mode = audit_mode_from_context(tr.context);
     if (mode != AuditMode::Off) {
@@ -217,7 +217,7 @@ int TrainEngine::run(tadah::mlip::Task &task) {
 
   // --uncertainty lists the weights with their standard deviations: a fit
   // that computed no covariance (its noise variance undefined) is refused
-  // before the potential is written (owner decision D8), with the reason
+  // before the potential is written, with the reason
   // the model gives and what to change.
   const bool uncertainty = uncertainty_requested(context);
   if (uncertainty && !tr.model->has_covariance())

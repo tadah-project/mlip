@@ -519,7 +519,7 @@ TEST_CASE("StructureTransformation remapToCell() wide out-of-box atom", "[transf
     StructureTransformation::remapToCell(st);
 
     // The cell is 3 in x, 3 in y, 2 in z
-    // We'll convert fractional => xFrac = (-5 / 3) => -1.666..., wrap => 0.333... => final => ~1.0
+    // Fractional => xFrac = (-5 / 3) => -1.666..., wrap => 0.333... => final => ~1.0
     // yFrac = 10/3 => 3.333..., wrap => 0.333..., => final => ~1.0
     // zFrac = 4/2 => 2.0 => wrap => 0.0 => final => 0.0
     // => final ~ (1.0, 1.0, 0.0)
@@ -531,7 +531,7 @@ TEST_CASE("StructureTransformation remapToCell() wide out-of-box atom", "[transf
 
 TEST_CASE("StructureTransformation mirrorHkl() with (1,1,0) plane", "[transform][extended]")
 {
-    // We'll test reflection about a plane that is normal to (1,1,0) in reciprocal-lattice space.
+    // Reflection about a plane that is normal to (1,1,0) in reciprocal-lattice space.
     // For our trio cell => a1=(3,0,0), a2=(0,3,0), a3=(0,0,2)
     // (h,k,l)=(1,1,0) => normal is basically along the sum of b1+b2 => x+y direction in direct space.
     Structure st = makeTrioStructure();
@@ -543,10 +543,10 @@ TEST_CASE("StructureTransformation mirrorHkl() with (1,1,0) plane", "[transform]
     REQUIRE(std::fabs(vol) == Approx(18.0).margin(1e-12));
 
     // Also confirm that the third atom (near x=2.9,y=2.5) now has x or y negated in some consistent reflection sense.
-    // We'll do a sanity check that the new positions differ from old by more than some threshold
+    // A sanity check that the new positions differ from old by more than some threshold
     const auto &a2 = st.atoms[2].position; 
     // It's presumably "mirrored" in a plane with normal ~ (1/sqrt(2),1/sqrt(2),0).
-    // We won't match exact numbers, just confirm it's not the same as original 2.9,2.5,0.5
+    // Not an exact-number match, just a check that it's not the same as original 2.9,2.5,0.5
     REQUIRE(std::fabs(a2[0] - 2.9) > 0.1);
     REQUIRE(std::fabs(a2[1] - 2.5) > 0.1);
 }
@@ -563,16 +563,16 @@ TEST_CASE("StructureTransformation shakeAtoms() large triple-atom structure", "[
     // Now each coordinate is in [orig - 1.0, orig + 1.0].
     for (size_t i=0; i < st.natoms(); ++i) {
         const Vec3d &pos = st.atoms[i].position;
-        // We'll do a quick bounding check
+        // A quick bounding check
         // e.g., for the second atom's x=1.5 => must be in [0.5, 2.5]
-        // We'll just do a generic approach using the original positions from makeTrioStructure()
+        // A generic approach using the original positions from makeTrioStructure()
         // For each dimension:
         //   low = orig - 1.0
         //   high = orig + 1.0
-        // We'll store them in an array for quick reference:
+        // Stored in an array for quick reference:
     }
 
-    // Let's re-implement the bounding logic more explicitly:
+    // The bounding logic, explicitly:
     std::vector<Vec3d> originalPositions{
         {0.0, 0.0, 0.0},
         {1.5, 1.5, 1.0},
@@ -599,9 +599,9 @@ TEST_CASE("StructureTransformation addAtom() checks minDistance in a 3-atom stru
     Structure st = makeTrioStructure();
     REQUIRE(st.natoms() == 3);
 
-    // We'll attempt to add a new H atom near the second atom => we expect a warning
+    // Add a new H atom near the second atom => a warning is expected
     // The code won't throw, but we can verify it doesn't fail catastrophically.
-    // We'll do some extremely close position => e.g. (1.45,1.45,1.05)
+    // An extremely close position => e.g. (1.45,1.45,1.05)
     Atom newH(PeriodicTable::find_by_symbol("H"), 0.0,0.0,0.0); // template
     Vec3d closePos(1.45, 1.45, 1.05);
     REQUIRE_NOTHROW(StructureTransformation::addAtom(st, newH, false, closePos, 0.5));
@@ -617,7 +617,7 @@ TEST_CASE("StructureTransformation addAtom() checks minDistance in a 3-atom stru
 
 TEST_CASE("StructureTransformation::center() now calls either getCentreOfMass or getGeometricCenter", "[transform][new]") 
 {
-    // We'll do a 2-atom system again, to illustrate difference.
+    // A 2-atom system again, to illustrate the difference.
     Structure st;
     st.cell.set_zero();
     st.cell(0,0) = 1.0;
@@ -637,7 +637,7 @@ TEST_CASE("StructureTransformation::center() now calls either getCentreOfMass or
     }
 
     SECTION("Center by center of mass => He => ~ (0.2,0.2,0.2)") {
-        // We'll create a fresh structure since the previous one is offset
+        // A fresh structure, since the previous one is offset
         Structure st2;
         st2.cell.set_zero();
         st2.cell(0,0) = 1.0;
@@ -649,7 +649,7 @@ TEST_CASE("StructureTransformation::center() now calls either getCentreOfMass or
         StructureTransformation::center(st2, /*useCenterOfMass=*/true, /*shiftCell=*/false);
 
         // The heavier He is ~ 4x the mass => new He pos = old(1,1,1) - COM => Should be around (0.2,0.2,0.2)
-        // Let's check the actual final position:
+        // The actual final position:
         Vec3d hePos = st2.atoms[1].position;
         REQUIRE(hePos[0] == Approx(0.2).margin(0.1));
         REQUIRE(hePos[1] == Approx(0.2).margin(0.1));

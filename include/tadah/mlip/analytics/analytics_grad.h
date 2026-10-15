@@ -1,7 +1,7 @@
 #ifndef ANALYTICS_GRAD_H
 #define ANALYTICS_GRAD_H
 
-/* analytics_grad.h - per-metric closed-form derivatives for HPO Phase 2.
+/* analytics_grad.h - per-metric closed-form derivatives for HPO gradients.
  *
  * Each helper takes the (truth, predicted) StructureDB pair the same way
  * Analytics does, plus a callback `set_dydp` that the helper invokes

@@ -1,12 +1,12 @@
 #ifndef TADAH_MLIP_CHECK_BOUNDS_H
 #define TADAH_MLIP_CHECK_BOUNDS_H
 
-// Phase 7 — `tadah analysis check_bounds`. CI-friendly dry-run.
+// `tadah analysis check_bounds`. CI-friendly dry-run.
 //
 // Reads an HPOTARGET file's `OPTIM <KEY> (range) <lo> <hi>` lines,
 // builds a bound box, samples corners (full 2^k for k ≤ 12, otherwise
 // `min(2^k, ⌈k·log₂(k)⌉)` Latin-hypercube samples), and runs the
-// Phase 5 pre-flight audit at each corner. A corner value below the low
+// pre-flight audit at each corner. A corner value below the low
 // bound the seed's density form or a radial bump channel allows
 // (models::optim_low_bound_rule(key, seed), the boxes tadah hpo refuses)
 // is a FAIL finding too; a DM_REAM seed must declare RHOFORM. Returns 1 if ANY corner produces a FAIL finding, 0
@@ -60,7 +60,7 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
                                     const std::vector<Bound>& bounds,
                                     const std::vector<double>& corner);
 
-/** \brief Run the Phase 5 audit at every corner of the bound box (in the
+/** \brief Run the pre-flight audit at every corner of the bound box (in the
  *  corner_context of each corner), plus the low-bound rules of `seed`
  *  (models::optim_low_bound_rule(key, seed): under RHOFORM NONNEG /
  *  MONOTONE AMPGRIDMB >= 0, WATOM > 0, SGRIDMB > 0 under MONOTONE and, for

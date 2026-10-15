@@ -1,4 +1,4 @@
-// Catch2 v2 unit tests for the pre-flight audit (Phase 5).
+// Catch2 v2 unit tests for the pre-flight audit.
 //
 // Verifies:
 //   * parse_audit_mode handles warn / error / off case-insensitively;

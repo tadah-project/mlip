@@ -1,5 +1,5 @@
-/* AFLOW: the entry the service serves today, saved on 2026-10-06 with MK's
- * approval (tests_data/aflow/):
+/* AFLOW: the entry the service serves today, saved on 2026-10-06
+ * (tests_data/aflow/):
  *   - Ta1_ICSD_76152_aflux.json, the answer of
  *     https://aflow.org/API/aflux/?auid('aflow:06436b96b885f76d');
  *   - Ta1_ICSD_76152_aflowlib.json, the entry file

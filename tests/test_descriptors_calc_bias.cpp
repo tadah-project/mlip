@@ -755,8 +755,8 @@ TEST_CASE("NORM true with BIAS false is refused for linear models",
 // intercept column per species with it); likewise an M_KRR Kern_RBF
 // potential whose basis vectors have 1 + 3 entries ("of 4 values each").
 // Before the fix: DSIZE was 4, so both predicted with the shared
-// intercept (no exception; DSIZE 4 != 5). Before the one-guard rewording
-// (review): the messages said "WEIGHTS has 4 values", "DSIZE 5" and "4
+// intercept (no exception; DSIZE 4 != 5). Before the one-guard rewording:
+// the messages said "WEIGHTS has 4 values", "DSIZE 5" and "4
 // entries", and the hint named no version.
 TEST_CASE("A multi-species BIAS potential with one shared intercept column "
           "is refused when it predicts",

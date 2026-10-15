@@ -15,7 +15,7 @@ namespace engines {
  * context, computes per-element-pair distance percentiles + KDE peaks,
  * neighbour-count percentiles per element, energy/force scales, and a
  * material-class label. Writes the result to a text file consumable by
- * `tadah hpo --suggest-bounds` and the pre-flight audit (Phases 4/5).
+ * `tadah hpo --suggest-bounds` and the pre-flight audit.
  * Every pair strictly inside RCUTMAX counts, a pair at distance 0 (two
  * atoms at one position) included, so r_min is 0 for such a dataset
  * (compute_data_stats).

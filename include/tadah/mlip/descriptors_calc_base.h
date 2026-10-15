@@ -17,7 +17,7 @@ class DC_Base {
         virtual StDescriptorsDB calc(const StructureDB &) const {return StDescriptorsDB();};
         /** \brief Per-block column layout for the design matrix.
          *  Default returns an empty layout — concrete DescriptorsCalc
-         *  overrides this. The DesignMatrix audit (Phase 2) skips its
+         *  overrides this. The DesignMatrix layout audit skips its
          *  validate() check when the layout is empty, so legacy
          *  DC_Base-only consumers stay byte-identical to before.
          */

@@ -1,6 +1,6 @@
 // test_native_relaxer.cpp
 //
-// Phase D2 (PC_OBSERVABLE redesign): smoke tests for NativeRelaxer
+// Smoke tests for NativeRelaxer
 // (MLIP/include/tadah/mlip/native_relaxer.h). The relaxer is the
 // minimisation engine the typed cohesive_energy observable composes
 // with cells::bcc + cells::isolated_atom to produce x* without going

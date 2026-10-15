@@ -3,11 +3,11 @@
 
 // `tadah hpo --suggest-bounds` — produce data-driven OPTIM bound
 // proposals for every parameter declared in each descriptor's meta().
-// Phase 4 of the HPO bound-validation pipeline.
+// Part of the HPO bound-validation pipeline.
 //
 // The suggester reads dataset statistics (a `DataStats` produced by
-// Phase 3) plus the seed `Context` from the user's config, walks the
-// configured descriptor's metadata, and returns one
+// compute_data_stats) plus the seed `Context` from the user's config,
+// walks the configured descriptor's metadata, and returns one
 // `OptimSuggestion` per (key, arg_pos) pair. Each suggestion carries
 // a human-readable rationale so the user can review and override.
 
@@ -40,7 +40,7 @@ struct OptimSuggestion {
 
 /** \brief Suggest OPTIM bounds for one descriptor's meta().
  *
- *  \param data        DataStats produced by Phase 3.
+ *  \param data        DataStats produced by compute_data_stats.
  *  \param meta        DescriptorMeta returned by the descriptor's
  *                     `D_Base::meta()`.
  *  \param seed        Context with seed values (the user's

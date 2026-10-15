@@ -1,6 +1,6 @@
 // test_cell_builder.cpp
 //
-// Phase D2 (PC_OBSERVABLE redesign): coverage for the native cell
+// Coverage for the native cell
 // builder primitives in tadah::mlip::cells (MLIP/include/tadah/mlip/
 // cell_builder.h). These are the building blocks the cohesive-energy
 // observable composes with NativeRelaxer to replace LAMMPS scripts.

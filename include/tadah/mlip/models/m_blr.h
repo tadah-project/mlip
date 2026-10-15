@@ -32,7 +32,7 @@ namespace mlip {
  *
  * **Model Supported Training Modes**:
  * - **LINEAR**: Uses Ordinary Least Squares or Ridge Regression for linear relationships.
- * - **NONLINEAR**: Utilizes basis functions to handle nonlinear input spaces, transforming input descriptors into higher-dimensional feature spaces. For example, polynomial transformations.
+ * - **NONLINEAR**: Uses basis functions to handle nonlinear input spaces, transforming input descriptors into higher-dimensional feature spaces. For example, polynomial transformations.
  *
  * **Prediction**:
  * - Computes predictions as a weighted sum of basis functions applied to input vectors.

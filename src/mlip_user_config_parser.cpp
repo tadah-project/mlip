@@ -101,7 +101,7 @@ MLIPUserConfigParser::parseNamed(
   // The final result: vec of <sectionName, Context>
   std::vector<std::pair<std::string, core::Context>> resultVec;
 
-  // We'll retrieve the blueprint tasks for validation
+  // The blueprint tasks, for validation
   const auto &taskMap = tadah::core::BlueprintParser::getTasksMapRef();
 
   // Parse each section. If it's not "GLOBAL", validate it using blueprint tasks.
@@ -221,7 +221,7 @@ MLIPUserConfigParser::splitSections(const std::vector<std::string>& lines) const
     std::string uppercaseLine = core::to_upper(line);
     // Check if starts with "TASK"
     if (uppercaseLine.size() >= 4 && uppercaseLine.compare(0, 4, "TASK") == 0) {
-      // We're about to switch to a new section:
+      // A new section starts:
       // finalize the current one if it has lines
       finish();
 

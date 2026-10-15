@@ -28,7 +28,7 @@
  * nothing. Under OpenMP the loop catches each index's exception in its own
  * slot; in a build without OpenMP (TADAH_ENABLE_OPENMP OFF, the default of
  * a configure without a preset) the serial loop does the same.
- * Before the serial loop did (cross-lane review 2): a build without OpenMP
+ * Before the serial loop did: a build without OpenMP
  * stopped at index 7 and rethrew at once, so indices 8 to 39 did not run
  * (ran[i] == 0: 32 failed checks, every time). */
 TEST_CASE("parallel_for carries the exception of the lowest failing index "

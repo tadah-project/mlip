@@ -8,9 +8,8 @@
 // configuration is refused before any file is read, naming the key, saying
 // that a potential has no DBFILE line and how to retrain from one. The
 // training record a potential of tadah train carries: the run's own keys, a
-// retrain's too, and the keys that prepared the training data (MK's
-// decision of 2026-10-14, option 2), which a retrain from a potential does
-// not take from it.
+// retrain's too, and the keys that prepared the training data, which a
+// retrain from a potential does not take from it.
 
 #include "catch2/catch.hpp"
 
@@ -135,17 +134,17 @@ std::string train_error(const Context &c, std::string &printed) {
  * Before the fix: the DBFILE read of find_unique_elements threw "Key not
  * found in the Context object: DBFILE", after the Logger's ERROR line
  * "Context::operator() -> Key not found: DBFILE".
- * Before the advice named the pins (cross-lane review 2): it ended "add a
+ * Before the advice named the pins: it ended "add a
  * DBFILE line to a copy of it (the Training page of the documentation,
  * Retraining from a potential).", and a refit potential so retrained
  * fitted nothing (the next test case).
- * Before the training record (MK's decision of 2026-10-14): the advice
+ * Before the training record: the advice
  * began "A potential records no DBFILE (no potential tadah writes has
  * one): to train from one, ...", and the case was named "..., saying that
  * a potential records none".
- * Before the advice said when the record lists a DBFILE (review of the
- * training record): it said "the DBFILE of the run that wrote it is in its
- * training record, a comment block tadah does not read", which a refit
+ * Before the advice said when the record lists a DBFILE: it said "the
+ * DBFILE of the run that wrote it is in its training record, a comment
+ * block tadah does not read", which a refit
  * potential, an hpo run's without training datasets and one of an earlier
  * version contradict: this check fails. */
 TEST_CASE("TrainEngine::run refuses a configuration without DBFILE, saying "
@@ -237,9 +236,8 @@ std::vector<std::string> pot_line(const fs::path &p, const std::string &key) {
  * Not a refusal: such a fit can be deliberate (under OALGO 3 it gives the
  * noise of the data about the pinned weights).
  * Before the fix: no WARNING: tadah train exited 0 with the input weights
- * and said nothing (lanes/D/tmp/review/training2/refit: a dense refit
- * potential, FIXINDEX 1-171, retrained on eos_bcc.tadahdb, WEIGHTS
- * byte-identical). */
+ * and said nothing (a run before the fix: a dense refit potential,
+ * FIXINDEX 1-171, retrained on eos_bcc.tadahdb, WEIGHTS byte-identical). */
 TEST_CASE("TrainEngine::run warns when FIXINDEX pins every weight, so the "
           "fit changes none",
           "[train][potential_content][fixindex]") {
@@ -301,8 +299,8 @@ TEST_CASE("TrainEngine::run warns when FIXINDEX pins every weight, so the "
 namespace {
 
 /* The opening and end lines of the training record of a potential file.
- * The opening line said "(not read by tadah)" before MK's decision of
- * 2026-10-14 (option 2): refit --edit reads the block, to copy it. */
+ * The opening line said "(not read by tadah)" before it was corrected:
+ * refit --edit reads the block, to copy it. */
 const std::string kRecordOpen =
     "# --- training record (no key is read from it) ---";
 const std::string kRecordEnd = "# --- end of training record ---";
@@ -402,9 +400,8 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * train -c, tadah hpo -c and pair_style tadah) to the same context, key by
  * key, as the file without the block, with none of the ten keys.
  * Before the fix: no training record: the ten keys were dropped from the
- * potential (the decision taken in MK's absence on 2026-10-12, replaced by
- * MK's of 2026-10-14).
- * Before the opening line was corrected (MK, 2026-10-14, option 2): it read
+ * potential.
+ * Before the opening line was corrected: it read
  * "# --- training record (not read by tadah) ---", so no opening line is
  * found and the REQUIRE stops the case.
  * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
@@ -473,7 +470,7 @@ TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
  * Before the fix: neither potential has a training record: the check of
  * pot1.tadah's record fails, and the REQUIRE of pot2.tadah's stops the case
  * before the WEIGHTS comparison.
- * Before the opening line was corrected (MK, 2026-10-14, option 2): the
+ * Before the opening line was corrected: the
  * same, the opening line being "# --- training record (not read by tadah)
  * ---". */
 TEST_CASE("A retrain from a potential records the retrain's DBFILE, not "
@@ -524,11 +521,11 @@ TEST_CASE("A retrain from a potential records the retrain's DBFILE, not "
   CHECK(pot_line("pot2.tadah", "WEIGHTS") == pot_line("pot3.tadah", "WEIGHTS"));
 }
 
-/* ---- the keys that prepared the training data (MK's decision of
- * 2026-10-14, option 2): a potential's key lines are what is needed to use
- * the model (the model keys, the resolved ESHIFT and LSCALE); EFILTER,
- * FFILTER, ESHIFT_ATOM, ESHIFT_DBATOM, EWEIGHT_TEMP, ZERO_COM_FORCE,
- * WDBFILE and WDBFILE_AUTO are written into its training record. */
+/* ---- the keys that prepared the training data: a potential's key lines
+ * are what is needed to use the model (the model keys, the resolved ESHIFT
+ * and LSCALE); EFILTER, FFILTER, ESHIFT_ATOM, ESHIFT_DBATOM, EWEIGHT_TEMP,
+ * ZERO_COM_FORCE, WDBFILE and WDBFILE_AUTO are written into its training
+ * record. */
 
 namespace {
 
@@ -699,7 +696,7 @@ TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
  * of two values for one dataset, applied later, was not reached): the
  * REQUIRE stops each section.
  * Before the run's own dataset keys of a configuration that includes a
- * potential applied (review of the dataset keys): the second section built
+ * potential applied: the second section built
  * the KeyProvenance by hand, and the WARNING's advice was "Give --efilter
  * or --eweight-temp on the command line to apply one to this run.", which
  * a run of a task file cannot follow: the check of the WARNING fails.
@@ -1056,12 +1053,12 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
  * last recorded "ESHIFT_ATOM false" and "ESHIFT_DBATOM false" as the run's.
  * Before that fix this case pinned the derivation from the potential's own
  * toggle (pot2.tadah's ESHIFT that of pot3.tadah).
- * Before the toggles were one setting of the notice (review of the
- * dev-history messages): a potential's toggle was left out only when the
- * run gave that same toggle, so atom.train with --eshift-dbatom printed
- * "WARNING: tadah train: the configuration file atom.train is a potential
- * (it has WEIGHTS): its ESHIFT_ATOM true ... Give --eshift-atom on the
- * command line, ... to apply it to this run ...", advice that sets both
+ * Before the toggles were one setting of the notice: a potential's toggle
+ * was left out only when the run gave that same toggle, so atom.train
+ * with --eshift-dbatom printed "WARNING: tadah train: the configuration
+ * file atom.train is a potential (it has WEIGHTS): its ESHIFT_ATOM true
+ * ... Give --eshift-atom on the command line, ... to apply it to this run
+ * ...", advice that sets both
  * toggles (ATOM then overrules the run's DBATOM, "Multiple ESHIFT sources
  * set"), and dbatom.train with --eshift-atom "... its ESHIFT_DBATOM true
  * ... Give --eshift-dbatom ...", advice that does not apply it (ATOM
@@ -1368,8 +1365,8 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  * the Task without a KeyProvenance was refused by
  * validate ("tadah train --uncertainty needs OALGO 3 ..."), since without
  * a provenance UNCERTAINTY true was a request: the REQUIRE stops it.
- * (These two sections were added in the review of the fix, and were run on
- * the code before it.) */
+ * (These two sections were added after the fix, and were run on the code
+ * before it.) */
 TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
           "UNCERTAINTY applies",
           "[train][potential_content][retrain][uncertainty]") {
@@ -1563,8 +1560,8 @@ TEST_CASE("TrainEngine::run refuses a DBFILE that lists one dataset twice, "
   CHECK_FALSE(fs::exists("pot.tadah"));
 }
 
-/* ---- the run settings of a potential (completing MK's rule of
- * 2026-10-14): VALIDATION, HPOTARGET, VERBOSE, NUMERIC, OUTFILE, AUDIT,
+/* ---- the run settings of a potential (completing the rule of the
+ * training record): VALIDATION, HPOTARGET, VERBOSE, NUMERIC, OUTFILE, AUDIT,
  * AUDIT_SAMPLE and HEALTH_LOG were settings of the run that wrote it; a
  * potential of an earlier version has them as key lines (a 1.5.x
  * best_pot.tadah has HPOTARGET, VERBOSE and NUMERIC, and VALIDATION when

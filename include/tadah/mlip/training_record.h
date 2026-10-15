@@ -15,7 +15,7 @@ namespace mlip {
 class KeyProvenance;
 
 /** @file training_record.h
- *  The training record of a potential file (MK's decisions of 2026-10-14):
+ *  The training record of a potential file:
  *  the keys a potential does not use -- the training datasets, the keys
  *  that prepared the training data and the inputs of the run that wrote it
  *  -- kept, for the user's record only, as a comment block right above the
@@ -51,9 +51,9 @@ class KeyProvenance;
  *  derived ESHIFT from its data: the values they produced are the
  *  potential's ESHIFT line), EWEIGHT_TEMP (the Boltzmann weights),
  *  ZERO_COM_FORCE (the reference forces), WDBFILE and WDBFILE_AUTO (the
- *  weight of each dataset). The model does not use them (MK's decision of
- *  2026-10-14, option 2): a potential lists them in its training record
- *  (training_record_keys), tadah predict ignores them in a potential
+ *  weight of each dataset). The model does not use them: a potential
+ *  lists them in its training record (training_record_keys), tadah
+ *  predict ignores them in a potential
  *  (ignore_potential_dataset_keys) and a retrain from a potential does not
  *  read the potential's lines of them (potential_line_not_read). LSCALE
  *  and ESHIFT, the model's length scale and energy reference, are not among

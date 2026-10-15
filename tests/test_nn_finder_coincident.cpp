@@ -1,20 +1,19 @@
 // test_nn_finder_coincident.cpp
 //
-// NNFinder refuses two atoms at one position (report_leftovers.md section 3;
-// MK's decision: option A). A pair whose distance, computed as consumers
-// compute it (r_p - (r_q + s0 a0 + s1 a1 + s2 a2)), is exactly 0 throws
-// std::invalid_argument naming the two atoms (1-based indices and element
-// symbols), the position and the image shift s (in the stored basis, the
-// NNTable convention: the image of the second atom shifted by s lies on the
-// first); calc(StructureDB&) adds the structure ("structure <i> of <N>
-// ('<label>')"). Every descriptor divides by the distance, so such a pair
-// made the forces and the stress NaN: `tadah predict` printed nan, `tadah
-// train` stopped in DGELSD without naming the structure, an energy-only fit
-// silently fitted it, and `tadah hpo` failed every evaluation.
+// NNFinder refuses two atoms at one position. A pair whose distance,
+// computed as consumers compute it (r_p - (r_q + s0 a0 + s1 a1 + s2 a2)),
+// is exactly 0 throws std::invalid_argument naming the two atoms (1-based
+// indices and element symbols), the position and the image shift s (in
+// the stored basis, the NNTable convention: the image of the second atom
+// shifted by s lies on the first); calc(StructureDB&) adds the structure
+// ("structure <i> of <N> ('<label>')"). Every descriptor divides by the
+// distance, so such a pair made the forces and the stress NaN: `tadah
+// predict` printed nan, `tadah train` stopped in DGELSD without naming the
+// structure, an energy-only fit silently fitted it, and `tadah hpo` failed
+// every evaluation.
 //
 // Two atoms close together but apart (1e-12 A) are a data-quality question
-// whose harm depends on the basis (report section 3.6): they are listed, not
-// refused.
+// whose harm depends on the basis: they are listed, not refused.
 //
 // The geometries are built here; NNFinder is the only production code used.
 
@@ -140,7 +139,7 @@ TEST_CASE("NNFinder: two atoms at the same position are refused, naming the "
 /* Pins: an atom on a periodic image of another is refused in the same way,
  * and the image shift is given in the stored basis.
  * - bcc Fe, a = 2.8665 A, with Fe at fractional (0, 0, 0), (1, 0, 0) and
- *   (0.5, 0.5, 0.5): a CIF that lists both corners (report section 3.3).
+ *   (0.5, 0.5, 0.5): a CIF that lists both corners.
  *   The image of atom 2 shifted by -a0 lies on atom 1: "atoms 1 and 2
  *   (Fe, Fe)", "same position (0, 0, 0)", "image shift (-1, 0, 0)".
  * - The sheared description (4,0,0), (12,4,0), (0,0,4) of a simple cubic

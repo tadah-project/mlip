@@ -20,7 +20,7 @@ TEST_CASE("StructureProperties: getVolume() with default/zeroed cell", "[structu
 TEST_CASE("StructureProperties: getVolume() with known cell", "[structure_props][new]") {
     Structure st;
 
-    // Let's define a simple 3x3 identity cell => volume = 1 Å^3
+    // A simple 3x3 identity cell => volume = 1 Å^3
     st.cell(0, 0) = 1.0;  st.cell(0, 1) = 0.0;  st.cell(0, 2) = 0.0;
     st.cell(1, 0) = 0.0;  st.cell(1, 1) = 1.0;  st.cell(1, 2) = 0.0;
     st.cell(2, 0) = 0.0;  st.cell(2, 1) = 0.0;  st.cell(2, 2) = 1.0;
@@ -43,7 +43,7 @@ TEST_CASE("StructureProperties: getDensity() with zero-volume cell", "[structure
 }
 
 TEST_CASE("StructureProperties: getDensity() with known cell and atoms", "[structure_props][new]") {
-    // We'll define a 10Å x 10Å x 10Å cubic cell => volume = 1000 Å^3
+    // A 10Å x 10Å x 10Å cubic cell => volume = 1000 Å^3
     // Add 2 atoms: H (1 amu) and He (4 amu). Total = ~5 amu
     // volume in cm^3 = 1000 * 1e-24 = 1e-21 cm^3
     // mass in grams = 5 amu * 1.66053906660e-24 g/amu = ~8.3026953e-24 g
@@ -90,7 +90,7 @@ TEST_CASE("StructureProperties: getCentreOfMass() with multiple atoms", "[struct
     // Suppose we place 2 identical atoms of mass M at:
     //  ( 2, 0, 0 ) and ( -2, 0, 0 )
     // Then CoM = ( (M*(2) + M*(-2))/ (2M), 0, 0 ) = (0,0,0).
-    // We'll pick O for both, but in practice same mass anyway.
+    // O for both, but in practice same mass anyway.
     Structure st;
     st.cell.set_zero(); // not used for CoM
     Atom O1(makeElement("O"), 2.0, 0.0, 0.0,0,0,0);
@@ -105,7 +105,7 @@ TEST_CASE("StructureProperties: getCentreOfMass() with multiple atoms", "[struct
 }
 
 TEST_CASE("StructureProperties: getCentreOfMass() with different masses", "[structure_props][new]") {
-    // Let's put H (mass ~1) at (0,0,0)  and O (mass ~16) at (0, 3, 0)
+    // H (mass ~1) at (0,0,0)  and O (mass ~16) at (0, 3, 0)
     // total mass ~17
     // Weighted sum of positions = 1*(0,0,0) + 16*(0,3,0) = (0,48,0)
     // => CoM = (0,48,0)/17 ~ (0,2.823529...,0)
@@ -125,7 +125,7 @@ TEST_CASE("StructureProperties: getCentreOfMass() with different masses", "[stru
 
 TEST_CASE("StructureProperties getGeometricCenter() vs. getCentreOfMass()", "[properties][new]") 
 {
-    // We'll build a small structure with 2 atoms:
+    // A small structure with 2 atoms:
     //   H(0,0,0) => mass ~1.008
     //   He(1,1,1) => mass ~4.0026
     // The geometric center => (0.5, 0.5, 0.5).
