@@ -203,7 +203,9 @@ TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves
     "EMBEDDING\nBASIS Gaussian\nCENTRES AUTO 20\nWIDTHS AUTO\n"
     "REFERENCE ZERO\nENVELOPE\nTYPE Smoothstep2\nCUTOFF 2\nENDENVELOPE\n"
     "ENDEMBEDDING\nENDDESCRIPTOR\n");
-  auto c=tadah::core::CoreUserConfigParser().parse(input); Task task("refit",c);
+  auto c=tadah::core::CoreUserConfigParser().parse(input);
+  tadah::mlip::KeyProvenance provenance(Context{},c,"refit.config",tadah::mlip::KeyOrigin::Kind::ConfigFile,{"REFIT_CONSTRAIN_F0"});
+  c.add("REFIT_CONSTRAIN_F0",false);Task task("refit",c);task.setKeyProvenance(provenance);
   RefitEngine engine; REQUIRE_NOTHROW(engine.validate(task));
   REQUIRE(engine.run(task)==EXIT_SUCCESS);
   auto pot=tadah::core::CoreUserConfigParser().parse("pot.tadah");
@@ -1713,4 +1715,10 @@ TEST_CASE_METHOD(PTFixture,
                                         {"REFIT_CONSTRAIN_F0"}));
     CHECK_NOTHROW(RefitEngine().validate(task));
   }
+}
+
+TEST_CASE_METHOD(PTFixture,"Refit pair basis cannot silently override a shared legacy basis", "[unified-dm][refit][validation]") {
+  Context c;c.add("EAM","unused.eam");c.add("REFIT_MODE","dense");c.add("RHOFORM","SIGNED");
+  c.add("REFIT_BASIS","Blip");c.add("REFIT_PAIR_BASIS","Blip5");Task task("refit",c);
+  REQUIRE_THROWS(RefitEngine().validate(task));
 }
