@@ -1,6 +1,8 @@
 #include <tadah/mlip/engines/hpotarget_writer.h>
+#include <tadah/models/descriptors/dm/embed_spec.h>
 
 #include <cmath>
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <optional>
@@ -187,6 +189,9 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   std::optional<tadah::models::RhoForm> form;
   if (tadah::models::context_has_ream(pot))
     form = tadah::models::require_rhoform(pot, "tadah refit (hpotarget)");
+  const auto components=tadah::models::embed_specs(pot);
+  bool zero_reference=!components.empty() && std::all_of(components.begin(),components.end(),[](const auto &s){return s.reference==tadah::models::EmbF0Mode::Zero;});
+  if(tadah::models::context_has_ream(pot))zero_reference=(components.empty() || zero_reference) && tadah::models::stored_embf0(pot).value_or(tadah::models::EmbF0Mode::Zero)==tadah::models::EmbF0Mode::Zero;
   std::ofstream os(path);
   if (!os)
     throw std::runtime_error("tadah refit: cannot open the hpotarget file " +
@@ -201,9 +206,7 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   // <config> is the refit potential (it has WEIGHTS), whose ESHIFT_ATOM and
   // ESHIFT_DBATOM lines a run does not read (potential_line_not_read): the
   // run's own toggle derives the shift; an ESHIFT line of <config> is read.
-  if (tadah::models::context_has_ream(pot) &&
-      tadah::models::stored_embf0(pot).value_or(
-          tadah::models::EmbF0Mode::Zero) == tadah::models::EmbF0Mode::Zero)
+  if (zero_reference)
     os << "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no\n"
        << "# per-atom energy constant. For absolute reference energies (e.g.\n"
        << "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an\n"
@@ -290,6 +293,12 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   };
 
   os << "# ---- pair function (two-body) shape ----\n";
+  for(const auto &binding:tadah::models::embed_bindings(pot)) {
+    const bool amplitude=binding.path.find(".AMPLITUDES")!=std::string::npos;
+    os<<"# COMPONENT_PARAMETER "<<binding.path<<" "<<(binding.positive?(amplitude?"NONNEG":"POSITIVE"):"FREE")<<"\n";
+    emit_optim_group(os,binding.path,binding.values,pct,binding.positive && !amplitude,true,
+      binding.positive && amplitude?tadah::models::OptimLowerBound::NonNegative:tadah::models::OptimLowerBound::Free);
+  }
   const auto w2b = bump_gate("2B", "RCUT2B");
   emit_rcut("2B", "RCUT2B", w2b);
   // Knot families carry NO width keys (eta is a pure gauge — the pot has

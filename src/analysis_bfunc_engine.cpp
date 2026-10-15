@@ -12,6 +12,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <iomanip>
 
 namespace tadah {
 namespace mlip {
@@ -46,8 +47,27 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   std::ostringstream oss;
   for (size_t i=0; i<contexts.size(); ++i) {
     tadah::core::Context &singleContext = contexts[i];
+    if(types[0]=="MB") {
+      std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(singleContext.get<std::string>("TYPEMB"),singleContext));
+      const std::string channel=types[1]=="EMBEDDING"?"EMBEDDING":"DENSITY";
+      const auto count=descriptor->component_basis_size(channel);
+      if(count) {
+        std::vector<std::size_t> indices;
+        if(singleContext.has_stored("INDEX")) indices=core::parse_one_based_indices(singleContext("INDEX"),count,"tadah analysis bfunc","component basis");
+        else for(std::size_t j=1;j<=count;++j) indices.push_back(j);
+        auto range=core::linspace(singleContext.get<double>("RANGE",0),singleContext.get<double>("RANGE",1),singleContext.get<std::size_t>("RANGE",2));
+        const bool derivative=singleContext.get<bool>("DERIVATIVE");
+        const bool cutoff=types[1]=="Y" || singleContext.get<bool>("RESCALE");
+        oss<<std::setprecision(singleContext.get<int>("NUMERIC"));
+        for(auto index:indices) {
+          for(double q:range) {double v,d;descriptor->component_basis_curve(channel,index-1,q,cutoff,v,d);oss<<q<<" "<<(derivative?d:v)<<"\n";}
+          oss<<"\n\n";
+        }
+        continue;
+      }
+    }
 
-    models::Cut_Base *fcut = nullptr;
+    std::unique_ptr<models::Cut_Base> fcut;
     std::string cgridtype;
     std::string sgridtype;
     std::string dtype;
@@ -57,7 +77,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
       dtype = singleContext.get<std::string>("TYPE2B");
       if (types[1]=="Y" || singleContext.get<bool>("RESCALE")) {
         double rcut = singleContext.get<double>("RCUT2BMAX");
-        fcut = core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPE2B"), rcut);
+        fcut.reset(core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPE2B"), rcut));
       }
     } else if (types[0]=="MB") {
       cgridtype="CGRIDMB";
@@ -65,7 +85,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
       dtype = singleContext.get<std::string>("TYPEMB");
       if (types[1]=="Y" || singleContext.get<bool>("RESCALE")) {
         double rcut = singleContext.get<double>("RCUTMBMAX");
-        fcut = core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPEMB"), rcut);
+        fcut.reset(core::factory<models::Cut_Base,double&>( singleContext.get<std::string>("RCTYPEMB"), rcut));
       }
     } else {
       throw std::runtime_error("Unsupported -t, --type: " + types[0] + " " + types[1]);
@@ -74,7 +94,7 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     core::v_type cgrid;
     core::v_type sgrid;
     models::D_Base::get_grid(singleContext, cgridtype, cgrid);
-    models::D_Base::get_grid(singleContext, sgridtype, sgrid);
+    if(singleContext.contains(sgridtype))models::D_Base::get_grid(singleContext, sgridtype, sgrid);
 
     // The descriptor reports its own radial basis family; the basis-analysis
     // engine no longer branches on the descriptor NAME string (which forced a
@@ -99,6 +119,13 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
           "Unsupported: " + dtype +
           " (descriptor has no analytic radial basis for bfunc analysis).");
     }
+    if(*bk==models::BasisKind::Knot5)sgrid.assign(cgrid.size(),1);
+    if(sgrid.size()!=cgrid.size())throw std::runtime_error("bfunc: centre/scale size mismatch");
+    core::v_type degrees;
+    const std::string degree_key=types[0]=="2B"?"KDEG2B":"KDEGMB";
+    if(singleContext.contains(degree_key))models::D_Base::get_grid(singleContext,degree_key,degrees);
+    if(degrees.empty())degrees.assign(cgrid.size(),5);
+    if(degrees.size()!=cgrid.size())throw std::runtime_error("bfunc: centre/degree size mismatch");
     const bool deriv = singleContext.get<bool>("DERIVATIVE");
 
     std::vector<size_t> indices;
@@ -125,20 +152,6 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
     core::v_type range = core::linspace(start,stop,N);
 
     size_t numeric = singleContext.get<size_t>("NUMERIC");
-    core::v_type cutoff_values (range.size(), 1.0);
-    if (singleContext.get<bool>("RESCALE")) {
-      // only for rescale
-      if(singleContext.get<bool>("DERIVATIVE")) {
-        for (size_t i=0; i<range.size(); ++i) {
-          cutoff_values[i] = fcut->calc_prime(range[i]);
-        }
-      } else {
-        for (size_t i=0; i<range.size(); ++i) {
-          cutoff_values[i] = fcut->calc(range[i]);
-        }
-      }
-    }
-
     core::Logger::instance().log(tadah::core::LogLevel::INFO, "Generating output...");
     for (const auto &i : indices) {
       double c = cgrid[i-1];
@@ -148,9 +161,15 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
           << std::setw(numeric+5)
           << range[j] << "    "
           << std::setw(numeric+5)
-          << (deriv ? models::radial_deriv_bare(*bk, range[j], s, c)
-                    : models::radial_value_bare(*bk, range[j], s, c))
-             * cutoff_values[j]
+          << [&] {
+            double value=models::radial_value_bare(*bk,range[j],s,c,static_cast<int>(degrees[i-1]));
+            double derivative=models::radial_deriv_bare(*bk,range[j],s,c,static_cast<int>(degrees[i-1]));
+            if(singleContext.get<bool>("RESCALE")) {
+              derivative=derivative*fcut->calc(range[j])+value*fcut->calc_prime(range[j]);
+              value*=fcut->calc(range[j]);
+            }
+            return deriv?derivative:value;
+          }()
           << std::endl;
       }
       oss << std::endl;

@@ -3,6 +3,7 @@
 #include <tadah/mlip/engines/refit_keys.h>
 #include <tadah/mlip/engines/refit_log.h>
 #include <tadah/mlip/engines/refit_modes.h>
+#include <tadah/mlip/engines/embed_refit.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/training_record.h>
 
@@ -35,6 +36,16 @@ namespace engines {
 namespace {
 
 using tadah::core::Context;
+// Component ownership rejects explicitly configured legacy fields. Defaults
+// added by TaskFactory are not declarations and must not become conflicts.
+Context refit_inputs(const Task &task) {
+  auto c=task.getContext();
+  if(!c.blocks("DESCRIPTOR").empty() && task.getKeyProvenance())
+    for(const auto &entry:c.storage_snapshot())
+      if(task.getKeyProvenance()->origin(entry.first).kind==KeyOrigin::Kind::Default)c.remove(entry.first);
+  return c;
+}
+
 
 std::string get_str(const Context &c, const std::string &k, const std::string &def) {
   return c.contains(k) && c.size(k) > 0 ? c.get<std::string>(k) : def;
@@ -282,7 +293,7 @@ RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
 
 void RefitEngine::validate(const tadah::mlip::Task &task) {
   core::Logger::instance().log(core::LogLevel::INFO, "Validating RefitEngine...");
-  const auto &c = task.getContext();
+  const auto c = refit_inputs(task);
   const bool edit = c.contains("EDIT") && c.size("EDIT") > 0;
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
   if (edit || retarget) {
@@ -303,7 +314,8 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   }
   // The written DM_REAM potential declares its density form, which only the
   // configuration can choose (no default).
-  models::require_rhoform(c, kRefitRhoFormWho);
+  if(c.blocks("DESCRIPTOR").empty()) models::require_rhoform(c, kRefitRhoFormWho);
+  else validate_embed_refit(c);
   // The mode rule: a key the configuration's REFIT_MODE does not read is
   // refused (before its number would be checked); then every configuration
   // number, strictly and with its range; then whether this engine fits the
@@ -318,7 +330,7 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
 }
 
 int RefitEngine::run(tadah::mlip::Task &task) {
-  core::Context c = task.getContext();
+  core::Context c = refit_inputs(task);
 
   // ---- editing modes on existing refit outputs (no EAM input) ----
   if (c.contains("RETARGET") && c.size("RETARGET") > 0)
@@ -335,7 +347,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   // ---- RHOFORM: the density form fitted, self-tested and written ----
   // Mandatory in the configuration (no default, never inserted); checked
   // before the table is read.
-  const models::RhoForm rho_form = models::require_rhoform(c, kRefitRhoFormWho);
+  const bool components=!c.blocks("DESCRIPTOR").empty();
+  if(components) validate_embed_refit(c);
+  models::RhoForm rho_form = components?models::RhoForm::Signed:models::require_rhoform(c, kRefitRhoFormWho);
   // REFIT_MODE and the mode rule, the configuration numbers (strictly and
   // with their ranges; the compact fitter reads them with the same reader)
   // and whether this engine fits the mode, before the table is read, as in
@@ -415,13 +429,22 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   cfg.reach_smin   = nums.reach_smin.value_or(cfg.reach_smin);
   cfg.reach_margin = nums.reach_margin.value_or(cfg.reach_margin);
   cfg.r_lo_frac    = nums.r_lo_frac.value_or(cfg.r_lo_frac);
-  if (c.contains("REFIT_CONSTRAIN_F0") && c.size("REFIT_CONSTRAIN_F0") > 0)
+  cfg.unified_output=true;
+  if(components) {
+    prepare_embed_refit(c,eam,cfg);
+    rho_form=cfg.rho_form;
+  } else if(models::basis_kind_from_string(cfg.basis)==models::BasisKind::Gaussian) {
+    cfg.rctype="Cut_Poly";
+    core::Logger::instance().log(core::LogLevel::INFO,
+      "tadah refit: Gaussian density uses Cut_Poly; its spatial tail requires a smooth cutoff");
+  }
+  if (!components && c.contains("REFIT_CONSTRAIN_F0") && c.size("REFIT_CONSTRAIN_F0") > 0)
     cfg.constrain_F0 = c.get<bool>("REFIT_CONSTRAIN_F0");
 
   // ---- EMBF0: the embedding reference fitted, self-tested and written ----
   // Non-inserting lookup (absent -> the default ZERO); dense and compact
   // modes both read cfg.embf0_zero.
-  cfg.embf0_zero = (models::stored_embf0(c).value_or(models::EmbF0Mode::Zero) ==
+  if(!components) cfg.embf0_zero = (models::stored_embf0(c).value_or(models::EmbF0Mode::Zero) ==
                     models::EmbF0Mode::Zero);
   if (cfg.embf0_zero) {
     // (REFIT_CONSTRAIN_F0, which this fit does not read, was refused by the
@@ -444,7 +467,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   const bool basis_knotfam = refit_basis_is_knot_family(cfg.basis);
 
   // ---- RHOFORM: form x basis x mode, then the fit in the declared form ----
-  check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
+  if(!components) check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
                        compact, cfg.rctype);
   cfg.rho_form = rho_form;
   core::Logger::instance().log(core::LogLevel::INFO,
@@ -488,7 +511,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     // EAMRefit evaluates/serialises, else the pot's evaluation basis would
     // silently differ from the fit (measured hazard). Compact supports the
     // blip bumps and the one-sided quintic knot family.
-    if (!basis_blip && !basis_knotfam && !basis_blip5)
+    if (!components && !basis_blip && !basis_knotfam && !basis_blip5)
       throw std::runtime_error(
           "tadah refit: REFIT_MODE compact supports REFIT_BASIS Blip, "
           "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
@@ -506,7 +529,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   }
 
   // (cfg.basis, not basis_knotfam: a defaulted Knot5 fell back to Blip)
-  if (!fitted && refit_basis_is_knot_family(cfg.basis))
+  if (!components && !fitted && refit_basis_is_knot_family(cfg.basis))
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
         "compact on an HPO (Ceres) build — the one-sided knot families have "
@@ -547,7 +570,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     const bool pass =
         1000.0 * st.mx_a <= tol_amb && 1000.0 * st.mx_c <= tol_cmp &&
         std::fabs(1000.0 * (st.e_fit - st.e_orig)) <= tol_amb;
-    if (pass || attempt >= max_esc) break;
+    if (pass || attempt >= max_esc || components) break;
     const int which =
         (st.contrib[0] >= st.contrib[1] && st.contrib[0] >= st.contrib[2]) ? 0
         : (st.contrib[1] >= st.contrib[2] ? 1 : 2);

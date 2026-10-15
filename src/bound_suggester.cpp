@@ -14,8 +14,10 @@ const char* scale_str(models::Scale s) {
   switch (s) {
     case S::Distance:           return "Å";
     case S::InverseDistanceSq:  return "Å^-2";
+    case S::InverseDistance:    return "Å^-1";
     case S::Density:            return "ρ";
     case S::InverseDensity:     return "ρ^-1";
+    case S::InverseDensitySq:   return "ρ^-2";
     case S::Energy:             return "eV";
     case S::Force:              return "eV/Å";
     case S::Count:              return "n";
@@ -36,11 +38,11 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
 
     // Determine how many entries this ParamMeta covers given the
     // current seed. arg_pos == -1 -> scalar (one suggestion). arg_pos
-    // >= 0 -> vector entry; iterate over `seed.size(pm.key)`.
+    // >= 0 -> vector entry; iterate over `sv.size(pm.key)`.
     std::size_t n_entries = 1;
     int base_arg_pos = -1;
     if (pm.arg_pos >= 0) {
-      n_entries = seed.contains(pm.key) ? seed.size(pm.key) : 0;
+      n_entries = sv.contains(pm.key) ? sv.size(pm.key) : 0;
       if (n_entries == 0) {
         // No seed entry yet — emit a single suggestion at arg_pos 0
         // with a generic rationale ("seed config has no entries; emit
@@ -66,11 +68,11 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
       s.units    = pm.units;
 
       // Seed value, when retrievable as double.
-      if (seed.contains(pm.key)) {
+      if (sv.contains(pm.key)) {
         try {
           s.seed_value = (ap < 0)
-              ? seed.get<double>(pm.key)
-              : seed.get<double>(pm.key, static_cast<std::size_t>(ap));
+              ? sv.get<double>(pm.key)
+              : sv.get<double>(pm.key, static_cast<std::size_t>(ap));
         } catch (...) { /* non-numeric or out of range — leave unset */ }
       }
 
