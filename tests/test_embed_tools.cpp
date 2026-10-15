@@ -83,7 +83,7 @@ TEST_CASE("DM_Embed retarget recognizes named paths and component nonnegative am
 TEST_CASE("Knot basis analysis accepts absent scales mixed degrees and cutoff product rule", "[unified-dm][analysis][legacy]") {
   Temp temp;core::Context c;
   c.add("ATOM","Ta");c.add("VERBOSE",0);c.add("INITMB",false);c.add("INIT2B",true);
-  c.add("TYPE2B","D2_Knot5 2 0 Ta Ta");c.add("CGRID2B","3 4");c.add("KDEG2B","3 5");
+  c.add("TYPE2B","D2_Knot5 2 2 Ta Ta");c.add("CGRID2B","3 4");c.add("KDEG2B","3 5");
   c.add("RCTYPE2B","Cut_Poly");c.add("RCUT2B",6);c.add("TYPE","2B");
   c.add("RANGE","2 2.5 2");c.add("DERIVATIVE",true);c.add("RESCALE",true);c.add("NUMERIC",17);
   c.add("OUTFILE","knot.dat");mlip::Task task("analysis.bfunc",c);
