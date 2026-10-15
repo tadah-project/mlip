@@ -56,8 +56,9 @@ std::string get_str(const Context &c, const std::string &k, const std::string &d
 // can share it.
 using tadah::models::eam_lattice::crystal_epa;
 
-// Prefix of the missing-RHOFORM message: the refit configuration, not a
-// potential, must declare the form of the DM_REAM potential it writes.
+// Prefix of the missing-RHOFORM message: a refit configuration without
+// DESCRIPTOR blocks, not a potential, declares the density form of the
+// potential it writes (the FORM of its density component).
 const char *const kRefitRhoFormWho = "tadah refit configuration";
 
 // The RHOFORM x REFIT_BASIS x REFIT_MODE matrix, checked before any fitting.
@@ -316,8 +317,9 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
         "existing refit outputs). Supported: single-element setfl "
         "(eam/alloy or eam/fs).");
   }
-  // The written DM_REAM potential declares its density form, which only the
-  // configuration can choose (no default).
+  // The written potential's density component declares its density form,
+  // which only the configuration can choose (RHOFORM without blocks, no
+  // default; the block's FORM with them).
   if(c.blocks("DESCRIPTOR").empty()) models::require_rhoform(c, kRefitRhoFormWho);
   else validate_embed_refit(c);
   // The mode rule: a key the configuration's REFIT_MODE does not read is
