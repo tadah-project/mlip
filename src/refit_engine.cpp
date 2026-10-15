@@ -382,8 +382,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   //      normalised to lower case on read, so FCC/BCC/HCP are accepted;
   //      anything else (or a0<=0, e.g. a "NONE 0.0" header) is a hard stop with
   //      a fix hint rather than a silently-skipped self-test. The crystal's
-  //      nearest neighbours must lie below the table's cutoff at a0 (a
-  //      crystal without a pair within rcut has no interaction), and at the
+  //      nearest neighbours must lie below the table's cutoff at a0 (LAMMPS
+  //      counts a pair only below rcut: there a crystal without one has no
+  //      interaction), and at the
   //      strongest compression the refit tests (a/a0 = REFIT_REACH_SMIN) be
   //      at least the table's dr apart, so the reachability analysis'
   //      r_reach lies in [dr, rcut). Shared by dense and compact modes
