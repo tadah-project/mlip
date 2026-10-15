@@ -153,6 +153,15 @@ RefitOutputs run_refit(const Context &c) {
     if (key == "AMPGRIDMB")
       while (ls >> tok) out.amps.push_back(std::stod(tok));
   }
+  {
+    auto context=tadah::core::CoreUserConfigParser().parse("pot.tadah");
+    auto specs=tadah::models::embed_specs(context);
+    if(!specs.empty()) {
+      out.embf0=tadah::models::embf0_name(specs[0].reference);
+      out.rhoform=tadah::models::rhoform_name(specs[0].form);
+      out.amps=specs[0].density.amplitudes;
+    }
+  }
   tadah::models::EAMSetflIO setfl;
   setfl.read_setfl("refit.eam");
   out.setfl_F0 = setfl.frho().at(0);
@@ -188,7 +197,7 @@ TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves
   write_synth_eam("source.eam","bcc",3.2);
   std::istringstream input(
     "EAM source.eam\nREFIT_MODE dense\nREFIT_MAX_ESCALATIONS 0\n"
-    "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS WendlandC4\n"
+    "DESCRIPTOR ta DM_Embed\nPAIRS Cu Cu\nDENSITY\nBASIS WendlandC4\n"
     "FORM NONNEG\nCENTRES AUTO 12\nWIDTHS AUTO\nAMPLITUDES AUTO\n"
     "CUTOFF\nTYPE Cut_Poly\nRADIUS AUTO\nENDCUTOFF\nENDDENSITY\n"
     "EMBEDDING\nBASIS Gaussian\nCENTRES AUTO 20\nWIDTHS AUTO\n"
