@@ -504,19 +504,22 @@ TEST_CASE_METHOD(PTFixture,
 
 /* Pins: the crystal gate of RefitEngine::run() refuses, before any fitting,
  * a lattice constant that puts the crystal's nearest neighbours at or
- * beyond the table's cutoff, where the crystal has no pair: the synthetic
+ * beyond the table's cutoff, where LAMMPS counts no pair: the synthetic
  * fcc table (rcut 5 A) whose element line gives a0 = 361 (copper's lattice
  * constant in picometres) is refused with exactly "tadah refit: the lattice
  * constant of the EAM header, a0 = 361 A, puts the nearest neighbours of
  * the fcc crystal 255.26554800834364 A apart, at or beyond the table's
- * cutoff, rcut = 5 A: the crystal has no pair within the cutoff. Edit the
- * element line of the setfl file (`<Z> <mass> <a0> <lattice>`): set the
+ * cutoff, rcut = 5 A, and LAMMPS (pair_style eam/alloy) counts a pair only
+ * below rcut: the crystal has no interaction in LAMMPS. Edit the element
+ * line of the setfl file (`<Z> <mass> <a0> <lattice>`): set the
  * equilibrium lattice constant, in Angstrom (a value in picometres is 100
  * times the value in Angstrom)." and writes no pot.tadah.
- * Before the fix: the gate took no cutoff, so the dense refit ran: its
- * reachable pair distances began at 191.4 A, its self-test compared
- * crystals without neighbours (0.000 meV/atom) and it wrote pot.tadah: no
- * exception. */
+ * Before the fix: the refusal said "...: the crystal has no pair within
+ * the cutoff." (tadah itself counts a pair at exactly rcut), so the text
+ * check fails. Before the crystal gate took the cutoff, the dense refit
+ * ran: its reachable pair distances began at 191.4 A, its self-test
+ * compared crystals without neighbours (0.000 meV/atom) and it wrote
+ * pot.tadah. */
 TEST_CASE_METHOD(PTFixture,
                  "RefitEngine refuses a lattice constant whose crystal's "
                  "nearest neighbours are at or beyond the table's cutoff",
@@ -529,8 +532,10 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(what ==
         "tadah refit: the lattice constant of the EAM header, a0 = 361 A, "
         "puts the nearest neighbours of the fcc crystal 255.26554800834364 A "
-        "apart, at or beyond the table's cutoff, rcut = 5 A: the crystal has "
-        "no pair within the cutoff. Edit the element line of the setfl file "
+        "apart, at or beyond the table's cutoff, rcut = 5 A, and LAMMPS "
+        "(pair_style eam/alloy) counts a pair only below rcut: the crystal "
+        "has no interaction in LAMMPS. Edit the element line of the setfl "
+        "file "
         "(`<Z> <mass> <a0> <lattice>`): set the equilibrium lattice constant, "
         "in Angstrom (a value in picometres is 100 times the value in "
         "Angstrom).");
