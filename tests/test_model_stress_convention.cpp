@@ -30,6 +30,7 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/models/descriptors/dm/embed_spec.h>
 
 #include <array>
 #include <cmath>
@@ -346,4 +347,32 @@ TEST_CASE("Predicted stress is symmetric for M_BLR and M_KRR",
     REQUIRE(pred.size() == 1);
     check_symmetric(pred(0).stress);
   }
+}
+
+TEST_CASE("DM_Embed cluster forces and all stress components equal energy differences", "[unified-dm][stress][force]") {
+  PeriodicTable::initialize();auto c=blr_context();
+  for(const char *key:{"TYPEMB","CGRIDMB","SGRIDMB","RCUTMB","RCTYPEMB"})c.remove(key);
+  c.remove("WATOM");c.add("WATOM",1);
+  tadah::models::EmbedSpec spec;spec.id="ta";spec.pairs={"Ta","Ta"};
+  spec.form=tadah::models::RhoForm::NonNeg;spec.radius=kRcut;spec.cutoff="Cut_Poly";
+  spec.density.basis=tadah::models::EmbedBasis::WendlandC4;
+  spec.density.centres={2.2,3.2};spec.density.scales={0.6,0.7};spec.density.amplitudes={0.4,0.2};
+  spec.embedding.basis=tadah::models::EmbedBasis::Gaussian;
+  spec.embedding.centres={0,0.5,1};spec.embedding.scales={2,2,2};
+  spec.envelope=tadah::models::EmbedEnvelope::Smoothstep2;spec.envelope_cutoff=1;
+  c.append_block(tadah::models::embed_block(spec));
+  FixedModel model(std::move(c),{.02,.02,.02,.02,1,2,3});
+  const auto st=sheared_cell();const auto predicted=model.predict(st,true);const double h=1e-5;
+  for(int x=0;x<3;++x)for(int y=x;y<3;++y) {
+    double fd=(model.energy(strained(st,x,y,h))-model.energy(strained(st,x,y,-h)))/(2*h*st.get_volume());
+    REQUIRE(predicted.stress(x,y)==Approx(fd).margin(1e-7));
+  }
+  for(std::size_t a=0;a<st.natoms();++a)for(int k=0;k<3;++k) {
+    auto plus=st,minus=st;plus.atoms[a].position[k]+=h;minus.atoms[a].position[k]-=h;
+    double fd=-(model.energy(plus)-model.energy(minus))/(2*h);
+    REQUIRE(predicted.atoms[a].force[k]==Approx(fd).margin(1e-7));
+  }
+  for(int k=0;k<3;++k) {double total=0;for(std::size_t a=0;a<st.natoms();++a)total+=predicted.atoms[a].force[k];REQUIRE(std::abs(total)<1e-12);}
+  auto translated=st;for(std::size_t a=0;a<st.natoms();++a)for(int k=0;k<3;++k)translated.atoms[a].position[k]+=0.37*(k+1);
+  REQUIRE(model.energy(translated)==Approx(model.energy(st)).margin(1e-12));
 }
