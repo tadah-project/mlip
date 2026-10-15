@@ -271,6 +271,8 @@ bool refit_basis_is_gaussian(const std::string &b) {
 }
 
 void check_refit_basis(const Context &c) {
+  if(c.blocks("DESCRIPTOR").empty() && c.has_stored("REFIT_PAIR_BASIS"))
+    throw std::runtime_error("tadah refit: REFIT_PAIR_BASIS requires a DESCRIPTOR block; REFIT_BASIS controls all legacy components");
   const std::optional<std::string> b = single(c, "REFIT_BASIS");
   if (!b || tadah::models::basis_kind_from_name(*b)) return;
   throw std::runtime_error(

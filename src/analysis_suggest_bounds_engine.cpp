@@ -128,6 +128,14 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
 
   run_for("TYPE2B");
   run_for("TYPEMB");
+  if(!workCtx.blocks("DESCRIPTOR").empty())
+    for(const auto &child:models::embed_contexts(workCtx))if(!child.blocks("DESCRIPTOR").empty()) {
+      std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(child.get<std::string>("TYPEMB"),child));
+      if(auto meta=descriptor->meta()) {
+        auto suggestions=suggest_bounds_for(data,*meta,workCtx);
+        all_suggestions.insert(all_suggestions.end(),suggestions.begin(),suggestions.end());
+      }
+    }
 
   // Always print the human table to stdout for visibility.
   print_suggestions(all_suggestions, std::cout);

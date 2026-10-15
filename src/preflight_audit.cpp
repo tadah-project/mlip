@@ -12,6 +12,7 @@
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d_base.h>
+#include <tadah/models/descriptors/dm/dm_all.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
@@ -56,6 +57,11 @@ collect_descriptor_metas(const tadah::core::Context& seed) {
       }
     }
   }
+  if(!seed.blocks("DESCRIPTOR").empty())
+    for(const auto &child:models::embed_contexts(seed))if(!child.blocks("DESCRIPTOR").empty()) {
+      std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(child.get<std::string>("TYPEMB"),child));
+      if(auto meta=descriptor->meta())out.emplace_back(meta->label,std::move(*meta));
+    }
   return out;
 }
 
@@ -135,7 +141,7 @@ AuditReport run_preflight_with_metas_impl(
       // Skip if the seed lacks the param entirely — the per-param
       // check expects the value to exist (the cross_param_checks
       // handle absent-but-derivable cases).
-      if (!seed.contains(pm.key)) continue;
+      if (!sv.contains(pm.key)) continue;
 
       auto v = pm.check(data, sv);
       if (tadah::models::is_ok(v)) continue;
@@ -223,6 +229,7 @@ AuditReport run_critical_optim_audit_with_metas(
     const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
   AuditReport report;
   if (metas.empty()) return report;
+  tadah::models::SeedView sv(seed);
 
   std::unordered_set<std::string> optim_set(optim_keys.begin(),
                                             optim_keys.end());
@@ -230,7 +237,7 @@ AuditReport run_critical_optim_audit_with_metas(
   for (const auto& [label, meta] : metas) {
     for (const auto& pm : meta.params) {
       if (pm.crit != tadah::models::Criticality::Critical) continue;
-      if (!seed.contains(pm.key)) continue;        // not configured
+      if (!sv.contains(pm.key)) continue;        // not configured
       if (optim_set.count(pm.key) > 0) continue;   // covered by HPO
       // Knot channels: RCUT2B/RCUTMB are DERIVED from the largest knot and
       // re-derived on every HPO evaluation — recommending an OPTIM block on

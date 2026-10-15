@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Component-block EAM refit configuration with independent pair selection, AUTO resolution, fixed explicit dense grids and component seeds for compact refitting. New CLI refits write resolved `DM_Embed` blocks.
+- Preserve component widths, references and envelopes through editing, retargeting and generated HPO starters. Basis analysis selects density or embedding through descriptor capabilities.
+
+### Fixed
+- Keep embedding-removal sampling nonnegative for negative knots and report compensation residuals over the actual sampling window.
+- Distinguish task defaults from explicit component conflicts; reject an inactive `REFIT_PAIR_BASIS` without component blocks.
+- Analyze mixed-degree knots without fictitious scales; apply the cutoff product rule to rescaled basis derivatives. Legacy DM_REAM analysis uses its declared density form and embedding reference.
+
 ## [1.6.0] — unreleased
 
 ### Added
