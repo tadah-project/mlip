@@ -27,7 +27,9 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unistd.h>
@@ -535,6 +537,117 @@ TEST_CASE_METHOD(PTFixture,
               "= REFIT_REACH_SMIN " +
               (*smin ? "0.1" : "0.75") + ")," + tail);
     CHECK_FALSE(fs::exists("pot.tadah"));
+  }
+}
+
+/* Pins: the crystal gate of RefitEngine::run() refuses, before any fitting,
+ * a lattice constant that puts the crystal's nearest neighbours at or
+ * beyond the table's cutoff, where LAMMPS counts no pair: the synthetic
+ * fcc table (rcut 5 A) whose element line gives a0 = 361 (copper's lattice
+ * constant in picometres) is refused with exactly "tadah refit: the lattice
+ * constant of the EAM header, a0 = 361 A, puts the nearest neighbours of
+ * the fcc crystal 255.26554800834364 A apart, at or beyond the table's
+ * cutoff, rcut = 5 A, and LAMMPS (pair_style eam/alloy) counts a pair only
+ * below rcut: the crystal has no interaction in LAMMPS. Edit the element
+ * line of the setfl file (`<Z> <mass> <a0> <lattice>`): set the
+ * equilibrium lattice constant, in Angstrom (a value in picometres is 100
+ * times the value in Angstrom)." and writes no pot.tadah.
+ * Before the fix: the refusal said "...: the crystal has no pair within
+ * the cutoff." (tadah itself counts a pair at exactly rcut), so the text
+ * check fails. Before the crystal gate took the cutoff, the dense refit
+ * ran: its reachable pair distances began at 191.4 A, its self-test
+ * compared crystals without neighbours (0.000 meV/atom) and it wrote
+ * pot.tadah. */
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine refuses a lattice constant whose crystal's "
+                 "nearest neighbours are at or beyond the table's cutoff",
+                 "[refit][engine][integration]") {
+  ScopedTempDir tmp;
+  write_synth_eam("synth_pm.eam.alloy", "fcc", 361.0);
+  const auto [what, logged] =
+      refit_error(dense_refit_context("synth_pm.eam.alloy"));
+  INFO(logged);
+  CHECK(what ==
+        "tadah refit: the lattice constant of the EAM header, a0 = 361 A, "
+        "puts the nearest neighbours of the fcc crystal 255.26554800834364 A "
+        "apart, at or beyond the table's cutoff, rcut = 5 A, and LAMMPS "
+        "(pair_style eam/alloy) counts a pair only below rcut: the crystal "
+        "has no interaction in LAMMPS. Edit the element line of the setfl "
+        "file "
+        "(`<Z> <mass> <a0> <lattice>`): set the equilibrium lattice constant, "
+        "in Angstrom (a value in picometres is 100 times the value in "
+        "Angstrom).");
+  CHECK_FALSE(fs::exists("pot.tadah"));
+}
+
+namespace {
+
+/* An engine with a compact fitter whose hook returns without a fit: what
+ * RefitEngine::run() does when an engine breaks the hook's contract (fill
+ * the fit and its self-test, or throw). */
+struct CompactFitterWithoutFit : RefitEngine {
+protected:
+  bool has_compact_fitter() const override { return true; }
+  void compact_fit(const tadah::core::Context &,
+                   const tadah::models::EAMSetflIO &,
+                   tadah::models::EAMRefitConfig &,
+                   std::unique_ptr<tadah::models::EAMRefit> &,
+                   SelfTest &) override {}
+};
+
+}  // namespace
+
+/* Pins: RefitEngine::compact_fit returns nothing -- the compact fitter fits
+ * the table or throws -- and run() has no dense fallback: a hook that
+ * returns without a fit (CompactFitterWithoutFit) makes run() of REFIT_MODE
+ * compact throw std::logic_error "tadah refit: internal error: the compact
+ * fitter returned without a fit (RefitEngine::compact_fit fills the fit
+ * and its self-test, or throws); this is a bug, please report it", with the
+ * explicit REFIT_BASIS Blip5 and with the defaulted basis (Knot5), writes
+ * no pot.tadah and logs no "falls back" WARNING.
+ * Before the fix: the hook returned bool, and a false return ("the fitter
+ * declined this table") fitted the table in dense mode, with the WARNING
+ * "tadah refit: defaulted basis falls back Knot5 -> Blip for the dense
+ * path (set REFIT_BASIS explicitly to control this)." for the defaulted
+ * basis, and wrote pot.tadah; this test, written for the hook without a
+ * return value, does not compile (tmp/before_fix_rg_mlip.txt holds that
+ * build and a run of the same engine returning false). */
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine: a compact fitter that returns without a fit "
+                 "is an internal error, not a fall back to the dense fit",
+                 "[refit][engine][compact_hook]") {
+  for (const bool defaulted_basis : {false, true}) {
+    INFO((defaulted_basis ? "the default basis" : "REFIT_BASIS Blip5"));
+    ScopedTempDir tmp;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = compact_refit_context("synth_fcc.eam.alloy");
+    if (defaulted_basis) c.remove("REFIT_BASIS");
+    Task task("refit", c);
+    auto &logger = tadah::core::Logger::instance();
+    const auto old_level = logger.getLogLevel();
+    logger.setLogLevel(tadah::core::LogLevel::INFO);
+    std::ostringstream captured;
+    std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+    std::string what;
+    bool logic_error = false;
+    try {
+      CompactFitterWithoutFit().run(task);
+    } catch (const std::logic_error &e) {
+      logic_error = true;
+      what = e.what();
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    std::cout.rdbuf(old_buf);
+    logger.setLogLevel(old_level);
+    INFO("log:\n" << captured.str());
+    CHECK(logic_error);
+    CHECK(what ==
+          "tadah refit: internal error: the compact fitter returned without "
+          "a fit (RefitEngine::compact_fit fills the fit and its self-test, "
+          "or throws); this is a bug, please report it");
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    CHECK(captured.str().find("falls back") == std::string::npos);
   }
 }
 
