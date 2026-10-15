@@ -304,7 +304,7 @@ TEST_CASE("nn_cache: a cell change keeps the list only while it provably "
     SECTION("scale 1.1: fresh and complete") {
         /* Every pair closer than 5 A after a 10% expansion was closer than
          * 5/1.1 = 4.55 A < 7 A before it. (The old two-corner rule called
-         * this stale; MK signed off that it is fresh, 2026-09-30.) */
+         * this stale.) */
         fresh_and_complete(1.1);
     }
 

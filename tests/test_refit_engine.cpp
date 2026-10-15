@@ -610,8 +610,7 @@ protected:
  * "tadah refit: defaulted basis falls back Knot5 -> Blip for the dense
  * path (set REFIT_BASIS explicitly to control this)." for the defaulted
  * basis, and wrote pot.tadah; this test, written for the hook without a
- * return value, does not compile (tmp/before_fix_rg_mlip.txt holds that
- * build and a run of the same engine returning false). */
+ * return value, does not compile. */
 TEST_CASE_METHOD(PTFixture,
                  "RefitEngine: a compact fitter that returns without a fit "
                  "is an internal error, not a fall back to the dense fit",
@@ -1911,8 +1910,8 @@ Task config_file_task(const Context &c) {
 /* Pins: a refit configuration with DESCRIPTOR blocks that sets
  * REFIT_CONSTRAIN_F0, RHOFORM or EMBF0 itself (a ConfigFile key, not a
  * default the task factory added) is refused naming the key: the setting
- * belongs to the component (its REFERENCE, its FORM). The UDM-009 fix
- * removes the injected defaults by provenance; this pins the other half,
+ * belongs to the component (its REFERENCE, its FORM). The injected
+ * defaults are removed by provenance; this pins the other half,
  * which no test covered (a refit_inputs() that dropped ConfigFile keys too
  * passed every test). */
 TEST_CASE_METHOD(PTFixture,

@@ -36,7 +36,7 @@ inline bool counts_in_metric(const Structure &s, MetricQuantity q) {
 
 /** For each dataset of @p truth, whether the @p q metrics measure it: a
  *  dataset in which no structure counts (every one has that weight 0, or
- *  none is left) is not measured; its metric is nan (MK, 2026-10-06). */
+ *  none is left) is not measured; its metric is nan. */
 std::vector<bool> measured_datasets(const StructureDB &truth, MetricQuantity q);
 
 /** The mean of the per-dataset values @p v over the datasets @p measured

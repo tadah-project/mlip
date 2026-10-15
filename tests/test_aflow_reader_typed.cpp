@@ -11,7 +11,7 @@
 //   volume_cell, density  numbers
 //   compound, auid        strings, the same in both forms
 // These typed shapes were checked against the live Ta1_ICSD_76152 entry,
-// saved on 2026-10-06 with MK's approval (test_aflow_live_fixture.cpp).
+// saved on 2026-10-06 (test_aflow_live_fixture.cpp).
 //
 // The entries are written by hand: bcc Ta with a_c = 3.3058 A (the 1-atom
 // primitive cell, the shape of the ICSD_WEB/BCC/Ta1 entry, and the 2-atom

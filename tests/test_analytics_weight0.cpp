@@ -3,8 +3,8 @@
 // A structure with force weight 0 (fweight) has no force data of its own
 // (tadah data convert stores it with zero forces, e.g. a .castep step that
 // prints no forces), and one with stress weight 0 (sweight) no stress
-// tensor. Training ignores them through the weights; the metrics must too
-// (MK, 2026-10-05): Analytics::calc_f_mae/calc_f_rmse/calc_f_r_sq skip a
+// tensor. Training ignores them through the weights; the metrics must
+// too: Analytics::calc_f_mae/calc_f_rmse/calc_f_r_sq skip a
 // structure with fweight 0, calc_s_mae/calc_s_rmse/calc_s_r_sq one with
 // sweight 0, and so do the PC_FRMSE/PC_SRMSE partials of analytics_grad. A
 // dataset in which every structure has that weight 0 is refused, naming the
@@ -240,7 +240,7 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structur
   CHECK(s.at({0, 1}) == Approx(-0.01 / (2 * 12 * srmse1)).epsilon(kRel));
 }
 
-/* Pins (MK, 2026-10-06): a dataset in which every structure has force
+/* Pins: a dataset in which every structure has force
  * weight 0 (stress weight 0) is not measured by the force (stress) metrics:
  * each returns nan for it and the other datasets' values unchanged, the
  * partials emit none of its cells and do not throw; the PC_SRMSE partials

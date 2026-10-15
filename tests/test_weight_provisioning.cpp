@@ -431,16 +431,16 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
  * Before the fix: each refusal ended with its own remedy ("... or pin every
  * weight with FIXINDEX/FIXWEIGHT.", "... to search them).", "Provide a
  * training DBFILE."), without the advice.
- * Before the advice named the pins (cross-lane review 2): it ended "add a
+ * Before the advice named the pins: it ended "add a
  * DBFILE line to a copy of it (the Training page ...)." -- a refit
  * potential so retrained fitted nothing: these checks fail.
- * Before the training record (MK's decision of 2026-10-14): the advice
+ * Before the training record: the advice
  * began "A potential records no DBFILE (no potential tadah writes has
  * one): to train from one, ...", and the case was named "..., says that a
  * potential records none".
- * Before the advice said when the record lists a DBFILE (review of the
- * training record): it said "the DBFILE of the run that wrote it is in its
- * training record, a comment block tadah does not read", which a refit
+ * Before the advice said when the record lists a DBFILE: it said "the
+ * DBFILE of the run that wrote it is in its training record, a comment
+ * block tadah does not read", which a refit
  * potential, an hpo run's without training datasets and one of an earlier
  * version contradict: these checks fail. */
 TEST_CASE("classify_weight_source: a refusal without a training DBFILE says "

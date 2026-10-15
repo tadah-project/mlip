@@ -245,7 +245,7 @@ using ModelMaker = std::unique_ptr<FixedModel> (*)();
 // Tolerance: the central difference is accurate to O(h^2) E'''/V plus the
 // energy's rounding over 2hV. Measured here: at most 6.8e-10 (M_BLR) and
 // 1.6e-9 eV/A^3 (M_KRR) at h = 1e-5, scaling as h^2 (1.6e-7 at h = 1e-4);
-// the investigation saw ~1e-9 with two shipped potentials. 1e-7 leaves 60x
+// two shipped potentials gave ~1e-9. 1e-7 leaves 60x
 // headroom and is far below the components themselves (0.06 .. 0.44,
 // |sigma| > 1e-2 checked), so a sign or factor error cannot pass.
 // This passes before and after the fix. It fails if the sign of the

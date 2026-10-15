@@ -2,8 +2,7 @@
 #define TADAH_MLIP_DPHI_DTHETA_WALK_H
 
 /* dphi_dtheta_walk.h - structure-level dPhi/dtheta assembly for HPO
- * analytical / hybrid gradients (Phase 2A.4 follow-up, extended to DM
- * in Phase 2B (A3)).
+ * analytical / hybrid gradients.
  *
  * The MLIP design-matrix builder (DesignMatrix::build) walks atoms +
  * neighbours and routes each pair through D2_Base::calc_aed /
@@ -23,8 +22,9 @@
  *    section of rhoi (= 2 f rho), which calc_daed_dtheta then dot-products
  *    with drho_i/dtheta.
  *
- * For Phase 2A/2B first cut the helper covers ONLY the energy rows
- * (FORCE=false, STRESS=false).
+ * The energy-row helpers cover ONLY the energy rows (FORCE=false,
+ * STRESS=false); the force-row and combined walkers below add the force
+ * rows.
  *
  * Symmetry-of-pair convention matches descriptors_calc.hpp:248
  * (`d2.calc_aed(..., 0.5)`): each (i, j) pair is iterated from both
@@ -285,7 +285,7 @@ assemble_dphi_train_energy_rows_dm(const StructureDB&                 stdb,
  *  (caller pre-zeros dphi_out), `n_cols` must equal `kernel.basis.cols()`,
  *  returns `true` iff at least one term contributed.
  *
- *  Phase 2B (B-HPO) groundwork — this walker is NOT yet consumed by
+ *  This walker is NOT yet consumed by
  *  compute_analytical_gradient_from_trainer, whose analytical chain
  *  covers BF_Linear and Kern_Linear only. (It used to wait for the
  *  derivative of the EKM projection of M_KRR_Train, which non-linear
@@ -1038,7 +1038,7 @@ assemble_dphi_train_both_rows_dm(
     return {any_energy, any_force};
 }
 
-/* DM rho cache (Phase 2E P3) — caches the θ-independent per-atom rho_i and
+/* DM rho cache — caches the θ-independent per-atom rho_i and
  * F'(rho_i) tail across an entire gradient call. The combined+cached walker
  * (assemble_dphi_train_both_rows_dm_cached) reads from this cache instead of
  * re-running the calc_rho neighbour-loop + calc_aed embedding evaluation on
@@ -1337,7 +1337,7 @@ assemble_dphi_train_both_rows(
     return {any_e, any_f};
 }
 
-/* Cached DC_Selector-level combined walker (Phase 2E P3). Same shape as
+/* Cached DC_Selector-level combined walker. Same shape as
  * assemble_dphi_train_both_rows but the DM arm goes through the
  * _cached variant which reads rho_i / F'(rho_i) from the supplied cache
  * instead of recomputing them per θ.

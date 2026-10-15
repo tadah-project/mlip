@@ -1,9 +1,9 @@
 # Reference numbers for bench_dphi_dtheta_walk
 #
-# Captured 2026-05-12 on Linux Xeon w7-2475X (single-socket), Phase 2F
-# baseline. Tree state: HPO Phase 2F (cost-aware scheduling) merged,
-# per-pair kernel sibling work NOT applied. Build: cmake mkz4_develop
-# preset, RelWithDebInfo, OPENMP enabled, gcc 13.
+# Captured 2026-05-12 on Linux Xeon w7-2475X (single-socket). Tree state:
+# HPO cost-aware scheduling merged, per-pair kernel sibling work NOT
+# applied. Build: a local cmake preset, RelWithDebInfo, OPENMP enabled,
+# gcc 13.
 #
 # Bench params (see bench_dphi_dtheta_walk.cpp):
 #   N_STRUCT = 10

@@ -1,4 +1,4 @@
-// Catch2 v2 unit tests for the check_bounds dry-run (Phase 7).
+// Catch2 v2 unit tests for the check_bounds dry-run.
 //
 // Verifies:
 //   * parse_hpo_target_bounds extracts (key, lo, hi) from
@@ -10,7 +10,7 @@
 //     samples for k > 12.
 //   * check_bounds_at_corners refuses a dataset with two atoms at one
 //     position, naming the structure (NNFinder's refusal).
-//   * The Phase 7 engine (`tadah analysis check_bounds`) is wired —
+//   * The engine (`tadah analysis check_bounds`) is wired —
 //     tested elsewhere via the smoke path; this file focuses on the
 //     pure-function library.
 
@@ -247,7 +247,7 @@ TEST_CASE("check_bounds: under NONNEG a Gaussian density's SGRIDMB box needs "
 
 TEST_CASE("check_bounds: a radial bump width box needs lo > 0 in every form",
           "[check_bounds][rhoform][bump_width]") {
-  // Owner decision (2026-09-29, C8): every radial bump width > 0 -- SGRIDMB
+  // Every radial bump width > 0 -- SGRIDMB
   // of a DM_REAM Blip/Blip5 density and SGRID2B of a D2_Blip/D2_Blip5 pair
   // term, in every RHOFORM (models::optim_low_bound_rule(key, ctx), the
   // rule tadah hpo refuses such a box by). The Blip5 density under NONNEG

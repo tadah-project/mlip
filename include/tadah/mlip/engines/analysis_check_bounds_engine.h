@@ -7,8 +7,8 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
-/** Phase 7 — `tadah analysis check_bounds`. Loads HPOTARGET, parses
- *  OPTIM bounds, samples corners, runs Phase 5 audit at each corner.
+/** `tadah analysis check_bounds`. Loads HPOTARGET, parses OPTIM
+ *  bounds, samples corners, runs the pre-flight audit at each corner.
  *  Returns non-zero exit code if any corner fails. */
 class AnalysisCheckBoundsEngine final : public IEngine {
  public:

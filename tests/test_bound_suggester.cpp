@@ -1,4 +1,4 @@
-// Catch2 v2 unit tests for the bound_suggester (Phase 4).
+// Catch2 v2 unit tests for the bound_suggester.
 //
 // Verifies:
 //   * suggest_bounds_for() produces one OptimSuggestion per ParamMeta and

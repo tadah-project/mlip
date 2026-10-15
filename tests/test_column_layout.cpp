@@ -1,11 +1,11 @@
-// Catch2 v2 unit tests for ColumnLayout / ColumnBlock (Phase 2).
+// Catch2 v2 unit tests for ColumnLayout / ColumnBlock.
 //
 // We do not exercise a full DesignMatrix build here. DesignMatrix::build()
 // checks the descriptor layout (dc.layout(context)) against DSIZE and the
 // function's layout (f.phi_layout(), see column_block.h) against the
 // matrix width; test_nonlinear_model_training.cpp tests both, with linear
-// and non-linear functions. (Phase 2 compared the descriptor layout with
-// the matrix width, which only a linear function's equals: every
+// and non-linear functions. (Before, build() compared the descriptor layout
+// with the matrix width, which only a linear function's equals: every
 // non-linear model was refused, and no test trained one.)
 //
 // The unit tests below verify the layout structure itself:

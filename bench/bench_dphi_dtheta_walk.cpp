@@ -1,6 +1,6 @@
 // bench_dphi_dtheta_walk.cpp
 //
-// Phase 2F microbench gate for the per-θ walker stack.
+// Microbench gate for the per-θ walker stack.
 //
 // Times three call paths that dominate the HPO analytical gradient
 // per-θ wall on configs with a DM_mBlip arm + WATOM bias (a production

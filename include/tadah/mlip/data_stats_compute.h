@@ -4,9 +4,9 @@
 // compute_data_stats — produce a populated DataStats from a StructureDB
 // plus the (already postprocessed) Context that drives RCUTMAX.
 //
-// Phase 3 of the HPO bound-validation pipeline. Engine wraps this in
-// `analysis_dataset_stats_engine`. Phases 4 / 5 consume the resulting
-// DataStats.
+// Part of the HPO bound-validation pipeline. Engine wraps this in
+// `analysis_dataset_stats_engine`. The bound suggester and the pre-flight
+// audit consume the resulting DataStats.
 //
 // find_close_contacts lists the pairs of atoms closer than a threshold
 // (CLOSE_CONTACT of `tadah analysis dataset_stats`).

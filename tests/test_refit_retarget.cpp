@@ -929,7 +929,7 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 // ---------------------------------------------------------------------------
-//  refit --retarget --rhoform (owner decision C7)
+//  refit --retarget --rhoform
 // ---------------------------------------------------------------------------
 namespace {
 int retarget_with(const std::string &in, const std::string &out,
@@ -950,7 +950,7 @@ TEST_CASE_METHOD(PTFixture,
     INFO(form);
     ScopedTempDir tmp;
     write_hpotarget("s.hpotarget", make_ream_blip5_pot("SIGNED"), 5.0);
-    // the example of the decision: AMPGRIDMB (3) = 2.5e-5 with the group
+    // an example: AMPGRIDMB (3) = 2.5e-5 with the group
     // floor 6e-5, a SIGNED box reaching below 0
     REQUIRE(slurp("s.hpotarget").find(
                 "# OPTIM AMPGRIDMB (3) -3.50000000e-05 8.50000000e-05\n") !=

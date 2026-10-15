@@ -172,9 +172,9 @@ bool isLikelyPoscar(const std::string &filepath) {
   }
 
   // 4) line[5]: Often either element symbols or number of atoms
-  //    But this line is optional. Let's do a minimal check:
+  //    But this line is optional. A minimal check:
   //    In many POSCARs, if it's not numeric, it might be e.g., "Si O" or "Fe" or something.
-  //    We'll not strictly require anything here. Additional checks can be added if needed.
+  //    Nothing is strictly required here. Additional checks can be added if needed.
 
   // 5) Optional: Check for “Selective dynamics” or the “Direct/Cartesian” line.
   //    The line after the element/atom count might be "Selective dynamics"
@@ -195,7 +195,7 @@ bool isLikelyCif(const std::string &filepath) {
     return false; // Could not open -> not a CIF
   }
 
-  // We'll read up to ~30 lines (CIF can have many lines, but this is enough to detect).
+  // Read up to ~30 lines (CIF can have many lines, but this is enough to detect).
   std::vector<std::string> lines;
   std::string line;
   while (std::getline(file, line)) {

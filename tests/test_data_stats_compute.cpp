@@ -1,4 +1,4 @@
-// Catch2 v2 unit tests for compute_data_stats (Phase 3).
+// Catch2 v2 unit tests for compute_data_stats.
 //
 // Builds tiny synthetic StructureDBs in C++ — no external DBFILE
 // dependency — and verifies:

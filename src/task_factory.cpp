@@ -156,7 +156,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     // of its own fit, UNCERTAINTY and the settings of the run that wrote it
     // (VALIDATION, HPOTARGET, VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE,
     // HEALTH_LOG) -- are not read, wherever the file and its CONFIG
-    // includes put it (MK's decisions of 2026-10-14): every other line, and
+    // includes put it: every other line, and
     // the command line, is the run's.
     configVec = parser_->parse(userFile, /*mergeFlag=*/true,
                                potential_line_not_read, skippedVec);

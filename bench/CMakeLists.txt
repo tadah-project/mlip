@@ -1,4 +1,4 @@
-# Phase 2F microbench for the dPhi/dθ walker stack. Built as a
+# Microbench for the dPhi/dθ walker stack. Built as a
 # standalone executable rather than a test — the bench prints
 # parseable timing lines to stdout and is not pass/fail-gated.
 #

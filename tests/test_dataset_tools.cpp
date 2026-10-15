@@ -1,6 +1,4 @@
-// Tests for the data tools' building blocks (RELEASE-1.6.0-FOLLOWUPS.md,
-// "Known-issues session ... decisions", D, "Data tools";
-// tmp/known-issues/report_leftovers.md sections 1 and 2):
+// Tests for the data tools' building blocks:
 //
 // - DatasetReaderSelector::get_reader, the factory behind 'tadah data
 //   convert', refuses a file it does not recognise, or cannot open, with a
@@ -213,7 +211,7 @@ TEST_CASE("DatasetReaderSelector: a missing file is refused, naming it and "
 // --------------------------------------------------------------------
 
 /* Pins: is_the_same does not depend on the order of the atoms. The NaCl
- * pair of report_leftovers.md section 2 with Cl first, and a triclinic
+ * pair with Cl first, and a triclinic
  * 4-atom cell listed in the order 2, 0, 3, 1, are the same structure as the
  * original; the identity order is the same too (it held before the fix).
  * Pins that held before the fix and must still hold (each fails if the
@@ -320,7 +318,7 @@ TEST_CASE("Structure::is_the_same: atoms are compared through the periodic "
 
 /* Pins: each atom of the other structure is matched at most once.
  * - F1 = [Na, Na (coincident), Cl] and F2 = [Na, Na (coincident), K
- *   elsewhere] (report_leftovers.md section 2) are not the same, either
+ *   elsewhere] are not the same, either
  *   way round.
  * - [Na at 0, Na at 0, Na at p] and [Na at 0, Na at p, Na at p] are not
  *   the same (that held before the fix; it fails if each atom were matched

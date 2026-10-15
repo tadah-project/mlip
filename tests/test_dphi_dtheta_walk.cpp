@@ -330,7 +330,7 @@ TEST_CASE("dPhi/dtheta walker matches FD on SGRID2B[2]",
 }
 
 // ============================================================================
-// Force-row walker (Phase 2C C-step) — Layer-1.5 parity for the per-D2 force
+// Force-row walker — Layer-1.5 parity for the per-D2 force
 // walker. Builds the (3·natoms × n_cols) FD reference via
 // build_phi_force_block_via_calc_all at θ±h and compares against the
 // analytical walker output.
@@ -507,7 +507,7 @@ TEST_CASE("dPhi/dtheta force walker matches FD on RCUT2B",
 }
 
 // ----------------------------------------------------------------------
-// Force walker parity on D2_Blip (Phase 2C C-step). The walker is
+// Force walker parity on D2_Blip. The walker is
 // descriptor-polymorphic over D2_Base&, so this case exercises the same
 // integration code path with a different per-pair closed form. Test
 // points keep x_c = eta(r-mu) at least 0.2 away from |x|=1 (C^2 break).
@@ -802,7 +802,7 @@ TEST_CASE("dPhi/dtheta walker reports false for unregistered theta",
 }
 
 // ============================================================================
-// DM walker (Phase 2B A3) — DM_EAD and DM_Blip many-body parity.
+// DM walker — DM_EAD and DM_Blip many-body parity.
 //
 // Same structure as the D2 walker tests: build a structure, run the walker
 // for a known (theta_name, arg_pos), FD-reference against a fresh pipeline
@@ -1132,7 +1132,7 @@ TEST_CASE("DM walker (DM_Blip) matches FD on CGRIDMB[1]",
 }
 
 /* ----------------------------------------------------------------------
- * DM force-row walker (Phase 2C-DM): Layer-1.5 parity for
+ * DM force-row walker: Layer-1.5 parity for
  * assemble_dphi_train_force_rows_dm.
  *
  * Cluster: same 4-atom H cluster as the energy-walker tests.
@@ -1530,7 +1530,7 @@ TEST_CASE("DM walker reports false for unowned theta",
 }
 
 // ============================================================================
-// Kernel-arm walker (Phase 2B B-HPO) — non-linear kernel features.
+// Kernel-arm walker — non-linear kernel features.
 //
 // Tests `assemble_dphi_train_energy_rows_d2_kern` against FD on a small
 // 3-atom H cluster with D2_BP descriptor and Kern_RBF kernel with a
@@ -1751,7 +1751,7 @@ TEST_CASE("kernel walker reports false for unowned theta",
 }
 
 // ============================================================================
-// Phase 2C-WATOM walker tests. WATOM[1] is owned by every D2/DM
+// WATOM walker tests. WATOM[1] is owned by every D2/DM
 // descriptor that uses weights[Zj]; the walker should report true and
 // the IFT chain should match FD.
 // ============================================================================
@@ -2123,7 +2123,7 @@ TEST_CASE("DM force walker (DM_mBlip) matches FD on WATOM[1]",
 }
 
 // ============================================================================
-// Phase 2E P1: Layer-1.5 parity tests for the combined (energy + force)
+// Layer-1.5 parity tests for the combined (energy + force)
 // walker. The combined walker fuses the per-atom / per-pair iteration of the
 // legacy two-pass walker into one structure traversal sharing scratch state
 // (and, for DM, sharing the per-atom rho_i / drho_i / F'(rho_i) buffers).
@@ -2349,7 +2349,7 @@ TEST_CASE("combined walker DM_mBlip CGRIDMB[1] energy-only (force_out=nullptr) "
 }
 
 // ============================================================================
-// Phase 2E P3: Layer-1.5 parity tests for the cached DM walker. The cached
+// Layer-1.5 parity tests for the cached DM walker. The cached
 // walker reads rho_i / F'(rho_i) from a pre-built DMRhoCache instead of
 // recomputing them; the math is otherwise identical to the non-cached
 // combined walker, so the outputs must be byte-identical.

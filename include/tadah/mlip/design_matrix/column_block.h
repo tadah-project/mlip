@@ -39,9 +39,9 @@ struct ColumnBlock {
   std::string family{};             ///< "D2" | "DM" | "bias" | "kernel" | "BF"
   std::size_t col_offset{0};
   std::size_t col_count{0};
-  /** Optional: per-element-pair sub-blocks. Phase 3 fills this for
-   *  multi-element systems where a parameter has PairScope::PerElementPair.
-   *  Phase 2 leaves it empty. */
+  /** Optional: per-element-pair sub-blocks, for multi-element systems
+   *  where a parameter has PairScope::PerElementPair. Nothing fills it
+   *  yet: it is empty. */
   std::vector<std::pair<std::string, std::pair<std::size_t, std::size_t>>>
       sub_blocks{};
 };

@@ -1,11 +1,11 @@
 #ifndef TADAH_MLIP_PREFLIGHT_AUDIT_H
 #define TADAH_MLIP_PREFLIGHT_AUDIT_H
 
-// Phase 5 — pre-flight design-matrix audit.
+// Pre-flight design-matrix audit.
 //
 // The audit walks every configured descriptor's `meta()`, runs the
 // per-parameter and cross-parameter HealthChecks declared by the
-// descriptor's metadata schema (Phase 1), and emits per-finding
+// descriptor's metadata schema, and emits per-finding
 // verdicts at OK / WARN / FAIL levels.
 //
 // Audit modes (driven by the AUDIT context key, default `off`):

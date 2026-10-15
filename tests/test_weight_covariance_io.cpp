@@ -81,8 +81,8 @@ TEST_CASE("WCOV and WNOISE: write and read back", "[weight_covariance]") {
  * after it ("5 values", "has 4") and N = 4 with 33 ("17 values", "has 34",
  * the count of two appended SIGMAs before fix/hpo-trainer-reuse); a WNOISE
  * of odd length, of an unknown type, with a type twice, or with a negative
- * variance. (A WNOISE without E, "F 0.5", was refused here too until the
- * review of WCOV and WNOISE: it is the WNOISE of a fit without energies,
+ * variance. (A WNOISE without E, "F 0.5", was refused here too until WCOV
+ * and WNOISE were revised: it is the WNOISE of a fit without energies,
  * read by the case below. This Context without WCOV, with no OALGO and so
  * the default OALGO 1, was expected to name SIGMA too, which only an OALGO
  * 3 potential had.) */

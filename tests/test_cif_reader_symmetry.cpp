@@ -66,8 +66,7 @@
 //     partly vacant site, and two species sharing a site would become
 //     coincident atoms. Occupancies within 1e-6 of 1 are taken as 1.
 //
-// Fixtures: tests_data/cif/ (one file per row of the investigation table,
-// tmp/known-issues/report_leftovers.md section 6, and
+// Fixtures: tests_data/cif/ (one file per investigated case, and
 // si_diamond_icsd_z_loop.cif, an ICSD-style record with the 192 operators
 // of F d -3 m:2); the space-group policy tests write their CIF inline
 // (cif_cell). The expected atoms are hand-written from the Wyckoff
@@ -588,7 +587,7 @@ TEST_CASE("CIF reader: a CIF without a symmetry record is read as P 1, "
  * Before the fix: CifReader discarded the string check_spacegroup()
  * returned and printed nothing: every CHECK on the captured output fails
  * (it is empty), the atom counts pass. (The H-M finding is the reader's
- * own since review round 10.) The finding says what the symbol names and
+ * own.) The finding says what the symbol names and
  * what it differs from, the loop's group I 1: "space group from H-M
  * symbol (P m -3 m) is P m -3 m, which differs from I 1". Before that
  * (gemmi's words) it read "... (P m -3 m) differs: P m -3 m", and VESTA's
@@ -661,8 +660,8 @@ TEST_CASE("CIF reader: a consistent or absent symmetry record gives no "
 }
 
 /* Pins: an incomplete operator loop is not completed: the record falls
- * back to the symbols, and then to the number, as without a loop (MK,
- * 2026-10-07). The loop {x,y,z; x+1/2,y+1/2,z+1/2; y,z,x} (the threefold
+ * back to the symbols, and then to the number, as without a loop. The
+ * loop {x,y,z; x+1/2,y+1/2,z+1/2; y,z,x} (the threefold
  * y,z,x without its square z,x,y) names no group, so
  *   - with the H-M symbol 'I m -3 m' (fe_bcc_partial_loop_hm.cif), Fe1 on
  *     the general position (0.08,0.20,0.32) gives all 96 images of
@@ -1589,7 +1588,7 @@ TEST_CASE("CIF reader: the monoclinic check allows 1e-3 degrees and prints "
   CHECK(mentions_value(what, 90.00101));
 }
 
-// ================================================ review round 5 ====
+// =================================== untabulated settings and fallbacks ====
 
 namespace {
 
@@ -1895,7 +1894,7 @@ TEST_CASE("CIF reader: a refusal from a record read first says so",
   }
 }
 
-// ================================================ review round 6 ====
+// ======================================================= origin choices ====
 
 /* Pins: a symbol that names no origin choice gets origin choice 2 also in
  * its current spelling: C c c a (68) is written 'C c c e' since ITA 2002
@@ -1912,7 +1911,7 @@ TEST_CASE("CIF reader: a refusal from a record read first says so",
  * to the main table, and finds 'C c c e' among the other names, origin
  * choice 1: 'Ccce' and 'C c c e' gave the 4 atoms of origin choice 1, a
  * different crystal, without a message (check_sites fails twice; 'A e a a'
- * and 'B b e b', added in review round 9, fail the same way: four times
+ * and 'B b e b', added later, fail the same way: four times
  * in all). */
 TEST_CASE("CIF reader: the current spelling of a symbol gets origin "
           "choice 2 as well",
@@ -1998,7 +1997,7 @@ TEST_CASE("CIF reader: an unknown value does not hide the other tag of its "
   }
 }
 
-// ================================================ review round 7 ====
+// =============================== non-integer numbers and other settings ====
 
 /* Pins: the space-group number is read only when it is used, and a value
  * that is not an integer is refused naming the source and quoting it; one
@@ -2122,7 +2121,7 @@ TEST_CASE("CIF reader: an H-M symbol naming another setting than the loop's "
   }
 }
 
-// ================================================ review round 8 ====
+// ====================================== R groups and unreadable records ====
 
 namespace {
 
@@ -2294,7 +2293,7 @@ TEST_CASE("CIF reader: a CIF gemmi cannot parse is refused naming the "
   }
 }
 
-// ================================================ review round 9 ====
+// ========================================== R settings and Hall symbols ====
 
 namespace {
 
@@ -2426,7 +2425,7 @@ TEST_CASE("CIF reader: an H-M symbol naming another setting than the Hall "
   CHECK(contains(r.log, "F d -3 m:2"));
 }
 
-// =============================================== review round 10 ====
+// ====================================== supercells and equivalent names ====
 
 /* Pins: the extra translations of a supercell are no R centring: in a
  * loop, x+1/3 and x+2/3 make the cell 3 times the primitive one, and the
@@ -2588,7 +2587,7 @@ TEST_CASE("CIF reader: an equivalent name of the same setting is no "
   }
 }
 
-// =============================================== review round 11 ====
+// ======================================= rotations and gemmi's findings ====
 
 /* Pins: only rotations fix the cell's axes; translations do not, even the
  * R and H centring vectors:
@@ -2738,7 +2737,7 @@ TEST_CASE("CIF reader: gemmi's findings and errors are quoted naming the "
                        "data block"));
 }
 
-// =============================================== review round 12 ====
+// ========================================== cell lines and full symbols ====
 
 namespace {
 
@@ -2978,7 +2977,7 @@ TEST_CASE("CIF reader: an unreadable H-M symbol next to a Hall symbol "
   }
 }
 
-// =============================================== review round 13 ====
+// ===================================== full symbols, notes and suffixes ====
 
 /* Pins: the full symbols of the cubic m-3 groups (200 to 206), three
  * symmetry directions, are read by their short ones as the other full

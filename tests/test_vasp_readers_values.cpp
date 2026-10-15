@@ -1,8 +1,6 @@
 // Value tests for the VASP readers: the stored energy, the stored stress
 // (sign and unit), the element names of vasprun.xml and the species line of
-// POSCAR/CONTCAR files (RELEASE-1.6.0-FOLLOWUPS.md, "Known-issues session
-// ... decisions", D; tmp/known-issues/report_readers.md A, B, E and
-// report_stress.md).
+// POSCAR/CONTCAR files.
 //
 // Stored convention:
 // - Energy: the free energy F, the energy whose gradient the forces are.
@@ -659,7 +657,7 @@ TEST_CASE("VASP vasprun.xml reader: stores the calculation-level e_fr_energy",
  * stress stays zero (that part held before the fix; it fails if the reader
  * stopped zeroing the stress of a calculation without one), with stress
  * weight 0 so that a STRESS fit ignores it (vasprun_2's calculations keep
- * weight 1; before the review round's fix the weight was 1).
+ * weight 1; before an earlier fix the weight was 1).
  * Tolerance: VASP prints the tensor slightly asymmetric (vasprun_3:
  * 0.82409354 against 0.82409317 kB, 2.3e-10 eV/A^3); the absolute margin
  * of 1e-9 eV/A^3 accepts storing the tensor as printed, its upper triangle

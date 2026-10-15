@@ -1,6 +1,5 @@
-// Value tests for the CASTEP readers and the CASTEP cell writer (workstream D
-// of the 1.6.0 known-issues session; RELEASE-1.6.0-FOLLOWUPS.md, "D: stress
-// convention and reader bugs"; tmp/known-issues/report_readers.md C, D1-D6).
+// Value tests for the CASTEP readers and the CASTEP cell writer (stress
+// convention and reader bugs).
 //
 // Stored stress convention: Cauchy stress, positive under tension, in eV/A^3,
 // sigma = (1/V) dE/d(strain). CASTEP's '<-- S' block (.md/.geom) and the
@@ -348,7 +347,7 @@ void check_labels(const StructureDB &db, const std::string &file,
 }  // namespace
 
 // --------------------------------------------------------------------
-// .md and .geom: the first frame (report_readers.md D3 + D4)
+// .md and .geom: the first frame
 // --------------------------------------------------------------------
 
 // Pins: CastepMDReader returns every frame of test1.md, the first included,
@@ -425,9 +424,8 @@ TEST_CASE("CASTEP .geom reader: every frame is read with the first included",
   }
 }
 
-// Pins: a .geom file with a single frame (60.geom's header and first frame,
-// the file tmp/known-issues/wsD-readers/castep/one_frame.geom) gives one
-// structure with that frame's energy and a non-empty label.
+// Pins: a .geom file with a single frame (60.geom's header and first frame)
+// gives one structure with that frame's energy and a non-empty label.
 // Before the fix: 0 structures and no error ('tadah data convert' exits 0
 // with an empty output file).
 TEST_CASE("CASTEP .geom reader: a one-frame file gives one structure",
@@ -450,7 +448,7 @@ TEST_CASE("CASTEP .geom reader: a one-frame file gives one structure",
 }
 
 // --------------------------------------------------------------------
-// .md kinetic stress and .geom stress (report_readers.md C)
+// .md kinetic stress and .geom stress
 // --------------------------------------------------------------------
 
 // Pins: the .md reader stores sigma = S + (1/V) sum_i m_i v_i (x) v_i, in
@@ -614,7 +612,7 @@ TEST_CASE("CASTEP .md reader: velocities that contradict the kinetic energy are 
 }
 
 // --------------------------------------------------------------------
-// .md and .geom: malformed and truncated frames (report_readers.md DQ5)
+// .md and .geom: malformed and truncated frames
 // --------------------------------------------------------------------
 
 // Pins: a malformed frame that is not the last one is an error
@@ -750,7 +748,7 @@ TEST_CASE("CASTEP .md reader: a frame without a stress tensor has stress weight 
 }
 
 // --------------------------------------------------------------------
-// .castep (report_readers.md D1, D2)
+// .castep
 // --------------------------------------------------------------------
 
 // Pins: in an (L)BFGS run with a revert, each SCF result is paired with the
@@ -771,7 +769,7 @@ TEST_CASE("CASTEP .md reader: a frame without a stress tensor has stress weight 
 // the reverted iteration-0 cell (a = 2.9640232) and positions, with zero
 // forces (the revert's coordinate block reset them) and the trial SCF's
 // energy -2689.827841473 eV: one geometry with two energies 0.355 eV apart.
-// After that fix, until the review: the label's positions range 'C: (636 :
+// After that fix, until a later one: the label's positions range 'C: (636 :
 // 645)' still named the reverted block.
 TEST_CASE("CASTEP .castep reader: an LBFGS revert pairs each SCF with its own geometry",
           "[castep_readers][castep][revert]") {
@@ -829,8 +827,8 @@ TEST_CASE("CASTEP .castep reader: an LBFGS revert pairs each SCF with its own ge
 // energy; the label names the positions block and the energy line of that
 // SCF (geom.castep lines). Cell 1e-12 (parsed decimals); energy 1e-14
 // relative; stress 1e-7 relative (the reader's GPa factor).
-// Before the fix (a review finding on the first version of the revert fix,
-// which took the geometry once per iteration): structures 2-6 paired the
+// Before the fix (the first version of the revert fix, which took the
+// geometry once per iteration): structures 2-6 paired the
 // line-minimisation energy, forces and stress with the trial cell, e.g.
 // structure 2 had a = 2.9541657 with the energy of a = 2.9499544.
 TEST_CASE("CASTEP .castep reader: line and quad minimisation SCFs pair with their own geometry",
@@ -1651,7 +1649,7 @@ TEST_CASE("CASTEP .castep reader: atoms carry their atomic number",
 }
 
 // --------------------------------------------------------------------
-// Species labels with a CASTEP tag (report_readers.md D6)
+// Species labels with a CASTEP tag
 // --------------------------------------------------------------------
 
 // Pins: a CASTEP species label 'El:tag' is read as the element El (the tag
@@ -1832,7 +1830,7 @@ TEST_CASE("CASTEP .cell reader: an error names the file, and a refused file "
 }
 
 // --------------------------------------------------------------------
-// CASTEP cell writer (report_readers.md D5)
+// CASTEP cell writer
 // --------------------------------------------------------------------
 
 // Pins: CastepCellWriter separates every field, so a Ta atom at

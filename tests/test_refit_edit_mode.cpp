@@ -151,8 +151,8 @@ double curve_maxdiff(const potedit::CurveView &a, const potedit::CurveView &b,
 }
 
 /* The opening and end lines of the training record of a potential file.
- * The opening line said "(not read by tadah)" before MK's decision of
- * 2026-10-14 (option 2): refit --edit reads the block, to copy it. */
+ * The opening line said "(not read by tadah)" before it was corrected:
+ * refit --edit reads the block, to copy it. */
 const std::string kRecordOpen =
     "# --- training record (no key is read from it) ---";
 const std::string kRecordEnd = "# --- end of training record ---";
@@ -326,8 +326,8 @@ TEST_CASE_METHOD(PTFixture,
     CHECK(std::stod(first_weight("out12.tadah")) == 1.0 / 3.0);
     // NUMERIC is no key line of the edit; the input's NUMERIC 12 key line
     // (as a 1.5.0 tadah hpo potential has it) is listed in the edit's
-    // training record, after the line naming the input (owner decision,
-    // MK, 2026-10-14). Before the training record the check was that
+    // training record, after the line naming the input. Before the
+    // training record the check was that
     // NUMERIC appears nowhere in out12.tadah; before the fix this fails:
     // out12.tadah has no record.
     CHECK(key_line("out12.tadah", "NUMERIC").empty());
@@ -1283,9 +1283,8 @@ TEST_CASE_METHOD(PTFixture,
  * of the edit of the same potential without the record (plain_out.tadah):
  * the record is no key of the edit.
  * Before the fix: neither edit had a training record (no potential had
- * one; the decision taken in MK's absence on 2026-10-12, replaced by MK's
- * of 2026-10-14).
- * Before the opening line was corrected (MK, 2026-10-14, option 2): the
+ * one).
+ * Before the opening line was corrected: the
  * edit's opening line was "# --- training record (not read by tadah) ---"
  * and in.tadah's (this one) was not recognised: refused at its end line. */
 TEST_CASE_METHOD(PTFixture,
@@ -1341,7 +1340,7 @@ TEST_CASE_METHOD(PTFixture,
  * the record), with no key line of them.
  * Before the fix: the key lines were dropped (a pin of that part) and the
  * edit had no record.
- * Before the dataset keys moved into the record (MK, 2026-10-14, option 2):
+ * Before the dataset keys moved into the record:
  * old_data.tadah's edit kept the four as key lines and its record had the
  * "edited by" line alone; the opening line of both records read
  * "(not read by tadah)", so record_lines found none (the record checks fail
@@ -1429,9 +1428,9 @@ TEST_CASE_METHOD(PTFixture,
  * a record line, and the record without its opening line was not copied);
  * keyline.tadah's refusal named no end line ("that line 1 opens, is not a
  * comment").
- * Before the training record (MK's decision of 2026-10-14): every edit was
+ * Before the training record: every edit was
  * written (exit 0).
- * Before the opening line was corrected (MK, 2026-10-14, option 2): every
+ * Before the opening line was corrected: every
  * section fails. The opening line of the files of the case was no opening
  * line: open.tadah and eof.tadah were edited (exit 0); twice_open.tadah,
  * no_open.tadah and keyline.tadah were refused at their end line, quoting

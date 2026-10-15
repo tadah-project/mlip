@@ -1,6 +1,6 @@
 // test_m_tadah_base_w_grad.cpp
 //
-// Phase D1 (PC_OBSERVABLE redesign): parity tests for the new
+// Parity tests for the
 // M_Tadah_Base::predict_dE_dW and M_Tadah_Base::vjp_force methods that
 // supply ∂E/∂W and ∂(λᵀ·F)/∂W to the typed PC_OBSERVABLE pipeline.
 //

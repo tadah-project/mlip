@@ -288,18 +288,18 @@ TEST_CASE("dumpPotFile and write_hpotarget: an output that cannot be written "
  * before the potential-content fix records the DBFILE it was trained on),
  * and keeps the settings of the fit beside it: ALPHA 0.25 and BETA 4; no
  * WDBFILE line either for its WDBFILE 1 0.5, the per-dataset weights of the
- * training data, which a potential keeps in its training record only (MK's
- * decision of 2026-10-14, option 2). Given no training record (the record
+ * training data, which a potential keeps in its training record only.
+ * Given no training record (the record
  * is its caller's, from the run's configuration: TrainEngine::run,
  * RefitEngine::run, run_refit_edit), it writes none, so db1.tadah appears
  * nowhere in the file.
  * Before the fix: the DBFILE line was written (`DBFILE db1.tadah
  * db2.tadah`), so the potential, used as a training configuration with the
  * DBFILE lines of the retrain added, listed the datasets twice.
- * Before the training record (MK's decision of 2026-10-14): passes as well
+ * Before the training record: passes as well
  * (a pin); the case was named "dumpPotFile writes no DBFILE: a potential
  * records no training data".
- * Before the dataset keys moved into the record (MK, 2026-10-14, option 2):
+ * Before the dataset keys moved into the record:
  * the case pinned the key line "WDBFILE 1 0.5" (a retrain listing the same
  * datasets in the same order read it as the first fit did): its WDBFILE
  * check fails. */
@@ -339,7 +339,7 @@ TEST_CASE("dumpPotFile writes no DBFILE line: the DBFILE of its context is "
  * Before the fix: the HPOTARGET, VALIDATION and AUDIT_SAMPLE lines were
  * written ("HPOTARGET config.hpo", "VALIDATION config.val", "AUDIT_SAMPLE
  * 64"); the other five were not (a pin of those).
- * Before the training record (MK's decision of 2026-10-14): passes as well
+ * Before the training record: passes as well
  * (a pin); the case was named "dumpPotFile writes no input of the run:
  * ...". */
 TEST_CASE("dumpPotFile writes no key line of the run's inputs: HPOTARGET, "
@@ -388,10 +388,10 @@ TEST_CASE("dumpPotFile writes no key line of the run's inputs: HPOTARGET, "
  * WEIGHTS).
  * Before the fix: remove_run_inputs left UNCERTAINTY, which only M_BLR's
  * and M_KRR's get_param_file removed, so refit --edit of such a potential
- * wrote "UNCERTAINTY true" (lanes/D/tmp/review/training-verify/unc: edited
- * twice, the line kept; the retrain then warned that 1.5.x and development
+ * wrote "UNCERTAINTY true" (a run before the fix: edited twice, the line
+ * kept; the retrain then warned that 1.5.x and development
  * builds wrote it).
- * Before the training record (MK's decision of 2026-10-14): passes as well
+ * Before the training record: passes as well
  * (a pin); the case was named "dumpPotFile writes no UNCERTAINTY: a
  * potential does not record the switch of the run". */
 TEST_CASE("dumpPotFile writes no UNCERTAINTY line: the switch of the run "
