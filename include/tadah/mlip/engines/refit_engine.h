@@ -78,10 +78,13 @@ protected:
 
   /** Compact-mode hook, called only when has_compact_fitter(). Returns true
    *  when it produced a fit (refit filled, self-test computed), false when
-   *  the fitter cannot fit this table, having logged a WARNING that says
-   *  why: run() then fits it in dense mode (HPO's engine: no reachable
-   *  pair-distance window). The base throws std::logic_error (it has no
-   *  compact fitter, and run() refuses compact mode before calling it). */
+   *  the fitter declines this table, having logged a WARNING that says why:
+   *  run() then fits it in dense mode. HPO's engine declines no table: it
+   *  returns true or throws (a reachability analysis whose r_reach is below
+   *  the table's dr, which run()'s crystal gate refuses, is
+   *  std::logic_error), so with it run() never falls back to the dense fit.
+   *  The base throws std::logic_error (it has no compact fitter, and run()
+   *  refuses compact mode before calling it). */
   virtual bool compact_fit(const tadah::core::Context &c,
                            const models::EAMSetflIO &eam,
                            models::EAMRefitConfig &cfg,

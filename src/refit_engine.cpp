@@ -499,8 +499,8 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
           "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
     // (require_fitter refused compact mode without a compact fitter.)
-    // false: the fitter could not fit this table and said why in a WARNING;
-    // the dense fit runs instead.
+    // false: the fitter declined this table and said why in a WARNING; the
+    // dense fit runs instead (HPO's engine declines no table).
     fitted = compact_fit(c, eam, cfg, refit_ptr, st);
     if (!fitted && !basis_user_set) {
       cfg.basis = "Blip";  // defaulted Knot5 has no dense path
