@@ -3,6 +3,7 @@
 // that hard-errors on an unspecified / unsupported lattice. The EAM is written
 // from smooth analytic phi/rho/F so the test needs no checked-in binary fixture.
 #include "catch2/catch.hpp"
+#include <tadah/models/descriptors/dm/embed_spec.h>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
@@ -179,6 +180,30 @@ Context dense_refit_context(const std::string &eam_file,
   c.add("REFIT_TOL_COMPRESSED", 20.0);
   c.add("REFIT_MAX_ESCALATIONS", 2);
   return c;
+}
+
+TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves independent families",
+                 "[unified-dm][refit]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam","bcc",3.2);
+  std::istringstream input(
+    "EAM source.eam\nREFIT_MODE dense\nREFIT_MAX_ESCALATIONS 0\n"
+    "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS WendlandC4\n"
+    "FORM NONNEG\nCENTRES AUTO 12\nWIDTHS AUTO\nAMPLITUDES AUTO\n"
+    "CUTOFF\nTYPE Cut_Poly\nRADIUS AUTO\nENDCUTOFF\nENDDENSITY\n"
+    "EMBEDDING\nBASIS Gaussian\nCENTRES AUTO 20\nWIDTHS AUTO\n"
+    "REFERENCE ZERO\nENVELOPE\nTYPE Smoothstep2\nCUTOFF 2\nENDENVELOPE\n"
+    "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  auto c=tadah::core::CoreUserConfigParser().parse(input); Task task("refit",c);
+  RefitEngine engine; REQUIRE_NOTHROW(engine.validate(task));
+  REQUIRE(engine.run(task)==EXIT_SUCCESS);
+  auto pot=tadah::core::CoreUserConfigParser().parse("pot.tadah");
+  auto specs=tadah::models::embed_specs(pot);
+  REQUIRE(specs.size()==1);
+  REQUIRE(specs[0].density.basis==tadah::models::EmbedBasis::WendlandC4);
+  REQUIRE(specs[0].embedding.basis==tadah::models::EmbedBasis::Gaussian);
+  REQUIRE(specs[0].density.centres.size()==12);
+  REQUIRE(specs[0].radius==5);
 }
 
 // The REFIT_MODE compact counterpart of dense_refit_context: a bump basis,
