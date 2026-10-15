@@ -444,9 +444,12 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     prepare_embed_refit(c,eam,cfg);
     rho_form=cfg.rho_form;
   } else if(models::basis_kind_from_string(cfg.basis)==models::BasisKind::Gaussian) {
+    // The written potential's density is a DM_Embed component, and a
+    // Gaussian density, which never vanishes, needs a real smooth cutoff
+    // there: the Gaussian refit fits and writes the pair function and the
+    // density with Cut_Poly at the table's rcut (RCTYPE2B and the density
+    // CUTOFF TYPE), said in the EXPERIMENTAL warning below.
     cfg.rctype="Cut_Poly";
-    core::Logger::instance().log(core::LogLevel::INFO,
-      "tadah refit: Gaussian density uses Cut_Poly; its spatial tail requires a smooth cutoff");
   }
   if (!components && c.contains("REFIT_CONSTRAIN_F0") && c.size("REFIT_CONSTRAIN_F0") > 0)
     cfg.constrain_F0 = c.get<bool>("REFIT_CONSTRAIN_F0");
@@ -462,12 +465,17 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     // The one constant the zero-referenced fit drops from every atom's energy.
     const double F0 = eam.F_tab(0.0);
     const std::string xs = core::to_string(F0);
+    // A component configuration names the reference REFERENCE (its
+    // EMBEDDING block), a configuration without blocks EMBF0; the written
+    // potential's density component declares REFERENCE ZERO either way.
     core::Logger::instance().log(
         F0 != 0.0 ? core::LogLevel::WARNING : core::LogLevel::INFO,
-        "tadah refit: EMBF0 ZERO: table F(0) = " + xs + " eV removed; the "
-        "native potential and " + setfl_out + " give energies = table - " +
-        (F0 < 0.0 ? "(" + xs + ")" : xs) + " per atom (forces and cohesive "
-        "energies unchanged)");
+        std::string("tadah refit: ") +
+            (components ? "REFERENCE ZERO" : "EMBF0 ZERO") + ": table F(0) = " +
+            xs + " eV removed; the native potential (whose density component "
+            "declares REFERENCE ZERO) and " + setfl_out +
+            " give energies = table - " + (F0 < 0.0 ? "(" + xs + ")" : xs) +
+            " per atom (forces and cohesive energies unchanged)");
   }
 
   // ---- the basis family (REFIT_BASIS, else the mode's default) ----
@@ -480,8 +488,12 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   if(!components) check_rhoform_matrix(rho_form, cfg.basis, basis_knotfam, basis_user_set,
                        compact, cfg.rctype);
   cfg.rho_form = rho_form;
+  // The form the configuration names (a component's FORM, or RHOFORM
+  // without blocks); the written potential declares it as the FORM of its
+  // density component (DESCRIPTOR block), not as a RHOFORM key.
   core::Logger::instance().log(core::LogLevel::INFO,
-      std::string("tadah refit: RHOFORM ") + models::rhoform_name(rho_form) +
+      std::string(components ? "tadah refit: FORM " : "tadah refit: RHOFORM ") +
+      models::rhoform_name(rho_form) +
       (rho_form == models::RhoForm::Signed
            ? ": the density rho = f_c sum_n a_n psi_n(r) with signed "
              "amplitudes (the density before tadah 1.6.0)"
@@ -491,8 +503,11 @@ int RefitEngine::run(tadah::mlip::Task &task) {
            : ": the density rho = f_c sum_n a_n S_n(r) in integrated-bump "
              "steps S_n, amplitudes fitted by non-negative least squares "
              "(rho >= 0 and non-increasing)") +
-      "; the potential declares RHOFORM " + models::rhoform_name(rho_form) +
-      ".");
+      (components ? "; the density component " +
+                        core::to_upper(cfg.component->id) + " declares FORM "
+                  : "; the written potential's density component declares "
+                    "FORM ") +
+      models::rhoform_name(rho_form) + ".");
 
   // ---- faithfulness tolerances driving automatic basis escalation ----
   // The compression-aware crystal self-test below is the judge; when it fails,
@@ -549,11 +564,22 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   if (!fitted && !basis_blip && !basis_blip5)  // dense + Gaussian: demoted
                                                // (knot families threw above)
     core::Logger::instance().log(core::LogLevel::WARNING,
-        "tadah refit: REFIT_BASIS '" + cfg.basis + "' is EXPERIMENTAL and "
-        "UNVALIDATED for refit (no LAMMPS faithfulness battery has gated "
-        "it; the hard cutoff truncates the Gaussian tail, leaving a value "
-        "discontinuity at rcut). Prefer Blip (default), Blip5 or the Knot* "
-        "families.");
+        std::string("tadah refit: ") +
+        (components ? "REFIT_PAIR_BASIS '" : "REFIT_BASIS '") + cfg.basis +
+        "' is EXPERIMENTAL and UNVALIDATED for refit (no LAMMPS faithfulness "
+        "battery has gated it; " +
+        (cfg.rctype == "Cut_Dummy"
+             ? std::string("the hard cutoff truncates the Gaussian tail, "
+                           "leaving a value discontinuity at rcut")
+         : components
+             ? "the pair function is written with the smooth cutoff " +
+                   cfg.rctype + " (RCTYPE2B)"
+             : "a Gaussian never vanishes, so the pair function and the "
+               "density are written with the smooth cutoff " + cfg.rctype +
+                   " at the table's rcut (RCTYPE2B and the density CUTOFF "
+                   "TYPE), which tapers both to 0 there and changes the "
+                   "fitted functions near rcut") +
+        "). Prefer Blip (default), Blip5 or the Knot* families.");
 
   RefitLog dlog;
   if (!fitted) {
@@ -618,10 +644,17 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "  reachable pair distances r >= " + core::to_string(refit.r_reach(), 4) +
         " A (compression to a/a0=" + core::to_string(cfg.reach_smin, 2) +
         ", V/V0~" + core::to_string(std::pow(cfg.reach_smin, 3), 2) + ")");
-    core::Logger::instance().log(core::LogLevel::WARNING,
-        "  embedding fit window rho <= " + core::to_string(refit.rho_reach(), 4) +
-        " (table rhomax=" + core::to_string(eam.rhomax(), 4) +
-        (fitted ? ")" : "; the unreachable tail keeps a small uniform basis)"));
+    // a component fit fits F on the whole table (EAMRefit::fit_components)
+    if (components)
+      core::Logger::instance().log(core::LogLevel::WARNING,
+          "  embedding fit window [0, " + core::to_string(eam.rhomax(), 4) +
+          "] (the table's whole density range: a component fit fits its "
+          "embedding there)");
+    else
+      core::Logger::instance().log(core::LogLevel::WARNING,
+          "  embedding fit window rho <= " + core::to_string(refit.rho_reach(), 4) +
+          " (table rhomax=" + core::to_string(eam.rhomax(), 4) +
+          (fitted ? ")" : "; the unreachable tail keeps a small uniform basis)"));
     core::Logger::instance().log(core::LogLevel::WARNING,
         fitted ? "  (control: REFIT_REACH_SMIN, REFIT_REACH_MARGIN)"
                : "  (control: REFIT_PLACEMENT window|uniform, REFIT_REACH_SMIN, "
@@ -689,12 +722,25 @@ int RefitEngine::run(tadah::mlip::Task &task) {
         "  E-V compressed (a/a0 0.75-0.95): RMSE=" +
         core::to_string(1000.0 * st.rmse_c, 3) + " meV/atom  max=" +
         core::to_string(1000.0 * st.mx_c, 3) + " meV/atom  (V/V0 down to ~0.42)");
-    // The advice names the keys of the fit that ran: the compact fitter's
-    // basis ceiling, or the dense fit's escalation and basis sizes.
+    // The advice names the keys of the fit that ran: a component fit's
+    // declared basis, the compact fitter's basis ceiling, or the dense fit's
+    // escalation and basis sizes.
     if (1000.0 * st.mx_a > tol_amb || 1000.0 * st.mx_c > tol_cmp ||
         std::fabs(1000.0 * (st.e_fit - st.e_orig)) > tol_amb) {
       core::Logger::instance().log(core::LogLevel::WARNING,
-          fitted ? "  WARNING: still above tolerance — raise "
+          components
+            ? std::string("  WARNING: still above tolerance — a component "
+                          "fit has the basis its block declares and does not "
+                          "escalate it: give the component more density or "
+                          "embedding functions (CENTRES AUTO <count>, or a "
+                          "finer explicit grid)") +
+                  (fitted ? ", raise REFIT_COMPONENT_ITERATIONS if its "
+                            "centre/scale optimisation stopped before "
+                            "converging"
+                          : ", a larger N2B for the pair function") +
+                  ", or relax REFIT_TOL_* if this regime is irrelevant for "
+                  "your use."
+          : fitted ? "  WARNING: still above tolerance — raise "
                    "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis), "
                    "or relax REFIT_TOL_* if this regime is irrelevant for "
                    "your use."
