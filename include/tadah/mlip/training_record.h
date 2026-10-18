@@ -63,11 +63,12 @@ const std::vector<std::string> &dataset_preparation_keys();
 /** The keys whose lines in a potential a later run does not read
  *  (potential_line_not_read): every key of training_record_keys() but
  *  DBFILE, in that order -- those of dataset_preparation_keys() (they
- *  prepared the data of its own fit), VALIDATION, HPOTARGET, UNCERTAINTY,
- *  VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG (settings
- *  of the run that wrote it: its validation and target files, its switch
- *  for weights.tadah, its verbosity, output and diagnostics; the run that
- *  reads the potential has its own). DBFILE is read: a retrain adds its
+ *  prepared the data of its own fit), VALIDATION, HPOTARGET, CHECK,
+ *  UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and
+ *  HEALTH_LOG (settings of the run that wrote it: its validation and target
+ *  files, the check instruction of tadah hpo, its switch for weights.tadah,
+ *  its verbosity, output and diagnostics; the run that reads the potential
+ *  has its own). DBFILE is read: a retrain adds its
  *  DBFILE line to a copy of the potential. The run settings among them are
  *  core::run_setting_keys(), which no parse stores from a potential. */
 const std::vector<std::string> &keys_not_read_from_a_potential();
@@ -76,7 +77,10 @@ const std::vector<std::string> &keys_not_read_from_a_potential();
  *  order the record lists them: DBFILE (the training datasets), the keys
  *  of dataset_preparation_keys() (how the run prepared them), VALIDATION
  *  and HPOTARGET (the validation and target files of a tadah hpo run),
- *  UNCERTAINTY (the train task's switch for weights.tadah), VERBOSE,
+ *  CHECK (tadah hpo --check, which writes no potential: a potential of
+ *  tadah train records the CHECK its configuration has, which tadah train
+ *  does not read), UNCERTAINTY (the train task's switch for weights.tadah),
+ *  VERBOSE,
  *  NUMERIC and OUTFILE (the run's verbosity and the writer's settings),
  *  AUDIT, AUDIT_SAMPLE and HEALTH_LOG (the run's diagnostics). The one
  *  list both rules read: no key line of these is written
@@ -107,8 +111,9 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
  *  the keys of keys_not_read_from_a_potential() are settings of the run
  *  that wrote it, not of this run, and are not read -- the keys that
  *  prepared the data of its fit (ESHIFT_ATOM and ESHIFT_DBATOM whether or
- *  not the file has ESHIFT), VALIDATION, HPOTARGET, UNCERTAINTY, VERBOSE,
- *  NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other key
+ *  not the file has ESHIFT), VALIDATION, HPOTARGET, CHECK, UNCERTAINTY,
+ *  VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other
+ *  key
  *  (DBFILE is read: a retrain adds its DBFILE line to a copy of the
  *  potential), and no line of a file without WEIGHTS: the lines of the task
  *  file, of a configuration file that includes the potential with CONFIG
