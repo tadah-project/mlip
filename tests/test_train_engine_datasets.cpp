@@ -2095,3 +2095,93 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
     CHECK(printed.find("is a potential") == std::string::npos);
   }
 }
+
+/* Pins: CHECK, the check instruction of tadah hpo (`tadah hpo --check`), is
+ * a setting of the run, as HPOTARGET is (TaskFactory, then TrainEngine::run;
+ * plain.train is the Ta pair configuration, no WEIGHTS, with "DBFILE
+ * db.tadah"; db.tadah one dataset):
+ *   - `tadah train -c chk.train -o chk.tadah`, chk.train plain.train with
+ *     "CHECK true": the train runs, chk.tadah has no CHECK key line, and its
+ *     training record lists the run's CHECK: "DBFILE db.tadah", "CHECK
+ *     true", "OUTFILE chk.tadah" (tadah train does not read CHECK);
+ *   - the same from a task file with CHECK true above its TASK train line
+ *     (the GLOBAL section) and from one with CHECK true inside its TASK
+ *     train section (CONFIG plain.train, OUTFILE g.tadah and t.tadah);
+ *   - the tadah hpo task of `-c seed.tadah --hpotarget config.hpo`,
+ *     seed.tadah the Ta pair potential (WEIGHTS) with "DBFILE db.tadah" and
+ *     a CHECK true line: TaskFactory does not read the line, so the task's
+ *     CHECK is false, its default (the run is a run, not a check), and the
+ *     notice of ignore_configuration_potential_lines names it: "tadah hpo:
+ *     the configuration file seed.tadah is a potential (it has WEIGHTS):
+ *     its CHECK true was a setting of the run that wrote it, not of this
+ *     run, and is ignored (...). Give --check on the command line, or a
+ *     CHECK line in a configuration file that includes the potential with
+ *     CONFIG, to apply it to this run (...).".
+ * Before the fix: CHECK was a key of the model: tadah train wrote "CHECK
+ * true" as a key line and no record line, the potential's line was the
+ * hpo task's CHECK true (the run became a check) and the notice was empty:
+ * the key line, record, CHECK and notice checks fail. */
+TEST_CASE("CHECK is a setting of tadah hpo: tadah train writes no CHECK "
+          "line, and no run reads a potential's",
+          "[train][hpo][potential_content][run_settings][check]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  LoggerAtWarning at_warning;
+  write_ta_dataset(cwd.dir / "db.tadah", -1.0);
+  Context plain = training_context_of("M_BLR BF_Linear");
+  plain.add("DBFILE", "db.tadah");
+  write_pot_file("plain.train", plain);
+  std::ofstream("chk.train") << slurp("plain.train") << "CHECK true\n";
+  struct Run {
+    const char *name;
+    CommandInput input;
+    const char *potential;
+  };
+  std::ofstream("g.task") << "CHECK true\nTASK train\nCONFIG plain.train\n"
+                             "OUTFILE g.tadah\n";
+  std::ofstream("t.task") << "TASK train\nCONFIG plain.train\n"
+                             "OUTFILE t.tadah\nCHECK true\n";
+  const Run runs[] = {
+      {"-c chk.train", CommandInput("TRAIN", {{"config", {"chk.train"}},
+                                              {"outfile", {"chk.tadah"}}}),
+       "chk.tadah"},
+      {"GLOBAL section", CommandInput("", {{"task", {"g.task"}}}), "g.tadah"},
+      {"TASK train section", CommandInput("", {{"task", {"t.task"}}}),
+       "t.tadah"},
+  };
+  for (const Run &run : runs) {
+    INFO(run.name);
+    std::string printed;
+    const std::string what = train_input_error(run.input, printed);
+    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    REQUIRE(what.empty());
+    REQUIRE(fs::exists(run.potential));
+    INFO(run.potential << ":\n" << slurp(run.potential));
+    CHECK(pot_line(run.potential, "CHECK").empty());
+    CHECK(pot_line(run.potential, "WEIGHTS").size() == 2u);
+    CHECK(read_record(run.potential).lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "CHECK true",
+                                   std::string("OUTFILE ") + run.potential});
+  }
+
+  write_retrain_copy("seed.tadah", "CHECK true\n");
+  const CommandInput input("HPO", {{"config", {"seed.tadah"}},
+                                   {"hpotarget", {"config.hpo"}}});
+  std::vector<Task> tasks =
+      tadah::mlip::TaskFactory().createTasksFromInput(input);
+  REQUIRE(tasks.size() == 1u);
+  const Context &c = tasks[0].getContext();
+  CHECK(c("CHECK") == std::vector<std::string>{"false"});
+  CHECK(tasks[0].getKeyProvenance()->origin("CHECK").kind ==
+        tadah::mlip::KeyOrigin::Kind::Default);
+  CHECK(tadah::mlip::ignore_configuration_potential_lines(
+            tasks[0].getContext(), tasks[0].getKeyProvenance(), "hpo") ==
+        "tadah hpo: the configuration file seed.tadah is a potential (it has "
+        "WEIGHTS): its CHECK true was a setting of the run that wrote it, "
+        "not of this run, and is ignored (tadah keeps such keys in a "
+        "potential's training record, not as key lines). Give --check on "
+        "the command line, or a CHECK line in a configuration file that "
+        "includes the potential with CONFIG, to apply it to this run (the "
+        "Training page of the documentation, Retraining from a "
+        "potential).");
+}
