@@ -1,4 +1,5 @@
 #include <tadah/mlip/preflight_audit.h>
+#include <tadah/core/number_format.h>
 
 #include <ostream>
 #include <stdexcept>
@@ -223,6 +224,23 @@ AuditReport run_preflight_from_db(
   return run_preflight_soft(data, seed, mode);
 }
 
+namespace {
+/* Whether every value of the radial-centre key `key` of `seed` is the
+ * number 0 (a grid generator such as LIN is not). */
+bool centres_at_origin(const tadah::core::Context& seed,
+                       const std::string& key) {
+  const std::size_t n = seed.size(key);
+  if (n == 0) return false;
+  for (std::size_t i = 0; i < n; ++i) {
+    double v = 0.0;
+    if (!tadah::core::parse_number(seed.get<std::string>(key, i), v) ||
+        v != 0.0)
+      return false;
+  }
+  return true;
+}
+}  // namespace
+
 AuditReport run_critical_optim_audit_with_metas(
     const tadah::core::Context&     seed,
     const std::vector<std::string>& optim_keys,
@@ -262,6 +280,13 @@ AuditReport run_critical_optim_audit_with_metas(
           (pm.key == "RCUTMB" &&
            tadah::models::potedit::bump_channel_halfwidth(seed, "MB") &&
            tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
+        continue;
+
+      // Radial centres at the origin (every CGRID* value 0): the basis
+      // falls off from r = 0, so it is largest at the nearest neighbours
+      // whatever their distance and cannot miss the neighbour shells; its
+      // width (SGRID*), audited on its own, sets how far it reaches.
+      if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(seed, pm.key))
         continue;
 
       AuditMessage msg;
