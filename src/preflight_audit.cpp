@@ -282,10 +282,11 @@ AuditReport run_critical_optim_audit_with_metas(
            tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
         continue;
 
-      // Radial centres at the origin (every CGRID* value 0): the basis
-      // falls off from r = 0, so it is largest at the nearest neighbours
-      // whatever their distance and cannot miss the neighbour shells; its
-      // width (SGRID*), audited on its own, sets how far it reaches.
+      // Radial centres at the origin (every CGRID* value 0): the basis is
+      // largest at r = 0 and falls off with distance, so its width
+      // (SGRID*), not its centre, decides whether it reaches the neighbour
+      // shells (a compact blip reaches 2/eta); a fixed width is audited on
+      // its own.
       if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(seed, pm.key))
         continue;
 
