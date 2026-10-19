@@ -126,7 +126,7 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
 
 /** The notice of tadah train, tadah hpo and tadah analysis check_bounds for
  *  a configuration that is or includes a potential (TrainEngine::run,
- *  hpo_run_journaled, AnalysisCheckBoundsEngine::run), "" or a
+ *  hpo_run, AnalysisCheckBoundsEngine::run), "" or a
  *  warning naming its lines of keys_not_read_from_a_potential() that were
  *  not read, are not at their default (the blueprint task's default when
  *  it has one, else the key's: a key at its default, such as the
