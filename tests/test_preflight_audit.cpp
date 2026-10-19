@@ -177,8 +177,10 @@ TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out 
   // Minimal seed: fixed CGRIDMB, RCUTMB, SGRIDMB and no OPTIM coverage.
   // We supply the descriptor meta directly so the test does not depend
   // on dm_all.cpp's static registrations being live in the test binary.
+  /* A centre away from the origin: one that can miss the neighbour shells
+   * (the case below has the centre at 0). */
   Context seed;
-  seed.add<double>("CGRIDMB", 0.0);
+  seed.add<double>("CGRIDMB", 2.9);
   seed.add<double>("SGRIDMB", 0.2);
   seed.add<double>("RCUTMB", 5.6);
 
@@ -222,6 +224,39 @@ TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out 
     REQUIRE(m.param_key != "RCUTMB");
     REQUIRE(m.param_key != "SGRIDMB");
   }
+}
+
+/* A radial centre at the origin cannot miss the neighbour shells: the
+ * basis falls off from r = 0, so it is largest at the nearest neighbours
+ * whatever their distance, and its width alone sets its reach. A fixed
+ * CGRIDMB whose every value is 0 is not flagged; the width (SGRIDMB) and
+ * the cutoff (RCUTMB) still are, and a list with one non-zero centre is
+ * flagged.
+ * Before the fix: CGRIDMB 0 was flagged as a centre that can miss the
+ * neighbour distances (the case above pinned it with CGRIDMB 0; it sets
+ * 2.9 now). */
+TEST_CASE("preflight_audit: critical_optim_audit does not flag a fixed "
+          "CGRIDMB of centres at the origin", "[preflight_audit]") {
+  std::vector<MetaPair> metas;
+  metas.emplace_back("DM_mBlipEnv", make_dm_mblipenv_like_meta());
+  const std::vector<std::string> no_optim;
+  auto flagged = [](const AuditReport& r, const std::string& key) {
+    for (const auto& m : r.messages)
+      if (m.param_key == key) return true;
+    return false;
+  };
+  Context seed;
+  seed.add<double>("CGRIDMB", 0.0);
+  seed.add<double>("SGRIDMB", 0.2);
+  seed.add<double>("RCUTMB", 5.6);
+  auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+  CHECK_FALSE(flagged(rep, "CGRIDMB"));
+  CHECK(flagged(rep, "SGRIDMB"));
+  CHECK(flagged(rep, "RCUTMB"));
+
+  seed.add<double>("CGRIDMB", 2.9);   /* centres 0 and 2.9 */
+  rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+  CHECK(flagged(rep, "CGRIDMB"));
 }
 
 // Bump-family metas: RCUT* Critical as in the real D2_Blip5 / DM_REAM
