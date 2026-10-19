@@ -119,19 +119,19 @@ TEST_CASE("tadah explain: a command, a subcommand and an option print as "
           "before",
           "[explain]") {
   /* Pins: `tadah explain data.split` prints the subcommand's description
-   * ("Split a dataset into parts." is in it), `tadah explain
-   * data.split.even` the option's ("Split dataset into equal-size
-   * partitions."), `tadah explain refit` the command's ("Convert a
+   * ("Splits a dataset into parts." is in it), `tadah explain
+   * data.split.even` the option's ("Splits the dataset into equal-size
+   * partitions."), `tadah explain refit` the command's ("Converts a
    * tabulated EAM potential"), `tadah explain refit.add` the option's.
    * Before the fix: passes as well (a pin of the lookups that printed). */
-  CHECK(explain("data.split").find("Split a dataset into parts") !=
+  CHECK(explain("data.split").find("Splits a dataset into parts") !=
         std::string::npos);
   CHECK(explain("data.split.even")
-            .find("Split dataset into equal-size partitions.") !=
+            .find("Splits the dataset into equal-size partitions.") !=
         std::string::npos);
-  CHECK(explain("refit").find("Convert a tabulated EAM potential") !=
+  CHECK(explain("refit").find("Converts a tabulated EAM potential") !=
         std::string::npos);
-  CHECK(explain("refit.add").find("Insert one basis function into the curve "
+  CHECK(explain("refit.add").find("Inserts one basis function into the curve "
                                   "selected by --func") != std::string::npos);
 }
 
@@ -587,8 +587,8 @@ TEST_CASE("tadah explain: a subcommand is found in any letter case, before "
   /* Pins: a command, a subcommand and an option are found in any letter
    * case, the subcommand before a configuration key of the same name:
    * `tadah explain data.MERGE`, `data.Merge` and `DATA.MERGE` print what
-   * `data.merge` prints, the merge subcommand ("Merge multiple dataset files
-   * into a single file."), not the MERGE configuration key ("Merge
+   * `data.merge` prints, the merge subcommand ("Merges multiple dataset files
+   * into a single file."), not the MERGE configuration key ("Merges
    * deduplication results into one file."); `data.SPLIT`,
    * `DATA.SPLIT.EVEN` and `ANALYSIS.DATASET_STATS` print what `data.split`,
    * `data.split.even` and `analysis.dataset_stats` print.
@@ -600,7 +600,7 @@ TEST_CASE("tadah explain: a subcommand is found in any letter case, before "
    * has no subcommand or option 'DATASET_STATS', and it is no configuration
    * key". */
   const std::string merge = explain("data.merge");
-  REQUIRE(merge.find("Merge multiple dataset files into a single file") !=
+  REQUIRE(merge.find("Merges multiple dataset files into a single file") !=
           std::string::npos);
   for (const char *name : {"data.MERGE", "data.Merge", "DATA.MERGE"}) {
     INFO(name);
@@ -717,8 +717,8 @@ TEST_CASE("tadah explain: the text of a command this program was built "
   /* Pins: after EngineFactory::registerNotBuilt("HPO", "tadah hpo needs a
    * part this program was built without") (test_mlip has no HPO engine in
    * any build), `tadah explain hpo` prints the command's long description
-   * (its first line, "Refine your model's architecture and hyperparameters
-   * using Tadah!'s nested", first), then a blank line and the message with
+   * (its first line, "Refines a model's architecture and hyperparameters
+   * with Tadah!'s nested", first), then a blank line and the message with
    * a full stop as its last two lines; the text of `tadah explain
    * data.split`, whose engine is never registered as not built, and of
    * `tadah explain hpo.verbose`, an option of the command, do not have the
@@ -732,7 +732,7 @@ TEST_CASE("tadah explain: the text of a command this program was built "
   const auto lines = lines_of(out);
   REQUIRE(lines.size() >= 3);
   CHECK(lines.front() ==
-        "Refine your model's architecture and hyperparameters using Tadah!'s nested");
+        "Refines a model's architecture and hyperparameters with Tadah!'s nested");
   CHECK(lines[lines.size() - 2].empty());
   CHECK(lines.back() == msg + ".");
   CHECK(explain("data.split").find(msg) == std::string::npos);
