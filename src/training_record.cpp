@@ -50,9 +50,9 @@ const std::vector<std::string> &training_record_keys() {
     std::vector<std::string> k = {"DBFILE"};
     const std::vector<std::string> &data = dataset_preparation_keys();
     k.insert(k.end(), data.begin(), data.end());
-    for (const char *key : {"VALIDATION", "HPOTARGET", "UNCERTAINTY",
-                            "VERBOSE", "NUMERIC", "OUTFILE", "AUDIT",
-                            "AUDIT_SAMPLE", "HEALTH_LOG"})
+    for (const char *key : {"VALIDATION", "HPOTARGET", "CHECK",
+                            "UNCERTAINTY", "VERBOSE", "NUMERIC", "OUTFILE",
+                            "AUDIT", "AUDIT_SAMPLE", "HEALTH_LOG"})
       k.push_back(key);
     return k;
   }();

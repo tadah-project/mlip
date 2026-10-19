@@ -619,10 +619,10 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
  * potential, keys_not_read_from_a_potential(), is the training record's,
  * training_record_keys(), without DBFILE (which a retrain adds to a copy of
  * the potential), in its order: the keys that prepared the training data,
- * VALIDATION, HPOTARGET, UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE, AUDIT,
- * AUDIT_SAMPLE and HEALTH_LOG; potential_line_not_read selects each of the
- * eight run settings in a file whose key lines give WEIGHTS and none in a
- * file without WEIGHTS, DBFILE in neither; and TaskFactory's parse of
+ * VALIDATION, HPOTARGET, CHECK, UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE,
+ * AUDIT, AUDIT_SAMPLE and HEALTH_LOG; potential_line_not_read selects each
+ * of the nine run settings in a file whose key lines give WEIGHTS and none
+ * in a file without WEIGHTS, DBFILE in neither; and TaskFactory's parse of
  * `tadah train -c pot` (pot: ATOM, WEIGHTS and the eight lines of the run
  * that wrote it, VERBOSE 2 among them) stores none of the eight but the
  * blueprint defaults it adds itself (VERBOSE 1 and OUTFILE pot.tadah,
@@ -636,7 +636,9 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
  * (VERBOSE 2 set the level to INFO, OUTFILE old.tadah was the task's, no
  * line skipped; the included potential's VERBOSE 2 replaced the outer
  * file's VERBOSE 0 before it): the list, rule, has_stored, skipped and
- * level checks fail. */
+ * level checks fail.
+ * Before CHECK was a run setting: the lists had no CHECK and the rule did
+ * not select it: the list and rule checks fail. */
 TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
           "settings, and lists them",
           "[key_provenance][task_factory][training_record][run_settings]") {
@@ -646,9 +648,9 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
   const std::vector<std::string> expected = {
       "EFILTER",     "FFILTER",      "ESHIFT_ATOM", "ESHIFT_DBATOM",
       "EWEIGHT_TEMP", "ZERO_COM_FORCE", "WDBFILE",   "WDBFILE_AUTO",
-      "VALIDATION",  "HPOTARGET",    "UNCERTAINTY", "VERBOSE",
-      "NUMERIC",     "OUTFILE",      "AUDIT",       "AUDIT_SAMPLE",
-      "HEALTH_LOG"};
+      "VALIDATION",  "HPOTARGET",    "CHECK",       "UNCERTAINTY",
+      "VERBOSE",     "NUMERIC",      "OUTFILE",     "AUDIT",
+      "AUDIT_SAMPLE", "HEALTH_LOG"};
   CHECK(keys_not_read_from_a_potential() == expected);
   std::vector<std::string> record = training_record_keys();
   REQUIRE_FALSE(record.empty());
@@ -657,9 +659,9 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
   CHECK(keys_not_read_from_a_potential() == record);
 
   const std::set<std::string> pot_keys = {"ATOM", "WEIGHTS"};
-  const char *const settings[] = {"VALIDATION", "HPOTARGET", "VERBOSE",
-                                  "NUMERIC",    "OUTFILE",   "AUDIT",
-                                  "AUDIT_SAMPLE", "HEALTH_LOG"};
+  const char *const settings[] = {"VALIDATION", "HPOTARGET",    "CHECK",
+                                  "VERBOSE",    "NUMERIC",      "OUTFILE",
+                                  "AUDIT",      "AUDIT_SAMPLE", "HEALTH_LOG"};
   for (const char *k : settings) {
     INFO("key " << k);
     CHECK(potential_line_not_read(pot_keys, k));
