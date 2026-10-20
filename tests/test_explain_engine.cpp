@@ -776,3 +776,37 @@ TEST_CASE("tadah explain: a retired key's text ends with why it is retired, "
                      Catch::Matchers::Contains("n_d^-a"));
   CHECK(explain("ESIGMA").find("RETIRED:") == std::string::npos);
 }
+
+TEST_CASE("tadah explain: an inline role of a help text is shown as the text "
+          "the documentation shows",
+          "[explain]") {
+  /* Pins: the help texts are reStructuredText (the configuration-keys page
+   * renders them, and the CLI page shows an option's text in a
+   * parsed-literal block, which renders its roles), so explain_text_lines
+   * shows an inline role as its text: ':ref:`Title <label>`' as 'Title',
+   * ':ref:`LAMBDA`' as 'LAMBDA', ':code:`M`' as 'M', ':math:`x^2`' as 'x^2',
+   * two roles of one line each so, and a text with a back-quote but no
+   * role as it is; a line of a literal block is kept as written (RST does
+   * not read roles there). `tadah explain OALGO` (whose text cites LAMBDA,
+   * WCOV and WNOISE with :ref:) prints no ':ref:`' and the line "- The
+   * regularisation parameter is controlled by the LAMBDA key, which should
+   * be set separately to apply regularisation to the model.".
+   * Before the fix: the roles were printed as written (":ref:`LAMBDA`"). */
+  CHECK(explain_text_lines(
+            "The page :ref:`What a Fit Minimises <fit_objective>` and "
+            ":ref:`LAMBDA`.\n") ==
+        std::vector<std::string>{"The page What a Fit Minimises and LAMBDA."});
+  CHECK(explain_text_lines(":code:`M` = :math:`x^2`, `not a role`\n") ==
+        std::vector<std::string>{"M = x^2, `not a role`"});
+  CHECK(explain_text_lines("Literal::\n\n    :ref:`kept` here\n\nAfter "
+                           ":ref:`LAMBDA`\n") ==
+        std::vector<std::string>{"Literal:", "", "    :ref:`kept` here", "",
+                                 "After LAMBDA"});
+  const std::string oalgo = explain("OALGO");
+  INFO(oalgo);
+  CHECK(oalgo.find(":ref:`") == std::string::npos);
+  CHECK(has_line(lines_of(oalgo),
+                 "- The regularisation parameter is controlled by the LAMBDA "
+                 "key, which should be set separately to apply "
+                 "regularisation to the model."));
+}
