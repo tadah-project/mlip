@@ -102,10 +102,12 @@ std::vector<std::string> explain_text_lines(const std::string &text);
  *        @p key.
  *
  * Its long description, or its description when it has none, as
- * explain_text_lines renders it, one line each; then, when it has
- * examples, a blank line, "EXAMPLES: " and each line of each example
- * (an example of several lines is one value per line) indented by two
- * spaces.
+ * explain_text_lines renders it, one line each; for a retired key
+ * (BlueprintKey::isRetired()) then a blank line and the lines "RETIRED:
+ * <reason>", "REPLACED BY: <replacement>" and "CONVERSION: <conversion>";
+ * then, when it has examples, a blank line, "EXAMPLES: " and each line of
+ * each example (an example of several lines is one value per line)
+ * indented by two spaces.
  */
 std::string explain_key_text(const core::BlueprintKey &key);
 

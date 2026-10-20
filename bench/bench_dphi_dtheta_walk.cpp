@@ -167,9 +167,6 @@ Context make_bench_context(double rcut, int Lmax = 1) {
     c.add("STRESS",   "false");
     c.add("BIAS",     "false");
     c.add("NORM",     "false");
-    c.add("EWEIGHT",  1.0);
-    c.add("FWEIGHT",  1.0);
-    c.add("SWEIGHT",  1.0);
     c.add("MODEL",    "M_BLR");
     c.add("MODEL",    "BF_Linear");
     c.add("LAMBDA",   1e-3);

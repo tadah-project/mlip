@@ -31,9 +31,12 @@ struct PerRowType {
  *  WCOV:   N, then the N x N covariance of the WEIGHTS, column-major, in
  *          their own parameterisation (that of the raw descriptors for a
  *          linear model with NORM true).
- *  WNOISE: for each row type the fit had rows of with a non-zero weight,
- *          its letter (E, F, S) and the noise variance of one such value in
- *          raw units, s^2 / W_t (W_t the global EWEIGHT, FWEIGHT, SWEIGHT).
+ *  WNOISE: for each row type the fit observed, its letter (E, F, S) and
+ *          the noise variance of one observation of priority 1 in the units
+ *          of the data, s^2 sigma_t^2 (noise_of_fitted_types(): sigma_t the
+ *          absolute error scale of the type, ErrorScales::absolute(); the
+ *          energy's per atom, or per sqrt(atom) under ENORM SQRT, and the
+ *          stress's of a diagonal entry).
  *
  *  An OALGO 3 fit writes both (M_BLR / M_KRR get_param_file); `tadah
  *  predict --error` reads them. They replace SIGMA, which earlier versions
@@ -56,7 +59,9 @@ void write_weight_covariance(tadah::core::Context &c,
 /** Reads WCOV and WNOISE of a potential with @p n_weights WEIGHTS. WNOISE
  *  lists the row types its fit had (a fit without energies has no E: see
  *  require_noise_of()).
- *  @throws std::runtime_error, naming the keys, when either is absent,
+ *  @throws std::runtime_error, naming the keys, when either is absent, or
+ *  when the potential has no ESIGMA line (a fit before the error scales
+ *  wrote its WNOISE, in other units),
  *  with why the potential of @p c has none and what to do: another OALGO
  *  than 3 (retrain with OALGO 3), M_KRR implementation 2
  *  (is_krr_implementation_2(): MODEL M_KRR <kernel> 1), or, for an OALGO 3
@@ -70,10 +75,10 @@ WeightCovariance read_weight_covariance(const tadah::core::Context &c,
                                         std::size_t n_weights);
 
 /** Refuses a prediction with errors of a row type WNOISE does not list:
- *  energies, which every prediction has, of a potential whose fit had no
- *  energies with a non-zero weight (EWEIGHT 0, or every structure's
- *  eweight 0); forces (@p force) or stresses (@p stress) of a potential
- *  whose fit had no rows of that type with a non-zero weight.
+ *  energies, which every prediction has, of a potential whose fit observed
+ *  no energies (ENERGY false, or every structure's energy priority 0);
+ *  forces (@p force) or stresses (@p stress) of a potential whose fit
+ *  observed none of that type.
  *  @throws std::runtime_error naming the quantity, WNOISE, the cause and
  *  the remedy. */
 void require_noise_of(const WeightCovariance &wc, bool force, bool stress);
@@ -113,11 +118,17 @@ tadah::core::Matrix raw_descriptor_map(const Normaliser &norm, std::size_t n,
 void to_raw_descriptors(tadah::models::M_Core &m, const Normaliser &norm,
                         std::size_t n_intercepts);
 
-/** WNOISE of a fit: for each row type in @p fitted (the types with rows of
- *  non-zero weight, DesignMatrix::fitted_types()), the noise variance of
- *  one value in raw units, @p s2 / W_t, W_t the EWEIGHT, FWEIGHT or
- *  SWEIGHT of @p c (s2 is per unit row weight; a structure's own weight is
- *  taken as 1). */
+/** WNOISE of a fit: for each row type in @p fitted (the types the fit
+ *  observed, DesignMatrix::fitted_types()), the noise variance of one
+ *  observation of priority 1 in the units of the data, @p s2 sigma_t^2:
+ *  s2 the noise variance per unit row weight of the fit (a row's weight is
+ *  p m / sigma^2, row_weights.h) and sigma_t the absolute error scale of
+ *  the type in @p c (ErrorScales::absolute(): ESIGMA/1000 eV, FSIGMA a
+ *  eV/A, SSIGMA a in eV/A^3). The energy's is that of the energy per atom
+ *  (per sqrt(atom) under ENORM SQRT), the stress's that of a diagonal
+ *  entry (an off-diagonal one, which the fit counts twice, has half of
+ *  it); neither a structure's priority nor the relative part of FSIGMA and
+ *  SSIGMA is in it. */
 PerRowType noise_of_fitted_types(const tadah::core::Context &c,
                                  const std::array<bool, 3> &fitted, double s2);
 

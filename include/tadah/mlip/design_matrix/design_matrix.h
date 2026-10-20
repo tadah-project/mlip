@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <tadah/mlip/data_weights.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
@@ -66,17 +67,16 @@ public:
  *     | stress zz
  *
  * It reads \ref FORCE and \ref STRESS (which rows there are) and, for a
- * fit (apply_weights), \ref EWEIGHT, \ref FWEIGHT and \ref SWEIGHT.
+ * fit (apply_weights), the error scales and priorities of RowWeights
+ * (row_weights.h), when it builds.
  *
  * Row factors (compute_wfactors): a fit multiplies each row and its target
- * by the square root of the product of the structure's weight and the
- * global weight: sqrt(eweight x EWEIGHT) for the energy row (the total
- * energy of the structure, in eV), sqrt(fweight x FWEIGHT) for each of its
- * 3N force rows and sqrt(sweight x SWEIGHT) for each of its 6 stress rows
- * (xx, xy, xz, yy, yz, zz). No factor depends on the number of atoms: the
- * least-squares sum runs over the squared residuals of the total energies,
- * of the force components and of the six stress entries, each times its
- * weights. A row of weight 0 is a zero row: no observation.
+ * by sqrt(p m)/sigma (RowWeights): the energy row (the total energy of the
+ * structure, in eV) by sqrt(p_E)/(N^q ESIGMA/1000), each of its 3N force
+ * rows by sqrt(p_F)/sigma_F and each of its 6 stress rows (xx, xy, xz, yy,
+ * yz, zz) by sqrt(p_S m)/sigma_S, m = 2 for xy, xz and yz (the nine entries
+ * of the tensor). A row of factor 0 is a zero row; a row that is zero in
+ * every column is no observation either (n_observations()).
  *
  * @tparam F tadah::models::Function_Base child -> tadah::models::BF_Base or tadah::models::Kern_Base
  *
@@ -88,9 +88,9 @@ public:
 
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws = nullptr;
-  /** Whether the rows are weighted by sqrt(weight * EWEIGHT/FWEIGHT/SWEIGHT)
-   *  (a fit); false builds the rows as they are, for a prediction
-   *  (M_BLR/M_KRR predict with error estimates). */
+  /** Whether the rows are weighted by their factors sqrt(p m)/sigma
+   *  (RowWeights: a fit); false builds the rows as they are, for a
+   *  prediction (M_BLR/M_KRR predict with error estimates). */
   bool apply_weights = true;
   /** Whether build() appends the ridge-augmentation rows, one per column
    *  after the rows of the structures (zero; LinearRegressor writes the
@@ -107,14 +107,17 @@ public:
   bool w_copy_=false;  // keep a copy of Phi and T without the row factors
 
   /** The observations of the last build: the rows of the structures with a
-   *  non-zero weight (sqrt(weight x EWEIGHT/FWEIGHT/SWEIGHT) > 0), without
-   *  the augmentation rows; every row of the structures when apply_weights
-   *  is false. The number of observations an OALGO 3 fit estimates its
-   *  noise variance with (LinearRegressor::train). */
+   *  factor > 0 that are not zero in every column (count_observations()),
+   *  without the augmentation rows; every row of the structures when
+   *  apply_weights is false. The number of observations an OALGO 3 fit
+   *  estimates its noise variance with (LinearRegressor::train). */
   size_t n_observations() const { return n_obs_; }
-  /** Whether the last build had rows of each type (E, F, S: Tlabels 0, 1,
-   *  2) with a non-zero weight: the types the fit was fitted to. */
+  /** Whether the last build had observations of each type (E, F, S:
+   *  Tlabels 0, 1, 2): the types the fit was fitted to. */
   const std::array<bool, 3> &fitted_types() const { return fitted_types_; }
+  /** The dataset (the ranges of the StructureDB's dbidx; 0 without them)
+   *  of each row of the structures of the last build, in order. */
+  const std::vector<std::size_t> &row_datasets() const { return row_dataset_; }
 
   /** \brief The design-matrix column layout of the last build():
    *  f.phi_layout() of the descriptor layout (see column_block.h). For a
@@ -157,10 +160,7 @@ public:
     ownWorkspaceManager(false),
     context(c),
     force(context.get<bool>("FORCE")),
-    stress(context.get<bool>("STRESS")),
-    eweightglob(context.get<double>("EWEIGHT")),
-    fweightglob(context.get<double>("FWEIGHT")),
-    sweightglob(context.get<double>("SWEIGHT"))
+    stress(context.get<bool>("STRESS"))
   {
   }
 
@@ -216,6 +216,7 @@ public:
     parallel_for(stdb.size(), [&](size_t s) {
       build(rows[s], stdb(s), st_desc_db(s));
     });
+    count_observations_of_build();
     // The row factors, as the build from a DescriptorsCalc applies them.
     if (w_copy_) {
       copyAndScale();
@@ -304,6 +305,7 @@ public:
 
       build(rows[s], stdb(s), st_d);
     });
+    count_observations_of_build();
     if (w_copy_) {
       copyAndScale();
     }
@@ -438,43 +440,55 @@ public:
     ws->T.set_zero();
     ws->Tlabels.set_zero();
   }
+  /** The factor of every row of @p stdb (RowWeights: sqrt(p m)/sigma) and
+   *  the dataset of each; with apply_weights false every factor is 1. The
+   *  observations are counted once the rows are built
+   *  (count_observations_of_build()). */
   void compute_wfactors(const StructureDB &stdb) {
     n_obs_ = 0;
     fitted_types_ = {false, false, false};
+    row_dataset_.clear();
+    std::vector<std::size_t> dbidx = stdb.dbidx;
+    if (dbidx.size() < 2) dbidx = {0, stdb.size()};
+    std::vector<std::size_t> dataset(stdb.size(), 0);
+    for (std::size_t d = 0; d + 1 < dbidx.size(); ++d)
+      for (std::size_t s = dbidx[d]; s < dbidx[d + 1] && s < stdb.size(); ++s)
+        dataset[s] = d;
     if (!apply_weights) {  // a prediction: the rows as they are
       for (std::size_t i = 0; i < ws->wfactors.size(); ++i) ws->wfactors(i) = 1.0;
-      n_obs_ = rows - (augment ? cols : 0);
-      fitted_types_ = {n_obs_ > 0, force && n_obs_ > 0, stress && n_obs_ > 0};
+      for (size_t s=0; s<stdb.size(); ++s)
+        row_dataset_.insert(row_dataset_.end(),
+                            1 + (force ? 3 * stdb(s).natoms() : 0) +
+                                (stress ? 6 : 0),
+                            dataset[s]);
       return;
     }
+    const RowWeights rw(context, stdb);
     size_t j=0;
-    // One row of type `type` and factor `w`; the observations are the rows
-    // of non-zero weight (a weight-0 row is a zero row of the fit).
-    auto row = [&](double w, size_t type) {
+    auto row = [&](double w, std::size_t s) {
       ws->wfactors(j++) = w;
-      if (w > 0.0) {
-        ++n_obs_;
-        fitted_types_[type] = true;
-      }
+      row_dataset_.push_back(dataset[s]);
     };
     for (size_t s=0; s<stdb.size(); ++s) {
-      row(std::sqrt(stdb(s).eweight*eweightglob), 0);
+      row(rw.energy_factor(s), s);
       if (force) {
-        double fscale = std::sqrt(stdb(s).fweight*fweightglob);
+        const double fscale = rw.force_factor(s);
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          row(fscale, 1);
-          row(fscale, 1);
-          row(fscale, 1);
+          row(fscale, s);
+          row(fscale, s);
+          row(fscale, s);
         }
       }
       if (stress) {
-        for (size_t x=0; x<3; ++x) {
-          for (size_t y=x; y<3; ++y) {
-            row(std::sqrt(stdb(s).sweight*sweightglob), 2);
+        for (int x=0; x<3; ++x) {
+          for (int y=x; y<3; ++y) {
+            row(rw.stress_factor(s, x, y), s);
           }
         }
       }
     }
+    // The augmentation rows (a fit's ridge) keep the factor 1.
+    for (; j < ws->wfactors.size(); ++j) ws->wfactors(j) = 1.0;
   }
 
 private:
@@ -485,11 +499,25 @@ private:
   size_t cols = 0;
   bool force;
   bool stress;
-  double eweightglob;
-  double fweightglob;
-  double sweightglob;
   size_t n_obs_ = 0;
   std::array<bool, 3> fitted_types_{{false, false, false}};
+  std::vector<std::size_t> row_dataset_;  // row_datasets()
+
+  /* The observations of the rows just built (before the factors are
+   * applied): a row of factor > 0 that is not zero in every column
+   * (count_observations()); every row of the structures with apply_weights
+   * false. */
+  void count_observations_of_build() {
+    if (!apply_weights) {
+      n_obs_ = data_rows_;
+      fitted_types_ = {n_obs_ > 0, force && n_obs_ > 0, stress && n_obs_ > 0};
+      return;
+    }
+    const ObservationCount n =
+        count_observations(ws->Phi, data_rows_, ws->wfactors, ws->Tlabels);
+    n_obs_ = n.total;
+    fitted_types_ = n.fitted;
+  }
   size_t built_structures_ = 0;  // the structures of the last build
   size_t data_rows_ = 0;         // its rows without the ridge rows
   // structure_identity() of each structure of the last build that kept its

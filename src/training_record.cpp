@@ -25,8 +25,8 @@ const char *const kTrainingRecordEnd = "# --- end of training record ---";
 
 const std::vector<std::string> &dataset_preparation_keys() {
   static const std::vector<std::string> keys = {
-      "EFILTER",      "FFILTER",        "ESHIFT_ATOM", "ESHIFT_DBATOM",
-      "EWEIGHT_TEMP", "ZERO_COM_FORCE", "WDBFILE",     "WDBFILE_AUTO"};
+      "EFILTER",        "FFILTER", "ESHIFT_ATOM", "ESHIFT_DBATOM",
+      "ZERO_COM_FORCE", "WDBFILE"};
   return keys;
 }
 
@@ -717,6 +717,12 @@ void write_potential_with_record(std::ostream &os, const core::Context &pot,
   core::Context written = pot;
   remove_training_record_keys(written);
   written.write_potential(os, sig_digits);
+  // The retired lines the parse of the potential's input recorded (a
+  // potential of an earlier version that refit --edit edits): as they were
+  // written, after the key lines, so that a fit from the written file
+  // refuses them as it refuses its input. No fit writes a potential from a
+  // Context that records one: every fit refuses it first.
+  for (const core::RetiredKeyLine &l : pot.retired_keys()) os << l.text << '\n';
 }
 
 }  // namespace mlip

@@ -432,9 +432,9 @@ assemble_dphi_train_energy_rows_d2_kern(
  * untouched (calc_dXijdri_dtheta writes only at fidx+c, c in
  * [0, descriptor_size_2b)).
  *
- * Weight scaling: NOT applied here — caller multiplies each row by
- * `sqrt(stdb(s).fweight * FWEIGHT)` after the walk to match the
- * post-scale layout in DesignMatrix::getPhi(). */
+ * Weight scaling: NOT applied here — caller multiplies each row by its
+ * factor (RowWeights::force_factor(s), row_weights.h) after the walk to
+ * match the post-scale layout in DesignMatrix::getPhi(). */
 inline bool
 assemble_dphi_train_force_rows_d2(
     const StructureDB&                     stdb,

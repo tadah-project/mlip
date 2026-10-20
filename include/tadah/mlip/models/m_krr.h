@@ -15,6 +15,7 @@
 #include <tadah/mlip/models/basis.h>
 #include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/intercepts.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/training_datasets.h>
 #include <tadah/mlip/data_weights.h>
@@ -135,7 +136,9 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
-    // The weights first: the checks below read them.
+    // The settings of the fit first (retired keys, error scales), then the
+    // priorities of the data: the checks below read them.
+    require_fit_settings(context, "M_KRR::train");
     require_valid_weights(stdb, context);
     check_bias_constraints(context);
 
@@ -171,6 +174,9 @@ public:
     train(desmat);
   }
   void train(const StructureDB &stdb, DC_Base &dc) {
+    // The settings of the fit first (retired keys, error scales), whatever
+    // the implementation.
+    require_fit_settings(context, "M_KRR::train");
     check_bias_constraints(context);
     int modelN;
     if (context.size("MODEL")==3) {
@@ -275,6 +281,8 @@ public:
     if (weights_on_raw_descriptors(context, kernel))
       to_raw_descriptors(*this, norm,
                          tadah::core::n_intercept_columns(context));
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
+                                        fit_scales_info(context));
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
@@ -323,6 +331,9 @@ tadah::core::Context get_param_file() {
     int modelN=context.template get<int>("MODEL",2);
     c.add("MODEL", modelN);
 
+    // The error scales and switches of the fit, the defaults included: a
+    // retrain from the potential reads them.
+    write_fit_scales(c);
     if (c.contains("WEIGHTS")) {
       c.remove("WEIGHTS");
     }
@@ -438,6 +449,8 @@ private:
     if (this->has_covariance())
       noise_by_type = noise_of_fitted_types(context, desmat.fitted_types(),
                                             this->noise_variance);
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
+                                        fit_scales_info(context));
   }
 
   // Do we want to confuse user with those and make them public?

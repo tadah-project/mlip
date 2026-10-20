@@ -7,6 +7,7 @@
 #include <tadah/core/utils.h>
 #include <tadah/core/blueprint_parser.h>
 #include <tadah/core/blueprint_validator.h>
+#include <tadah/core/retired_keys.h>
 #include <stdexcept>
 #include <algorithm>
 #include <string>
@@ -104,6 +105,15 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
           "TaskFactory::createTasksFromInput - Invalid key: " + key +
           ". Closest match: " + closestKey);
       throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid blueprint key: " + key);
+    }
+    // A retired key (its command-line option is kept to say so): what
+    // replaces it and its conversion, before its value is used.
+    if (keyInfo->isRetired()) {
+      const std::string name = keyInfo->cli_long_flag.empty()
+                                   ? core::to_upper(key)
+                                   : keyInfo->cli_long_flag;
+      throw std::runtime_error(
+          name + ": " + core::retired_key_text(core::to_upper(key), *keyInfo));
     }
     if (!valid_schema) {
       // Values joined by a comma or a '+' (one command-line word), which no

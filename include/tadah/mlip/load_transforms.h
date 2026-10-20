@@ -53,15 +53,6 @@ struct LoadTransformReport {
   /** Number of configurations dropped by FFILTER (per-atom force threshold). */
   std::size_t n_dropped_force = 0;
 
-  /** Per-dataset weight multipliers actually applied (composed WDBFILE * WDBFILE_AUTO). */
-  std::vector<double> wdbfile_applied;
-
-  /** Per-dataset N_i used by WDBFILE_AUTO (post outlier-filter counts). */
-  std::vector<std::size_t> wdbfile_counts;
-
-  /** Boltzmann reweighting temperature (Kelvin); 0 = disabled. */
-  double eweight_temp = 0.0;
-
   /** True iff per-config COM-force zeroing was applied. */
   bool   zero_com_force = false;
 
@@ -79,25 +70,24 @@ struct LoadTransformReport {
  * Apply all configured load-time transforms to @p stdb in place.
  *
  * Reads keys from @p context (LSCALE, ESHIFT, ESHIFT_ATOM, ESHIFT_DBATOM,
- * EFILTER, FFILTER, WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP, ZERO_COM_FORCE)
- * and emits a report describing what was actually done.
+ * EFILTER, FFILTER, ZERO_COM_FORCE) and emits a report describing what was
+ * actually done. No transform changes a priority of the data (eweight,
+ * fweight, sweight): WDBFILE, the priority of each dataset, applies in the
+ * fit (RowWeights, row_weights.h), so a dataset of WDBFILE 0 is left out of
+ * the fit only.
  *
  * Order of operations (matters because some transforms feed others):
  *  1. Outlier filter (EFILTER, FFILTER) - drop configs first.
  *  2. Length rescale (LSCALE).
  *  3. ESHIFT determination (precedence: explicit > ATOM > DBATOM, WARN if multiple set).
  *  4. ESHIFT application: E -= sum_Z N_Z * eshift[Z].
- *  5. Boltzmann eweight (EWEIGHT_TEMP).
- *  6. COM force zeroing (ZERO_COM_FORCE).
- *  7. Per-dataset weights: w_final[i] = WDBFILE[i] * N_i^(-WDBFILE_AUTO).
- *  8. Equilibrium-volume diagnostic.
+ *  5. COM force zeroing (ZERO_COM_FORCE).
+ *  6. Equilibrium-volume diagnostic.
  *
  * A structure with eweight 0 has no energy of its own (its energy line,
- * which the dataset format needs, holds a placeholder): steps 1, 3, 5 and 8 leave its energy out (it is
- * neither filtered by energy nor reweighted). One with fweight 0 has no
- * forces: FFILTER leaves it out. Refused before any transform changes a
- * weight: a WDBFILE value below 0 (naming the dataset), WDBFILE_AUTO
- * outside [0, 1] and EWEIGHT_TEMP <= 0.
+ * which the dataset format needs, holds a placeholder): steps 1, 3 and 6
+ * leave its energy out (it is not filtered by energy). One with fweight 0
+ * has no forces: FFILTER leaves it out.
  */
 LoadTransformReport
 apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context);
@@ -167,35 +157,6 @@ OutlierCounts apply_outlier_filter(StructureDB &stdb,
                                    std::optional<double> fmax_per_atom);
 
 /**
- * Multiply eweight, fweight, sweight of every config in dataset i by w[i].
- * Datasets are identified via StructureDB::dbidx. @p w must have the same
- * length as the number of datasets, and each value be a finite number >= 0
- * (std::runtime_error otherwise).
- */
-void apply_per_db_weights(StructureDB &stdb,
-                          const std::vector<double> &w);
-
-/**
- * Compute auto-balance per-dataset factors: factor[i] = N_i^(-alpha), where
- * N_i is the number of configurations in dataset i. Returns a vector with one
- * value per dataset (indexed via StructureDB::dbidx).
- *
- * Throws std::invalid_argument if alpha < 0 or alpha > 1.
- */
-std::vector<double>
-auto_balance_db_weights(const StructureDB &stdb, double alpha);
-
-/**
- * Apply Boltzmann eweight reweighting:
- *     eweight *= exp(-(E/N - E_min)/(kB * T_kelvin))
- * where E_min is the minimum per-atom energy of the configs with an energy
- * (eweight != 0); a config with eweight 0 keeps it.
- *
- * Throws std::invalid_argument if T_kelvin is not > 0.
- */
-void apply_boltzmann_eweight(StructureDB &stdb, double T_kelvin);
-
-/**
  * For each configuration, subtract the mean per-atom force so that the sum of
  * forces over the configuration is exactly zero.
  */
@@ -205,8 +166,8 @@ void apply_com_force_zero(StructureDB &stdb);
  * Stamp the resolved LSCALE / ESHIFT from @p report into a Context that will be
  * written into pot.tadah, so prediction can round-trip them: the model's
  * length scale and energy reference, key lines of the potential. The other
- * transform keys (EFILTER, FFILTER, WDBFILE, WDBFILE_AUTO, EWEIGHT_TEMP,
- * ZERO_COM_FORCE, and the ESHIFT_ATOM / ESHIFT_DBATOM toggles) prepared the
+ * keys of the training data (EFILTER, FFILTER, WDBFILE, ZERO_COM_FORCE, and
+ * the ESHIFT_ATOM / ESHIFT_DBATOM toggles) prepared or weighted the
  * training data: the potential's writer puts them into its training record
  * (dataset_preparation_keys, training_record.h), and tadah predict ignores
  * them in a potential, applying to the data it predicts only the EFILTER,

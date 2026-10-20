@@ -29,7 +29,7 @@ inline void log_missing_stress(const std::string &source, std::size_t missing,
       source + ": " + std::to_string(missing) + " of " +
           std::to_string(total) +
           " structures have no stress tensor; they are stored with zero "
-          "stress and stress weight 0, so a STRESS fit ignores them");
+          "stress and stress priority 0, so a STRESS fit ignores them");
 }
 
 /**
@@ -45,7 +45,7 @@ inline void log_missing_forces(const std::string &source, std::size_t missing,
       source + ": " + std::to_string(missing) + " of " +
           std::to_string(total) +
           " structures have no forces; they are stored with zero forces "
-          "and force weight 0, so a FORCE fit ignores them");
+          "and force priority 0, so a FORCE fit ignores them");
 }
 
 } // namespace mlip

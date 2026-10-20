@@ -59,9 +59,9 @@ void require_metric_structures(const StructureDB &truth, MetricQuantity q,
     const char *data = q == MetricQuantity::Energy   ? "a structure with an energy"
                        : q == MetricQuantity::Forces ? "a structure with forces"
                                                      : "a stress tensor";
-    const char *weight = q == MetricQuantity::Energy   ? "energy weight 0 (eweight)"
-                         : q == MetricQuantity::Forces ? "force weight 0 (fweight)"
-                                                       : "stress weight 0 (sweight)";
+    const char *weight = q == MetricQuantity::Energy   ? "energy priority 0 (eweight)"
+                         : q == MetricQuantity::Forces ? "force priority 0 (fweight)"
+                                                       : "stress priority 0 (sweight)";
     const char *metrics = q == MetricQuantity::Energy   ? "energy"
                           : q == MetricQuantity::Forces ? "force"
                                                         : "stress";

@@ -53,8 +53,8 @@ double measured_mean(const tadah::core::t_type &v, const std::vector<bool> &meas
 /** Refuses @p truth when no dataset is measured by the @p q metrics (every
  *  structure has that weight 0): they would have nothing to measure. Throws
  *  std::runtime_error, prefixed with @p who, naming the files when
- *  @p dataset_names has them and the weight ("energy weight 0 (eweight)",
- *  "force weight 0 (fweight)", "stress weight 0 (sweight)"). A dataset of
+ *  @p dataset_names has them and the weight ("energy priority 0 (eweight)",
+ *  "force priority 0 (fweight)", "stress priority 0 (sweight)"). A dataset of
  *  only such structures among others is not refused: it is not measured
  *  (measured_datasets()). */
 void require_metric_structures(const StructureDB &truth, MetricQuantity q,

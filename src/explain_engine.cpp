@@ -168,6 +168,13 @@ std::string explain_key_text(const core::BlueprintKey &key) {
   for (const auto &line : explain_text_lines(
            key.longDescription.empty() ? key.description : key.longDescription))
     out += line + "\n";
+  // A retired key: why, what replaces it and how a value of it converts
+  // (a fit refuses it, with the same conversion).
+  if (key.isRetired()) {
+    out += "\nRETIRED: " + key.retired.reason + "\n";
+    out += "REPLACED BY: " + key.retired.replacement + "\n";
+    out += "CONVERSION: " + key.retired.conversion + "\n";
+  }
   if (!key.examples.empty()) {
     out += "\nEXAMPLES: \n";
     for (const auto &example : key.examples) {

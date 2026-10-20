@@ -52,8 +52,8 @@ int PredictEngine::run(mlip::Task &task) {
   potContext  = tadah::core::Context::merge(potContext, taskContext);
   // Of those keys, the data predicted is prepared only with the ones
   // tadah predict has an option for (EFILTER, FFILTER, ZERO_COM_FORCE): a
-  // TASK predict of a task file may hold the others (WDBFILE, WDBFILE_AUTO,
-  // EWEIGHT_TEMP, ESHIFT_ATOM, ESHIFT_DBATOM), which weight the training
+  // TASK predict of a task file may hold the others (WDBFILE, ESHIFT_ATOM,
+  // ESHIFT_DBATOM), which weight the training
   // set or derive a shift from the data, and are not predict's.
   {
     std::vector<std::string> predict_keys;
@@ -252,10 +252,10 @@ int PredictEngine::run(mlip::Task &task) {
                     << " 0 everywhere): its " << metrics
                     << " metrics are not measured (nan) and left out of the mean." << std::endl;
     };
-    note(measured_e, "an energy", "energy weight", "energy");
-    if (taskContext.get<bool>("FORCE")) note(measured_f, "forces", "force weight", "force");
+    note(measured_e, "an energy", "energy priority", "energy");
+    if (taskContext.get<bool>("FORCE")) note(measured_f, "forces", "force priority", "force");
     if (taskContext.get<bool>("STRESS"))
-      note(measured_s, "a stress tensor", "stress weight", "stress");
+      note(measured_s, "a stress tensor", "stress priority", "stress");
   }
 
   delete modelp;

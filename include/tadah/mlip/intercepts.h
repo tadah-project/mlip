@@ -69,11 +69,12 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  An intercept column (f.intercept_columns) depends on an atom only
  *  through its species, so only energies constrain it (its force and
  *  stress rows are zero), and the ridge does not penalise it. Over the
- *  structures with an energy weight (eweight x EWEIGHT > 0) the energy
- *  rows of the intercept columns that FIXINDEX/FIXWEIGHT do not pin must
- *  therefore have full rank: with every structure of one composition
- *  (e.g. a fixed stoichiometry), or without any energy weight, a fit
- *  would split the energy between the species arbitrarily (or overflow).
+ *  structures whose energies the fit observes (ENERGY true and an energy
+ *  priority, eweight x WDBFILE, above 0: RowWeights) the energy rows of
+ *  the intercept columns that FIXINDEX/FIXWEIGHT do not pin must therefore
+ *  have full rank: with every structure of one composition (e.g. a fixed
+ *  stoichiometry), or without any energy observation, a fit would split
+ *  the energy between the species arbitrarily (or overflow).
  *  The value of intercept column j for an atom of species s is f's
  *  energy of the unit weight j at the descriptor with intercept component
  *  s alone (@p ctx holds DSIZE).
@@ -88,7 +89,8 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  too), whose solve (K + LAMBDA I) w = T fits the basis vectors' targets,
  *  not the structures' energies, and pins no weight, is not checked.
  *
- *  A weight of the data that is negative or not finite is refused first
+ *  A priority of the data that is negative or not finite, and a WDBFILE
+ *  without one value per dataset, are refused first
  *  (require_valid_weights), for BIAS false too. Otherwise a no-op for BIAS
  *  false and for a function without intercept columns (Kern_RBF). An atom
  *  of an element not in ATOM is refused
