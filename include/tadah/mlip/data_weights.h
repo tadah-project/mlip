@@ -39,6 +39,34 @@ std::string structure_in_data(const StructureDB &stdb, std::size_t s,
 void require_valid_weights(const StructureDB &stdb,
                            const tadah::core::Context &context);
 
+/** The refusal of M_KRR implementation 2 (MODEL M_KRR <kernel> 2) for a
+ *  setting it would ignore: "MODEL M_KRR <kernel> 2 fits the energies per
+ *  atom of whole structures, without forces, stresses or weights: <what>
+ *  would be ignored. Implementation 1 (MODEL M_KRR <kernel> 1) <fits>;
+ *  implementation 2 fits <instead>." */
+std::string krr_implementation2_ignores(const std::string &kernel,
+                                        const std::string &what,
+                                        const std::string &fits,
+                                        const std::string &instead);
+
+/** Refuses what M_KRR implementation 2 of @p context (MODEL M_KRR <kernel>
+ *  2) would ignore, before it fits: it solves (K + LAMBDA I) w = t on the
+ *  mean descriptors of whole structures and their energies per atom, so no
+ *  force, stress or weight of the data enters it. FORCE true, STRESS true,
+ *  EWEIGHT, FWEIGHT or SWEIGHT other than 1, a WDBFILE value other than 1,
+ *  WDBFILE_AUTO other than 0, EWEIGHT_TEMP (any value: it reweights the
+ *  energies), and a structure of @p stdb whose eweight is not 1 (its energy
+ *  weighted, or left out with 0) are refused, each naming implementation
+ *  1, which fits them (krr_implementation2_ignores()). A structure's
+ *  fweight and sweight weight nothing here, as in implementation 1 with
+ *  FORCE and STRESS false: a valid one (finite, >= 0) is accepted, and the
+ *  fit refuses another before this (require_valid_weights), as every fit
+ *  does. M_KRR::train2 calls it; tadah hpo calls it when a run starts.
+ *  @throws std::runtime_error naming the key and its values (or the
+ *  structure and its eweight) and MODEL M_KRR <kernel> 1. */
+void refuse_what_krr_implementation2_ignores(
+    const tadah::core::Context &context, const StructureDB &stdb);
+
 }  // namespace mlip
 }  // namespace tadah
 

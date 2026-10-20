@@ -83,6 +83,29 @@ int krr_implementation(const tadah::core::Context &ctx) {
              : 1;
 }
 
+void require_krr_implementation(const tadah::core::Context &ctx) {
+  if (!ctx.contains("MODEL") || ctx.size("MODEL") < 3 ||
+      ctx.get<std::string>("MODEL", 0) != "M_KRR")
+    return;
+  const int n = krr_implementation(ctx);
+  if (n == 1 || n == 2) return;
+  std::string line = "MODEL";
+  for (const std::string &v : ctx("MODEL")) line += " " + v;
+  throw std::runtime_error(
+      line + ": M_KRR has implementation 1, which fits the energies, forces "
+      "and stresses of the structures, and implementation 2, which fits the "
+      "energies per atom of whole structures (the third value of MODEL, 1 "
+      "when it is left out); " + std::to_string(n) + " is neither.");
+}
+
+void require_fit_lambda(const tadah::core::Context &ctx) {
+  if (is_krr_implementation_2(ctx))
+    tadah::models::require_krr_implementation2_lambda(
+        ctx, ctx.get<std::string>("MODEL", 1));
+  else
+    tadah::models::LinearRegressor::require_lambda_for_oalgo(ctx);
+}
+
 bool is_krr_implementation_2(const tadah::core::Context &ctx) {
   return ctx.contains("MODEL") && ctx.size("MODEL") >= 2 &&
          ctx.get<std::string>("MODEL", 0) == "M_KRR" &&

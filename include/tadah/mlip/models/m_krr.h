@@ -180,15 +180,11 @@ public:
       modelN=1;
       context.add("MODEL", modelN);
     }
+    require_krr_implementation(context);
     if (modelN==1)
       train1(stdb,dc);
-    else if (modelN==2)
-      train2(stdb,dc);
     else
-      throw
-    std::runtime_error(
-      "This KRR implementation does exist: "\
-      + std::to_string(modelN)+"\n");
+      train2(stdb,dc);
   }
   void train1(const StructureDB &stdb, DC_Base &dc) {
     // The weights first: the intercept check below reads them.
@@ -234,63 +230,14 @@ public:
     train(desmat);
   }
 
-  /** Refuses what implementation 2 would ignore, before it fits: it solves
-   *  (K + LAMBDA I) w = t on the mean descriptors of whole structures and
-   *  their energies per atom, so no force, stress or weight of the data
-   *  enters it. FORCE true, STRESS true, EWEIGHT, FWEIGHT or SWEIGHT other
-   *  than 1, a WDBFILE value other than 1, WDBFILE_AUTO other than 0,
-   *  EWEIGHT_TEMP (any value: it reweights the energies), and a structure
-   *  whose eweight is not 1 (its energy weighted, or left out with 0) are
-   *  refused, each naming implementation 1, which fits them. A structure's
-   *  fweight and sweight weight nothing here, as in implementation 1 with
-   *  FORCE and STRESS false: a valid one (finite, >= 0) is accepted, and
-   *  train2() refuses another before this (require_valid_weights), as
-   *  every fit does.
+  /** Refuses what implementation 2 would ignore, before it fits
+   *  (refuse_what_krr_implementation2_ignores of its context: FORCE,
+   *  STRESS, the weights of the configuration, and a structure whose
+   *  eweight is not 1).
    *  @throws std::runtime_error naming the key and its values (or the
    *  structure and its eweight) and MODEL M_KRR <kernel> 1. */
   void refuse_what_train2_ignores(const StructureDB &stdb) const {
-    const std::string k = kernel.get_label();
-    const std::string head =
-        "MODEL M_KRR " + k + " 2 fits the energies per atom of whole "
-        "structures, without forces, stresses or weights: ";
-    const std::string impl1 = "Implementation 1 (MODEL M_KRR " + k + " 1) ";
-    auto given = [&](const std::string &key) {
-      std::string t = key;
-      for (const std::string &v : context(key)) t += " " + v;
-      return t;
-    };
-    auto refuse = [&](const std::string &what, const std::string &fits,
-                      const std::string &instead) {
-      throw std::runtime_error(head + what + " would be ignored. " + impl1 +
-                               fits + "; implementation 2 fits " + instead +
-                               ".");
-    };
-    if (context.template get<bool>("FORCE"))
-      refuse(given("FORCE"), "fits the forces", "with FORCE false");
-    if (context.template get<bool>("STRESS"))
-      refuse(given("STRESS"), "fits the stresses", "with STRESS false");
-    for (const char *key : {"EWEIGHT", "FWEIGHT", "SWEIGHT"})
-      if (context.template get<double>(key) != 1.0)
-        refuse(given(key), "applies it", std::string("with ") + key + " 1");
-    if (context.has_stored("WDBFILE")) {
-      std::vector<double> w(context.size("WDBFILE"));
-      context.get("WDBFILE", w);
-      for (double v : w)
-        if (v != 1.0)
-          refuse(given("WDBFILE"), "applies it", "without WDBFILE");
-    }
-    if (context.contains("WDBFILE_AUTO") &&
-        context.template get<double>("WDBFILE_AUTO") != 0.0)
-      refuse(given("WDBFILE_AUTO"), "applies it", "with WDBFILE_AUTO 0");
-    if (context.has_stored("EWEIGHT_TEMP"))
-      refuse(given("EWEIGHT_TEMP"), "applies it", "without EWEIGHT_TEMP");
-    for (size_t s = 0; s < stdb.size(); ++s)
-      if (stdb(s).eweight != 1.0)
-        refuse("eweight " + tadah::core::format_roundtrip(stdb(s).eweight) +
-                   " of " + structure_in_data(stdb, s, &context),
-               "weights each structure's energy (and leaves out one of "
-               "eweight 0)",
-               "when every structure has eweight 1");
+    refuse_what_krr_implementation2_ignores(context, stdb);
   }
 
   void train2(const StructureDB &stdb, DC_Base &dc) {
