@@ -22,6 +22,7 @@
 #include <tadah/core/number_format.h>
 
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <type_traits>
 #include <iostream>
@@ -429,7 +430,9 @@ tadah::core::Context get_param_file() {
    *  its design matrix and the coefficients it solved for; none for a fit
    *  of implementation 2, which solves a kernel matrix of the mean
    *  descriptors of structures it draws, not the rows of the observations
-   *  of the fit. */
+   *  of the fit; none, saying why, when it cannot be computed (its
+   *  memory, an SVD that does not converge): it never throws a
+   *  std::exception, so the fit is kept. */
   FitBalance fit_balance() const override {
     if (fit_by_train2_)
       return no_fit_balance(
@@ -437,9 +440,14 @@ tadah::core::Context get_param_file() {
           "of the mean descriptors of the structures it draws, not the "
           "observations of a fit");
     if (!fit_rows_) return M_Tadah_Base::fit_balance();
+    // The table is a diagnostic of a fit that is done: whatever stops it
+    // (its memory, an SVD that does not converge) is its none, so the fit
+    // is still written.
     try {
       return desmat.balance(fit_weights_, kernel.intercept_columns(context));
-    } catch (const std::runtime_error &e) {
+    } catch (const std::bad_alloc &) {
+      return no_fit_balance("it could not be computed: not enough memory");
+    } catch (const std::exception &e) {
       return no_fit_balance(std::string("it could not be computed: ") +
                             e.what());
     }

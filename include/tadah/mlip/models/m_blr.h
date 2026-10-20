@@ -19,6 +19,7 @@
 #include <tadah/mlip/weight_covariance.h>
 
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <type_traits>
 #include <iostream>
@@ -265,12 +266,19 @@ public:
   }
 
   /** The balance table of the last fit (fit_balance.h), from the rows of
-   *  its design matrix and the coefficients it solved for. */
+   *  its design matrix and the coefficients it solved for; none, saying
+   *  why, when it cannot be computed (its memory, an SVD that does not
+   *  converge): it never throws a std::exception, so the fit is kept. */
   FitBalance fit_balance() const override {
     if (!fit_rows_) return M_Tadah_Base::fit_balance();
+    // The table is a diagnostic of a fit that is done: whatever stops it
+    // (its memory, an SVD that does not converge) is its none, so the fit
+    // is still written.
     try {
       return desmat.balance(fit_weights_, bf.intercept_columns(context));
-    } catch (const std::runtime_error &e) {
+    } catch (const std::bad_alloc &) {
+      return no_fit_balance("it could not be computed: not enough memory");
+    } catch (const std::exception &e) {
       return no_fit_balance(std::string("it could not be computed: ") +
                             e.what());
     }

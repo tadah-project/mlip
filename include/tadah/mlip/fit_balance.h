@@ -5,38 +5,44 @@
 //
 //     sum_i W_i r_i^2 + lambda |w|^2_pen,   W_i = p_i m_i / sigma_i^2,
 //
-// is shared among its quantities (energies, forces, stresses) and its
-// datasets, and how many of the coefficients each of them determines.
-// One row per quantity the fit observes (ENERGY, FORCE, STRESS true) over
+// over its observations i is shared among its quantities (energies,
+// forces, stresses) and its datasets, and how many of the coefficients
+// each of them determines. After a first line (LAMBDA, ENORM SQRT, the
+// coefficients and the rank) and the error scales of the quantities the
+// fit observes (ENERGY, FORCE, STRESS true), one row per quantity over
 // every dataset, then, with several datasets, one per dataset, and the
 // prior's row:
 //
 //   n        the observations (count_observations(): rows of priority > 0
-//            that are not zero in every column; six per stress tensor);
-//   sigma    the error scale as its key gives it (ESIGMA; FSIGMA, SSIGMA
-//            a b);
+//            that are not zero in every column; at most six per stress
+//            tensor, at most three per atom);
 //   RMSE     the root mean square residual in the unit of the quantity's
-//            metric: the energy per atom in meV/atom, the force components
-//            in eV/Å, the nine entries of each stress tensor in GPa (an
-//            off-diagonal entry counted twice, m_i = 2);
+//            metric over every row of priority > 0, those zero by
+//            symmetry included: the energy per atom in meV/atom, the force
+//            components in eV/Å, the nine entries of each stress tensor in
+//            GPa (an off-diagonal entry counted twice, m_i = 2), the
+//            entries the metrics of tadah predict -A run over;
 //   r/sigma  the root mean square of residual / error scale over the same
 //            entries (sigma_i of each row: N^q ESIGMA for the energy of a
-//            structure of N atoms, the structure's own force or stress
-//            scale);
-//   share    sum_i W_i r_i^2 of the rows over the minimised sum; the prior's
-//            row has lambda |w|^2_pen over it, so the column sums to 1;
+//            structure of N atoms, q 1 or 1/2 under ENORM SQRT, the
+//            structure's own force or stress scale);
+//   share    sum_i W_i r_i^2 of the row's observations over the minimised
+//            sum; the prior's row has lambda |w|^2_pen over it, so the
+//            rows of every dataset and the prior's sum to 1;
 //   gamma    the effective parameters, tr(H^+ H_q) over the directions the
 //            solve keeps (effective_parameters()); the prior's row has the
-//            rest of the rank, lambda tr(H^+ I_pen), so the column sums to
-//            the rank, sum_kept s_i^2 / (s_i^2 + lambda) without the prior
-//            for a uniform ridge.
+//            rest of the rank, lambda tr(H^+ I_pen), so the rows of every
+//            dataset and the prior's sum to the rank, sum_kept s_i^2 /
+//            (s_i^2 + lambda) without the prior for a uniform ridge.
 //
-// Computing it is one O(n p^2) pass over the n rows and p coefficients of
-// the fit (an SVD of its weighted rows), once per potential written: tadah
-// train after its fit, tadah hpo for each new best potential it publishes.
-// The table is printed (print_fit_balance) and kept in the potential's
-// training record (add_fit_balance), from which it is read back
-// (read_fit_balance).
+// The rows of a dataset sum to its row of every dataset (n, share, gamma).
+// Computing the table is one O(n p^2) pass over the n rows and p
+// coefficients of the fit, which reads the fit's design matrix in blocks:
+// its memory is of the order of p^2 + 1024 p, not a copy of the rows. It is
+// computed once per potential written: tadah train after its fit, tadah
+// hpo for each evaluation that may become its new best. The table is
+// printed (print_fit_balance) and kept in the potential's training record
+// (add_fit_balance), from which it is read back (read_fit_balance).
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
@@ -70,16 +76,19 @@ struct FitBalanceRow {
 /** The balance table of a fit, or why it has none. */
 struct FitBalance {
   /** Why the fit has no table ("" when it has one): a model without a fit
-   *  of its own, M_KRR implementation 2, ... */
+   *  of its own, M_KRR implementation 2, a FIXINDEX that pins every
+   *  coefficient, ... */
   std::string none;
   double lambda = 0.0;       ///< LAMBDA as the configuration gives it
   double lambda_used = 0.0;  ///< the solve's (LAMBDA -1: ALPHA/BETA)
+  bool enorm_sqrt = false;   ///< ENORM SQRT: energies per sqrt(atom)
   std::size_t coefficients = 0;  ///< the coefficients the solve fitted
   std::size_t pinned = 0;        ///< those FIXINDEX pins (not fitted)
   std::size_t retained = 0;      ///< the rank: the directions kept
   std::size_t datasets = 1;      ///< the datasets of the fit
-  /** The error scale of each quantity as its key gives it: "1", "0.1 0",
-   *  "0.5 0" (ESIGMA, FSIGMA, SSIGMA). */
+  /** The error scale of each quantity the fit observes as the table
+   *  prints it, to 4 significant digits: "1", "0.1 0", "0.5 0" (ESIGMA;
+   *  FSIGMA, SSIGMA a b); "" for a quantity without a row. */
   std::array<std::string, 3> sigma;
   /** Per quantity observed (energy, force, stress, in that order): its row
    *  of every dataset, then, with several datasets, one per dataset. */
@@ -95,6 +104,15 @@ struct FitBalance {
 
 /** A table of none: "Fit balance: none (<why>)". */
 FitBalance no_fit_balance(const std::string &why);
+
+/** The table of a fit whose FIXINDEX pins every coefficient, which solves
+ *  for none: none ("FIXINDEX pins every coefficient: none was fitted"),
+ *  that of tadah train and of tadah hpo, which skips such a fit. */
+FitBalance all_pinned_fit_balance();
+
+/** The widest line of a table: 78 characters, 80 in a training record
+ *  after its "# ". */
+constexpr std::size_t kFitBalanceWidth = 78;
 
 /** The scales of one row of a design matrix, besides its factor. */
 struct FitRowScale {
@@ -122,7 +140,10 @@ struct FitSolve {
                      const std::vector<std::size_t> &intercepts);
 };
 
-/** The balance table of a fit (see the file comment).
+/** The balance table of a fit (see the file comment); none, saying so,
+ *  when FIXINDEX pins every column (all_pinned_fit_balance()). It reads
+ *  @p Phi where it is, in blocks of rows (effective_parameters() of
+ *  WeightedRows), and allocates no copy of it.
  *  @param Phi the rows of the design matrix without their factors.
  *  @param data_rows the first rows of @p Phi, those of the structures.
  *  @param T their reference values (unweighted).
@@ -137,7 +158,8 @@ struct FitSolve {
  *  @param c the configuration of the fit: ENERGY, FORCE, STRESS (the
  *         quantities with a row) and the error scale keys (sigma).
  *  @throws std::logic_error for arrays of other sizes.
- *  @throws std::runtime_error when the SVD does not converge. */
+ *  @throws std::runtime_error when the QR factorisation or the SVD fails.
+ *  @throws std::bad_alloc without the memory of its blocks. */
 FitBalance fit_balance(const core::phi_type &Phi, std::size_t data_rows,
                        const core::t_type &T, const core::t_type &factors,
                        const core::t_type &labels,
@@ -147,17 +169,25 @@ FitBalance fit_balance(const core::phi_type &Phi, std::size_t data_rows,
                        const core::t_type &w, const FitSolve &solve,
                        const core::Context &c);
 
-/** The lines of the table as printed and recorded: "Fit balance: LAMBDA
- *  <LAMBDA>[ (evidence approximation: <lambda>)]; <p> coefficients[
- *  (FIXINDEX pins <k> more)], rank <r>", the column header, one line per
- *  row, then the prior's; or the one line "Fit balance: none (<why>)".
- *  The columns, two blanks apart after an indent of two, are as wide as
- *  their widest entry; a number has 4 significant digits from 0.001 to
- *  9999 and 3 in exponent form otherwise ("-" without an observation). */
+/** The lines of the table as printed and recorded:
+ *   - "Fit balance: LAMBDA <LAMBDA>[ (evidence approximation: <lambda>)][;
+ *     ENORM SQRT]; <p> coefficients[ (FIXINDEX pins <k> more)], rank <r>";
+ *   - "  error scales: ESIGMA <a> meV/atom (meV per sqrt(atom) under ENORM
+ *     SQRT); FSIGMA <a> <b> eV/Å; SSIGMA <a> <b> GPa", the quantities with
+ *     a row, each value to 4 significant digits;
+ *   - the column header, one line per row, then the prior's;
+ * or "Fit balance: none (<why>)". Those three first lines are wrapped to
+ * kFitBalanceWidth after a "; " (within a clause longer than a line, at a
+ * blank), each line after the first of one starting with four blanks. The
+ * columns, two blanks apart after an indent of two, are as wide as their
+ * widest entry, numbers to the right; a number has 4 significant digits,
+ * its trailing zeros kept, from 0.001 to 9999 and 3 in exponent form
+ * otherwise ("0" for 0, "-" without an observation), so each line is at
+ * most kFitBalanceWidth wide for fewer than 10^7 observations. */
 std::vector<std::string> fit_balance_lines(const FitBalance &b);
 
-/** One line per column, "  <column>  <what it is>", printed after the
- *  first table of a run (print_fit_balance). */
+/** One line per column, "  <column>  <what it is>", and one on what sums
+ *  to what, printed after the first table of a run (print_fit_balance). */
 std::vector<std::string> fit_balance_legend();
 
 /** Appends fit_balance_lines(@p b) to @p record: the table of the fit that
@@ -165,8 +195,14 @@ std::vector<std::string> fit_balance_legend();
 void add_fit_balance(TrainingRecord &record, const FitBalance &b);
 
 /** The lines of the table in @p record, from its "Fit balance:" line to the
- *  prior's row (or that line alone for none); empty without one. */
+ *  prior's row (for none, that line and the lines that continue it); empty
+ *  without one. */
 std::vector<std::string> fit_balance_record_lines(const TrainingRecord &record);
+
+/** @p record without the lines of its table (fit_balance_record_lines()):
+ *  the record of a potential whose coefficients are no longer those of the
+ *  fit (tadah refit --edit). */
+TrainingRecord without_fit_balance(const TrainingRecord &record);
 
 /** The table of @p record (fit_balance_record_lines() read back, its
  *  numbers as printed); std::nullopt when it has none.

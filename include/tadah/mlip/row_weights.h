@@ -229,6 +229,33 @@ EffectiveParameters effective_parameters(
     double lambda, const std::vector<std::size_t> &unpenalised, int oalgo,
     double rcond);
 
+/** Some rows of a design matrix with their factors, read where they are:
+ *  row k is @c factors(rows[k]) times row @c rows[k] of @c Phi on the
+ *  columns @c cols, of type @c labels(rows[k]) (0, 1, 2) and dataset
+ *  @c row_dataset[rows[k]]. */
+struct WeightedRows {
+  const core::phi_type &Phi;    ///< the rows without their factors
+  const core::t_type &factors;  ///< the factor of each row of Phi
+  const core::t_type &labels;   ///< the type of each row of Phi
+  const std::vector<std::size_t> &row_dataset;  ///< its dataset
+  std::vector<std::size_t> rows;  ///< the rows taken, ascending
+  std::vector<std::size_t> cols;  ///< the columns taken
+};
+
+/** effective_parameters() of the rows @p w, the same directions and the
+ *  same numbers, without a copy of them: the rows are read in blocks of
+ *  at most max(p, 1024) rows, whose QR factorisations stream into the p x p
+ *  triangle R of the rows (and of the ridge rows), whose SVD gives the
+ *  directions; a second pass of blocks gives each row's part of them. Its
+ *  memory is of the order of p^2 + 1024 p for p columns, not of the n
+ *  rows. @p unpenalised indexes @c w.cols.
+ *  @throws std::logic_error as effective_parameters(), and for a row,
+ *  column, type or dataset out of range.
+ *  @throws std::runtime_error when the QR factorisation or the SVD fails. */
+EffectiveParameters effective_parameters(
+    const WeightedRows &w, std::size_t n_datasets, double lambda,
+    const std::vector<std::size_t> &unpenalised, int oalgo, double rcond);
+
 }  // namespace mlip
 }  // namespace tadah
 

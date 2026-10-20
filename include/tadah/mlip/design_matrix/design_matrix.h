@@ -444,12 +444,14 @@ public:
    *  design matrix was built with (FitSolve::of: LAMBDA, or the ALPHA/BETA
    *  of LAMBDA -1 that the fit wrote into it, OALGO, FIXINDEX), whose ridge
    *  leaves @p intercepts out (Function_Base::intercept_columns()). One
-   *  O(n p^2) pass over the n rows and p columns.
+   *  O(n p^2) pass over the n rows and p columns, which reads the rows
+   *  where they are, in blocks: no copy of them.
    *  @throws std::logic_error when the last build kept no rows without the
    *  factors (a fit builds with wcopy true) or was not a fit's
    *  (apply_weights false), when another design matrix has been built in
    *  the workspace since, and for @p w of another size than the columns.
-   *  @throws std::runtime_error when the SVD does not converge. */
+   *  @throws std::runtime_error when the QR factorisation or the SVD
+   *  fails, std::bad_alloc without the memory of its blocks. */
   FitBalance balance(const tadah::core::t_type &w,
                      const std::vector<size_t> &intercepts) const {
     if (!ws || !w_copy_ || !apply_weights)
