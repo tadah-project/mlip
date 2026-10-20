@@ -60,9 +60,11 @@ std::string retired_task_option_text(const std::string &task,
                                      const core::BlueprintKey &option) {
   std::string command = "tadah " + core::to_lower(task);
   std::replace(command.begin(), command.end(), '.', ' ');
-  const std::string name = option.cli_long_flag.empty()
-                               ? core::to_upper(local_name(option.keyName))
-                               : option.cli_long_flag;
+  std::string name = option.cli_long_flag.empty()
+                         ? core::to_upper(local_name(option.keyName))
+                         : option.cli_long_flag;
+  if (!option.cli_long_flag.empty() && !option.cli_short_flag.empty())
+    name += " (" + option.cli_short_flag + ")";
   return name + " of " + command + " is retired: " +
          one_line(option.retired.reason) + " Replaced by: " +
          one_line(option.retired.replacement) + ". " +
