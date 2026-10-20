@@ -331,7 +331,6 @@ ObservationCount count_observations(const core::phi_type &Phi,
                              std::to_string(t));
     ++n.total;
     ++n.by_type[t];
-    n.fitted[t] = true;
   }
   return n;
 }

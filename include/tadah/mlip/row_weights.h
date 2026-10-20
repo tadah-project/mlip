@@ -167,8 +167,6 @@ std::string fit_scales_info(const core::Context &c);
 struct ObservationCount {
   std::size_t total = 0;
   std::array<std::size_t, 3> by_type{{0, 0, 0}};  ///< E, F, S
-  /** Whether each type has an observation (the types a fit fitted). */
-  std::array<bool, 3> fitted{{false, false, false}};
 };
 
 /** The observations among the first @p data_rows rows of @p Phi, whose
