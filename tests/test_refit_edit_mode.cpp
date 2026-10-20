@@ -1325,12 +1325,14 @@ TEST_CASE_METHOD(PTFixture,
 }
 
 /* Pins: refit --edit of a potential that has DBFILE, UNCERTAINTY and
- * VERBOSE key lines and no training record (as tadah 1.5.x and 1.6.0
- * development builds wrote them: the knot potential with "DBFILE old.db",
- * "UNCERTAINTY true" and "VERBOSE 0" appended, old.tadah) writes the edit
- * without those key lines and with the training record "edited by tadah
- * refit --edit from old.tadah", "DBFILE old.db", "UNCERTAINTY true",
- * "VERBOSE 0": the input's keys are kept in the record, not dropped. The
+ * VERBOSE key lines and no training record (as tadah 1.5.x wrote them: the
+ * knot potential with "DBFILE old.db", "UNCERTAINTY true" and "VERBOSE 0"
+ * appended, old.tadah) writes the edit without the DBFILE and VERBOSE key
+ * lines and with the training record "edited by tadah refit --edit from
+ * old.tadah", "DBFILE old.db", "VERBOSE 0": the input's keys are kept in
+ * the record, not dropped; its UNCERTAINTY line, a retired key, is kept as
+ * it is after the key lines, as an edit keeps every retired line (a fit
+ * refuses the edited potential as it refuses the input). The
  * same for the keys that prepared the training data, which such a
  * potential has as key lines (old_data.tadah: "ESHIFT_ATOM true", "EFILTER
  * -9 -1", "WDBFILE 1 0.5" and "ZERO_COM_FORCE false" appended, as tadah
@@ -1339,15 +1341,17 @@ TEST_CASE_METHOD(PTFixture,
  * "ESHIFT_ATOM true", "ZERO_COM_FORCE false", "WDBFILE 1 0.5" (the order of
  * the record), with no key line of them.
  * Before the fix: the key lines were dropped (a pin of that part) and the
- * edit had no record.
+ * edit had no record. Before UNCERTAINTY was retired: its line went into
+ * the record, after DBFILE, and the edit had no UNCERTAINTY line.
  * Before the dataset keys moved into the record:
  * old_data.tadah's edit kept the four as key lines and its record had the
  * "edited by" line alone; the opening line of both records read
  * "(not read by tadah)", so record_lines found none (the record checks fail
  * for old_out.tadah too). */
 TEST_CASE_METHOD(PTFixture,
-                 "refit --edit of an older potential keeps its DBFILE, "
-                 "UNCERTAINTY and VERBOSE in the edit's training record",
+                 "refit --edit of an older potential keeps its DBFILE and "
+                 "VERBOSE in the edit's training record and its UNCERTAINTY "
+                 "line",
                  "[refit][edit][potential_content][training_record]") {
   ScopedTempDir tmp;
   const auto level = tadah::core::Logger::instance().getLogLevel();
@@ -1360,12 +1364,13 @@ TEST_CASE_METHOD(PTFixture,
   INFO("old_out.tadah:\n" << slurp_file("old_out.tadah"));
   CHECK(record_lines("old_out.tadah") ==
         std::vector<std::string>{"edited by tadah refit --edit from old.tadah",
-                                 "DBFILE old.db", "UNCERTAINTY true",
-                                 "VERBOSE 0"});
-  for (const char *key : {"DBFILE", "UNCERTAINTY", "VERBOSE"}) {
+                                 "DBFILE old.db", "VERBOSE 0"});
+  for (const char *key : {"DBFILE", "VERBOSE"}) {
     INFO("key " << key);
     CHECK(key_line("old_out.tadah", key).empty());
   }
+  CHECK(key_line("old_out.tadah", "UNCERTAINTY") ==
+        std::vector<std::string>{"true"});
   std::ofstream("old_data.tadah") << slurp_file("plain.tadah")
                                   << "ESHIFT_ATOM true\nEFILTER -9 -1\n"
                                      "WDBFILE 1 0.5\nZERO_COM_FORCE false\n";

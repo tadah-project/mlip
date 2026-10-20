@@ -15,6 +15,7 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
+#include <tadah/core/key_notice.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/analysis_check_bounds_engine.h>
@@ -1283,99 +1284,50 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
 
 }  // namespace
 
-/* Pins: a retrain reads no UNCERTAINTY line of a potential, and the run's
- * own UNCERTAINTY (--uncertainty, a line of the task file or of a
- * configuration file that includes the potential) asks for weights.tadah
- * as in any run. db.tadah is one dataset of three structures; old.tadah is
- * the Ta pair potential (2 WEIGHTS) with OALGO 1 and "UNCERTAINTY true",
- * old3.tadah the same with OALGO 3 and no UNCERTAINTY line (TaskFactory,
- * then TrainEngine::validate and run, as tadah runs a task):
+/* Pins: a retrain refuses an UNCERTAINTY line (a retired key: Tadah! 1.5.0
+ * wrote "UNCERTAINTY true" into every potential trained with
+ * --uncertainty), wherever it is, naming the line and its conversion (the
+ * deletion of the line), and writes no potential and no weights.tadah; with
+ * the line deleted the retrain runs. db.tadah is one dataset of three
+ * structures; old.tadah is the Ta pair potential (2 WEIGHTS) with OALGO 1
+ * and "UNCERTAINTY true" appended (TaskFactory, then TrainEngine::validate
+ * and run, as tadah runs a task):
  *   - `tadah --task run.task`, its TASK train section "CONFIG old.tadah",
- *     "DBFILE db.tadah", "OUTFILE pot2.tadah": trains (no OALGO 3
- *     refusal), writes no weights.tadah, pot2.tadah's record is "DBFILE
- *     db.tadah", "OUTFILE pot2.tadah", and the WARNING is "tadah train:
- *     old.tadah, which the task file run.task includes with CONFIG, is a
- *     potential (it has WEIGHTS): its UNCERTAINTY true asked the run that
- *     wrote it for weights.tadah, not this run, and is ignored (tadah keeps
- *     such keys in a potential's training record, not as key lines). Write
- *     UNCERTAINTY in the task file run.task to apply it to this run (the
- *     Training page of the documentation, Retraining from a potential).";
- *   - `tadah train -c outer.train`, outer.train being "CONFIG old3.tadah",
- *     "UNCERTAINTY true", "DBFILE db.tadah", "OUTFILE pot3.tadah": writes
- *     weights.tadah, pot3.tadah's record is "DBFILE db.tadah",
- *     "UNCERTAINTY true", "OUTFILE pot3.tadah", and no WARNING calls a file
- *     a potential;
- *   - `tadah train -c retrain.train -o pot4.tadah`, retrain.train being
- *     old3.tadah with "UNCERTAINTY true" and "DBFILE db.tadah": no
- *     weights.tadah, the record "DBFILE db.tadah", "OUTFILE pot4.tadah",
- *     the WARNING "tadah train: the configuration file retrain.train is a
- *     potential (it has WEIGHTS): its UNCERTAINTY true asked the run that
- *     wrote it for weights.tadah, not this run, and is ignored (...). Give
- *     --uncertainty on the command line, or an UNCERTAINTY line in a
- *     configuration file that includes the potential with CONFIG, to apply
- *     it to this run (...).", and nothing printed names a development
- *     stage ("development"); with --uncertainty (pot5.tadah): weights.tadah,
- *     the record "DBFILE db.tadah", "UNCERTAINTY true", "OUTFILE
- *     pot5.tadah", no WARNING (a pin: --uncertainty was a request before
- *     the fix too);
- *   - `tadah train -c both.train -o pot7.tadah`, both.train being the
- *     potential (OALGO 1) with "EFILTER -9 9", "UNCERTAINTY true" and
- *     "DBFILE db.tadah": no weights.tadah, the record "DBFILE db.tadah",
- *     "OUTFILE pot7.tadah", and the one WARNING "tadah train: the
- *     configuration file both.train is a potential (it has WEIGHTS): its
- *     EFILTER -9 9 prepared the training data of the fit that wrote it, not
- *     of this run, and is ignored (...). Its UNCERTAINTY true asked the run
- *     that wrote it for weights.tadah, not this run, and is ignored too.
- *     Give --efilter or --uncertainty on the command line, or an EFILTER or
- *     UNCERTAINTY line in a configuration file that includes the potential
- *     with CONFIG, to apply one to this run (...).";
- *   - a Task("train") a program built (no KeyProvenance) from the
- *     potential (OALGO 1) with "UNCERTAINTY true", "DBFILE db.tadah" and
- *     "OUTFILE pot6.tadah": TrainEngine::validate and run do not throw, no
- *     weights.tadah, the record "DBFILE db.tadah", "OUTFILE pot6.tadah",
- *     and the WARNING "tadah train: the configuration is a potential (it
- *     has WEIGHTS): its UNCERTAINTY true asked the run that wrote it for
- *     weights.tadah, not this run, and is ignored (...). Give --uncertainty
- *     on the command line to apply it to this run (...)." printed once
- *     (validate applies the rule to a copy of the configuration and prints
- *     nothing).
- * Each -c run of a file with WEIGHTS gives its output file with -o (the
- * potN.tadah named): a potential's OUTFILE line is not read (before the fix
- * that reads no run setting of a potential the copies had an OUTFILE line
- * instead).
- * Before the fix: UNCERTAINTY was a request unless it came from the
- * configuration file of a context with WEIGHTS: the task file's section was
- * refused by validate ("tadah train --uncertainty (UNCERTAINTY true: task
- * file run.task) needs OALGO 3 ..."), so the REQUIRE stops it; outer.train's
- * own line was ignored with the WARNING "tadah train: the configuration
- * file outer.train is a potential (it has WEIGHTS), and its UNCERTAINTY
- * true is the record of the run that trained it ...", and no weights.tadah
- * was written; retrain.train's WARNING said "(tadah 1.5.x and 1.6.0
- * development builds wrote UNCERTAINTY into every potential)", and its
- * record listed "UNCERTAINTY true"; both.train printed that WARNING apart
- * from the notice of its EFILTER line ("... and is ignored (tadah keeps
- * such keys in a potential's training record, not as key lines). Give
- * --efilter on the command line, or an EFILTER line ..."), so the exact
- * WARNING is not found, and its record listed "UNCERTAINTY true" too; and
- * the Task without a KeyProvenance was refused by
- * validate ("tadah train --uncertainty needs OALGO 3 ..."), since without
- * a provenance UNCERTAINTY true was a request: the REQUIRE stops it.
- * (These two sections were added after the fix, and were run on the code
- * before it.) */
-TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
-          "UNCERTAINTY applies",
+ *     "DBFILE db.tadah", "OUTFILE pot2.tadah": refused, "UNCERTAINTY true
+ *     (line N of old.tadah)";
+ *   - `tadah train -c outer.train`, outer.train being "CONFIG old3.tadah"
+ *     (the potential with OALGO 3, without the line), "UNCERTAINTY true",
+ *     "DBFILE db.tadah": refused, "UNCERTAINTY true (line 2 of
+ *     outer.train)";
+ *   - `tadah train -c retrain.train`, retrain.train being old.tadah with
+ *     "DBFILE db.tadah": refused naming retrain.train; with --uncertainty
+ *     the option is refused first ("--uncertainty: UNCERTAINTY is a retired
+ *     key"); retrain.train without the UNCERTAINTY line (the conversion)
+ *     trains, no WARNING names UNCERTAINTY and the record of pot4.tadah is
+ *     "DBFILE db.tadah", "OUTFILE pot4.tadah".
+ * Before the fix: the potential's line was not read (a WARNING said that
+ * it asked the run that wrote it for weights.tadah) and the retrains ran;
+ * the run's own line and --uncertainty were requests for weights.tadah,
+ * which an OALGO 3 fit wrote. */
+TEST_CASE("A retrain refuses an UNCERTAINTY line, of a potential or of the "
+          "run",
           "[train][potential_content][retrain][uncertainty]") {
   tadah::core::PeriodicTable::initialize();
   ScratchCwd cwd;
   LoggerAtWarning at_warning;
+  tadah::core::IgnoredKeyNoticeCapture quiet;
   write_ta_dataset(cwd.dir / "db.tadah", -1.0);
-  {
-    Context old = potential_context("M_BLR BF_Linear");
-    old.add("UNCERTAINTY", "true");
-    write_pot_file("old.tadah", old);
-  }
+  write_pot_file("plain.tadah", potential_context("M_BLR BF_Linear"));
+  const std::string plain = slurp("plain.tadah");
+  std::ofstream("old.tadah") << plain << "UNCERTAINTY true\n";
   write_pot_file("old3.tadah", potential_with_oalgo("M_BLR BF_Linear", 3));
   std::string printed;
+  auto refused = [](const std::string &what, const std::string &where) {
+    return what.find("UNCERTAINTY true (line ") != std::string::npos &&
+           what.find(where) != std::string::npos &&
+           what.find("Deleting the option, or the UNCERTAINTY line, "
+                     "converts it") != std::string::npos;
+  };
   SECTION("a task file that includes the potential") {
     std::ofstream("run.task") << "TASK train\n"
                                  "  CONFIG old.tadah\n"
@@ -1384,20 +1336,9 @@ TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
     const CommandInput input("", {{"task", {"run.task"}}});
     const std::string what = validated_train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
-    REQUIRE(what.empty());
+    CHECK(refused(what, " of old.tadah)"));
+    CHECK_FALSE(fs::exists("pot2.tadah"));
     CHECK_FALSE(fs::exists("weights.tadah"));
-    INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
-    CHECK(read_record("pot2.tadah").lines ==
-          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot2.tadah"});
-    CHECK(printed.find(
-              "WARNING: tadah train: old.tadah, which the task file run.task "
-              "includes with CONFIG, is a potential (it has WEIGHTS): its "
-              "UNCERTAINTY true asked the run that wrote it for "
-              "weights.tadah, not this run, and is ignored (tadah keeps such "
-              "keys in a potential's training record, not as key lines). "
-              "Write UNCERTAINTY in the task file run.task to apply it to "
-              "this run (the Training page of the documentation, Retraining "
-              "from a potential).") != std::string::npos);
   }
   SECTION("the run's own line in a file that includes the potential") {
     std::ofstream("outer.train") << "CONFIG old3.tadah\n"
@@ -1407,117 +1348,41 @@ TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
     const CommandInput input("TRAIN", {{"config", {"outer.train"}}});
     const std::string what = validated_train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
-    REQUIRE(what.empty());
-    CHECK(fs::exists("weights.tadah"));
-    CHECK(printed.find("is a potential") == std::string::npos);
-    INFO("pot3.tadah:\n" << slurp("pot3.tadah"));
-    CHECK(read_record("pot3.tadah").lines ==
-          std::vector<std::string>{"DBFILE db.tadah", "UNCERTAINTY true",
-                                   "OUTFILE pot3.tadah"});
+    CHECK(refused(what, "(line 2 of outer.train)"));
+    CHECK_FALSE(fs::exists("pot3.tadah"));
+    CHECK_FALSE(fs::exists("weights.tadah"));
   }
   SECTION("a copy of the potential with the line") {
-    Context copy = potential_with_oalgo("M_BLR BF_Linear", 3);
-    copy.add("UNCERTAINTY", "true");
-    copy.add("DBFILE", "db.tadah");
-    write_pot_file("retrain.train", copy);
+    std::ofstream("retrain.train")
+        << plain << "UNCERTAINTY true\nDBFILE db.tadah\n";
     {
       const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
                                          {"outfile", {"pot4.tadah"}}});
       const std::string what = validated_train_input_error(input, printed);
       INFO("thrown: " << what << "\nprinted:\n" << printed);
-      REQUIRE(what.empty());
-      CHECK_FALSE(fs::exists("weights.tadah"));
-      INFO("pot4.tadah:\n" << slurp("pot4.tadah"));
-      CHECK(read_record("pot4.tadah").lines ==
-            std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot4.tadah"});
-      CHECK(printed.find(
-                "WARNING: tadah train: the configuration file retrain.train "
-                "is a potential (it has WEIGHTS): its UNCERTAINTY true asked "
-                "the run that wrote it for weights.tadah, not this run, and "
-                "is ignored (tadah keeps such keys in a potential's training "
-                "record, not as key lines). Give --uncertainty on the command "
-                "line, or an UNCERTAINTY line in a configuration file that "
-                "includes the potential with CONFIG, to apply it to this run "
-                "(the Training page of the documentation, Retraining from a "
-                "potential).") != std::string::npos);
-      CHECK(printed.find("development") == std::string::npos);
+      CHECK(refused(what, " of retrain.train)"));
+      CHECK_FALSE(fs::exists("pot4.tadah"));
     }
-    const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
-                                       {"uncertainty", {"true"}},
-                                       {"outfile", {"pot5.tadah"}}});
-    const std::string what = validated_train_input_error(input, printed);
-    INFO("--uncertainty: thrown: " << what << "\nprinted:\n" << printed);
-    REQUIRE(what.empty());
-    CHECK(fs::exists("weights.tadah"));
-    CHECK(printed.find("is a potential") == std::string::npos);
-    INFO("pot5.tadah:\n" << slurp("pot5.tadah"));
-    CHECK(read_record("pot5.tadah").lines ==
-          std::vector<std::string>{"DBFILE db.tadah", "UNCERTAINTY true",
-                                   "OUTFILE pot5.tadah"});
-  }
-  SECTION("a copy of the potential with a dataset key and the line") {
-    Context copy = potential_context("M_BLR BF_Linear");
-    copy.add("EFILTER", "-9 9");
-    copy.add("UNCERTAINTY", "true");
-    copy.add("DBFILE", "db.tadah");
-    write_pot_file("both.train", copy);
-    const CommandInput input("TRAIN", {{"config", {"both.train"}},
-                                       {"outfile", {"pot7.tadah"}}});
-    const std::string what = validated_train_input_error(input, printed);
-    INFO("thrown: " << what << "\nprinted:\n" << printed);
-    REQUIRE(what.empty());
-    CHECK_FALSE(fs::exists("weights.tadah"));
-    INFO("pot7.tadah:\n" << slurp("pot7.tadah"));
-    CHECK(read_record("pot7.tadah").lines ==
-          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot7.tadah"});
-    CHECK(printed.find(
-              "WARNING: tadah train: the configuration file both.train is a "
-              "potential (it has WEIGHTS): its EFILTER -9 9 prepared the "
-              "training data of the fit that wrote it, not of this run, and "
-              "is ignored (tadah keeps such keys in a potential's training "
-              "record, not as key lines). Its UNCERTAINTY true asked the run "
-              "that wrote it for weights.tadah, not this run, and is ignored "
-              "too. Give --efilter or --uncertainty on the command line, or "
-              "an EFILTER or UNCERTAINTY line in a configuration file that "
-              "includes the potential with CONFIG, to apply one to this run "
-              "(the Training page of the documentation, Retraining from a "
-              "potential).") != std::string::npos);
-  }
-  SECTION("no KeyProvenance") {
-    Context c = potential_context("M_BLR BF_Linear");
-    c.add("UNCERTAINTY", "true");
-    c.add("DBFILE", "db.tadah");
-    c.add("OUTFILE", "pot6.tadah");
-    Task task("train", c);
-    std::ostringstream captured;
-    std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
-    std::string what;
-    try {
-      TrainEngine().validate(task);
-      TrainEngine().run(task);
-    } catch (const std::exception &e) {
-      what = e.what();
+    {
+      const CommandInput input("TRAIN", {{"config", {"retrain.train"}},
+                                         {"uncertainty", {"true"}},
+                                         {"outfile", {"pot5.tadah"}}});
+      const std::string what = validated_train_input_error(input, printed);
+      INFO("--uncertainty: thrown: " << what << "\nprinted:\n" << printed);
+      CHECK(what.find("--uncertainty: UNCERTAINTY is a retired key") !=
+            std::string::npos);
+      CHECK_FALSE(fs::exists("pot5.tadah"));
     }
-    std::cout.rdbuf(old_buf);
-    printed = captured.str();
-    INFO("thrown: " << what << "\nprinted:\n" << printed);
+    std::ofstream("converted.train") << plain << "DBFILE db.tadah\n";
+    const CommandInput input("TRAIN", {{"config", {"converted.train"}},
+                                       {"outfile", {"pot4.tadah"}}});
+    const std::string what = validated_train_input_error(input, printed);
+    INFO("converted: thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
+    CHECK(printed.find("UNCERTAINTY") == std::string::npos);
     CHECK_FALSE(fs::exists("weights.tadah"));
-    INFO("pot6.tadah:\n" << slurp("pot6.tadah"));
-    CHECK(read_record("pot6.tadah").lines ==
-          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot6.tadah"});
-    const std::string warning =
-        "WARNING: tadah train: the configuration is a potential (it has "
-        "WEIGHTS): its UNCERTAINTY true asked the run that wrote it for "
-        "weights.tadah, not this run, and is ignored (tadah keeps such keys "
-        "in a potential's training record, not as key lines). Give "
-        "--uncertainty on the command line to apply it to this run (the "
-        "Training page of the documentation, Retraining from a potential).";
-    const std::size_t at = printed.find(warning);
-    CHECK(at != std::string::npos);
-    // Once: validate applies the rule to a copy and prints nothing.
-    if (at != std::string::npos)
-      CHECK(printed.find(warning, at + 1) == std::string::npos);
+    CHECK(read_record("pot4.tadah").lines ==
+          std::vector<std::string>{"DBFILE db.tadah", "OUTFILE pot4.tadah"});
   }
 }
 
