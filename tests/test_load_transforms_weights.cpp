@@ -10,11 +10,15 @@
 //    the Boltzmann weights (EWEIGHT_TEMP, its minimum energy) and the
 //    reference state of the log leave it out. A structure with fweight 0
 //    has no forces of its own: the force filter (FFILTER) leaves it out.
+//  - A species that only structures with eweight 0 contain has no energy
+//    to fit: ESHIFT_DBATOM fits the species the energies determine and
+//    gives that one 0, with a WARNING naming it.
 //  - The values a transform cannot apply are refused: a negative WDBFILE
 //    value (naming the dataset), WDBFILE_AUTO outside [0, 1] and
 //    EWEIGHT_TEMP <= 0. (WDBFILE_AUTO below 0 and EWEIGHT_TEMP <= 0 were
 //    ignored, although the documentation says they are rejected; a
-//    negative WDBFILE was applied.)
+//    negative WDBFILE was applied.) A WDBFILE with more values than
+//    datasets is refused for its size, before its signs are read.
 
 #include "catch2/catch.hpp"
 #include <tadah/core/context.h>
@@ -24,8 +28,12 @@
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 
+#include <tadah/core/logger.h>
+
 #include <cmath>
+#include <iostream>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -66,6 +74,27 @@ std::string transform_refusal(StructureDB stdb, const Context &c) {
     return e.what();
   }
   return "no exception";
+}
+
+/* What @p f writes to std::cout (where the Logger prints) at WARNING
+ * level; the stream and the level are restored afterwards. */
+template <class F>
+std::string warnings_of(F f) {
+  Logger &log = Logger::instance();
+  const LogLevel old_level = log.getLogLevel();
+  log.setLogLevel(LogLevel::WARNING);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  try {
+    f();
+  } catch (...) {
+    std::cout.rdbuf(old_buf);
+    log.setLogLevel(old_level);
+    throw;
+  }
+  std::cout.rdbuf(old_buf);
+  log.setLogLevel(old_level);
+  return captured.str();
 }
 
 StructureDB two_datasets() {
@@ -120,6 +149,44 @@ TEST_CASE("ESHIFT_DBATOM leaves out structures without an energy",
   auto shift = derive_eshift_by_lsq_fit(stdb);
   CHECK(shift[Z(kTi)] == Approx(-3.0).epsilon(1e-10));
   CHECK(shift[Z(kNb)] == Approx(-7.0).epsilon(1e-10));
+}
+
+/* Pins: a species that only a structure of eweight 0 contains (Nb2, its
+ * placeholder energy 0) has no energy to fit: ESHIFT_DBATOM fits Ti to the
+ * structures with an energy, Ti (-3 eV) and Ti2 (-6 eV), exactly (-3 to
+ * 1e-10), gives Nb 0 and names it in a WARNING with its structure of
+ * eweight 0. Without the structure of eweight 0 (no Nb at all) no WARNING
+ * is written.
+ * Before the fix: the normal matrix had a zero row for Nb, so it was
+ * singular and every ESHIFT was set to 0, Ti's too ('normal-equations
+ * matrix is singular; dataset compositions may be linearly dependent'). */
+TEST_CASE("ESHIFT_DBATOM fits the species with an energy and names one "
+          "without",
+          "[load_transforms][weight0]") {
+  StructureDB stdb;
+  stdb.add(make_structure("Ti", -3.0, {{kTi, Vec3d(0, 0, 0)}}));
+  stdb.add(make_structure("Ti2", -6.0, {{kTi, Vec3d(0, 0, 0)}, {kTi, Vec3d(2, 0, 0)}}));
+  stdb.add(make_structure("Nb2 no energy", 0.0,
+                          {{kNb, Vec3d(0, 0, 0)}, {kNb, Vec3d(2, 0, 0)}}, 0.0));
+  stdb.dbidx = {0, 3};
+  std::map<int, double> shift;
+  const std::string log =
+      warnings_of([&] { shift = derive_eshift_by_lsq_fit(stdb); });
+  INFO(log);
+  CHECK(shift[Z(kTi)] == Approx(-3.0).epsilon(1e-10));
+  REQUIRE(shift.count(Z(kNb)) == 1);
+  CHECK(shift[Z(kNb)] == 0.0);
+  CHECK_THAT(log, Contains("WARNING") && Contains("ESHIFT_DBATOM") &&
+                      Contains("Nb") && Contains("eweight 0") &&
+                      !Contains("singular"));
+
+  StructureDB ti;
+  ti.add(make_structure("Ti", -3.0, {{kTi, Vec3d(0, 0, 0)}}));
+  ti.add(make_structure("Ti2", -6.0, {{kTi, Vec3d(0, 0, 0)}, {kTi, Vec3d(2, 0, 0)}}));
+  ti.dbidx = {0, 2};
+  const std::string quiet = warnings_of([&] { shift = derive_eshift_by_lsq_fit(ti); });
+  CHECK(shift[Z(kTi)] == Approx(-3.0).epsilon(1e-10));
+  CHECK(quiet.find("ESHIFT_DBATOM") == std::string::npos);
 }
 
 /* Pins: EFILTER -10 0 keeps a structure of eweight 0 whose placeholder
@@ -186,6 +253,28 @@ TEST_CASE("A negative WDBFILE value is refused", "[load_transforms][refusal]") {
   StructureDB stdb = two_datasets();
   REQUIRE_NOTHROW(apply_load_transforms(stdb, z));
   CHECK(stdb(1).eweight == 0.0);
+}
+
+/* Pins: WDBFILE with more values than datasets is refused for its size
+ * whatever the signs of the values past the datasets: 'WDBFILE 1 -1' with
+ * one dataset names the size (2 values, 1 dataset), as 'WDBFILE 1 2' does,
+ * and no dataset 2.
+ * Before the fix: 'WDBFILE 1 -1: the weight of dataset 2 of 1, -1, is
+ * negative', a dataset that does not exist. */
+TEST_CASE("A WDBFILE of more values than datasets is refused for its size",
+          "[load_transforms][refusal]") {
+  StructureDB one;
+  one.add(make_structure("a", -3.0, {{kTi, Vec3d(0, 0, 0)}}));
+  one.dbidx = {0, 1};
+  for (const std::string v : {"1 -1", "1 2"}) {
+    INFO("WDBFILE " << v);
+    Context c;
+    c.add("WDBFILE", v);
+    const std::string msg = transform_refusal(one, c);
+    CHECK_THAT(msg, Contains("WDBFILE size (2)") &&
+                        Contains("number of datasets (1)") &&
+                        !Contains("dataset 2"));
+  }
 }
 
 /* Pins: WDBFILE_AUTO -0.5 and 1.5 are refused naming the key, the value

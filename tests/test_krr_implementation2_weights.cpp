@@ -10,6 +10,11 @@
 // WDBFILE_AUTO other than 0 and EWEIGHT_TEMP. Before the fix each was
 // ignored: the fit was the same with or without it.
 //
+// Like every fit, it refuses a weight of the data that is negative or not
+// finite (an fweight or sweight too, which it does not read otherwise), and
+// the fit of precomputed descriptors (train(StDescriptorsDB, StructureDB)),
+// which runs implementation 1, refuses MODEL M_KRR <kernel> 2.
+//
 // Data: three Ta cells of 3, 4 and 3 atoms, D2_Blip with 3 functions,
 // Kern_RBF (MPARAMS 1.5), SBASIS 3, LAMBDA 1e-6.
 
@@ -25,6 +30,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -157,4 +163,72 @@ TEST_CASE("M_KRR implementation 2 refuses the weights and the forces and "
     set_key(c, "WDBFILE_AUTO", "0");
     CHECK(fit(c, training_db()) == "no exception");
   }
+}
+
+/* Pins: implementation 2 (FORCE and STRESS false) refuses fweight -1 and
+ * nan and sweight -2, naming the weight, its value and the structure, as
+ * implementation 1 does; a valid fweight and sweight other than 1 (0.5 and
+ * 3) fit, since without forces and stresses they weight nothing, as in
+ * implementation 1 with FORCE and STRESS false.
+ * Before the fix: fweight -1, nan and sweight -2 fitted (no exception). */
+TEST_CASE("M_KRR implementation 2 refuses negative and non-finite weights",
+          "[krr][train2][refusal]") {
+  PeriodicTable::initialize();
+  struct Case {
+    const char *name;
+    double fweight, sweight;
+    const char *refused;  // nullptr: fits
+  };
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const Case cases[] = {{"fweight -1", -1.0, 1.0, "fweight -1"},
+                        {"fweight nan", nan, 1.0, "fweight nan"},
+                        {"sweight -2", 1.0, -2.0, "sweight -2"},
+                        {"fweight 0.5, sweight 3 (a pin)", 0.5, 3.0, nullptr}};
+  for (const Case &k : cases) {
+    DYNAMIC_SECTION(k.name) {
+      StructureDB db = training_db();
+      db(1).fweight = k.fweight;
+      db(1).sweight = k.sweight;
+      const std::string msg = fit(make_context(), db);
+      if (k.refused)
+        CHECK_THAT(msg, Contains(k.refused) && Contains("structure 2 of 3") &&
+                            Contains("'cell 1'") && Contains(">= 0"));
+      else
+        CHECK(msg == "no exception");
+    }
+  }
+}
+
+/* Pins: the fit of precomputed descriptors (train(StDescriptorsDB,
+ * StructureDB)) refuses MODEL M_KRR Kern_Linear 2 (FORCE and STRESS false,
+ * every weight 1), naming implementation 2, implementation 1 and
+ * train(StructureDB, DescriptorsCalc); MODEL M_KRR Kern_Linear 1 fits there
+ * (a pin).
+ * Before the fix: it fitted implementation 1's design matrix and kept
+ * MODEL M_KRR Kern_Linear 2 in the potential (no exception). */
+TEST_CASE("The fit of precomputed descriptors refuses M_KRR implementation 2",
+          "[krr][train2][refusal]") {
+  PeriodicTable::initialize();
+  auto fit_precomputed = [](Context c) {
+    try {
+      StructureDB db = training_db();
+      MLIPWorkspaceManager ws;
+      Trainer tr(c, ws);
+      tr.nnf.calc(db, tr.context);
+      tadah::mlip::StDescriptorsDB st = tr.dc.calc(db);
+      tr.model->train(st, db);
+    } catch (const std::exception &e) {
+      return std::string(e.what());
+    }
+    return std::string("no exception");
+  };
+  Context c = make_context();
+  set_key(c, "MODEL", "M_KRR Kern_Linear 2");
+  CHECK_THAT(fit_precomputed(c),
+             Contains("MODEL M_KRR Kern_Linear 2") &&
+                 Contains("train(StDescriptorsDB, StructureDB)") &&
+                 Contains("MODEL M_KRR Kern_Linear 1") &&
+                 Contains("train(StructureDB, DescriptorsCalc)"));
+  set_key(c, "MODEL", "M_KRR Kern_Linear 1");
+  CHECK(fit_precomputed(c) == "no exception");
 }

@@ -11,13 +11,15 @@
 //  - predict(StructureDB&) returns the values the last fit predicts for the
 //    structures it was fitted to, without the row factors, as
 //    predict(Context, StructureDB, DescriptorsCalc) does; it reads the data
-//    rows only, and refuses a StructureDB other than the fit's and a model
-//    without a fit of its own (built from a potential, or M_KRR
-//    implementation 2, which fits no design matrix).
+//    rows only, and refuses a StructureDB other than the fit's (other
+//    counts, or the same counts with other species, cells or positions)
+//    and a model without a fit of its own (built from a potential, or
+//    M_KRR implementation 2, which fits no design matrix).
 //  - a fit refuses a per-structure weight (eweight, fweight, sweight) that
 //    is negative or not a finite number, naming the weight, the structure
-//    (its index and label) and its dataset, and a negative EWEIGHT; a
-//    dataset file with a negative weight is refused as it is read.
+//    (its index and label) and its dataset, and a negative EWEIGHT, before
+//    anything else reads the weights (with BIAS true too); a dataset file
+//    with a negative weight is refused as it is read.
 //
 // Data: three sheared and rattled Ta cells of 3, 4 and 3 atoms, D2_Blip
 // with 3 functions, Cut_Cos at 5 A, INITMB false (DSIZE 3), FORCE and
@@ -43,6 +45,7 @@
 #include <memory>
 #include <string>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -348,6 +351,63 @@ TEST_CASE("predict(StructureDB&) refuses data other than the fit's",
                  Contains("predict(Context, StructureDB, DescriptorsCalc)"));
 }
 
+/* Pins: predict(StructureDB&) refuses a StructureDB of the fit's shape
+ * (3 structures of 3, 4 and 3 atoms, one dataset) whose structures are
+ * not the fit's: the first atom of structure 2 moved by 0.2 A, the cell of
+ * structure 3 3% larger, the atoms of structure 1 in another order. It
+ * names the first structure that differs, its label, and what predicts
+ * other structures. Data with the fit's structures and other reference
+ * energies, forces and stresses (the labels a prediction does not read)
+ * are its structures: their values are those of the fit's data, bit for
+ * bit. M_BLR BF_Linear and M_KRR Kern_Linear 1.
+ * Before the fix: the counts matched, so the three were accepted, and the
+ * call returned the fit's values under the other structures' labels. */
+TEST_CASE("predict(StructureDB&) refuses other structures of the fit's shape",
+          "[fit_weights][api][predict]") {
+  PeriodicTable::initialize();
+  for (const auto &model : kLinearModels) {
+    DYNAMIC_SECTION(model[0] << " " << model[1]) {
+      Context c = make_context(model);
+      StructureDB db = training_db();
+      MLIPWorkspaceManager ws;
+      Trainer tr(c, ws);
+      tr.nnf.calc(db, tr.context);
+      tr.model->train(db, tr.dc);
+      const StructureDB fit = tr.model->predict(db);
+
+      StructureDB moved = training_db();
+      moved(1).atoms[0].position[0] += 0.2;
+      CHECK_THAT(refusal([&] { tr.model->predict(moved); }),
+                 Contains("structure 2 of 3") && Contains("'cell 1'") &&
+                     Contains("predict(Context, StructureDB, DescriptorsCalc)"));
+
+      StructureDB scaled = training_db();
+      for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) scaled(2).cell(i, j) *= 1.03;
+      CHECK_THAT(refusal([&] { tr.model->predict(scaled); }),
+                 Contains("structure 3 of 3") && Contains("'cell 2'"));
+
+      StructureDB reordered = training_db();
+      std::swap(reordered(0).atoms[0], reordered(0).atoms[2]);
+      CHECK_THAT(refusal([&] { tr.model->predict(reordered); }),
+                 Contains("structure 1 of 3") && Contains("'cell 0'"));
+
+      StructureDB relabelled = training_db();
+      for (std::size_t s = 0; s < relabelled.size(); ++s) {
+        relabelled(s).energy += 5.0;
+        relabelled(s).atoms[0].force[1] += 1.0;
+        relabelled(s).stress(0, 0) += 0.1;
+      }
+      StructureDB again;
+      REQUIRE(refusal([&] { again = tr.model->predict(relabelled); }) ==
+              "no exception");
+      REQUIRE(again.size() == fit.size());
+      for (std::size_t s = 0; s < fit.size(); ++s)
+        CHECK(bits(again(s).energy) == bits(fit(s).energy));
+    }
+  }
+}
+
 /* Pins: a fit refuses a per-structure weight that is negative or not
  * finite, naming the weight and its value, the structure (1-based index
  * in the training data and its label) and the dataset; EWEIGHT -1 with
@@ -404,6 +464,50 @@ TEST_CASE("A fit refuses negative and non-finite weights",
     Context cn = c;
     set_key(cn, "EWEIGHT", "-1");
     CHECK_THAT(fit(cn, training_db()), Contains("EWEIGHT -1") && Contains(">= 0"));
+  }
+}
+
+/* Pins: with BIAS true (an intercept, which the energies determine) the
+ * weight is refused as a weight, before the intercepts are checked:
+ * EWEIGHT -1 names EWEIGHT and every eweight -1 names the eweight of
+ * structure 1, not the intercepts, for M_BLR BF_Linear and M_KRR
+ * Kern_Linear 1, through train(StructureDB, DescriptorsCalc) and
+ * train(StDescriptorsDB, StructureDB).
+ * Before the fix: each was refused as 'BIAS true: the training data cannot
+ * determine the per-species energy constants (the intercepts) ... no
+ * training structure has an energy weight (eweight x EWEIGHT > 0)', with
+ * advice about BIAS false, ESHIFT and FIXINDEX. */
+TEST_CASE("A fit with BIAS true refuses a negative weight as a weight",
+          "[fit_weights][api][refusal]") {
+  PeriodicTable::initialize();
+  for (const auto &model : kLinearModels) {
+    for (const bool precomputed : {false, true}) {
+      DYNAMIC_SECTION(model[0] << " " << model[1]
+                               << (precomputed ? ", precomputed descriptors"
+                                               : ", DescriptorsCalc")) {
+        Context c = make_context(model);
+        set_key(c, "BIAS", "true");
+        auto fit = [&](Context cc, StructureDB db) {
+          return refusal([&] { (void)fitted_potential(cc, db, precomputed); });
+        };
+        {
+          Context cn = c;
+          set_key(cn, "EWEIGHT", "-1");
+          const std::string msg = fit(cn, training_db());
+          CHECK_THAT(msg, Contains("EWEIGHT -1") && Contains(">= 0") &&
+                              !Contains("intercept"));
+        }
+        {
+          StructureDB db = training_db();
+          for (std::size_t s = 0; s < db.size(); ++s) db(s).eweight = -1.0;
+          const std::string msg = fit(c, db);
+          CHECK_THAT(msg, Contains("eweight -1") && Contains("structure 1 of 3") &&
+                              !Contains("intercept"));
+        }
+        /* The same configuration with valid weights fits (a pin). */
+        CHECK(fit(c, training_db()) == "no exception");
+      }
+    }
   }
 }
 
