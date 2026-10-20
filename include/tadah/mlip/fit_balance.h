@@ -77,7 +77,7 @@ struct FitBalance {
   std::size_t coefficients = 0;  ///< the coefficients the solve fitted
   std::size_t pinned = 0;        ///< those FIXINDEX pins (not fitted)
   std::size_t retained = 0;      ///< the rank: the directions kept
-  std::size_t datasets = 1;
+  std::size_t datasets = 1;      ///< the datasets of the fit
   /** The error scale of each quantity as its key gives it: "1", "0.1 0",
    *  "0.5 0" (ESIGMA, FSIGMA, SSIGMA). */
   std::array<std::string, 3> sigma;
@@ -87,6 +87,7 @@ struct FitBalance {
   double prior_share = 0.0;  ///< lambda |w|^2_pen over the minimised sum
   double prior_gamma = 0.0;  ///< lambda tr(H^+ I_pen): the rank less the data's
 
+  /** Whether the fit has a table (@c none is empty). */
   bool computed() const { return none.empty(); }
   /** The row of @p quantity and @p dataset (0: every dataset), or nullptr. */
   const FitBalanceRow *row(std::size_t quantity, std::size_t dataset) const;
@@ -110,7 +111,7 @@ struct FitRowScale {
 struct FitSolve {
   double lambda = 0.0;       ///< LAMBDA
   double lambda_used = 0.0;  ///< LAMBDA, or ALPHA/BETA of LAMBDA -1
-  int oalgo = 3;
+  int oalgo = 3;             ///< OALGO
   double rcond = 1e-8;       ///< OALGO's second value, 1e-8 without it
   std::vector<std::size_t> pinned;      ///< FIXINDEX columns, 0-based
   std::vector<std::size_t> intercepts;  ///< the columns no ridge penalises
@@ -122,12 +123,13 @@ struct FitSolve {
 };
 
 /** The balance table of a fit (see the file comment).
- *  @param Phi the rows of the design matrix without their factors; its
- *         first @p data_rows are the rows of the structures.
+ *  @param Phi the rows of the design matrix without their factors.
+ *  @param data_rows the first rows of @p Phi, those of the structures.
  *  @param T their reference values (unweighted).
- *  @param factors, labels the factor sqrt(W_i) and the type (0, 1, 2) of
- *         each row.
- *  @param row_dataset, n_datasets the dataset of each row (0-based).
+ *  @param factors the factor sqrt(W_i) of each row.
+ *  @param labels the type of each row (0 energy, 1 force, 2 stress).
+ *  @param row_dataset the dataset of each row (0-based).
+ *  @param n_datasets the datasets.
  *  @param scale the error scale, multiplicity and metric factor of each row.
  *  @param w the coefficients of the fit, one per column (FIXINDEX ones
  *         included).
