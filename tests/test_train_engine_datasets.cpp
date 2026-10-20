@@ -1525,13 +1525,14 @@ TEST_CASE("A retrain reads no UNCERTAINTY line of a potential; the run's own "
  * (the Ta pair training configuration with "DBFILE db.tadah db.tadah")
  * with exactly "DBFILE lists one dataset twice: entry 1 (db.tadah) and
  * entry 2 (db.tadah) are one file, so each of its structures would be
- * fitted twice. List each dataset once; to give a dataset more weight, use
- * WDBFILE. An M_BLR potential written by an earlier version of Tadah!
- * records the DBFILE it was trained on: remove that line from a potential
- * used as the training configuration.", and writes no pot.tadah.
+ * fitted twice. List each dataset once; to give a dataset a higher
+ * priority, use WDBFILE. An M_BLR potential written by an earlier version
+ * of Tadah! records the DBFILE it was trained on: remove that line from a
+ * potential used as the training configuration.", and writes no pot.tadah.
  * Before the fix: the advice named a development stage, "An M_BLR
  * potential written by Tadah! 1.5.x or earlier, or by a 1.6.0 development
- * build, records the DBFILE it was trained on: ...": the CHECK fails. */
+ * build, records the DBFILE it was trained on: ...": the CHECK fails.
+ * Before the priority wording: "to give a dataset more weight". */
 TEST_CASE("TrainEngine::run refuses a DBFILE that lists one dataset twice, "
           "naming an earlier version's DBFILE line",
           "[train][potential_content][dbfile]") {
@@ -1548,10 +1549,10 @@ TEST_CASE("TrainEngine::run refuses a DBFILE that lists one dataset twice, "
   CHECK(what ==
         "DBFILE lists one dataset twice: entry 1 (db.tadah) and entry 2 "
         "(db.tadah) are one file, so each of its structures would be fitted "
-        "twice. List each dataset once; to give a dataset more weight, use "
-        "WDBFILE. An M_BLR potential written by an earlier version of Tadah! "
-        "records the DBFILE it was trained on: remove that line from a "
-        "potential used as the training configuration.");
+        "twice. List each dataset once; to give a dataset a higher priority, "
+        "use WDBFILE. An M_BLR potential written by an earlier version of "
+        "Tadah! records the DBFILE it was trained on: remove that line from "
+        "a potential used as the training configuration.");
   CHECK_FALSE(fs::exists("pot.tadah"));
 }
 

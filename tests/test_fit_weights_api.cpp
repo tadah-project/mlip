@@ -581,10 +581,12 @@ TEST_CASE("The intercept check of tadah train refuses a negative weight as "
                        !Contains("intercept"));
 }
 
-/* Pins: a dataset file whose second structure has the weights line
+/* Pins: a dataset file whose second structure has the priorities line
  * '-1 1 1' is refused as it is read, naming the file, the structure (2),
- * its label and "eweight '-1' is negative"; '1 -0.5 1' names fweight.
- * Before the fix: both files were read, the negative weight kept. */
+ * its label and "eweight '-1' is negative: a priority is a number >= 0";
+ * '1 -0.5 1' names fweight.
+ * Before the fix: both files were read, the negative weight kept. (Until
+ * the priority wording: "a weight is a number >= 0".) */
 TEST_CASE("A dataset with a negative weight is refused as it is read",
           "[fit_weights][refusal]") {
   PeriodicTable::initialize();
@@ -606,10 +608,12 @@ TEST_CASE("A dataset with a negative weight is refused as it is read",
   StructureDB db;
   CHECK_THAT(refusal([&] { db.add(e); }),
              Contains(e) && Contains("structure 2") && Contains("'second'") &&
-                 Contains("eweight '-1' is negative"));
+                 Contains("eweight '-1' is negative: a priority is a number "
+                          ">= 0"));
   CHECK_THAT(refusal([&] { db.add(f); }),
              Contains(f) && Contains("structure 2") &&
-                 Contains("fweight '-0.5' is negative"));
+                 Contains("fweight '-0.5' is negative: a priority is a "
+                          "number >= 0"));
   std::error_code ec;
   fs::remove_all(dir, ec);
 }
