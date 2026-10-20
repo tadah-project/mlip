@@ -95,15 +95,8 @@ public:
   /** Whether build() appends the ridge-augmentation rows, one per column
    *  after the rows of the structures (zero; LinearRegressor writes the
    *  LAMBDA ridge of OALGO 1 and 2 into them): a fit. false builds the
-   *  rows of the structures only, for a prediction (M_BLR/M_KRR predict
-   *  with errors). */
+   *  rows of the structures only. */
   bool augment = true;
-  /** Whether build(stdb, norm, dc, wcopy) normalises the descriptors with
-   *  @p norm when NORM is true: a fit, and the prediction of a model whose
-   *  weights act on normalised descriptors. false for the prediction of a
-   *  linear NORM model, whose weights act on the raw descriptors
-   *  (weights_on_raw_descriptors). */
-  bool normalise_descriptors = true;
   bool w_copy_=false;  // keep a copy of Phi and T without the row factors
 
   /** The observations of the last build: the rows of the structures with a
@@ -296,7 +289,7 @@ public:
     }
     // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
     // Each s writes a disjoint Phi row-block (rows[s]) => order-independent.
-    const bool normalise_rows = normalise_descriptors && context.get<bool>("NORM");
+    const bool normalise_rows = context.get<bool>("NORM");
     parallel_for(stdb.size(), [&](size_t s) {
       StDescriptors st_d = dc.calc(stdb(s));
 

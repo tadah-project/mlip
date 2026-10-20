@@ -1,6 +1,6 @@
 #include <tadah/mlip/models/m_tadah_base.h>
 #include <tadah/mlip/parallel.h>
-#include <tadah/mlip/weight_covariance.h>
+#include <tadah/mlip/raw_descriptor_weights.h>
 #include <tadah/models/functions/weights_fit.h>
 namespace tadah {
 namespace mlip {
@@ -54,7 +54,7 @@ predict(const tadah::core::Context &c, StDescriptors &std, const Structure &stOr
 
   // A model whose weights act on normalised descriptors normalises them; a
   // linear NORM model's weights act on the raw ones (one predicate with
-  // the fit and predict --error: weights_on_raw_descriptors).
+  // the fit: weights_on_raw_descriptors).
   if(c.get<bool>("NORM") && !std.normalised
     && !weights_on_raw_descriptors(c, function()))
     norm.normalise(std);

@@ -15,16 +15,13 @@
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
-#include <tadah/mlip/output/output.h>
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/training_datasets.h>
 #include <tadah/mlip/training_record.h>
-#include <tadah/mlip/weight_covariance.h>
 #include <tadah/mlip/weight_provisioning.h>
-#include <tadah/models/m_krr_core.h>
 
 namespace tadah {
 namespace mlip {
@@ -53,62 +50,22 @@ void hint_embf0_reference(const Trainer &tr,
       "per ATOM species, precede the descriptor weights, so "
       "FIXINDEX/FIXWEIGHT indices shift).");
 }
-// A WNOISE without E (a fit without energies of a non-zero weight): every
-// --error prediction has an energy, so predict --error refuses the
-// potential; said when it is written.
-void warn_noise_without_energies(const core::Context &param_file) {
-  if (!param_file.has_stored("WCOV") || !param_file.has_stored("WNOISE"))
-    return;
-  const WeightCovariance wc =
-      read_weight_covariance(param_file, param_file.size("WEIGHTS"));
-  if (wc.noise.set[kEnergyRow]) return;
-  core::Logger::instance().log(
-      core::LogLevel::WARNING,
-      "tadah train: the fit observed no energies (ENERGY false, or every "
-      "structure's energy priority 0), so the potential's WNOISE has no E: "
-      "`tadah predict --error` and `tadah properties pairwise --error` "
-      "refuse it (every prediction has an energy). Its WCOV, and the "
-      "standard deviations of --uncertainty, are those of the fit.");
-}
-// Whether the run asks for weights.tadah (--uncertainty, UNCERTAINTY
-// true), read from @p run_config: the task's configuration after
-// ignore_configuration_potential_lines. A potential's own UNCERTAINTY line
-// (one an earlier version wrote into every potential, or one added to a
-// copy) was not read for this run (TaskFactory's parse skipped it; a
-// context without a KeyProvenance has it removed), so what is left is the
-// run's own: --uncertainty, or a line of the task file or of a
-// configuration file without WEIGHTS.
-bool uncertainty_requested(const core::Context &run_config) {
-  return run_config.get<bool>("UNCERTAINTY");
-}
-
-// " (UNCERTAINTY true: configuration file c.tadah)" when the request did
-// not come from the command line, else "".
-std::string uncertainty_source(const tadah::mlip::Task &task) {
-  const KeyProvenance *prov = task.getKeyProvenance();
-  if (!prov) return "";
-  const KeyOrigin o = prov->origin("UNCERTAINTY");
-  if (o.kind == KeyOrigin::Kind::CommandLine ||
-      o.kind == KeyOrigin::Kind::NotRecorded)
-    return "";
-  return " (UNCERTAINTY true: " + o.describe("UNCERTAINTY") + ")";
-}
 }  // namespace
 
 int TrainEngine::run(tadah::mlip::Task &task) {
   core::Context context = task.getContext();
   // A potential's lines of the keys of its training record but DBFILE --
-  // those that prepared the data of its own fit, UNCERTAINTY and the
-  // settings of the run that wrote it (VERBOSE, NUMERIC, OUTFILE, AUDIT,
-  // ...) -- are not read for this run (a potential of an earlier version
-  // has them as key lines): TaskFactory's
+  // those that prepared the data of its own fit and the settings of the
+  // run that wrote it (VERBOSE, NUMERIC, OUTFILE, AUDIT, ...) -- are not
+  // read for this run (a potential of an earlier version has them as key
+  // lines): TaskFactory's
   // parse skipped them wherever the configuration or task file has the
   // potential (tadah train -c pot.tadah plus a DBFILE line, CONFIG
   // pot.tadah in a file or a TASK train section), and the WARNING names
   // those tadah train reads; a context without a KeyProvenance is taken as
-  // one file, and the dataset keys and UNCERTAINTY are removed here (no
-  // parse stores a potential's run settings, so a program's own are kept).
-  // The run's own lines of them apply.
+  // one file, and the dataset keys are removed here (no parse stores a
+  // potential's run settings, so a program's own are kept). The run's own
+  // lines of them apply.
   {
     const std::string ignored = ignore_configuration_potential_lines(
         context, task.getKeyProvenance(), "train");
@@ -222,30 +179,9 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Training start...");
   tr.model->train(stdb, tr.dc);
 
-  // --uncertainty lists the weights with their standard deviations: a fit
-  // that computed no covariance (its noise variance undefined) is refused
-  // before the potential is written, with the reason
-  // the model gives and what to change.
-  const bool uncertainty = uncertainty_requested(context);
-  if (uncertainty && !tr.model->has_covariance())
-    throw std::runtime_error(
-        "tadah train --uncertainty" + uncertainty_source(task) +
-        ": no weight covariance: " +
-        tr.model->covariance_unavailable() +
-        ". No potential was written (train without --uncertainty to write "
-        "it, without the weights' standard deviations).");
-
   tadah::core::Context param_file = tr.model->get_param_file();
   stamp_into_param_file(param_file, report);
-  warn_noise_without_energies(param_file);
   dumpPotFile(context.get<std::string>("OUTFILE"), param_file, record);
-
-  // The weights and their standard deviations (weights.tadah)
-  if (uncertainty) {
-    tadah::core::t_type weights = tr.model->get_weights();
-    tadah::core::t_type unc = tr.model->get_weights_uncertainty();
-    Output(param_file).print_train_unc(weights, unc);
-  }
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {
@@ -256,24 +192,6 @@ void TrainEngine::validate(const tadah::mlip::Task &task) {
     throw std::runtime_error(
         "TrainEngine requires INIT2B or/and INITMB parameters to be set");
   }
-  // Only the SVD fit computes the weight covariance, and M_KRR
-  // implementation 2 none: refused before any training or output. The
-  // request is the run's own (run() applies the same rule, and warns).
-  core::Context run_config = context;
-  (void)ignore_configuration_potential_lines(run_config,
-                                             task.getKeyProvenance(), "train");
-  const bool uncertainty = uncertainty_requested(run_config);
-  if (uncertainty && context.get<int>("OALGO") != 3)
-    throw std::runtime_error(
-        "tadah train --uncertainty" + uncertainty_source(task) +
-        " needs OALGO 3: only the SVD fit (OALGO 3) "
-        "computes the weight covariance; the configuration has OALGO " +
-        std::to_string(context.get<int>("OALGO")) + ".");
-  if (uncertainty && is_krr_implementation_2(context))
-    throw std::runtime_error(
-        "tadah train --uncertainty" + uncertainty_source(task) + ": " +
-        tadah::models::krr_implementation2_without_covariance() +
-        ", or train without --uncertainty.");
 }
 
 
@@ -296,9 +214,7 @@ void TrainEngine::dumpPotFile(const std::string &outfile,
   // The key lines are the model's settings and its fit: neither the inputs
   // of the run (VERBOSE, NUMERIC, OUTFILE, the AUDIT and HEALTH_LOG
   // diagnostics, a tadah hpo run's HPOTARGET and VALIDATION, which a
-  // best_pot.tadah used as the configuration had, the train task's
-  // UNCERTAINTY, which a 1.5.x potential edited by refit --edit has) nor
-  // its training data (a refit --edit potential is a copy of its input's
+  // best_pot.tadah used as the configuration had) nor its training data (a refit --edit potential is a copy of its input's
   // context, which may be an M_BLR potential written with its DBFILE) and
   // the keys that prepared or weighted it (EFILTER, the ESHIFT toggles,
   // WDBFILE, ...:

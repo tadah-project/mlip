@@ -378,34 +378,3 @@ TEST_CASE("dumpPotFile writes no key line of the run's inputs: HPOTARGET, "
   log.setLogLevel(old_level);
 }
 
-/* Pins: dumpPotFile writes no UNCERTAINTY line, whatever its context holds:
- * UNCERTAINTY is a switch of the train task (weights.tadah), not part of
- * the model, and no key of a potential (a potential's training record, a
- * comment block, lists the value of the run that wrote it). A context with
- * UNCERTAINTY true -- refit --edit copies its input's context, and a
- * potential of tadah 1.5.x or a 1.6.0 development build has the line --
- * is written without it; the model's settings and fit stay (MODEL, the six
- * WEIGHTS).
- * Before the fix: remove_run_inputs left UNCERTAINTY, which only M_BLR's
- * and M_KRR's get_param_file removed, so refit --edit of such a potential
- * wrote "UNCERTAINTY true" (a run before the fix: edited twice, the line
- * kept; the retrain then warned that 1.5.x and development
- * builds wrote it).
- * Before the training record: passes as well
- * (a pin); the case was named "dumpPotFile writes no UNCERTAINTY: a
- * potential does not record the switch of the run". */
-TEST_CASE("dumpPotFile writes no UNCERTAINTY line: the switch of the run "
-          "is no key of the potential",
-          "[train][dumpPotFile][potential_content][uncertainty]") {
-  DumpTempDir tmp;
-  Context pot = make_pot();
-  pot.add("UNCERTAINTY", "true");
-  dump_capturing("pot.tadah", pot);
-
-  const std::string text = slurp("pot.tadah");
-  INFO(text);
-  CHECK(line_tokens(text, "UNCERTAINTY").empty());
-  CHECK(line_tokens(text, "MODEL") ==
-        std::vector<std::string>{"M_BLR", "BF_Linear"});
-  CHECK(line_tokens(text, "WEIGHTS").size() == kWeights.size());
-}

@@ -67,7 +67,7 @@ std::optional<std::pair<std::size_t, std::size_t>> repeated_dataset(
 /** Refuses a training configuration whose DBFILE lists one dataset file
  *  twice: StructureDB::add loads every DBFILE entry as a dataset, so each
  *  structure of the file would be fitted twice (a fit of twice the rows,
- *  LAMBDA at half strength, an OALGO 3 covariance of half the size). Two
+ *  LAMBDA at half strength). Two
  *  entries are one file by the rule of repeated_dataset. Throws
  *  std::runtime_error naming both entries, WDBFILE (the weight of a
  *  dataset) and the M_BLR potentials that recorded their DBFILE; a no-op

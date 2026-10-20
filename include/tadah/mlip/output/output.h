@@ -28,7 +28,6 @@ class Output {
     std::string energyFile;
     std::string forceFile;
     std::string stressFile;
-    std::string errorFile = "error.pred";
 
     struct OutputFiles {
       std::string energy;
@@ -79,34 +78,9 @@ class Output {
       set_numeric(c.get<size_t>("NUMERIC"));
     }
 
-    /** weights.tadah: the index, value and standard deviation of every
-     *  weight (@p unc, the square roots of the diagonal of WCOV). */
-    void print_train_unc(tadah::core::t_type &weights, tadah::core::t_type &unc) {
-      std::string index_str = "Index";
-
-      size_t iwe = (size_t)unc.size() > tadah::core::max_number(index_str.size()) ?
-        tadah::core::number_of_digits(unc.size()) : index_str.size();
-
-      std::ofstream out_unc("weights.tadah");
-      out_unc << std::scientific << std::setprecision(sigfig);
-      out_unc << std::setw(iwe) << index_str
-              << std::setw(nw) << "Mean weight"
-              << std::setw(nw) << "Std. dev." << std::endl;
-
-      for (size_t i = 0; i < unc.size(); ++i) {
-        out_unc << std::setw(iwe) << i
-                << std::setw(nw) << weights(i)
-                << std::setw(nw) << unc(i) << std::endl;
-      }
-
-      out_unc.close();
-    }
-
-    void print_predict_all(StructureDB &stdb, StructureDB &stpred,
-                           tadah::core::aed_type &predicted_error) {
+    void print_predict_all(StructureDB &stdb, StructureDB &stpred) {
       const bool wantForce    = context.get<bool>("FORCE");
       const bool wantStress   = context.get<bool>("STRESS");
-      const bool pred_err_bool = context.get<bool>("ERROR");
 
       OutputFiles files = resolve_output_files();
       energyFile = files.energy;
@@ -146,17 +120,8 @@ class Output {
         }
       }
 
-      std::ofstream out_error;
-      if (pred_err_bool) {
-        out_error.open(errorFile);
-        if (!out_error) {
-          throw std::runtime_error("Failed to open error output file: " + errorFile);
-        }
-      }
-
       // Common headers
       std::string index_str   = "Index";
-      std::string perror_str  = "Pred Error";
 
       // energy.pred
       std::string tenergy_str = "True Energy";
@@ -169,11 +134,6 @@ class Output {
       // stress.pred
       std::string tstress_str = "True Stress";
       std::string pstress_str = "Pred Stress";
-
-      // error.pred
-      std::string err_e_str   = "Energy";
-      std::string err_f_str   = "Force (max)";
-      std::string err_s_str   = "Stress (max)";
 
       // Grow width of the index column if necessary
       size_t iwe = stdb.size() > tadah::core::max_number(index_str.size()) ?
@@ -192,26 +152,17 @@ class Output {
       if (wantStress) {
         out_stress << std::scientific << std::setprecision(sigfig);
       }
-      if (pred_err_bool) {
-        out_error << std::scientific << std::setprecision(sigfig);
-      }
 
       // Write headers
       out_energy << std::setw(iwe) << index_str
                  << std::setw(nw) << tenergy_str
                  << std::setw(nw) << penergy_str;
-      if (pred_err_bool) {
-        out_energy << std::setw(nw) << perror_str;
-      }
       out_energy << std::endl;
 
       if (wantForce) {
         out_force << std::setw(iwf) << index_str
                   << std::setw(nw) << tforce_str
                   << std::setw(nw) << pforce_str;
-        if (pred_err_bool) {
-          out_force << std::setw(nw) << perror_str;
-        }
         out_force << std::endl;
       }
 
@@ -219,25 +170,9 @@ class Output {
         out_stress << std::setw(iws) << index_str
                    << std::setw(nw) << tstress_str
                    << std::setw(nw) << pstress_str;
-        if (pred_err_bool) {
-          out_stress << std::setw(nw) << perror_str;
-        }
         out_stress << std::endl;
       }
 
-      if (pred_err_bool) {
-        out_error << std::setw(iwe) << index_str
-                  << std::setw(nw) << err_e_str;
-        if (wantForce) {
-          out_error << std::setw(nw) << err_f_str;
-        }
-        if (wantStress) {
-          out_error << std::setw(nw) << err_s_str;
-        }
-        out_error << std::endl;
-      }
-
-      size_t j = 0;
       size_t fidx = 0, sidx = 0;
       bool newline = false;
 
@@ -265,17 +200,9 @@ class Output {
         out_energy << std::setw(iwe) << i
                    << std::setw(nw) << stdb(i).energy / stdb(i).natoms()
                    << std::setw(nw) << stpred(i).energy / stdb(i).natoms();
-
-        if (pred_err_bool) {
-          out_error << std::setw(iwe) << i
-                    << std::setw(nw) << predicted_error(j) / stdb(i).natoms();
-          out_energy << std::setw(nw) << predicted_error(j++) / stdb(i).natoms();
-        }
         out_energy << std::endl;
 
         if (wantForce) {
-          double max_ferr = 0.0;
-
           for (size_t a = 0; a < stdb(i).natoms(); ++a) {
             tadah::core::Vec3d &f  = stdb(i).atoms[a].force;
             tadah::core::Vec3d &fp = stpred(i).atoms[a].force;
@@ -284,25 +211,12 @@ class Output {
               out_force << std::setw(iwf) << fidx++
                         << std::setw(nw) << f[k]
                         << std::setw(nw) << fp[k];
-
-              if (pred_err_bool) {
-                if (max_ferr < predicted_error(j)) {
-                  max_ferr = predicted_error(j);
-                }
-                out_force << std::setw(nw) << predicted_error(j++);
-              }
-
               out_force << std::endl;
             }
-          }
-
-          if (pred_err_bool) {
-            out_error << std::setw(nw) << max_ferr;
           }
         }
 
         if (wantStress) {
-          double max_serr = 0.0;
           tadah::core::stress_type &s  = stdb(i).stress;
           tadah::core::stress_type &sp = stpred(i).stress;
 
@@ -311,33 +225,14 @@ class Output {
               out_stress << std::setw(iws) << sidx++
                          << std::setw(nw) << s(x, y)
                          << std::setw(nw) << sp(x, y);
-
-              if (pred_err_bool) {
-                if (max_serr < predicted_error(j)) {
-                  max_serr = predicted_error(j);
-                }
-                out_stress << std::setw(nw) << predicted_error(j++);
-              }
-
               out_stress << std::endl;
             }
-          }
-
-          if (pred_err_bool) {
-            out_error << std::setw(nw) << max_serr;
           }
         }
 
         newline = false;
-
-        if (pred_err_bool) {
-          out_error << std::endl;
-        }
       }
 
-      if (pred_err_bool) {
-        out_error.close();
-      }
       out_energy.close();
       if (wantForce) {
         out_force.close();

@@ -171,7 +171,7 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     // parser returns a vec of <taskName, Context> so we can keep multiple
     // tasks of the same type. A potential's lines of the keys of its
     // training record but DBFILE -- those that prepared the training data
-    // of its own fit, UNCERTAINTY and the settings of the run that wrote it
+    // of its own fit and the settings of the run that wrote it
     // (VALIDATION, HPOTARGET, CHECK, VERBOSE, NUMERIC, OUTFILE, AUDIT,
     // AUDIT_SAMPLE, HEALTH_LOG) -- are not read, wherever the file and its
     // CONFIG includes put it: every other line, and the command line, is the

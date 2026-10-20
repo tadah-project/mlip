@@ -703,18 +703,17 @@ TEST_CASE("A force row that is zero by symmetry is not an observation, "
 /* Pins: the forces of the bcc cells above, zero by symmetry, carry no
  * information, so a fit with FORCE true is the fit with FORCE false, and a
  * rigid translation of the atoms changes nothing (1e-9 relative):
- *  - OALGO 3, LAMBDA 0: WEIGHTS and WNOISE E (the noise variance RSS /
- *    (n_obs - gamma) with the 46 energies as n_obs); WNOISE has no F (the
- *    fit observed no force);
+ *  - OALGO 3, LAMBDA 0: WEIGHTS;
  *  - OALGO 3, LAMBDA -1 (the evidence approximation, whose noise precision
- *    counts the observations): ALPHA, BETA, WEIGHTS and WNOISE E;
+ *    counts the observations, the 46 energies): ALPHA, BETA and WEIGHTS;
  * through tadah train (Trainer::train) and the C++ API's train of
  * precomputed descriptors.
  * Before the fix: the count of observations took most of the force rows,
- * by their rounding (WNOISE E several times too small, with a WNOISE F),
- * and the translation changed WNOISE E, BETA and the WEIGHTS of LAMBDA -1. */
-TEST_CASE("Forces zero by symmetry change neither the fit nor its noise, "
-          "nor does a rigid translation",
+ * by their rounding, and the translation changed BETA and the WEIGHTS of
+ * LAMBDA -1 (and the noise variance of the fit's energies, which the
+ * potential held then). */
+TEST_CASE("Forces zero by symmetry change neither the fit nor the "
+          "evidence, nor does a rigid translation",
           "[error_scales][observations]") {
   PeriodicTable::initialize();
   for (const char *lambda : {"0", "-1"}) {
@@ -726,20 +725,12 @@ TEST_CASE("Forces zero by symmetry change neither the fit nor its noise, "
         Context forces = energies;
         set_key(forces, "FORCE", "true");
         const Context ref = potential_of(energies, bcc_set(kAtOrigin), api);
-        REQUIRE(ref.has_stored("WNOISE"));
-        REQUIRE(ref.size("WNOISE") == 2);
-        const double noise = value_of(ref, "WNOISE", 1);
         std::vector<double> w_ref;
         for (std::size_t i = 0; i < ref.size("WEIGHTS"); ++i)
           w_ref.push_back(value_of(ref, "WEIGHTS", i));
         for (const std::array<double, 3> &t : {kAtOrigin, kMoved}) {
           INFO("translation " << t[0] << " " << t[1] << " " << t[2]);
           const Context pot = potential_of(forces, bcc_set(t), api);
-          REQUIRE(pot.has_stored("WNOISE"));
-          CHECK(pot("WNOISE").size() == 2);
-          CHECK(pot.get<std::string>("WNOISE", 0) == "E");
-          CHECK(std::fabs(value_of(pot, "WNOISE", 1) - noise) <=
-                1e-9 * noise);
           std::vector<double> w;
           for (std::size_t i = 0; i < pot.size("WEIGHTS"); ++i)
             w.push_back(value_of(pot, "WEIGHTS", i));

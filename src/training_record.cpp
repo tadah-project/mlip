@@ -50,9 +50,9 @@ const std::vector<std::string> &training_record_keys() {
     std::vector<std::string> k = {"DBFILE"};
     const std::vector<std::string> &data = dataset_preparation_keys();
     k.insert(k.end(), data.begin(), data.end());
-    for (const char *key : {"VALIDATION", "HPOTARGET", "CHECK",
-                            "UNCERTAINTY", "VERBOSE", "NUMERIC", "OUTFILE",
-                            "AUDIT", "AUDIT_SAMPLE", "HEALTH_LOG"})
+    for (const char *key : {"VALIDATION", "HPOTARGET", "CHECK", "VERBOSE",
+                            "NUMERIC", "OUTFILE", "AUDIT", "AUDIT_SAMPLE",
+                            "HEALTH_LOG"})
       k.push_back(key);
     return k;
   }();
@@ -273,10 +273,9 @@ std::string eshift_sentence(EshiftSource source) {
  * options) says where the run's own go (keys: the named keys; options:
  * the options the task @p t has of them), "" for none; @p eshift: where the
  * ESHIFT of the run's configuration came from, which overrules a toggle
- * the run gives. Three kinds of key, each a sentence: the keys that
- * prepared the training data, UNCERTAINTY, and the run settings; the
- * first ends with the note on the training record, the others with
- * "too". */
+ * the run gives. Two kinds of key, each a sentence: the keys that prepared
+ * the training data, and the run settings; the first ends with the note on
+ * the training record, the other with "too". */
 template <class Advice>
 std::string ignored_keys_notice(const std::string &who,
                                 const std::string &subject,
@@ -285,15 +284,12 @@ std::string ignored_keys_notice(const std::string &who,
                                 EshiftSource eshift) {
   const std::vector<std::string> &data = dataset_preparation_keys();
   std::vector<std::string> prepared, settings, keys, options;
-  std::string uncertainty;  // "UNCERTAINTY true", "" when not named
   bool toggle_named = false;
   for (const IgnoredKey &k : ignored) {
     keys.push_back(k.key);
     if (t.options.count(k.key) && !option_of(k.key).empty())
       options.push_back(option_of(k.key));
-    if (k.key == "UNCERTAINTY") {
-      uncertainty = key_values(k.key, k.values);
-    } else if (std::find(data.begin(), data.end(), k.key) != data.end()) {
+    if (std::find(data.begin(), data.end(), k.key) != data.end()) {
       prepared.push_back(key_values(k.key, k.values));
       if (k.key == "ESHIFT_ATOM" || k.key == "ESHIFT_DBATOM")
         toggle_named = true;
@@ -308,10 +304,6 @@ std::string ignored_keys_notice(const std::string &who,
                         " prepared the training data of the fit that wrote "
                         "it, not of this run, and " +
                         (prepared.size() == 1 ? "is" : "are") + " ignored");
-  if (!uncertainty.empty())
-    sentences.push_back(uncertainty +
-                        " asked the run that wrote it for weights.tadah, not "
-                        "this run, and is ignored");
   if (!settings.empty())
     sentences.push_back(listed(settings, "and") +
                         (settings.size() == 1 ? " was a setting" : " were settings") +
@@ -339,8 +331,7 @@ std::string one_of(std::size_t n) { return n == 1 ? "it" : "one"; }
 bool vowel(char c) { return std::string("AEIOU").find(c) != std::string::npos; }
 
 /* "an" or "a" before the key @p key as it is read: one that begins with a
- * vowel takes "an" ("an EFILTER", "an UNCERTAINTY", "an AUDIT", "an
- * OUTFILE"); one that begins with a consonant and a vowel is read as a
+ * vowel takes "an" ("an EFILTER", "an AUDIT", "an OUTFILE"); one that begins with a consonant and a vowel is read as a
  * word and takes "a" ("a VERBOSE", "a NUMERIC", "a HEALTH_LOG", "a
  * ZERO_COM_FORCE"); one that begins with two consonants is read letter by
  * letter: "an" before a letter whose name begins with a vowel sound ("an

@@ -2,12 +2,10 @@
 //
 // A potential used as the training configuration (`tadah train -c
 // pot.tadah`, the -c potential of `tadah hpo`): the Trainer built from it
-// fits a model of its own, whose potential carries the weight covariance
-// of that fit only (OALGO 3: WCOV and WNOISE) or none (any other fit), and
-// an M_KRR potential trains as an M_BLR one does; a Trainer whose weights
-// are then set from FIXWEIGHT (provision_fixed_weights) holds no
-// covariance of its earlier fit. (Until WCOV and WNOISE replaced it, the
-// covariance was SIGMA, written into the model's Context by the fit.)
+// fits a model of its own, whose potential carries the weights of that fit
+// and no covariance of them (no WCOV, WNOISE or SIGMA), and an M_KRR
+// potential trains as an M_BLR one does; a Trainer whose weights are then
+// set from FIXWEIGHT (provision_fixed_weights) holds the FIXWEIGHT values.
 //
 // Data: three sheared and rattled Ta cells of 3 and 4 atoms, D2_Blip with
 // 3 functions, Cut_Cos at 5 A, INITMB false (DSIZE 3), FORCE true, LAMBDA
@@ -191,28 +189,26 @@ TEST_CASE("A DM_Embed trainer writes no legacy many-body cutoff key",
 }
 
 /* Pins: retraining from a potential (the potential of an OALGO 3 fit used
- * as the configuration, three times in a row) writes one WCOV of N*N+1 =
- * 10 values (DSIZE 3) and one WNOISE (E and F, 4 tokens), equal bit for bit
- * to the first fit's, and the same weights, for M_BLR BF_Linear and M_KRR
- * Kern_Linear.
- * Before the fix (WCOV and WNOISE): the potentials had no WCOV and no
- * WNOISE (this case, then named "... writes the SIGMA of its own fit",
- * checked SIGMA). Before fix/hpo-trainer-reuse (SIGMA, 10 values, was then
- * the covariance): M_BLR's retrains wrote 20, then 30 values (each fit
- * appended its SIGMA to the one in the configuration; predict --error then
- * read past its covariance matrix); M_KRR's retrain threw "This object is
- * already trained!" (the WEIGHTS of the potential marked it trained). */
-TEST_CASE("Retraining from an OALGO 3 potential writes the covariance of "
-          "its own fit",
+ * as the configuration, three times in a row) gives the weights of the
+ * first fit, bit for bit, and no potential has WCOV, WNOISE or SIGMA, for
+ * M_BLR BF_Linear and M_KRR Kern_Linear.
+ * Before the fix (uncertainty output not part of Tadah! 1.6.0): each
+ * potential had the WCOV and WNOISE of its fit (this case pinned them,
+ * bit for bit the first fit's). Before fix/hpo-trainer-reuse (SIGMA, 10
+ * values, was then the covariance): M_BLR's retrains wrote 20, then 30
+ * values (each fit appended its SIGMA to the one in the configuration);
+ * M_KRR's retrain threw "This object is already trained!" (the WEIGHTS of
+ * the potential marked it trained). */
+TEST_CASE("Retraining from an OALGO 3 potential gives the weights of its "
+          "first fit",
           "[trainer][sigma]") {
   PeriodicTable::initialize();
   for (const auto &mf : {std::array<const char *, 2>{"M_BLR", "BF_Linear"},
                          std::array<const char *, 2>{"M_KRR", "Kern_Linear"}}) {
     DYNAMIC_SECTION(mf[0] << " " << mf[1]) {
       const Context first = trained_potential(make_context(mf[0], mf[1], "3"));
-      REQUIRE(first.size("WCOV") == 10);
-      REQUIRE(first.size("WNOISE") == 4);
-      CHECK_FALSE(first.has_stored("SIGMA"));
+      for (const char *key : {"SIGMA", "WCOV", "WNOISE"})
+        CHECK_FALSE(first.has_stored(key));
       Context pot = first;
       for (int retrain = 1; retrain <= 2; ++retrain) {
         INFO("retrain " << retrain);
@@ -224,14 +220,8 @@ TEST_CASE("Retraining from an OALGO 3 potential writes the covariance of "
         }
         INFO("train: " << msg);
         REQUIRE(msg.empty());
-        REQUIRE(pot.size("WCOV") == 10);
-        for (std::size_t k = 0; k < 10; ++k)
-          CHECK(sbits(pot.get<double>("WCOV", k)) ==
-                sbits(first.get<double>("WCOV", k)));
-        REQUIRE(pot.size("WNOISE") == 4);
-        for (std::size_t k : {1, 3})
-          CHECK(sbits(pot.get<double>("WNOISE", k)) ==
-                sbits(first.get<double>("WNOISE", k)));
+        for (const char *key : {"SIGMA", "WCOV", "WNOISE"})
+          CHECK_FALSE(pot.has_stored(key));
         REQUIRE(pot.size("WEIGHTS") == first.size("WEIGHTS"));
         for (std::size_t k = 0; k < first.size("WEIGHTS"); ++k)
           CHECK(sbits(pot.get<double>("WEIGHTS", k)) ==
@@ -242,28 +232,24 @@ TEST_CASE("Retraining from an OALGO 3 potential writes the covariance of "
 }
 
 /* Pins: retraining an OALGO 3 potential with OALGO 1 (the potential edited
- * to OALGO 1 and used as the configuration) writes a potential without
- * WCOV, WNOISE or SIGMA, for M_BLR BF_Linear and M_KRR Kern_Linear; a
- * retrain with OALGO 3 and FIXINDEX pinning every weight (M_BLR, the fit
- * that solves nothing) writes the covariance of pinned weights, WCOV 3
- * and nine zeros, with a WNOISE (the noise of the pinned weights'
- * residuals), and its weights are the FIXWEIGHT values.
- * Before the fix (WCOV and WNOISE): the potentials had no WCOV, and the
- * pinned retrain no WNOISE (it wrote no covariance: the expectation of this
- * case, then named "... writes no SIGMA", for the pinned retrain before
- * WCOV). Before fix/hpo-trainer-reuse: the potentials kept the
- * configuration's 10 SIGMA values beside weights of another fit (and
- * predict --error used them); M_KRR's retrain threw "This object is
- * already trained!". */
-TEST_CASE("Retraining an OALGO 3 potential without OALGO 3 writes no "
-          "covariance",
+ * to OALGO 1 and used as the configuration) writes a potential of 3
+ * WEIGHTS without WCOV, WNOISE or SIGMA, for M_BLR BF_Linear and M_KRR
+ * Kern_Linear; a retrain with OALGO 3 and FIXINDEX pinning every weight
+ * (M_BLR, the fit that solves nothing) writes the FIXWEIGHT values as its
+ * weights, and no WCOV or WNOISE.
+ * Before the fix (uncertainty output not part of Tadah! 1.6.0): the pinned
+ * retrain wrote the covariance of pinned weights, WCOV 3 and nine zeros,
+ * with a WNOISE. Before fix/hpo-trainer-reuse: the potentials kept the
+ * configuration's 10 SIGMA values beside weights of another fit; M_KRR's
+ * retrain threw "This object is already trained!". */
+TEST_CASE("Retraining an OALGO 3 potential with OALGO 1 or every weight "
+          "pinned",
           "[trainer][sigma]") {
   PeriodicTable::initialize();
   for (const auto &mf : {std::array<const char *, 2>{"M_BLR", "BF_Linear"},
                          std::array<const char *, 2>{"M_KRR", "Kern_Linear"}}) {
     DYNAMIC_SECTION(mf[0] << " " << mf[1]) {
       Context pot = trained_potential(make_context(mf[0], mf[1], "3"));
-      REQUIRE(pot.size("WCOV") == 10);
       set_key(pot, "OALGO", "1");
       std::string msg;
       Context out;
@@ -282,15 +268,12 @@ TEST_CASE("Retraining an OALGO 3 potential without OALGO 3 writes no "
   }
   SECTION("M_BLR BF_Linear, FIXINDEX pinning every weight") {
     Context pot = trained_potential(make_context("M_BLR", "BF_Linear", "3"));
-    REQUIRE(pot.size("WCOV") == 10);
     pot.add("FIXINDEX", "1-3");
     pot.add("FIXWEIGHT", "0.25 -0.5 0.75");
     const Context out = trained_potential(pot);
     CHECK_FALSE(out.has_stored("SIGMA"));
-    REQUIRE(out.size("WCOV") == 10);
-    CHECK(out.get<double>("WCOV", 0) == 3.0);
-    for (std::size_t k = 1; k < 10; ++k) CHECK(out.get<double>("WCOV", k) == 0.0);
-    CHECK(out.size("WNOISE") == 4);
+    CHECK_FALSE(out.has_stored("WCOV"));
+    CHECK_FALSE(out.has_stored("WNOISE"));
     REQUIRE(out.size("WEIGHTS") == 3);
     CHECK(out.get<double>("WEIGHTS", 0) == 0.25);
     CHECK(out.get<double>("WEIGHTS", 1) == -0.5);
@@ -298,21 +281,17 @@ TEST_CASE("Retraining an OALGO 3 potential without OALGO 3 writes no "
   }
 }
 
-/* Pins: Trainer::provision_fixed_weights() leaves no covariance of an
- * earlier fit of its Trainer: an OALGO 3 fit of the Trainer (M_BLR
- * BF_Linear, DSIZE 3) gives the potential (get_param_file) WCOV (10
- * values) and WNOISE; FIXINDEX 1-3 and FIXWEIGHT 0.25 -0.5 0.75 are then
- * added to tr.context, the model is reset to be fitted again in place
- * (model->reset_trained()) and provision_fixed_weights() sets every
- * weight, with no fit: the potential has no WCOV, WNOISE or SIGMA, the
- * model is trained, and the weights are the FIXWEIGHT values; tr.context
- * has none of the three (a fit writes nothing into it).
- * Before the fix (WCOV and WNOISE): the first potential had no WCOV (the
- * fit wrote SIGMA into tr.context, which provision_fixed_weights removed:
- * the expectation of this case, then named "provision_fixed_weights
- * removes the SIGMA of an earlier fit of its Trainer", before WCOV). */
-TEST_CASE("provision_fixed_weights leaves no covariance of an earlier fit "
-          "of its Trainer",
+/* Pins: Trainer::provision_fixed_weights() after an OALGO 3 fit of its
+ * Trainer (M_BLR BF_Linear, DSIZE 3): FIXINDEX 1-3 and FIXWEIGHT 0.25 -0.5
+ * 0.75 added to tr.context, the model reset to be fitted again in place
+ * (model->reset_trained()), provision_fixed_weights() sets every weight,
+ * with no fit: the model is trained, its weights are the FIXWEIGHT values,
+ * and neither tr.context nor the potential has SIGMA, WCOV or WNOISE (a fit
+ * writes nothing into its context).
+ * Before the fix (uncertainty output not part of Tadah! 1.6.0): the
+ * potential of the first fit had WCOV and WNOISE, which the provisioning
+ * removed (this case pinned both). */
+TEST_CASE("provision_fixed_weights after a fit of its Trainer",
           "[trainer][sigma]") {
   PeriodicTable::initialize();
   MLIPWorkspaceManager ws;
@@ -321,8 +300,6 @@ TEST_CASE("provision_fixed_weights leaves no covariance of an earlier fit "
   StructureDB db = training_db();
   tr.train(db);
   CHECK_FALSE(tr.context.has_stored("SIGMA"));
-  REQUIRE(tr.get_param_file().size("WCOV") == 10);
-  REQUIRE(tr.get_param_file().has_stored("WNOISE"));
 
   tr.context.add("FIXINDEX", "1-3");
   tr.context.add("FIXWEIGHT", "0.25 -0.5 0.75");

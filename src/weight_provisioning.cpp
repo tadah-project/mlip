@@ -241,9 +241,6 @@ void provision_fixed_weights(M_Tadah_Base &model,
     w[spec.indices[k] - 1] = spec.values[k];
   }
   model.set_weights(w);
-  // No fit: no weight covariance (an earlier fit's is removed).
-  model.clear_covariance("the weights were set from FIXWEIGHT without a fit "
-                         "(provision_fixed_weights)");
   model.trained = true;
 }
 

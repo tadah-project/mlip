@@ -162,18 +162,11 @@ int PredictEngine::run(mlip::Task &task) {
       potContext.get<std::string>("MODEL",1),potContext);
   M_Tadah_Base *modelp = tadah::core::factory<M_Tadah_Base,DM_Function_Base&,core::Context&>(
       potContext.get<std::string>("MODEL",0),*fb,potContext);
-  StructureDB stpred;
-  tadah::core::aed_type predicted_error;
-  if (taskContext.get<bool>("ERROR")) {
-    stpred = modelp->predict(potContext,stdb,dc,predicted_error);
-  }
-  else {
-    stpred = modelp->predict(potContext,stdb,dc);
-  }
-  
+  StructureDB stpred = modelp->predict(potContext,stdb,dc);
+
   core::Logger::instance().log(core::LogLevel::INFO, "Dumping output...");
   Output output(taskContext);
-  output.print_predict_all(stdb,stpred,predicted_error);
+  output.print_predict_all(stdb,stpred);
   if(taskContext.get<bool>("ANALYTICS")) {
     core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");
     Analytics a(stdb, stpred);

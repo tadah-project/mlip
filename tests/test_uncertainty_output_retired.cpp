@@ -269,8 +269,8 @@ TEST_CASE("An OALGO 3 fit writes no WCOV or WNOISE",
  * with the WCOV and WNOISE lines of a potential of a development build of
  * Tadah! 1.6.0, naming each line (WCOV by its first values) and its
  * conversion, the deletion of the line; and one with an UNCERTAINTY line
- * (as Tadah! 1.5.0 wrote into every potential), likewise. Without the
- * lines the configuration fits.
+ * (as tadah train 1.5.0 wrote into every potential), likewise. Without
+ * the lines the configuration fits.
  * Before the fix: both fitted, WCOV and WNOISE replaced by those of the
  * fit and UNCERTAINTY read as the switch of weights.tadah. */
 TEST_CASE("A fit refuses a configuration with WCOV, WNOISE or UNCERTAINTY",

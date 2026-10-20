@@ -158,22 +158,6 @@ public:
          */
   virtual void train(StDescriptorsDB &, const StructureDB &) {};
 
-  /** \brief The values predicted for @p stdb and their predictive
-   *  standard deviations, sqrt(phi^T WCOV phi + WNOISE_t) per row
-   *  (predict_with_error: the potential's WCOV and WNOISE in
-   *  @p context_pred), `tadah predict --error`. */
-  virtual StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
-                              tadah::core::aed_type &predicted_error)=0;
-
-  /** \brief As predict(context_pred, stdb, dc, predicted_error), with each
-   *  error sqrt(phi^T WCOV phi): the standard deviation of the predicted
-   *  value alone, without the noise variance of an observation (WNOISE),
-   *  for a part of a potential that is not observed (`tadah properties
-   *  pairwise --error`'s two-body and many-body parts). */
-  virtual StructureDB predict_value_error(tadah::core::Context context_pred,
-                                          StructureDB &stdb, DC_Base &dc,
-                                          tadah::core::aed_type &value_error)=0;
-
   virtual StructureDB predict(StructureDB &stdb)=0;
 
 };

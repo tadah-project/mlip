@@ -218,8 +218,8 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
   // The fit pins weights of the normalised descriptors, and their
   // conversion to weights of the raw descriptors moves them (a pinned
   // intercept by the descriptor means times the weights), so the potential
-  // would not hold the FIXWEIGHT values it records, nor a zero covariance
-  // for them. tadah hpo refused it at startup; tadah train trained it.
+  // would not hold the FIXWEIGHT values it records. tadah hpo refused it at
+  // startup; tadah train trained it.
   if (norm && (ctx.has_stored("FIXINDEX") || ctx.has_stored("FIXWEIGHT"))) {
     throw std::runtime_error(
         "FIXINDEX/FIXWEIGHT is not supported with NORM true: fixed values "

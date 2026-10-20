@@ -376,9 +376,8 @@ std::string without_record(const fs::path &p) {
 
 /* The keys a potential keeps only in its training record. */
 const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
-                                   "UNCERTAINTY", "VERBOSE", "NUMERIC",
-                                   "OUTFILE", "AUDIT",      "AUDIT_SAMPLE",
-                                   "HEALTH_LOG"};
+                                   "VERBOSE", "NUMERIC",    "OUTFILE",
+                                   "AUDIT",   "AUDIT_SAMPLE", "HEALTH_LOG"};
 
 }  // namespace
 
@@ -386,20 +385,18 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * configuration sets every key a potential leaves out of its key lines --
  * DBFILE ./db1.tadah ./db2.tadah (two datasets), VALIDATION config.val,
  * HPOTARGET config.hpo (a best_pot.tadah of an earlier version used as the
- * configuration had them), UNCERTAINTY false, VERBOSE 0, NUMERIC 9,
- * OUTFILE pot.tadah, AUDIT off, AUDIT_SAMPLE 64, HEALTH_LOG full -- writes
+ * configuration had them), VERBOSE 0, NUMERIC 9, OUTFILE pot.tadah, AUDIT
+ * off, AUDIT_SAMPLE 64, HEALTH_LOG full -- writes
  * pot.tadah whose first line opens its training record ("# --- training
  * record (no key is read from it) ---"), then one "# KEY values" line per key
  * in that order with the values as the configuration has them (./db1.tadah
  * not normalised; under NUMERIC 9, which governs the key lines only), then
- * "# --- end of training record ---", before the first key line -- every
- * key but UNCERTAINTY: the configuration has WEIGHTS, so its UNCERTAINTY
- * false is the potential's line, which a run does not read (the rule of
- * TaskFactory's parse; a context without a KeyProvenance is one file), and
- * the record lists the nine others; no key line of any of the ten; and the
- * file parses (CoreUserConfigParser, the reader of tadah predict, tadah
- * train -c, tadah hpo -c and pair_style tadah) to the same context, key by
- * key, as the file without the block, with none of the ten keys.
+ * "# --- end of training record ---", before the first key line; no key
+ * line of any of the nine; and the file parses (CoreUserConfigParser, the
+ * reader of tadah predict, tadah train -c, tadah hpo -c and pair_style
+ * tadah) to the same context, key by key, as the file without the block,
+ * with none of the nine keys. (UNCERTAINTY, a key of the record until it
+ * was retired, is no key a Context stores.)
  * Before the fix: no training record: the ten keys were dropped from the
  * potential.
  * Before the opening line was corrected: it read
@@ -408,7 +405,7 @@ const char *const kRecordKeys[] = {"DBFILE",  "VALIDATION", "HPOTARGET",
  * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
  * line of a potential: the potential's UNCERTAINTY false was read as the
  * run's and the record listed "UNCERTAINTY false" after "HPOTARGET
- * config.hpo" (this case pinned it): the record check fails. */
+ * config.hpo". */
 TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
           "potential's training record, as written",
           "[train][potential_content][training_record]") {
@@ -422,7 +419,6 @@ TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
   c.add("DBFILE", "./db2.tadah");
   c.add("VALIDATION", "config.val");
   c.add("HPOTARGET", "config.hpo");
-  c.add("UNCERTAINTY", "false");
   c.add("VERBOSE", 0);
   c.add("NUMERIC", 9);
   c.add("OUTFILE", "pot.tadah");
@@ -1285,9 +1281,9 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
 }  // namespace
 
 /* Pins: a retrain refuses an UNCERTAINTY line (a retired key: Tadah! 1.5.0
- * wrote "UNCERTAINTY true" into every potential trained with
- * --uncertainty), wherever it is, naming the line and its conversion (the
- * deletion of the line), and writes no potential and no weights.tadah; with
+ * wrote one, true or false, into every potential), wherever it is, naming
+ * the line and its conversion (the deletion of the line), and writes no
+ * potential and no weights.tadah; with
  * the line deleted the retrain runs. db.tadah is one dataset of three
  * structures; old.tadah is the Ta pair potential (2 WEIGHTS) with OALGO 1
  * and "UNCERTAINTY true" appended (TaskFactory, then TrainEngine::validate
