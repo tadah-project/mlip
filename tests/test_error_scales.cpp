@@ -47,6 +47,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -586,6 +587,175 @@ TEST_CASE("A design-matrix row that is zero in every column is not an "
   tadah::mlip::Normaliser norm(c);
   dm.build(db, norm, dc, false);
   CHECK(dm.n_observations() == 3);
+}
+
+namespace {
+
+/* A perfect 2-atom bcc cell of lattice constant @p a, both atoms moved by
+ * @p t (a rigid translation, A): its forces are zero by symmetry (and in
+ * its labels), its energy a smooth function of a. */
+Structure bcc_cell(double a, const std::array<double, 3> &t) {
+  Structure st;
+  st.label = "bcc " + std::to_string(a);
+  st.cell.load(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+  st.add_atom(Atom(Element("Ta"), t[0], t[1], t[2], 0, 0, 0));
+  st.add_atom(Atom(Element("Ta"), 0.5 * a + t[0], 0.5 * a + t[1],
+                   0.5 * a + t[2], 0, 0, 0));
+  st.energy = 2.0 * (-11.8 + 4.0 * (a - 3.3) * (a - 3.3)) +
+              0.02 * std::sin(7.0 * a);
+  return st;
+}
+
+/* 46 bcc cells, a = 2.60 to 3.95 A, moved by @p t. */
+StructureDB bcc_set(const std::array<double, 3> &t) {
+  std::vector<Structure> cells;
+  for (int k = 0; k < 46; ++k) cells.push_back(bcc_cell(2.60 + 0.03 * k, t));
+  return db_of(cells);
+}
+
+const std::array<double, 3> kAtOrigin{{0.0, 0.0, 0.0}};
+const std::array<double, 3> kMoved{{0.1234, 0.5678, 0.9012}};
+
+/* The observations of a DesignMatrix build of @p db in @p c, from the
+ * descriptors (precomputed false) or from precomputed descriptors
+ * (precomputed true), and the data rows of its design matrix with a value
+ * other than exactly 0. */
+std::pair<std::size_t, std::size_t> observations_of(const Context &c,
+                                                    const StructureDB &db,
+                                                    bool precomputed) {
+  Context cc = c;
+  StructureDB d = db;
+  tadah::models::DC_Selector dcs(cc);
+  tadah::mlip::DescriptorsCalc<> dc(cc, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb);
+  tadah::mlip::NNFinder nnf;
+  nnf.calc(d, cc);
+  tadah::mlip::DM_BF_Linear bf(cc);
+  tadah::mlip::DesignMatrix<tadah::mlip::DM_BF_Linear> dm(bf, cc);
+  tadah::mlip::Normaliser norm(cc);
+  if (precomputed) {
+    tadah::mlip::StDescriptorsDB st = dc.calc(d);
+    dm.build(st, d, false);
+  } else {
+    dm.build(d, norm, dc, false);
+  }
+  const tadah::core::phi_type &Phi = dm.getPhi();
+  const std::size_t data_rows = Phi.rows() - Phi.cols();
+  std::size_t exact = 0;
+  for (std::size_t i = 0; i < data_rows; ++i) {
+    bool nonzero = false;
+    for (std::size_t j = 0; j < Phi.cols() && !nonzero; ++j)
+      nonzero = Phi(i, j) != 0.0;
+    exact += nonzero ? 1 : 0;
+  }
+  return {dm.n_observations(), exact};
+}
+
+/* The potential of a fit of @p db in @p c: of tadah train (Trainer::train)
+ * or of the C++ API's train(StDescriptorsDB, StructureDB). */
+Context potential_of(Context c, StructureDB db, bool api) {
+  MLIPWorkspaceManager ws;
+  Trainer tr(c, ws);
+  if (api) {
+    tr.nnf.calc(db, tr.context);
+    tadah::mlip::StDescriptorsDB st = tr.dc.calc(db);
+    tr.model->train(st, db);
+  } else {
+    tr.train(db);
+  }
+  return tr.get_param_file();
+}
+
+double value_of(const Context &c, const std::string &key, std::size_t i) {
+  return c.get<double>(key, i);
+}
+
+}  // namespace
+
+/* Pins: a force that is zero by symmetry is not an observation, however
+ * its design row rounds. The force rows of a perfect 2-atom bcc cell are
+ * sums over neighbours that cancel; their rounding leaves values of about
+ * 1e-16 against energy rows of order 1 (the data rows other than exactly
+ * 0 outnumber the energies, which the CHECK on `exact` shows: a test of
+ * exact zeros counts these rows, more of them after a rigid translation).
+ * 46 such cells with FORCE true have 46 observations, the energies, in
+ * both builds of the design matrix, at the origin and moved by (0.1234,
+ * 0.5678, 0.9012) A.
+ * Before the fix: a row counted unless every value was exactly 0, so the
+ * count was above 46 and changed under the translation. */
+TEST_CASE("A force row that is zero by symmetry is not an observation, "
+          "however its sums round",
+          "[error_scales][observations]") {
+  PeriodicTable::initialize();
+  const Context c = make_context(true, false);
+  for (const std::array<double, 3> &t : {kAtOrigin, kMoved}) {
+    for (bool precomputed : {false, true}) {
+      DYNAMIC_SECTION("translation " << t[0] << " " << t[1] << " " << t[2]
+                                     << (precomputed ? ", precomputed"
+                                                     : "")) {
+        const auto [n_obs, exact] = observations_of(c, bcc_set(t), precomputed);
+        CHECK(exact > 46);
+        CHECK(n_obs == 46);
+      }
+    }
+  }
+}
+
+/* Pins: the forces of the bcc cells above, zero by symmetry, carry no
+ * information, so a fit with FORCE true is the fit with FORCE false, and a
+ * rigid translation of the atoms changes nothing (1e-9 relative):
+ *  - OALGO 3, LAMBDA 0: WEIGHTS and WNOISE E (the noise variance RSS /
+ *    (n_obs - gamma) with the 46 energies as n_obs); WNOISE has no F (the
+ *    fit observed no force);
+ *  - OALGO 3, LAMBDA -1 (the evidence approximation, whose noise precision
+ *    counts the observations): ALPHA, BETA, WEIGHTS and WNOISE E;
+ * through tadah train (Trainer::train) and the C++ API's train of
+ * precomputed descriptors.
+ * Before the fix: the count of observations took most of the force rows,
+ * by their rounding (WNOISE E several times too small, with a WNOISE F),
+ * and the translation changed WNOISE E, BETA and the WEIGHTS of LAMBDA -1. */
+TEST_CASE("Forces zero by symmetry change neither the fit nor its noise, "
+          "nor does a rigid translation",
+          "[error_scales][observations]") {
+  PeriodicTable::initialize();
+  for (const char *lambda : {"0", "-1"}) {
+    for (bool api : {false, true}) {
+      DYNAMIC_SECTION("LAMBDA " << lambda << (api ? ", C++ API" : "")) {
+        Context energies = make_context(false, false);
+        set_key(energies, "OALGO", "3");
+        set_key(energies, "LAMBDA", lambda);
+        Context forces = energies;
+        set_key(forces, "FORCE", "true");
+        const Context ref = potential_of(energies, bcc_set(kAtOrigin), api);
+        REQUIRE(ref.has_stored("WNOISE"));
+        REQUIRE(ref.size("WNOISE") == 2);
+        const double noise = value_of(ref, "WNOISE", 1);
+        std::vector<double> w_ref;
+        for (std::size_t i = 0; i < ref.size("WEIGHTS"); ++i)
+          w_ref.push_back(value_of(ref, "WEIGHTS", i));
+        for (const std::array<double, 3> &t : {kAtOrigin, kMoved}) {
+          INFO("translation " << t[0] << " " << t[1] << " " << t[2]);
+          const Context pot = potential_of(forces, bcc_set(t), api);
+          REQUIRE(pot.has_stored("WNOISE"));
+          CHECK(pot("WNOISE").size() == 2);
+          CHECK(pot.get<std::string>("WNOISE", 0) == "E");
+          CHECK(std::fabs(value_of(pot, "WNOISE", 1) - noise) <=
+                1e-9 * noise);
+          std::vector<double> w;
+          for (std::size_t i = 0; i < pot.size("WEIGHTS"); ++i)
+            w.push_back(value_of(pot, "WEIGHTS", i));
+          check_same(w, w_ref, 1e-9);
+          if (std::string(lambda) == "-1") {
+            for (const char *key : {"ALPHA", "BETA"}) {
+              INFO(key);
+              const double r = value_of(ref, key, 0);
+              CHECK(std::fabs(value_of(pot, key, 0) - r) <=
+                    1e-9 * std::fabs(r));
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 /* Pins: the priority of a structure's observations is its weight in the
