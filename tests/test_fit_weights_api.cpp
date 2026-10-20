@@ -438,3 +438,20 @@ TEST_CASE("A dataset with a negative weight is refused as it is read",
   std::error_code ec;
   fs::remove_all(dir, ec);
 }
+
+/* Pins: a workspace manager asked for a design-matrix workspace with the
+ * copy of the rows (wcopy true, what a fit keeps for predict(StructureDB&))
+ * after one of the same size without it gives a workspace with the copy:
+ * Phi_cpy and T_cpy of 4 x 2 and 4.
+ * Before the fix: it gave the workspace without the copy (Phi_cpy 0 x 0),
+ * which the build then wrote into. */
+TEST_CASE("A design-matrix workspace without the copy of the rows is not "
+          "reused for a build that needs it",
+          "[fit_weights][workspace]") {
+  MLIPWorkspaceManager m;
+  m.getDesignMatrixWorkspace(4, 2, false);
+  tadah::mlip::memory::DesignMatrixWorkspace *w = m.getDesignMatrixWorkspace(4, 2, true);
+  CHECK(w->Phi_cpy.rows() == 4);
+  CHECK(w->Phi_cpy.cols() == 2);
+  CHECK(w->T_cpy.size() == 4);
+}
