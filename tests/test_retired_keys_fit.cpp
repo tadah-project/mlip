@@ -1,8 +1,8 @@
 // test_retired_keys_fit.cpp
 //
 // The keys retired in 1.6.0 (EWEIGHT, FWEIGHT, SWEIGHT, WDBFILE_AUTO,
-// EWEIGHT_TEMP, and UNCERTAINTY, which tadah train 1.5.0 wrote into every
-// potential) in the programs that load and fit potentials.
+// EWEIGHT_TEMP, and UNCERTAINTY, which tadah train 1.0.0 to 1.5.0 wrote
+// into every potential) in the programs that load and fit potentials.
 //
 //  - every load of a potential that has them works, with one notice per
 //    load listing them: tadah predict, tadah properties pairwise, tadah
@@ -261,11 +261,13 @@ TEST_CASE("The C++ API refuses a fit of a configuration with retired keys",
 /* Pins: tadah train -c of a configuration that includes the 1.5.0
  * potential (CONFIG old.tadah and a DBFILE line) is refused before any
  * structure is fitted, naming the five retired lines of the potential file
- * (its UNCERTAINTY false among them) and the conversion of each, and
- * writes no potential; the parse gives one notice listing them.
+ * (its UNCERTAINTY false among them, marked as converted by deleting the
+ * line) and the conversion of each, and writes no potential; the parse
+ * gives one notice listing them.
  * Before the fix: the retrain ran with EWEIGHT 1.0, FWEIGHT 100 and
  * SWEIGHT 1.0 and wrote pot.tadah. Before UNCERTAINTY was retired: the
- * refusal named four lines, the UNCERTAINTY line not read. */
+ * refusal named four lines, the UNCERTAINTY line not read; then it named
+ * the UNCERTAINTY line without the mark. */
 TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
           "conversion",
           "[retired][fit]") {
@@ -286,7 +288,8 @@ TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
                        Contains("FWEIGHT 100 (line 10 of " + f + ")") &&
                        Contains("SWEIGHT 1.0 (line 23 of " + f) &&
                        Contains("WDBFILE_AUTO 0.0 (line 27 of " + f) &&
-                       Contains("UNCERTAINTY false (line 25 of " + f + ")") &&
+                       Contains("UNCERTAINTY false (line 25 of " + f +
+                                "; converted by deleting the line)") &&
                        Contains("SSIGMA = 160.2/sqrt(SWEIGHT)"));
   CHECK_FALSE(fs::exists("pot.tadah"));
   CHECK(retired_notices(notices) == 1);
@@ -480,8 +483,8 @@ TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
 /* Pins: the refusal of a retrain of the potential of Tadah! 1.5.0 (FORCE
  * true, STRESS false; CONFIG of it and a DBFILE of four 2-atom cells)
  * marks the lines a deletion converts, SWEIGHT 1.0 (STRESS false here)
- * and WDBFILE_AUTO 0.0, and not EWEIGHT and FWEIGHT, and names the
- * UNCERTAINTY false line, whose conversion is its deletion; the
+ * and WDBFILE_AUTO 0.0, and not EWEIGHT and FWEIGHT, and the UNCERTAINTY
+ * false line, whose conversion is always its deletion; the
  * configuration converted as the refusal says -- those three lines
  * deleted, EWEIGHT 1.0 as ESIGMA = 1000/(N sqrt(EWEIGHT)) = 500 for the
  * 2-atom cells, FWEIGHT 100 as FSIGMA = 1/sqrt(FWEIGHT) = 0.1, its DBFILE
@@ -489,7 +492,8 @@ TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
  * potential.
  * Before the fix: the refusal gave SSIGMA = 160.2/sqrt(SWEIGHT) for the
  * SWEIGHT line too, and the configuration converted so (SSIGMA 160.2) was
- * refused again, as SSIGMA other than its default with STRESS false. */
+ * refused again, as SSIGMA other than its default with STRESS false; then
+ * it did not mark the UNCERTAINTY line. */
 TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
           "trains",
           "[retired][fit]") {
@@ -513,7 +517,8 @@ TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
                           "line)") &&
                  Contains("WDBFILE_AUTO 0.0 (line 27 of " + f +
                           "; 0: converted by deleting the line)") &&
-                 Contains("UNCERTAINTY false (line 25 of " + f + ")"));
+                 Contains("UNCERTAINTY false (line 25 of " + f +
+                          "; converted by deleting the line)"));
   {
     std::istringstream in(slurp(kOldPot));
     std::ofstream out("converted.tadah");
@@ -640,7 +645,8 @@ TEST_CASE("A potential of Tadah! 1.5.0 with WDBFILE and WDBFILE_AUTO, "
              Contains("SWEIGHT 1.0 (line 23 of pot.tadah; STRESS false "
                       "here: converted by deleting the line)") &&
                  Contains("WDBFILE_AUTO 0.7 (line 28 of pot.tadah)") &&
-                 Contains("UNCERTAINTY false (line 25 of pot.tadah)") &&
+                 Contains("UNCERTAINTY false (line 25 of pot.tadah; "
+                          "converted by deleting the line)") &&
                  Contains("A retrain does not read a potential's WDBFILE "
                           "line") &&
                  Contains("the WDBFILE values of a potential on the command "

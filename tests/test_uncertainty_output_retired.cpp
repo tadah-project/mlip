@@ -1,8 +1,8 @@
 // test_uncertainty_output_retired.cpp
 //
-// Uncertainty output is not part of Tadah! 1.6.0: its error bars were not
-// calibrated (they were too narrow for many structures). The predictions
-// and the fit are unaffected.
+// Uncertainty output is not part of Tadah! 1.6.0: the errors of Tadah!
+// 1.0.0 to 1.5.0 were not standard deviations, and no calibrated estimate
+// replaces them. The predictions and the fit are unaffected.
 //
 //  - tadah predict --error and tadah properties pairwise --error are
 //    retired options of those tasks, refused on the command line and in a
@@ -11,10 +11,10 @@
 //  - tadah train --uncertainty is the option of the retired key
 //    UNCERTAINTY, refused with the reason;
 //  - a fit writes no WCOV or WNOISE, and refuses a configuration with
-//    WCOV, WNOISE or UNCERTAINTY lines (a potential of a development build
-//    of Tadah! 1.6.0, which wrote WCOV and WNOISE for an OALGO 3 fit, used
-//    as the configuration of a retrain), with the conversion: deleting the
-//    lines.
+//    WCOV, WNOISE, UNCERTAINTY or ERROR lines (a potential of a development
+//    build of Tadah! 1.6.0, which wrote WCOV and WNOISE for an OALGO 3 fit,
+//    used as the configuration of a retrain), with the reason and the
+//    conversion: deleting the lines.
 
 #include "catch2/catch.hpp"
 
@@ -55,8 +55,9 @@ using tadah::mlip::memory::MLIPWorkspaceManager;
 namespace fs = std::filesystem;
 
 const std::string kNotPart =
-    "Uncertainty output is not part of Tadah! 1.6.0: its error bars were "
-    "not calibrated (they were too narrow for many structures).";
+    "Uncertainty output is not part of Tadah! 1.6.0: the errors of Tadah! "
+    "1.0.0 to 1.5.0 were not standard deviations, and no calibrated "
+    "estimate replaces them.";
 
 /* The working directory of a case. */
 struct ScratchCwd {
@@ -152,17 +153,20 @@ std::string fit(const std::vector<std::string> &lines, Context &pot) {
 
 /* Pins: the command line of tadah predict --error, tadah properties
  * pairwise --error and tadah train --uncertainty (TaskFactory of their
- * key-value data) is refused before any file is read, with the reason:
- * "--error of tadah predict is retired: tadah predict --error gave ...
- * Uncertainty output is not part of Tadah! 1.6.0: its error bars were not
- * calibrated (they were too narrow for many structures). Replaced by:
- * nothing in Tadah! 1.6.0. Deleting the option converts it: ...", likewise
- * "--error of tadah properties pairwise is retired: ...", and
- * "--uncertainty: UNCERTAINTY is a retired key: ...". The same commands
- * without the option make their task.
- * Before the fix: each option was taken (predict --error and properties
- * pairwise --error gave standard deviations, train --uncertainty wrote
- * weights.tadah). */
+ * key-value data) is refused before any file is read, with the reason, the
+ * option's own (the task's, although its key ERROR is retired too):
+ * "--error of tadah predict is retired: tadah predict --error wrote an
+ * error computed from SIGMA beside every predicted value (some of the
+ * errors negative). Uncertainty output is not part of Tadah! 1.6.0: the
+ * errors of Tadah! 1.0.0 to 1.5.0 were not standard deviations, and no
+ * calibrated estimate replaces them. Replaced by: nothing in Tadah! 1.6.0.
+ * Deleting the option converts it: ...", likewise "--error of tadah
+ * properties pairwise is retired: ...", and "--uncertainty: UNCERTAINTY is
+ * a retired key: tadah train --uncertainty wrote weights.tadah, ...". The
+ * same commands without the option make their task.
+ * Before the fix: each option was taken; then the reasons said that the
+ * options gave standard deviations, too narrow for many structures (what
+ * a development build gave, not a release). */
 TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
           "--uncertainty",
           "[uncertainty][retired][cli]") {
@@ -176,7 +180,8 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
   with["error"] = {"true"};
   CHECK_THAT(factory_error(Input("PREDICT", with)),
              StartsWith("--error of tadah predict is retired: tadah predict "
-                        "--error gave") &&
+                        "--error wrote an error computed from SIGMA beside "
+                        "every predicted value") &&
                  Contains(kNotPart) &&
                  Contains("Replaced by: nothing in Tadah! 1.6.0. Deleting "
                           "the option converts it"));
@@ -190,7 +195,9 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
   with["error"] = {"true"};
   CHECK_THAT(factory_error(Input("PROPERTIES.pairwise", with)),
              StartsWith("--error of tadah properties pairwise is retired: "
-                        "tadah properties pairwise --error gave") &&
+                        "tadah properties pairwise --error wrote an error "
+                        "computed from SIGMA beside every value of the "
+                        "energy curve") &&
                  Contains(kNotPart) &&
                  Contains("Replaced by: nothing in Tadah! 1.6.0."));
   CHECK(factory_error(Input("PROPERTIES.pairwise", pairwise)).empty());
@@ -198,7 +205,9 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
   CHECK_THAT(factory_error(Input("TRAIN", {{"config", {"config.train"}},
                                            {"uncertainty", {"true"}}})),
              StartsWith("--uncertainty: UNCERTAINTY is a retired key: tadah "
-                        "train --uncertainty wrote") &&
+                        "train --uncertainty wrote weights.tadah, each "
+                        "coefficient of the fit beside a diagonal entry of "
+                        "SIGMA.") &&
                  Contains(kNotPart) &&
                  Contains("Replaced by: nothing in Tadah! 1.6.0."));
 }
@@ -206,10 +215,10 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
 /* Pins: a task file that gives ERROR in a TASK predict or TASK properties
  * pairwise section, or in its GLOBAL section with such a TASK section
  * (the GLOBAL section sets the keys of every task of the file), is refused
- * before any task runs, naming the line and the reason ("ERROR (line 3 of
- * p.task) in TASK predict: --error of tadah predict is retired: ...").
- * Before the fix: the tasks were made, and predict wrote standard
- * deviations. */
+ * before any task runs, naming the line and the reason of the task's
+ * option ("ERROR (line 3 of p.task) in TASK predict: --error of tadah
+ * predict is retired: ..."), the key ERROR being retired too.
+ * Before the fix: the tasks were made, and predict wrote errors. */
 TEST_CASE("A task file is refused for ERROR in a predict or properties "
           "pairwise task",
           "[uncertainty][retired][cli]") {
@@ -267,12 +276,15 @@ TEST_CASE("An OALGO 3 fit writes no WCOV or WNOISE",
 
 /* Pins: a fit (Trainer, as the C++ API trains) refuses a configuration
  * with the WCOV and WNOISE lines of a potential of a development build of
- * Tadah! 1.6.0, naming each line (WCOV by its first values) and its
- * conversion, the deletion of the line; and one with an UNCERTAINTY line
- * (as tadah train 1.5.0 wrote into every potential), likewise. Without
- * the lines the configuration fits.
+ * Tadah! 1.6.0, naming each line (WCOV by its first values), marked as
+ * converted by deleting it, with the reason and the conversion of each;
+ * and one with an UNCERTAINTY line (as tadah train 1.0.0 to 1.5.0 wrote
+ * into every potential) or an ERROR line (the key of --error of tadah
+ * predict), likewise. Without the lines the configuration fits.
  * Before the fix: both fitted, WCOV and WNOISE replaced by those of the
- * fit and UNCERTAINTY read as the switch of weights.tadah. */
+ * fit and UNCERTAINTY read as the switch of weights.tadah; then the lines
+ * were not marked and no reason given, and an ERROR line was taken and
+ * written into the potential, where nothing read it. */
 TEST_CASE("A fit refuses a configuration with WCOV, WNOISE or UNCERTAINTY",
           "[uncertainty][retired][fit]") {
   PeriodicTable::initialize();
@@ -282,16 +294,29 @@ TEST_CASE("A fit refuses a configuration with WCOV, WNOISE or UNCERTAINTY",
       model_lines("M_BLR BF_Linear", {"WCOV 3 1 0 0 0 1 0 0 0 1",
                                       "WNOISE E 1e-6 F 1e-3"}),
       pot);
+  const std::string mark = "; converted by deleting the line)";
   CHECK_THAT(covariance,
-             Contains("WCOV 3 1 0 and 7 more values (line 16)") &&
-                 Contains("WNOISE E 1e-6 F 1e-3 (line 17)") &&
+             Contains("WCOV 3 1 0 and 7 more values (line 16" + mark) &&
+                 Contains("WNOISE E 1e-6 F 1e-3 (line 17" + mark) &&
                  Contains("retired") &&
+                 Contains(keys.at("WCOV").retired.reason) &&
                  Contains(keys.at("WCOV").retired.conversion) &&
-                 Contains(keys.at("WNOISE").retired.conversion));
+                 Contains(keys.at("WNOISE").retired.reason) &&
+                 Contains(keys.at("WNOISE").retired.conversion) &&
+                 Contains("With these lines deleted"));
   const std::string uncertainty =
       fit(model_lines("M_KRR Kern_Linear", {"UNCERTAINTY true"}), pot);
   CHECK_THAT(uncertainty,
-             Contains("UNCERTAINTY true (line 16)") &&
-                 Contains(keys.at("UNCERTAINTY").retired.conversion));
+             Contains("UNCERTAINTY true (line 16" + mark) &&
+                 Contains(keys.at("UNCERTAINTY").retired.reason) &&
+                 Contains(keys.at("UNCERTAINTY").retired.conversion) &&
+                 Contains("With this line deleted"));
+  pot = Context();
+  const std::string error =
+      fit(model_lines("M_BLR BF_Linear", {"ERROR true"}), pot);
+  CHECK_THAT(error, Contains("ERROR true (line 16" + mark) &&
+                        Contains(kNotPart) &&
+                        Contains(keys.at("ERROR").retired.conversion));
+  CHECK_FALSE(pot.has_stored("ERROR"));
   CHECK(fit(model_lines("M_BLR BF_Linear", {}), pot).empty());
 }

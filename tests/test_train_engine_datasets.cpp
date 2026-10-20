@@ -1290,11 +1290,11 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  * and run, as tadah runs a task):
  *   - `tadah --task run.task`, its TASK train section "CONFIG old.tadah",
  *     "DBFILE db.tadah", "OUTFILE pot2.tadah": refused, "UNCERTAINTY true
- *     (line N of old.tadah)";
+ *     (line N of old.tadah; converted by deleting the line)";
  *   - `tadah train -c outer.train`, outer.train being "CONFIG old3.tadah"
  *     (the potential with OALGO 3, without the line), "UNCERTAINTY true",
  *     "DBFILE db.tadah": refused, "UNCERTAINTY true (line 2 of
- *     outer.train)";
+ *     outer.train; converted by deleting the line)";
  *   - `tadah train -c retrain.train`, retrain.train being old.tadah with
  *     "DBFILE db.tadah": refused naming retrain.train; with --uncertainty
  *     the option is refused first ("--uncertainty: UNCERTAINTY is a retired
@@ -1304,7 +1304,7 @@ Context potential_with_oalgo(const std::string &model, int oalgo) {
  * Before the fix: the potential's line was not read (a WARNING said that
  * it asked the run that wrote it for weights.tadah) and the retrains ran;
  * the run's own line and --uncertainty were requests for weights.tadah,
- * which an OALGO 3 fit wrote. */
+ * which an OALGO 3 fit wrote; then the refusal did not mark the line. */
 TEST_CASE("A retrain refuses an UNCERTAINTY line, of a potential or of the "
           "run",
           "[train][potential_content][retrain][uncertainty]") {
@@ -1332,7 +1332,7 @@ TEST_CASE("A retrain refuses an UNCERTAINTY line, of a potential or of the "
     const CommandInput input("", {{"task", {"run.task"}}});
     const std::string what = validated_train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
-    CHECK(refused(what, " of old.tadah)"));
+    CHECK(refused(what, " of old.tadah; converted by deleting the line)"));
     CHECK_FALSE(fs::exists("pot2.tadah"));
     CHECK_FALSE(fs::exists("weights.tadah"));
   }
@@ -1344,7 +1344,8 @@ TEST_CASE("A retrain refuses an UNCERTAINTY line, of a potential or of the "
     const CommandInput input("TRAIN", {{"config", {"outer.train"}}});
     const std::string what = validated_train_input_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
-    CHECK(refused(what, "(line 2 of outer.train)"));
+    CHECK(refused(what, "(line 2 of outer.train; converted by deleting the "
+                        "line)"));
     CHECK_FALSE(fs::exists("pot3.tadah"));
     CHECK_FALSE(fs::exists("weights.tadah"));
   }
@@ -1356,7 +1357,8 @@ TEST_CASE("A retrain refuses an UNCERTAINTY line, of a potential or of the "
                                          {"outfile", {"pot4.tadah"}}});
       const std::string what = validated_train_input_error(input, printed);
       INFO("thrown: " << what << "\nprinted:\n" << printed);
-      CHECK(refused(what, " of retrain.train)"));
+      CHECK(refused(what, " of retrain.train; converted by deleting the "
+                          "line)"));
       CHECK_FALSE(fs::exists("pot4.tadah"));
     }
     {
