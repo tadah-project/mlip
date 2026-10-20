@@ -195,10 +195,11 @@ struct EffectiveParameters {
   std::vector<std::array<double, 3>> by_dataset;
   /** Their sum, sum_kept s_i^2/(s_i^2 + lambda) for a uniform ridge. */
   double total = 0.0;
-  /** The prior's share, lambda tr(H^+ I_pen) over the retained
-   *  directions (each direction's lambda |P v_i|^2 over its eigenvalue of
-   *  H): the retained directions less @c total, without the rounding of
-   *  that difference; 0 at lambda 0. */
+  /** The prior's effective parameters, lambda tr(H^+ I_pen) over the
+   *  retained directions (each direction's lambda |P v_i|^2 over its
+   *  eigenvalue of H): the retained directions less @c total, computed per
+   *  direction rather than as that difference, whose rounding could make
+   *  it negative; 0 at lambda 0. */
   double prior = 0.0;
   /** The directions the solve keeps (the rank of H on them). */
   std::size_t retained = 0;
