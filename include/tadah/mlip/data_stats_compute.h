@@ -56,8 +56,10 @@ namespace mlip {
  *
  *  The energy-per-atom and force-magnitude statistics take the structures
  *  that have them: a structure with eweight 0 has no energy of its own and
- *  one with fweight 0 no forces (tadah data convert stores placeholders),
- *  so they are left out of those (not of the pair statistics).
+ *  one with fweight 0 no forces (the values stored for them are
+ *  placeholders; tadah data convert stores zero forces with fweight 0 for
+ *  a file that gives none), so they are left out of those (not of the pair
+ *  statistics).
  *
  *  When `with_descriptor_stats` is true, callers should populate
  *  `out.rho_percentiles_per_descriptor` themselves (this function only

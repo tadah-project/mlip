@@ -2,8 +2,9 @@
 //
 // The statistics of the data leave out the energies and forces a structure
 // does not have: a structure stored with eweight 0 has no energy of its own,
-// one with fweight 0 no forces (tadah data convert stores placeholders for
-// them). compute_data_stats (tadah analysis dataset_stats, and the
+// one with fweight 0 no forces (the values stored for them are
+// placeholders; tadah data convert stores zero forces with fweight 0 for a
+// file that gives none). compute_data_stats (tadah analysis dataset_stats, and the
 // statistics suggest_bounds and check_bounds read) takes the energies per
 // atom of the structures with an energy and the force magnitudes of those
 // with forces; the design matrix's standard deviations of the reference

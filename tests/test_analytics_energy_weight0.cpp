@@ -2,8 +2,8 @@
 //
 // The energy metrics leave out the structures stored with energy weight 0.
 //
-// A structure with eweight 0 has no energy of its own (tadah data convert
-// stores a placeholder for a file that gives none). Training leaves its
+// A structure with eweight 0 has no energy of its own (its energy line,
+// which the dataset format needs, holds a placeholder). Training leaves its
 // energy out through the weight; the energy metrics (Analytics::calc_e_mae,
 // calc_e_rmse, calc_e_rrmse, calc_e_r_sq: PC_EMAE, PC_ERMSE, PC_ErRMSE,
 // PC_ERSQ of tadah hpo, the Energy lines of tadah predict -A) and their

@@ -92,8 +92,8 @@ struct LoadTransformReport {
  *  7. Per-dataset weights: w_final[i] = WDBFILE[i] * N_i^(-WDBFILE_AUTO).
  *  8. Equilibrium-volume diagnostic.
  *
- * A structure with eweight 0 has no energy of its own (tadah data convert
- * stores a placeholder): steps 1, 3, 5 and 8 leave its energy out (it is
+ * A structure with eweight 0 has no energy of its own (its energy line,
+ * which the dataset format needs, holds a placeholder): steps 1, 3, 5 and 8 leave its energy out (it is
  * neither filtered by energy nor reweighted). One with fweight 0 has no
  * forces: FFILTER leaves it out. Refused before any transform changes a
  * weight: a WDBFILE value below 0 (naming the dataset), WDBFILE_AUTO

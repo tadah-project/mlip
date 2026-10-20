@@ -3,8 +3,8 @@
 // The transforms that prepare the training data (apply_load_transforms)
 // and the weights of the data.
 //
-//  - A structure with eweight 0 has no energy of its own (tadah data
-//    convert stores a placeholder for a file that gives none): the energy
+//  - A structure with eweight 0 has no energy of its own (its energy line,
+//    which the dataset format needs, holds a placeholder): the energy
 //    shift derived from the data (ESHIFT_ATOM, the isolated atoms;
 //    ESHIFT_DBATOM, the least-squares fit), the energy filter (EFILTER),
 //    the Boltzmann weights (EWEIGHT_TEMP, its minimum energy) and the

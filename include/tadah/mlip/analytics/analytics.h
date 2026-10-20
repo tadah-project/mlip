@@ -29,8 +29,10 @@ enum class MetricQuantity { Forces, Stress, Energy };
 /** Whether structure @p s counts in the @p q metrics: a structure stored
  *  with energy weight 0 (eweight) has no energy of its own, one with force
  *  weight 0 (fweight) no force data and one with stress weight 0 (sweight)
- *  no stress tensor (tadah data convert stores placeholders for them); the
- *  metrics leave them out, as training does. */
+ *  no stress tensor (the values stored for them are placeholders; tadah
+ *  data convert stores zero forces and stresses with fweight and sweight 0
+ *  for a file that gives none); the metrics leave them out, as training
+ *  does. */
 inline bool counts_in_metric(const Structure &s, MetricQuantity q) {
     const double w = q == MetricQuantity::Energy   ? s.eweight
                      : q == MetricQuantity::Forces ? s.fweight
