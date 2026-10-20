@@ -128,68 +128,6 @@ TEST_CASE("apply_outlier_filter drops only structures violating thresholds",
   REQUIRE(stdb(1).label == std::string("normal_b"));
 }
 
-TEST_CASE("auto_balance_db_weights computes N_i^(-alpha)", "[load_transforms]") {
-  StructureDB stdb;
-  for (int i = 0; i < 2; ++i)
-    stdb.add(make_structure("ds0", -1.0, {{"Ti", Vec3d(0, 0, 0)}}));
-  for (int i = 0; i < 1000; ++i)
-    stdb.add(make_structure("ds1", -2.0, {{"Ti", Vec3d(0, 0, 0)}}));
-  stdb.dbidx = {0, 2, 1002};
-
-  auto w0 = auto_balance_db_weights(stdb, 0.0);
-  REQUIRE(w0.size() == 2);
-  REQUIRE(w0[0] == Approx(1.0));
-  REQUIRE(w0[1] == Approx(1.0));
-
-  auto w_half = auto_balance_db_weights(stdb, 0.5);
-  REQUIRE(w_half[0] == Approx(1.0 / std::sqrt(2.0)));
-  REQUIRE(w_half[1] == Approx(1.0 / std::sqrt(1000.0)));
-
-  auto w_full = auto_balance_db_weights(stdb, 1.0);
-  REQUIRE(w_full[0] == Approx(0.5));
-  REQUIRE(w_full[1] == Approx(0.001));
-
-  REQUIRE_THROWS_AS(auto_balance_db_weights(stdb, -0.1),
-                    std::invalid_argument);
-  REQUIRE_THROWS_AS(auto_balance_db_weights(stdb, 1.1),
-                    std::invalid_argument);
-}
-
-TEST_CASE("apply_per_db_weights composes with WDBFILE_AUTO", "[load_transforms]") {
-  StructureDB stdb;
-  for (int i = 0; i < 2; ++i)
-    stdb.add(make_structure("ds0", -1.0, {{"Ti", Vec3d(0, 0, 0)}}));
-  for (int i = 0; i < 4; ++i)
-    stdb.add(make_structure("ds1", -2.0, {{"Ti", Vec3d(0, 0, 0)}}));
-  stdb.dbidx = {0, 2, 6};
-
-  auto w_auto = auto_balance_db_weights(stdb, 0.5);
-  std::vector<double> w_user{5.0, 1.0};
-  std::vector<double> w_final(2);
-  for (int i = 0; i < 2; ++i) w_final[i] = w_user[i] * w_auto[i];
-
-  apply_per_db_weights(stdb, w_final);
-  REQUIRE(stdb(0).eweight == Approx(5.0 / std::sqrt(2.0)));
-  REQUIRE(stdb(2).eweight == Approx(1.0 / std::sqrt(4.0)));
-  REQUIRE(stdb(2).fweight == Approx(1.0 / std::sqrt(4.0)));
-  REQUIRE(stdb(2).sweight == Approx(1.0 / std::sqrt(4.0)));
-}
-
-TEST_CASE("apply_boltzmann_eweight rewweights toward minimum energy",
-          "[load_transforms]") {
-  StructureDB stdb;
-  // Two configs, same N=1, energies 0.0 (E_min) and 0.01 eV/atom.
-  stdb.add(make_structure("min", 0.0, {{"Ti", Vec3d(0, 0, 0)}}));
-  stdb.add(make_structure("hot", 0.01, {{"Ti", Vec3d(0, 0, 0)}}));
-  stdb.dbidx = {0, 2};
-
-  apply_boltzmann_eweight(stdb, 1000.0);  // kT ~ 0.0862 eV
-  REQUIRE(stdb(0).eweight == Approx(1.0));  // exp(0) = 1
-  // The relative weight should be exp(-0.01/(kB*1000)) ~= exp(-0.116)
-  const double kB = 8.617333262e-5;
-  REQUIRE(stdb(1).eweight == Approx(std::exp(-0.01 / (kB * 1000.0))));
-}
-
 TEST_CASE("apply_com_force_zero zeroes net force per config",
           "[load_transforms]") {
   StructureDB stdb;

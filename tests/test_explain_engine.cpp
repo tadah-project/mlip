@@ -738,3 +738,41 @@ TEST_CASE("tadah explain: the text of a command this program was built "
   CHECK(explain("data.split").find(msg) == std::string::npos);
   CHECK(explain("hpo.verbose").find(msg) == std::string::npos);
 }
+
+TEST_CASE("tadah explain: a retired key's text ends with why it is retired, "
+          "what replaces it and its conversion",
+          "[explain][retired]") {
+  /* Pins: `tadah explain EWEIGHT` and `tadah explain WDBFILE_AUTO` print the
+   * key's description, then a blank line and the lines "RETIRED: <reason>",
+   * "REPLACED BY: <replacement>" and "CONVERSION: <conversion>" of the
+   * blueprint's retired table, in this order (EWEIGHT's replacement names
+   * ESIGMA and ENERGY false, its conversion 1000/(N sqrt(EWEIGHT)); that of
+   * WDBFILE_AUTO names WDBFILE and n_d^-a); a retired key has no
+   * EXAMPLES; the text of ESIGMA, a key that is not retired, has no
+   * RETIRED line.
+   * Before the fix: the text of a retired key was its description alone. */
+  const std::string out = explain("EWEIGHT");
+  INFO(out);
+  const auto lines = lines_of(out);
+  const std::size_t r = std::find_if(lines.begin(), lines.end(),
+                                     [](const std::string &l) {
+                                       return l.rfind("RETIRED: ", 0) == 0;
+                                     }) -
+                        lines.begin();
+  REQUIRE(r < lines.size());
+  REQUIRE(r >= 2);
+  CHECK(lines[r - 1].empty());
+  CHECK_THAT(lines[r], Catch::Matchers::Contains("total energy"));
+  REQUIRE(r + 2 < lines.size());
+  CHECK_THAT(lines[r + 1], Catch::Matchers::StartsWith("REPLACED BY: ESIGMA") &&
+                               Catch::Matchers::Contains("ENERGY false"));
+  CHECK_THAT(lines[r + 2], Catch::Matchers::StartsWith("CONVERSION: ") &&
+                               Catch::Matchers::Contains("1000/(N sqrt(EWEIGHT))"));
+  CHECK(out.find("EXAMPLES:") == std::string::npos);
+
+  const std::string wa = explain("WDBFILE_AUTO");
+  INFO(wa);
+  CHECK_THAT(wa, Catch::Matchers::Contains("\nREPLACED BY: WDBFILE") &&
+                     Catch::Matchers::Contains("n_d^-a"));
+  CHECK(explain("ESIGMA").find("RETIRED:") == std::string::npos);
+}

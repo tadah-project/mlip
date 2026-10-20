@@ -2,13 +2,15 @@
 //
 // M_KRR implementation 2 (MODEL M_KRR <kernel> 2) solves (K + LAMBDA I) w
 // = t on the mean descriptors of whole structures and their energies per
-// atom: it fits no forces and no stresses, and no weight of the data
-// enters its solve. A configuration that asks for either is refused before
-// the fit, naming the key (or the structure's eweight) and implementation
-// 1, which fits them: FORCE true, STRESS true, an eweight other than 1,
-// WDBFILE values other than 1, EWEIGHT, FWEIGHT or SWEIGHT other than 1,
-// WDBFILE_AUTO other than 0 and EWEIGHT_TEMP. Before the fix each was
-// ignored: the fit was the same with or without it.
+// atom: it fits no forces and no stresses, and no error scale or priority
+// of the data enters its solve. A configuration that asks for either is
+// refused before the fit, naming the key (or the structure's eweight) and
+// implementation 1, which fits them: FORCE true, STRESS true, an eweight
+// other than 1, WDBFILE values other than 1, an ESIGMA other than its
+// default (compared by value) and ENORM SQRT. (FSIGMA and SSIGMA other
+// than the default, and ENERGY false, are refused by every fit without
+// forces and stresses, before this.) Before the fix each was ignored: the
+// fit was the same with or without it.
 //
 // Like every fit, it refuses a weight of the data that is negative or not
 // finite (an fweight or sweight too, which it does not read otherwise), and
@@ -70,9 +72,6 @@ Context make_context() {
   c.add("DIMER", "false 0 false");
   c.add("FORCE", "false");
   c.add("STRESS", "false");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);
@@ -132,21 +131,21 @@ std::string fit(Context c, StructureDB db) {
 
 }  // namespace
 
-/* Pins: each of FORCE true, STRESS true, WDBFILE 2, EWEIGHT 2, FWEIGHT 2,
- * SWEIGHT 2, WDBFILE_AUTO 0.5 and EWEIGHT_TEMP 300 is refused naming the
- * key and its value and MODEL M_KRR Kern_RBF 1 (implementation 1); an
- * eweight of 0.5 on the second structure is refused naming it; the
- * configuration with every weight 1 (EWEIGHT 1.0, WDBFILE 1, WDBFILE_AUTO
- * 0) fits.
- * Before the fix: every one of them fitted, as if it were absent. */
+/* Pins: each of FORCE true, STRESS true, WDBFILE 2, ESIGMA 2 and ENORM
+ * SQRT is refused naming the key and its value and MODEL M_KRR Kern_RBF 1
+ * (implementation 1); an eweight of 0.5 on the second structure is refused
+ * naming it; the configuration with every priority 1 and the default error
+ * scales written out (WDBFILE 1, ESIGMA 1.0, ENORM ATOM, FSIGMA 0.1 0)
+ * fits.
+ * Before the fix: every one of them fitted, as if it were absent (EWEIGHT,
+ * FWEIGHT, SWEIGHT, WDBFILE_AUTO and EWEIGHT_TEMP, retired since, too). */
 TEST_CASE("M_KRR implementation 2 refuses the weights and the forces and "
           "stresses it would ignore",
           "[krr][train2][refusal]") {
   PeriodicTable::initialize();
   const std::vector<std::pair<std::string, std::string>> keys = {
-      {"FORCE", "true"},        {"STRESS", "true"},     {"WDBFILE", "2"},
-      {"EWEIGHT", "2"},         {"FWEIGHT", "2"},       {"SWEIGHT", "2"},
-      {"WDBFILE_AUTO", "0.5"},  {"EWEIGHT_TEMP", "300"}};
+      {"FORCE", "true"},  {"STRESS", "true"}, {"WDBFILE", "2"},
+      {"ESIGMA", "2"},    {"ENORM", "SQRT"}};
   for (const auto &kv : keys) {
     DYNAMIC_SECTION(kv.first << " " << kv.second) {
       Context c = make_context();
@@ -164,10 +163,12 @@ TEST_CASE("M_KRR implementation 2 refuses the weights and the forces and "
                Contains("eweight 0.5") && Contains("structure 2 of 3") &&
                    Contains("'cell 1'") && Contains("MODEL M_KRR Kern_RBF 1"));
   }
-  SECTION("every weight 1 (a pin)") {
+  SECTION("every priority 1, the default error scales (a pin)") {
     Context c = make_context();
     set_key(c, "WDBFILE", "1");
-    set_key(c, "WDBFILE_AUTO", "0");
+    set_key(c, "ESIGMA", "1.0");
+    set_key(c, "ENORM", "ATOM");
+    set_key(c, "FSIGMA", "0.1 0");
     CHECK(fit(c, training_db()) == "no exception");
   }
 }
@@ -258,9 +259,8 @@ TEST_CASE("The refusals of M_KRR implementation 2 are checked without a fit",
     return std::string("no exception");
   };
   const std::vector<std::pair<std::string, std::string>> keys = {
-      {"FORCE", "true"},        {"STRESS", "true"},     {"WDBFILE", "2"},
-      {"EWEIGHT", "2"},         {"FWEIGHT", "0.5"},     {"SWEIGHT", "2"},
-      {"WDBFILE_AUTO", "0.5"},  {"EWEIGHT_TEMP", "300"}};
+      {"FORCE", "true"},  {"STRESS", "true"}, {"WDBFILE", "2"},
+      {"ESIGMA", "0.5"},  {"ENORM", "SQRT"}};
   for (const auto &kv : keys) {
     DYNAMIC_SECTION(kv.first << " " << kv.second) {
       Context c = make_context();

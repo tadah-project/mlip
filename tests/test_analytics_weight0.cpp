@@ -290,7 +290,7 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
                                                 {"a.tadah", "b.tadah"}),
                       Contains("t: no dataset has a structure with forces") &&
                           Contains("a.tadah") && Contains("b.tadah") &&
-                          Contains("force weight 0"));
+                          Contains("force priority 0"));
   }
   SECTION("stress weight 0") {
     StructureDB truth = reference();
@@ -321,6 +321,6 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     for (std::size_t i = 0; i < truth.size(); ++i) truth(i).sweight = 0.0;
     CHECK_THROWS_WITH(require_metric_structures(truth, MetricQuantity::Stress, "t"),
                       Contains("no dataset has a stress tensor") &&
-                          Contains("stress weight 0"));
+                          Contains("stress priority 0"));
   }
 }

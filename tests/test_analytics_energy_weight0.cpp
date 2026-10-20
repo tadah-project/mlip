@@ -168,8 +168,9 @@ TEST_CASE("Analytics: the energy metrics leave out structures with energy "
 /* Pins: measured_datasets(Energy) is {true, true, false};
  * measured_mean of the RMSE over it is the mean of datasets 1 and 2;
  * require_metric_structures(Energy) passes with them and refuses data in
- * which every structure has eweight 0, naming the files and 'energy weight
- * 0 (eweight)'.
+ * which every structure has eweight 0, naming the files and 'energy
+ * priority 0 (eweight)' ('energy weight 0 (eweight)' before the priorities
+ * were named so).
  * Before the fix: MetricQuantity has no Energy (does not compile). */
 TEST_CASE("The energy metrics measure the datasets with an energy",
           "[analytics][weight0][energy]") {
@@ -188,7 +189,7 @@ TEST_CASE("The energy metrics measure the datasets with an energy",
       tadah::mlip::require_metric_structures(truth, MetricQuantity::Energy, "t",
                                              {"a.tadah", "b.tadah", "c.tadah"}),
       Contains("t: no dataset has a structure with an energy") &&
-          Contains("a.tadah") && Contains("energy weight 0 (eweight)"));
+          Contains("a.tadah") && Contains("energy priority 0 (eweight)"));
 }
 
 /* Pins: the partials of every energy metric emit no cell of Z, Y, X or W, and

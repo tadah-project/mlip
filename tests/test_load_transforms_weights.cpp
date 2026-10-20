@@ -6,25 +6,26 @@
 //  - A structure with eweight 0 has no energy of its own (its energy line,
 //    which the dataset format needs, holds a placeholder): the energy
 //    shift derived from the data (ESHIFT_ATOM, the isolated atoms;
-//    ESHIFT_DBATOM, the least-squares fit), the energy filter (EFILTER),
-//    the Boltzmann weights (EWEIGHT_TEMP, its minimum energy) and the
-//    reference state of the log leave it out. A structure with fweight 0
-//    has no forces of its own: the force filter (FFILTER) leaves it out.
+//    ESHIFT_DBATOM, the least-squares fit), the energy filter (EFILTER)
+//    and the reference state of the log leave it out. A structure with
+//    fweight 0 has no forces of its own: the force filter (FFILTER) leaves
+//    it out.
 //  - A species that only structures with eweight 0 contain has no energy
 //    to fit: ESHIFT_DBATOM fits the species the energies determine and
 //    gives that one 0, with a WARNING naming it.
-//  - The values a transform cannot apply are refused: a negative WDBFILE
-//    value (naming the dataset), WDBFILE_AUTO outside [0, 1] and
-//    EWEIGHT_TEMP <= 0. (WDBFILE_AUTO below 0 and EWEIGHT_TEMP <= 0 were
-//    ignored, although the documentation says they are rejected; a
-//    negative WDBFILE was applied.) A WDBFILE with more values than
-//    datasets is refused for its size, before its signs are read.
+//  - WDBFILE, the priority of each dataset, applies in the fit
+//    (row_weights.h): no transform changes a priority of the data, and the
+//    fit refuses a WDBFILE value that is not a finite number >= 0 (naming
+//    the dataset) and a WDBFILE without one value per dataset (for its
+//    size, before its signs are read). WDBFILE_AUTO and EWEIGHT_TEMP are
+//    retired: Context::add refuses them, whatever their value.
 
 #include "catch2/catch.hpp"
 #include <tadah/core/context.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/load_transforms.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 
@@ -70,6 +71,17 @@ int Z(const char *s) { return PeriodicTable::find_by_symbol(s).Z; }
 std::string transform_refusal(StructureDB stdb, const Context &c) {
   try {
     apply_load_transforms(stdb, c);
+  } catch (const std::exception &e) {
+    return e.what();
+  }
+  return "no exception";
+}
+
+/* What the fit's priorities of @p stdb (dataset_priorities) throw for
+ * @p c, or "no exception". */
+std::string priorities_refusal(const StructureDB &stdb, const Context &c) {
+  try {
+    (void)dataset_priorities(c, stdb);
   } catch (const std::exception &e) {
     return e.what();
   }
@@ -218,47 +230,33 @@ TEST_CASE("EFILTER and FFILTER leave out the energies and forces a structure "
   CHECK(stdb(2).label == "no forces");
 }
 
-/* Pins: EWEIGHT_TEMP's minimum energy is that of the structures with an
- * energy: with a structure of eweight 0 at a placeholder -100 eV/atom, the
- * structure at 0 eV/atom keeps eweight 1 (it is the minimum) and the
- * placeholder's eweight stays 0 (no nan).
- * Before the fix: the minimum was the placeholder's, so the structure at 0
- * got exp(-100/kT), 0 at 1000 K. */
-TEST_CASE("EWEIGHT_TEMP takes its minimum energy from the structures with an "
-          "energy",
-          "[load_transforms][weight0]") {
-  StructureDB stdb;
-  stdb.add(make_structure("min", 0.0, {{kTi, Vec3d(0, 0, 0)}}));
-  stdb.add(make_structure("hot", 0.01, {{kTi, Vec3d(0, 0, 0)}}));
-  stdb.add(make_structure("no energy", -100.0, {{kTi, Vec3d(0, 0, 0)}}, 0.0));
-  stdb.dbidx = {0, 3};
-  apply_boltzmann_eweight(stdb, 1000.0);
-  const double kB = 8.617333262e-5;
-  CHECK(stdb(0).eweight == Approx(1.0));
-  CHECK(stdb(1).eweight == Approx(std::exp(-0.01 / (kB * 1000.0))));
-  CHECK(stdb(2).eweight == 0.0);
-}
-
-/* Pins: a negative WDBFILE value is refused naming WDBFILE, the value and
- * the dataset (2 of 2); WDBFILE 0 (a dataset out of the fit) is applied.
- * Before the fix: -1 was applied (the weights of dataset 2 became -1). */
+/* Pins: a negative WDBFILE value is refused by the fit's priorities
+ * (dataset_priorities) naming WDBFILE, the value and the dataset (2 of 2);
+ * WDBFILE 0 (a dataset out of the fit) is accepted, and the load transforms
+ * leave the priorities of the data as they are (WDBFILE applies in the fit
+ * only).
+ * Before the fix: -1 was applied (the weights of dataset 2 became -1);
+ * after it was refused, apply_load_transforms refused it and multiplied the
+ * weights by WDBFILE 0 (eweight 0). */
 TEST_CASE("A negative WDBFILE value is refused", "[load_transforms][refusal]") {
   Context c;
   c.add("WDBFILE", "1 -1");
-  CHECK_THAT(transform_refusal(two_datasets(), c),
+  CHECK_THAT(priorities_refusal(two_datasets(), c),
              Contains("WDBFILE") && Contains("-1") && Contains("dataset 2 of 2") &&
                  Contains(">= 0"));
+  CHECK(transform_refusal(two_datasets(), c) == "no exception");
   Context z;
   z.add("WDBFILE", "1 0");
+  CHECK(priorities_refusal(two_datasets(), z) == "no exception");
   StructureDB stdb = two_datasets();
   REQUIRE_NOTHROW(apply_load_transforms(stdb, z));
-  CHECK(stdb(1).eweight == 0.0);
+  CHECK(stdb(1).eweight == 1.0);
 }
 
 /* Pins: WDBFILE with more values than datasets is refused for its size
  * whatever the signs of the values past the datasets: 'WDBFILE 1 -1' with
- * one dataset names the size (2 values, 1 dataset), as 'WDBFILE 1 2' does,
- * and no dataset 2.
+ * one dataset names the size (2 values for 1 dataset), as 'WDBFILE 1 2'
+ * does, and no dataset 2.
  * Before the fix: 'WDBFILE 1 -1: the weight of dataset 2 of 1, -1, is
  * negative', a dataset that does not exist. */
 TEST_CASE("A WDBFILE of more values than datasets is refused for its size",
@@ -270,32 +268,32 @@ TEST_CASE("A WDBFILE of more values than datasets is refused for its size",
     INFO("WDBFILE " << v);
     Context c;
     c.add("WDBFILE", v);
-    const std::string msg = transform_refusal(one, c);
-    CHECK_THAT(msg, Contains("WDBFILE size (2)") &&
-                        Contains("number of datasets (1)") &&
+    const std::string msg = priorities_refusal(one, c);
+    CHECK_THAT(msg, Contains("2 values for 1 dataset") &&
                         !Contains("dataset 2"));
   }
 }
 
-/* Pins: WDBFILE_AUTO -0.5 and 1.5 are refused naming the key, the value
- * and [0, 1]; EWEIGHT_TEMP 0 and -300 are refused naming the key, the value
- * and > 0, as training.rst says they are.
+/* Pins: WDBFILE_AUTO and EWEIGHT_TEMP are retired: Context::add refuses
+ * them, whatever the value (-0.5, 0.5, 1.5; 0, -300, 300), with the
+ * conversion (n_d^-a; the priorities of the data).
  * Before the fix: WDBFILE_AUTO -0.5, EWEIGHT_TEMP 0 and -300 were ignored
- * (no exception); WDBFILE_AUTO 1.5 was refused. */
-TEST_CASE("WDBFILE_AUTO outside [0, 1] and EWEIGHT_TEMP <= 0 are refused",
+ * (no exception), then refused by the load transforms; 0.5 and 300
+ * reweighted the data. */
+TEST_CASE("WDBFILE_AUTO and EWEIGHT_TEMP are refused, whatever the value",
           "[load_transforms][refusal]") {
-  for (const std::string v : {"-0.5", "1.5"}) {
+  for (const std::string v : {"-0.5", "0.5", "1.5"}) {
     INFO("WDBFILE_AUTO " << v);
     Context c;
-    c.add("WDBFILE_AUTO", v);
-    CHECK_THAT(transform_refusal(two_datasets(), c),
-               Contains("WDBFILE_AUTO") && Contains(v) && Contains("[0, 1]"));
+    REQUIRE_THROWS_WITH(c.add("WDBFILE_AUTO", v),
+                        Contains("WDBFILE_AUTO") && Contains("retired") &&
+                            Contains("n_d^-a"));
   }
-  for (const std::string v : {"0", "-300"}) {
+  for (const std::string v : {"0", "-300", "300"}) {
     INFO("EWEIGHT_TEMP " << v);
     Context c;
-    c.add("EWEIGHT_TEMP", v);
-    CHECK_THAT(transform_refusal(two_datasets(), c),
-               Contains("EWEIGHT_TEMP") && Contains(v) && Contains("> 0"));
+    REQUIRE_THROWS_WITH(c.add("EWEIGHT_TEMP", v),
+                        Contains("EWEIGHT_TEMP") && Contains("retired") &&
+                            Contains("WDBFILE"));
   }
 }

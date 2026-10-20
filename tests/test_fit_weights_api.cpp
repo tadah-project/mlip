@@ -4,8 +4,9 @@
 // them (M_BLR and M_KRR, through Trainer's model).
 //
 //  - train(StDescriptorsDB&, StructureDB), the fit of precomputed
-//    descriptors, applies the row factors sqrt(weight x EWEIGHT/FWEIGHT/
-//    SWEIGHT) as train(StructureDB, DescriptorsCalc) does: the same
+//    descriptors, applies the row factors sqrt(priority)/sigma (the error
+//    scales ESIGMA, FSIGMA, SSIGMA) as train(StructureDB, DescriptorsCalc)
+//    does: the same
 //    WEIGHTS, and the same observations (the rows of a non-zero weight),
 //    which the weight covariance of OALGO 3 (WCOV, WNOISE) is computed with.
 //  - predict(StructureDB&) returns the values the last fit predicts for the
@@ -17,7 +18,8 @@
 //    M_KRR implementation 2, which fits no design matrix).
 //  - a fit refuses a per-structure weight (eweight, fweight, sweight) that
 //    is negative or not a finite number, naming the weight, the structure
-//    (its index and label) and its dataset, and a negative EWEIGHT, before
+//    (its index and label) and its dataset, and a negative error scale
+//    (ESIGMA -1) and WDBFILE value, before
 //    anything else reads the weights (with BIAS true too); a dataset file
 //    with a negative weight is refused as it is read.
 //
@@ -89,9 +91,6 @@ Context make_context(const std::vector<std::string> &model) {
   c.add("DIMER", "false 0 false");
   c.add("FORCE", "true");
   c.add("STRESS", "true");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);
@@ -151,11 +150,12 @@ StructureDB training_db() {
   return db;
 }
 
-/* The weights of a case: per structure (eweight, fweight, sweight), and
- * EWEIGHT, FWEIGHT, SWEIGHT. */
+/* The weights of a case: per structure the priorities (eweight, fweight,
+ * sweight), and the error scales ESIGMA (meV/atom), FSIGMA (eV/A) and
+ * SSIGMA (GPa). */
 struct Weights {
   std::array<std::array<double, 3>, 3> per_structure;
-  double ew, fw, sw;
+  double es, fs, ss;
 };
 
 StructureDB weighted_db(const Weights &w) {
@@ -171,9 +171,9 @@ StructureDB weighted_db(const Weights &w) {
 Context weighted_context(const std::vector<std::string> &model,
                          const Weights &w) {
   Context c = make_context(model);
-  set_key(c, "EWEIGHT", std::to_string(w.ew));
-  set_key(c, "FWEIGHT", std::to_string(w.fw));
-  set_key(c, "SWEIGHT", std::to_string(w.sw));
+  set_key(c, "ESIGMA", std::to_string(w.es));
+  set_key(c, "FSIGMA", std::to_string(w.fs));
+  set_key(c, "SSIGMA", std::to_string(w.ss));
   return c;
 }
 
@@ -203,10 +203,11 @@ const std::vector<std::vector<std::string>> kLinearModels = {
     {"M_BLR", "BF_Linear"}, {"M_KRR", "Kern_Linear", "1"}};
 
 const std::vector<Weights> kWeightCases = {
-    // non-unit per-structure weights and EWEIGHT/FWEIGHT/SWEIGHT
-    {{{{0.5, 2.0, 3.0}, {2.0, 0.25, 1.0}, {1.5, 1.0, 0.5}}}, 10.0, 0.5, 4.0},
-    // structure 0 without any weight, structure 1 without forces
-    {{{{0.0, 0.0, 0.0}, {1.0, 0.0, 1.0}, {1.0, 1.0, 1.0}}}, 1.0, 1.0, 1.0}};
+    // non-unit priorities and error scales other than the defaults
+    {{{{0.5, 2.0, 3.0}, {2.0, 0.25, 1.0}, {1.5, 1.0, 0.5}}}, 300.0, 1.4, 50.0},
+    // structure 0 without any priority, structure 1 without forces; the
+    // default error scales
+    {{{{0.0, 0.0, 0.0}, {1.0, 0.0, 1.0}, {1.0, 1.0, 1.0}}}, 1.0, 0.1, 0.5}};
 
 /* What @p f throws, or "no exception". */
 template <class F>
@@ -222,9 +223,9 @@ std::string refusal(F f) {
 }  // namespace
 
 /* Pins: for M_BLR BF_Linear and M_KRR Kern_Linear 1 (OALGO 3, LAMBDA 0),
- * with non-unit per-structure weights and EWEIGHT 10, FWEIGHT 0.5,
- * SWEIGHT 4, and with weights 0 (structure 0 without any weight, structure
- * 1 without forces), train(StDescriptorsDB, StructureDB) gives the WEIGHTS
+ * with non-unit priorities and ESIGMA 300, FSIGMA 1.4, SSIGMA 50, and with
+ * priorities 0 (structure 0 without any, structure 1 without forces) and
+ * the default error scales, train(StDescriptorsDB, StructureDB) gives the WEIGHTS
  * of train(StructureDB, DescriptorsCalc) bit for bit, and the same weight
  * covariance (WCOV and WNOISE, whose noise variance RSS / (n_obs - gamma)
  * counts the observations): the same rows, weighted alike.
@@ -262,8 +263,8 @@ TEST_CASE("train of precomputed descriptors applies the weights of the data",
  * of the training structures returns the energies, forces and stresses of
  * predict(Context, StructureDB, DescriptorsCalc) to 1e-10 relative (other
  * arithmetic), one structure each, for M_BLR BF_Linear, M_KRR Kern_Linear
- * 1 and M_KRR Kern_RBF 1 (SBASIS 5) with non-unit and zero weights and
- * EWEIGHT 10, FWEIGHT 0.5, SWEIGHT 4, and for M_BLR BF_Linear with NORM and
+ * 1 and M_KRR Kern_RBF 1 (SBASIS 5) with non-unit and zero priorities and
+ * ESIGMA 300, FSIGMA 1.4, SSIGMA 50, and for M_BLR BF_Linear with NORM and
  * BIAS true (its WEIGHTS act on the raw descriptors, the design matrix's
  * columns on the normalised ones).
  * Before the fix: the values were those of the weighted rows (the energy of
@@ -415,9 +416,10 @@ TEST_CASE("predict(StructureDB&) refuses other structures of the fit's shape",
 
 /* Pins: a fit refuses a per-structure weight that is negative or not
  * finite, naming the weight and its value, the structure (1-based index
- * in the training data and its label) and the dataset; EWEIGHT -1 with
- * every eweight -1 is refused (the products would be 1), and EWEIGHT -1
- * alone, naming EWEIGHT. M_BLR BF_Linear, train(StructureDB,
+ * in the training data and its label) and the dataset; every eweight -1 is
+ * refused naming structure 1, and an error scale below 0 (ESIGMA -1),
+ * naming ESIGMA (the global weights, whose products with the per-structure
+ * ones could cancel, are retired). M_BLR BF_Linear, train(StructureDB,
  * DescriptorsCalc).
  * Before the fix: eweight -1 on one structure and fweight nan were refused
  * as a value of the design matrix that is not finite ('a descriptor or
@@ -461,20 +463,19 @@ TEST_CASE("A fit refuses negative and non-finite weights",
   {
     StructureDB db = training_db();
     for (std::size_t s = 0; s < 3; ++s) db(s).eweight = -1.0;
-    Context cn = c;
-    set_key(cn, "EWEIGHT", "-1");
-    CHECK_THAT(fit(cn, db), Contains("eweight -1") && Contains("structure 1 of 3"));
+    CHECK_THAT(fit(c, db), Contains("eweight -1") && Contains("structure 1 of 3"));
   }
   {
     Context cn = c;
-    set_key(cn, "EWEIGHT", "-1");
-    CHECK_THAT(fit(cn, training_db()), Contains("EWEIGHT -1") && Contains(">= 0"));
+    set_key(cn, "ESIGMA", "-1");
+    CHECK_THAT(fit(cn, training_db()), Contains("ESIGMA -1") && Contains("> 0"));
   }
 }
 
 /* Pins: with BIAS true (an intercept, which the energies determine) the
  * weight is refused as a weight, before the intercepts are checked:
- * EWEIGHT -1 names EWEIGHT and every eweight -1 names the eweight of
+ * ESIGMA -1 names ESIGMA (EWEIGHT -1 named EWEIGHT before the key was
+ * retired) and every eweight -1 names the eweight of
  * structure 1, not the intercepts, for M_BLR BF_Linear and M_KRR
  * Kern_Linear 1, through train(StructureDB, DescriptorsCalc) and
  * train(StDescriptorsDB, StructureDB).
@@ -497,9 +498,9 @@ TEST_CASE("A fit with BIAS true refuses a negative weight as a weight",
         };
         {
           Context cn = c;
-          set_key(cn, "EWEIGHT", "-1");
+          set_key(cn, "ESIGMA", "-1");
           const std::string msg = fit(cn, training_db());
-          CHECK_THAT(msg, Contains("EWEIGHT -1") && Contains(">= 0") &&
+          CHECK_THAT(msg, Contains("ESIGMA -1") && Contains("> 0") &&
                               !Contains("intercept"));
         }
         {
@@ -518,10 +519,10 @@ TEST_CASE("A fit with BIAS true refuses a negative weight as a weight",
 
 /* Pins: the check that the energies determine the intercepts (BIAS true),
  * which tadah train and tadah hpo make before any fit, refuses an invalid
- * weight as a weight: require_intercepts_determined with EWEIGHT -1, and
- * TrainEngine::run (tadah train) of a dataset file with BIAS true and
- * EWEIGHT -1, name EWEIGHT -1 and not the intercepts. With EWEIGHT 1 the
- * check passes (a pin).
+ * priority as a priority: require_intercepts_determined with WDBFILE -1,
+ * and TrainEngine::run (tadah train) of a dataset file with BIAS true and
+ * WDBFILE -1, name WDBFILE -1 and not the intercepts (EWEIGHT -1 before
+ * the key was retired). Without WDBFILE the check passes (a pin).
  * Before the fix: both were refused as 'BIAS true: the training data cannot
  * determine the per-species energy constants (the intercepts) ...'. */
 TEST_CASE("The intercept check of tadah train refuses a negative weight as "
@@ -539,12 +540,12 @@ TEST_CASE("The intercept check of tadah train refuses a negative weight as "
                                                      *tr.fb);
         }) == "no exception");
   Context cn = tr.context;
-  set_key(cn, "EWEIGHT", "-1");
+  set_key(cn, "WDBFILE", "-1");
   CHECK_THAT(refusal([&] {
                tadah::mlip::require_intercepts_determined(training_db(), cn,
                                                           *tr.fb);
              }),
-             Contains("EWEIGHT -1") && Contains(">= 0") &&
+             Contains("WDBFILE -1") && Contains(">= 0") &&
                  !Contains("intercept"));
 
   const fs::path dir = fs::temp_directory_path() /
@@ -559,7 +560,7 @@ TEST_CASE("The intercept check of tadah train refuses a negative weight as "
   const fs::path old_cwd = fs::current_path();
   fs::current_path(dir);
   Context tc = c;
-  set_key(tc, "EWEIGHT", "-1");
+  set_key(tc, "WDBFILE", "-1");
   set_key(tc, "DBFILE", db_file.string());
   std::string what = "no exception";
   {
@@ -576,7 +577,7 @@ TEST_CASE("The intercept check of tadah train refuses a negative weight as "
   fs::current_path(old_cwd);
   std::error_code ec;
   fs::remove_all(dir, ec);
-  CHECK_THAT(what, Contains("EWEIGHT -1") && Contains(">= 0") &&
+  CHECK_THAT(what, Contains("WDBFILE -1") && Contains(">= 0") &&
                        !Contains("intercept"));
 }
 

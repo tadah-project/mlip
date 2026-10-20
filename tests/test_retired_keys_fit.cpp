@@ -1,0 +1,506 @@
+// test_retired_keys_fit.cpp
+//
+// The keys retired in 1.6.0 (EWEIGHT, FWEIGHT, SWEIGHT, WDBFILE_AUTO,
+// EWEIGHT_TEMP) in the programs that load and fit potentials.
+//
+//  - every load of a potential that has them works, with one notice per
+//    load listing them: tadah predict, tadah properties pairwise, tadah
+//    analysis descriptor and tadah refit --edit;
+//  - every fit refuses a configuration that records them, with the
+//    conversion: the C++ API (Trainer, M_BLR and M_KRR train), tadah train
+//    -c with a potential, and tadah train -c of the potential refit --edit
+//    wrote from one (the edit keeps the retired lines as they are and adds
+//    no error scale);
+//  - prediction neither validates nor reads the error scales: a potential
+//    trained with FORCE true and FSIGMA 0.2 predicts without -F;
+//  - a potential a fit writes has no retired line and retrains.
+//
+// The potential of Tadah! 1.5.0 is tests_data/potentials_1_5/
+// ta_blip_1.5.0.tadah, written by `tadah train -c config.train` of tadah
+// 1.5.0 (D2_Blip 3 3 Ta Ta, CGRID2B 2.8 3.5 4.2, SGRID2B 2 2 2, RCUT2B 5,
+// Cut_Cos, M_BLR BF_Linear, FORCE true, LAMBDA 0, OALGO 3, EWEIGHT 1.0,
+// FWEIGHT 100, three 54-atom bcc Ta cells), as it wrote it: its EWEIGHT,
+// FWEIGHT, SWEIGHT and WDBFILE_AUTO lines are lines 8, 10, 23 and 27, and
+// it has SIGMA, DBFILE, UNCERTAINTY and the ESHIFT toggles.
+
+#include "catch2/catch.hpp"
+
+#include <tadah/core/context.h>
+#include <tadah/core/core_user_config_parser.h>
+#include <tadah/core/key_notice.h>
+#include <tadah/core/periodic_table.h>
+#include <tadah/mlip/atom.h>
+#include <tadah/mlip/engines/analysis_descriptor_engine.h>
+#include <tadah/mlip/engines/predict_engine.h>
+#include <tadah/mlip/engines/properties_pairwise_engine.h>
+#include <tadah/mlip/engines/refit_engine.h>
+#include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/itask_input.h>
+#include <tadah/mlip/memory/mlip_workspace_manager.h>
+#include <tadah/mlip/structure.h>
+#include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/task.h>
+#include <tadah/mlip/task_factory.h>
+#include <tadah/mlip/trainer.h>
+
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <sstream>
+#include <string>
+#include <unistd.h>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace {
+
+using Catch::Matchers::Contains;
+using tadah::core::Context;
+using tadah::core::Element;
+using tadah::core::IgnoredKeyNoticeCapture;
+using tadah::core::PeriodicTable;
+using tadah::mlip::Atom;
+using tadah::mlip::Structure;
+using tadah::mlip::StructureDB;
+using tadah::mlip::Task;
+using tadah::mlip::Trainer;
+using tadah::mlip::memory::MLIPWorkspaceManager;
+namespace fs = std::filesystem;
+
+const fs::path kOldPot =
+    fs::absolute("tests_data/potentials_1_5/ta_blip_1.5.0.tadah");
+
+/* The working directory of a case. */
+struct ScratchCwd {
+  fs::path old_cwd, dir;
+  ScratchCwd() {
+    static int counter = 0;
+    old_cwd = fs::current_path();
+    dir = fs::temp_directory_path() /
+          ("tadah_retired_fit_" + std::to_string(::getpid()) + "_" +
+           std::to_string(counter++));
+    fs::create_directories(dir);
+    fs::current_path(dir);
+  }
+  ~ScratchCwd() {
+    fs::current_path(old_cwd);
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+  }
+};
+
+std::string slurp(const fs::path &p) {
+  std::ifstream in(p);
+  return std::string(std::istreambuf_iterator<char>(in),
+                     std::istreambuf_iterator<char>());
+}
+
+/* The lines of @p text whose first word is @p key. */
+std::vector<std::string> key_lines(const std::string &text,
+                                   const std::string &key) {
+  std::vector<std::string> out;
+  std::istringstream in(text);
+  for (std::string l; std::getline(in, l);) {
+    std::istringstream ls(l);
+    std::string k;
+    if ((ls >> k) && k == key) out.push_back(l);
+  }
+  return out;
+}
+
+/* A 2-atom Ta cell with smooth labels. */
+Structure cell(double a, double shift, std::size_t s) {
+  Structure st;
+  st.label = "cell " + std::to_string(s);
+  st.cell.load(a, 0.0, 0.0, 0.03, a, 0.0, -0.02, 0.04, a);
+  st.add_atom(Atom(Element("Ta"), 0.01, 0.02, -0.01, 0.1, -0.2, 0.05));
+  st.add_atom(Atom(Element("Ta"), 0.5 * a + shift, 0.5 * a - shift,
+                   0.5 * a, -0.1, 0.2, -0.05));
+  st.energy = -23.4 + 0.1 * std::sin(1.3 * s);
+  return st;
+}
+
+/* Writes a dataset of four cells to @p path. */
+void write_db(const std::string &path) {
+  StructureDB db;
+  for (std::size_t s = 0; s < 4; ++s)
+    db.add(cell(3.25 + 0.03 * s, 0.02 * s, s));
+  db.dump_to_file(path, false);
+}
+
+/* The configuration keys of the 1.5.0 potential's model, and @p extra. */
+std::vector<std::string> model_lines(const std::vector<std::string> &extra) {
+  std::vector<std::string> l = {
+      "ATOM Ta",          "WATOM 73",           "INIT2B true",
+      "INITMB false",     "TYPE2B D2_Blip 3 3 Ta Ta",
+      "CGRID2B 2.8 3.5 4.2", "SGRID2B 2 2 2",   "RCUT2B 5",
+      "RCTYPE2B Cut_Cos", "FORCE true",         "LAMBDA 0",
+      "OALGO 3",          "BIAS false",         "NORM false",
+      "MODEL M_BLR BF_Linear"};
+  l.insert(l.end(), extra.begin(), extra.end());
+  return l;
+}
+
+using KV = std::unordered_map<std::string, std::vector<std::string>>;
+
+/* What TaskFactory gets from the command line. */
+struct CommandInput : tadah::mlip::ITaskInput {
+  std::string task;
+  KV kv;
+  CommandInput(std::string t, KV k) : task(std::move(t)), kv(std::move(k)) {}
+  std::string getTaskName() const override { return task; }
+  KV getKeyValueData() const override { return kv; }
+};
+
+/* Runs @p run on each task TaskFactory makes of @p input; what it throws,
+ * "" when nothing; the notices of the run go to @p notices. */
+template <typename Run>
+std::string run_input(const CommandInput &input, Run run,
+                      std::vector<std::string> &notices) {
+  IgnoredKeyNoticeCapture cap;
+  std::string what;
+  try {
+    for (Task &t : tadah::mlip::TaskFactory().createTasksFromInput(input))
+      run(t);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  notices = cap.notices();
+  return what;
+}
+
+std::size_t retired_notices(const std::vector<std::string> &notices) {
+  std::size_t n = 0;
+  for (const std::string &s : notices)
+    if (s.find("Retired keys") != std::string::npos) ++n;
+  return n;
+}
+
+/* A refit potential (D2_Knot5 + DM_REAM, every weight pinned), as
+ * test_refit_edit_mode.cpp builds it. */
+Context knot_potential() {
+  Context c;
+  c.add("MODEL", "M_BLR");
+  c.add("MODEL", "BF_Linear");
+  c.add("ATOM", "Ta");
+  c.add("WATOM", 1.0);
+  c.add("BIAS", "false");
+  c.add("NORM", "false");
+  c.add("FORCE", "false");
+  c.add("STRESS", "false");
+  c.add("LAMBDA", 0);
+  c.add("OALGO", 2);
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Knot5");
+  c.add("TYPE2B", 3);
+  c.add("TYPE2B", 0);
+  c.add("TYPE2B", "Ta");
+  c.add("TYPE2B", "Ta");
+  for (double v : {5.0, 3.0, 4.2}) c.add("CGRID2B", v);
+  c.add("RCUT2B", 5.0);
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_REAM");
+  for (int v : {2, 2, 0, 2, 3, 0, 0, 0}) c.add("TYPEMB", v);
+  c.add("TYPEMB", "Ta");
+  c.add("TYPEMB", "Ta");
+  for (double v : {4.8, 2.5}) c.add("CGRIDMB", v);
+  for (double v : {0.01, -1.2}) c.add("AMPGRIDMB", v);
+  c.add("RHOFORM", "SIGNED");
+  for (double v : {0.9, -2.9, 0.1}) c.add("CEMBFUNC", v);
+  c.add("RCUTMB", 4.8);
+  c.add("RCTYPEMB", "Cut_Dummy");
+  for (double v : {1.5, -900.0, 12.0, 220.0, -160.0, 5300.0})
+    c.add("WEIGHTS", v);
+  c.add("FIXINDEX", "1-6");
+  for (double v : {1.5, -900.0, 12.0, 220.0, -160.0, 5300.0})
+    c.add("FIXWEIGHT", v);
+  return c;
+}
+
+}  // namespace
+
+/* Pins: a fit refuses a configuration that records a retired key, through
+ * the C++ API (a configuration parsed with EWEIGHT 1.0 and FWEIGHT 100,
+ * trained by Trainer, as the API examples do), with the lines and the
+ * conversion of each; the same configuration without them trains.
+ * Before the fix: the fit ran, EWEIGHT and FWEIGHT weighting the rows. */
+TEST_CASE("The C++ API refuses a fit of a configuration with retired keys",
+          "[retired][fit]") {
+  PeriodicTable::initialize();
+  IgnoredKeyNoticeCapture quiet;
+  StructureDB db;
+  for (std::size_t s = 0; s < 4; ++s) db.add(cell(3.25 + 0.03 * s, 0.02 * s, s));
+  for (const std::string model : {"M_BLR BF_Linear", "M_KRR Kern_Linear"}) {
+    DYNAMIC_SECTION(model) {
+      std::vector<std::string> lines =
+          model_lines({"EWEIGHT 1.0", "FWEIGHT 100"});
+      lines[14] = "MODEL " + model;
+      Context c = tadah::core::CoreUserConfigParser().parse(lines);
+      MLIPWorkspaceManager ws;
+      Trainer tr(c, ws);
+      StructureDB d = db;
+      std::string what;
+      try {
+        tr.train(d);
+      } catch (const std::exception &e) {
+        what = e.what();
+      }
+      CHECK_THAT(what, Contains("EWEIGHT 1.0 (line 16)") &&
+                           Contains("FWEIGHT 100 (line 17)") &&
+                           Contains("retired") &&
+                           Contains("FSIGMA = 1/sqrt(FWEIGHT)") &&
+                           Contains("ESIGMA = 1000/(N sqrt(EWEIGHT))"));
+      lines.resize(15);
+      Context ok = tadah::core::CoreUserConfigParser().parse(lines);
+      MLIPWorkspaceManager ws2;
+      Trainer tr2(ok, ws2);
+      StructureDB d2 = db;
+      CHECK_NOTHROW(tr2.train(d2));
+    }
+  }
+}
+
+/* Pins: tadah train -c of a configuration that includes the 1.5.0
+ * potential (CONFIG old.tadah and a DBFILE line) is refused before any
+ * structure is fitted, naming the four retired lines of the potential file
+ * and the conversion of each, and writes no potential; the parse gives
+ * one notice listing them.
+ * Before the fix: the retrain ran with EWEIGHT 1.0, FWEIGHT 100 and
+ * SWEIGHT 1.0 and wrote pot.tadah. */
+TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
+          "conversion",
+          "[retired][fit]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_db("db.tadah");
+  {
+    std::ofstream cfg("retrain.train");
+    cfg << "CONFIG " << kOldPot.string() << "\nDBFILE db.tadah\n";
+  }
+  std::vector<std::string> notices;
+  const std::string what = run_input(
+      CommandInput("TRAIN", {{"config", {"retrain.train"}}}),
+      [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); }, notices);
+  const std::string f = kOldPot.string();
+  CHECK_THAT(what, Contains("tadah train") &&
+                       Contains("EWEIGHT 1.0 (line 8 of " + f + ")") &&
+                       Contains("FWEIGHT 100 (line 10 of " + f + ")") &&
+                       Contains("SWEIGHT 1.0 (line 23 of " + f + ")") &&
+                       Contains("WDBFILE_AUTO 0.0 (line 27 of " + f + ")") &&
+                       Contains("SSIGMA = 160.2/sqrt(SWEIGHT)"));
+  CHECK_FALSE(fs::exists("pot.tadah"));
+  CHECK(retired_notices(notices) == 1);
+}
+
+/* Pins: the 1.5.0 potential loads, with one notice per load that lists its
+ * four retired keys and their lines, in tadah predict (energies and forces
+ * of a dataset), tadah properties pairwise and tadah analysis descriptor.
+ * Before the fix: the keys were stored (no notice), as keys of a model
+ * nothing read. */
+TEST_CASE("A potential of Tadah! 1.5.0 loads with one notice per load",
+          "[retired][load]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_db("db.tadah");
+  const std::string pot = kOldPot.string();
+  std::vector<std::string> notices;
+  SECTION("tadah predict") {
+    const std::string what = run_input(
+        CommandInput("PREDICT", {{"potential", {pot}},
+                                 {"dbfile", {"db.tadah"}},
+                                 {"force", {"true"}}}),
+        [](Task &t) { tadah::mlip::engines::PredictEngine().run(t); },
+        notices);
+    CHECK(what.empty());
+    CHECK(fs::exists("energy.pred"));
+  }
+  SECTION("tadah properties pairwise") {
+    const std::string what = run_input(
+        CommandInput("PROPERTIES.pairwise", {{"potential", {pot}},
+                                             {"range", {"2.5", "4.5", "5"}},
+                                             {"atompair", {"Ta", "Ta"}},
+                                             {"outfile", {"pair.txt"}}}),
+        [](Task &t) {
+          tadah::mlip::engines::PropertiesPairwiseEngine().run(t);
+        },
+        notices);
+    CHECK(what.empty());
+  }
+  SECTION("tadah analysis descriptor") {
+    const std::string what = run_input(
+        CommandInput("ANALYSIS.descriptor", {{"potential", {pot}},
+                                             {"dbfile", {"db.tadah"}},
+                                             {"outfile", {"desc.txt"}}}),
+        [](Task &t) {
+          tadah::mlip::engines::AnalysisDescriptorEngine().run(t);
+        },
+        notices);
+    CHECK(what.empty());
+  }
+  REQUIRE(retired_notices(notices) == 1);
+  for (const std::string &n : notices)
+    if (n.find("Retired keys") != std::string::npos)
+      CHECK_THAT(n, Contains("EWEIGHT (line 8 of " + pot + ")") &&
+                        Contains("FWEIGHT (line 10 of " + pot + ")") &&
+                        Contains("SWEIGHT (line 23 of " + pot + ")") &&
+                        Contains("WDBFILE_AUTO (line 27 of " + pot + ")"));
+}
+
+/* Pins: tadah predict neither validates nor reads the error scales of a
+ * potential: one trained with FORCE true and FSIGMA 0.2 predicts energies
+ * without -F (the task's FORCE false over the potential's), where a fit
+ * would refuse FSIGMA 0.2 with FORCE false.
+ * Before the fix: FSIGMA was not a key. */
+TEST_CASE("A potential trained with forces predicts without -F",
+          "[retired][load]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_db("db.tadah");
+  Context c = tadah::core::CoreUserConfigParser().parse(
+      model_lines({"FSIGMA 0.2", "DBFILE db.tadah"}));
+  {
+    Task t("train", c);
+    t.getContext().add("OUTFILE", std::string("pot.tadah"));
+    REQUIRE_NOTHROW(tadah::mlip::engines::TrainEngine().run(t));
+  }
+  REQUIRE(key_lines(slurp("pot.tadah"), "FSIGMA").size() == 1);
+  std::vector<std::string> notices;
+  const std::string what = run_input(
+      CommandInput("PREDICT", {{"potential", {"pot.tadah"}},
+                               {"dbfile", {"db.tadah"}}}),
+      [](Task &t) { tadah::mlip::engines::PredictEngine().run(t); }, notices);
+  CHECK(what.empty());
+  CHECK(retired_notices(notices) == 0);
+}
+
+/* Pins: a potential a fit writes has no line of a retired key, and a
+ * retrain from it (tadah train -c with a DBFILE line added) runs.
+ * Before the fix: the potential had EWEIGHT, FWEIGHT and SWEIGHT lines
+ * (their defaults). */
+TEST_CASE("A potential written by a fit has no retired line and retrains",
+          "[retired][fit]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_db("db.tadah");
+  {
+    std::ofstream cfg("config.train");
+    for (const std::string &l : model_lines({"DBFILE db.tadah"}))
+      cfg << l << "\n";
+  }
+  std::vector<std::string> notices;
+  CHECK(run_input(CommandInput("TRAIN", {{"config", {"config.train"}}}),
+                  [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); },
+                  notices)
+            .empty());
+  const std::string text = slurp("pot.tadah");
+  for (const char *key : {"EWEIGHT", "FWEIGHT", "SWEIGHT", "WDBFILE_AUTO",
+                          "EWEIGHT_TEMP"}) {
+    INFO(key);
+    CHECK(key_lines(text, key).empty());
+  }
+  CHECK(key_lines(text, "ESIGMA").size() == 1);
+  {
+    std::ofstream cfg("retrain.train");
+    cfg << "CONFIG pot.tadah\nDBFILE db.tadah\n";
+  }
+  CHECK(run_input(CommandInput("TRAIN", {{"config", {"retrain.train"}},
+                                         {"outfile", {"pot2.tadah"}}}),
+                  [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); },
+                  notices)
+            .empty());
+  CHECK(fs::exists("pot2.tadah"));
+  CHECK(retired_notices(notices) == 0);
+}
+
+/* Pins: tadah refit --edit of a refit potential of Tadah! 1.5.0 (its key
+ * lines and, appended as that version wrote them, EWEIGHT 1.0, FWEIGHT 1.0,
+ * SWEIGHT 1.0 and WDBFILE_AUTO 0.0) loads it with one notice, writes the
+ * edited potential with those four lines as they are and with no ESIGMA,
+ * FSIGMA, SSIGMA, ENORM or ENERGY line, and tadah train -c of the edited
+ * potential (with a DBFILE line) is refused naming the four lines of the
+ * edited file: the edit cannot turn a potential of retired keys into one
+ * that retrains with the default error scales.
+ * Before the fix: the parse stored the four keys and the edit wrote them
+ * back as key lines, and a retrain read them as weights. */
+TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
+          "edited potential",
+          "[retired][refit]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  tadah::mlip::engines::TrainEngine::dumpPotFile("in.tadah", knot_potential());
+  const std::vector<std::string> retired = {
+      "EWEIGHT           1.0", "FWEIGHT           1.0",
+      "SWEIGHT           1.0", "WDBFILE_AUTO      0.0"};
+  {
+    std::ofstream app("in.tadah", std::ios::app);
+    for (const std::string &l : retired) app << l << "\n";
+  }
+  Context c;
+  c.add("EDIT", std::string("in.tadah"));
+  c.add("FUNC", std::string("phi"));
+  c.add("ADD", 3.6);
+  c.add("OUTFILE", std::string("edited.tadah"));
+  c.add("HPOFILEOUT", std::string("edited.hpotarget"));
+  Task task("refit", c);
+  std::vector<std::string> notices;
+  {
+    IgnoredKeyNoticeCapture cap;
+    REQUIRE(tadah::mlip::engines::RefitEngine().run(task) == EXIT_SUCCESS);
+    notices = cap.notices();
+  }
+  CHECK(retired_notices(notices) == 1);
+  const std::string text = slurp("edited.tadah");
+  for (const std::string &l : retired) {
+    INFO(l << " in:\n" << text);
+    std::istringstream ls(l);
+    std::string key;
+    ls >> key;
+    CHECK(key_lines(text, key) == std::vector<std::string>{l});
+  }
+  for (const char *key : {"ESIGMA", "FSIGMA", "SSIGMA", "ENORM", "ENERGY"}) {
+    INFO(key);
+    CHECK(key_lines(text, key).empty());
+  }
+  write_db("db.tadah");
+  {
+    std::ofstream cfg("retrain.train");
+    cfg << "CONFIG edited.tadah\nDBFILE db.tadah\n";
+  }
+  const std::string what = run_input(
+      CommandInput("TRAIN", {{"config", {"retrain.train"}}}),
+      [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); }, notices);
+  CHECK_THAT(what, Contains("EWEIGHT 1.0 (line") &&
+                       Contains("of edited.tadah") &&
+                       Contains("WDBFILE_AUTO 0.0") && Contains("retired"));
+}
+
+/* Pins: the command-line options of the retired keys, --wdbfile-auto and
+ * --eweight-temp of tadah train (TaskFactory of their key-value data, as
+ * the command line gives it), are refused before any file is read, naming
+ * the option, the key and its conversion.
+ * Before the fix: the options were taken (WDBFILE_AUTO and EWEIGHT_TEMP
+ * reweighted the training data). */
+TEST_CASE("The options of the retired keys give their conversion",
+          "[retired][cli]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  std::ofstream("config.train") << "ATOM Ta\n";
+  const std::vector<std::pair<std::string, std::string>> options = {
+      {"wdbfile_auto", "--wdbfile-auto"}, {"eweight_temp", "--eweight-temp"}};
+  for (const auto &o : options) {
+    INFO(o.second);
+    std::string what;
+    try {
+      (void)tadah::mlip::TaskFactory().createTasksFromInput(CommandInput(
+          "TRAIN", {{"config", {"config.train"}}, {o.first, {"0.5"}}}));
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    CHECK_THAT(what, Contains(o.second + ": ") && Contains("retired") &&
+                         Contains("WDBFILE"));
+  }
+}

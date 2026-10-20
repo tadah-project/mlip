@@ -46,6 +46,7 @@ TEST_CASE("WCOV and WNOISE: write and read back", "[weight_covariance]") {
   c.add("SIGMA", "2 1 0 0 1");
   c.add("WCOV", "3 1 0 0 0 1 0 0 0 1");
   c.add("WNOISE", "F 9");
+  c.add("ESIGMA", 1);  // a potential with WNOISE has its error scales
   Matrix S(2, 2);
   S(0, 0) = 0.5;
   S(1, 0) = 0.125;
@@ -91,6 +92,7 @@ TEST_CASE("read_weight_covariance refuses what does not fit the potential",
   Context ok;
   ok.add("WCOV", "2 1 0 0 1");
   ok.add("WNOISE", "E 0.5");
+  ok.add("ESIGMA", 1);
   REQUIRE(refusal(ok, 2) == "<no exception>");
   {
     Context c;
@@ -153,7 +155,7 @@ TEST_CASE("read_weight_covariance refuses what does not fit the potential",
 }
 
 /* Pins: read_weight_covariance reads the WNOISE of a fit without energies
- * (EWEIGHT 0, or every structure's eweight 0), which lists F (and S) and no
+ * (ENERGY false, or every structure's eweight 0), which lists F (and S) and no
  * E, as write_weight_covariance writes it: "F 0.5" read with F set to 0.5
  * and E and S unset.
  * Before the fix: refused, "WNOISE lists no E (energies): every prediction
@@ -167,6 +169,7 @@ TEST_CASE("read_weight_covariance reads the WNOISE of a fit without energies",
   c.add("WCOV", "2 1 0 0 1");
   c.add("WNOISE", "F");
   c.add("WNOISE", 0.5);
+  c.add("ESIGMA", 1);
   REQUIRE(refusal(c, 2) == "<no exception>");
   const WeightCovariance wc = read_weight_covariance(c, 2);
   CHECK_FALSE(wc.noise.set[kEnergyRow]);
@@ -228,11 +231,14 @@ TEST_CASE("read_weight_covariance says why a potential has no covariance",
 /* Pins: the refusal of an OALGO 3 potential (M_BLR BF_Linear) without WCOV
  * and WNOISE says, of the potentials with only SIGMA, exactly "a potential
  * of an earlier version of Tadah!, whose SIGMA is ignored (it was computed
- * with a transposed formula): retrain it;" (an OALGO 3 potential of an
- * earlier version has SIGMA), and names no development stage
- * ("development").
+ * with a transposed formula): a retrain, after its retired keys are
+ * converted, gives them;" (an OALGO 3 potential of an earlier version has
+ * SIGMA, and the retired keys a fit refuses), and names no development
+ * stage ("development").
  * Before the fix: it said "a potential of Tadah! 1.0.0 to 1.5.0 or a 1.6.0
- * development build, whose SIGMA is ignored ...": both checks fail. */
+ * development build, whose SIGMA is ignored ...": both checks fail; until
+ * the keys were retired it said "...: retrain it;", which a fit of such a
+ * potential refuses. */
 TEST_CASE("read_weight_covariance: an OALGO 3 potential with SIGMA only is "
           "one of an earlier version",
           "[weight_covariance]") {
@@ -242,16 +248,17 @@ TEST_CASE("read_weight_covariance: an OALGO 3 potential with SIGMA only is "
   const std::string m = refusal(c, 2);
   INFO(m);
   CHECK(m.find("a potential of an earlier version of Tadah!, whose SIGMA is "
-               "ignored (it was computed with a transposed formula): retrain "
-               "it;") != std::string::npos);
+               "ignored (it was computed with a transposed formula): a "
+               "retrain, after its retired keys are converted, gives them;") !=
+        std::string::npos);
   CHECK(m.find("development") == std::string::npos);
 }
 
 /* Pins: require_noise_of refuses every prediction of a covariance whose
- * WNOISE has no E (the fit had no energies with a non-zero weight): every
- * prediction has an energy, so energies alone and forces with F are both
- * refused, naming the energies, WNOISE and EWEIGHT 0 (the cause), not
- * OALGO 3.
+ * WNOISE has no E (the fit observed no energies): every prediction has an
+ * energy, so energies alone and forces with F are both refused, naming the
+ * energies, WNOISE and ENERGY false (the cause; EWEIGHT 0 before the keys
+ * were retired), not OALGO 3.
  * Before the fix: require_noise_of checked only forces and stresses, so
  * both passed (read_weight_covariance refused such a WNOISE first, with the
  * remedy of a potential without OALGO 3). */
@@ -270,7 +277,7 @@ TEST_CASE("require_noise_of refuses the energies of a fit without them",
     INFO(m);
     CHECK(m.find("energies") != std::string::npos);
     CHECK(m.find("WNOISE") != std::string::npos);
-    CHECK(m.find("EWEIGHT 0") != std::string::npos);
+    CHECK(m.find("ENERGY false") != std::string::npos);
     CHECK(m.find("OALGO 3") == std::string::npos);
   }
 }
@@ -318,4 +325,51 @@ TEST_CASE("raw_descriptor_map maps normalised weights to raw ones",
       CHECK(J(a, b) == expect[a][b]);
     }
   CHECK_THROWS_WITH(raw_descriptor_map(norm, 4, 0), Catch::Contains("BIAS"));
+}
+
+/* Pins: read_weight_covariance refuses a WNOISE without an ESIGMA line
+ * beside it: a fit before the error scales wrote it, with the noise of a
+ * total energy over the retired global weights, so its values are not in
+ * the units --error reads them in; the message names WNOISE, ESIGMA and a
+ * retrain. With the line it reads it.
+ * Before the fix: read, as noise variances of a total energy and of the
+ * rows of unit global weight. */
+TEST_CASE("read_weight_covariance refuses a WNOISE written before the "
+          "error scales",
+          "[weight_covariance]") {
+  Context c;
+  c.add("OALGO", 3);
+  c.add("WCOV", "2 1 0 0 1");
+  c.add("WNOISE", "E 0.5 F 0.25");
+  const std::string m = refusal(c, 2);
+  INFO(m);
+  CHECK(m.find("WNOISE") != std::string::npos);
+  CHECK(m.find("ESIGMA") != std::string::npos);
+  CHECK(m.find("retrain") != std::string::npos);
+  c.add("ESIGMA", 2);
+  CHECK(refusal(c, 2) == "<no exception>");
+}
+
+/* Pins: the WNOISE of a fit (noise_of_fitted_types) is the noise variance
+ * per unit row weight s2 times the square of the absolute error scale of
+ * each type the fit observed, in the units of the data: ESIGMA/1000 eV,
+ * FSIGMA a eV/A, SSIGMA a GPa x 6.241509074e-3 eV/A^3; the relative parts
+ * are not in it, and a type the fit did not observe is not set.
+ * Before the fix: s2 over EWEIGHT, FWEIGHT and SWEIGHT. */
+TEST_CASE("noise_of_fitted_types: s2 times the absolute error scales",
+          "[weight_covariance]") {
+  Context c;
+  c.add("ESIGMA", 2);
+  c.add("FSIGMA", "0.3 0.5");
+  c.add("SSIGMA", "0.7");
+  const double s2 = 1.7;
+  const PerRowType n = noise_of_fitted_types(c, {true, true, false}, s2);
+  CHECK(n.set[kEnergyRow]);
+  CHECK(n.set[kForceRow]);
+  CHECK_FALSE(n.set[kStressRow]);
+  CHECK(n.value[kEnergyRow] == Approx(s2 * 2e-3 * 2e-3).epsilon(1e-15));
+  CHECK(n.value[kForceRow] == Approx(s2 * 0.3 * 0.3).epsilon(1e-15));
+  const PerRowType s = noise_of_fitted_types(c, {false, false, true}, s2);
+  const double a = 0.7 * 6.241509074e-3;
+  CHECK(s.value[kStressRow] == Approx(s2 * a * a).epsilon(1e-15));
 }
