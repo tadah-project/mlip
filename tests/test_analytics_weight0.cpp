@@ -5,8 +5,9 @@
 // prints no forces), and one with stress weight 0 (sweight) no stress
 // tensor. Training ignores them through the weights; the metrics must
 // too: Analytics::calc_f_mae/calc_f_rmse/calc_f_r_sq skip a
-// structure with fweight 0, calc_s_mae/calc_s_rmse/calc_s_r_sq one with
-// sweight 0, and so do the PC_FRMSE/PC_SRMSE partials of analytics_grad. A
+// structure with fweight 0, calc_s_mae_gpa/calc_s_rmse_gpa/calc_s_r_sq one
+// with sweight 0, and so do the PC_FRMSE/PC_SRMSE_GPA partials of
+// analytics_grad. A
 // dataset in which every structure has that weight 0 is refused, naming the
 // dataset: its metric would have nothing to measure.
 //
@@ -15,15 +16,17 @@
 // (stress weight 0, with a reference stress far from the prediction and
 // exact forces); dataset 2 holds C (weights 1). So a metric that read the
 // other weight would count Bf in the force metrics or Bs in the stress
-// metrics. Every structure has 2 atoms, so 6 force components and 6 stress
-// components (xx, xy, xz, yy, yz, zz). The prediction differs from the
+// metrics. Every structure has 2 atoms, so 6 force components, and a
+// stress tensor of nine entries (the stress metrics read the six x <= y,
+// an off-diagonal one twice, in GPa: test_stress_metric_gpa.cpp). The
+// prediction differs from the
 // reference by d:
 //   A:  one force component by 0.3, the stress xy by 0.01;
 //   Bf: every force component by 50 (stress exact), its energy by 0.5;
 //   Bs: every stress component by 0.5 (forces exact);
 //   C:  one force component by 0.4, the stress zz by 0.02.
 // The force metrics of dataset 1 count A and Bs (N = 12), its stress metrics
-// A and Bf (N = 12); the energy metrics count all three.
+// A and Bf (18 entries); the energy metrics count all three.
 // Before the fix Bf counted in the force metrics and Bs in the stress
 // metrics, so the force MAE and RMSE of dataset 1 were off by O(10) and the
 // stress ones by O(0.1), and an all-weight-0 dataset gave a number.
@@ -33,6 +36,7 @@
 #include <tadah/core/vec3d.h>
 #include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/analytics/analytics_grad.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 
@@ -56,6 +60,7 @@ namespace analytics_grad = tadah::mlip::analytics_grad;
 namespace {
 
 constexpr double kRel = 1e-12;
+constexpr double kC = 1.0 / tadah::mlip::kGPaInEvPerA3;  // eV/A^3 -> GPa
 
 /* Whether @p v is a NaN, from its bits: the build may use -ffast-math, under
  * which std::isnan can be folded to false. */
@@ -164,26 +169,31 @@ TEST_CASE("Analytics: the force metrics leave out structures with force weight 0
   CHECK(rsq(0) == Approx(r_sq(obs, 0.09)).epsilon(kRel));
 }
 
-/* Pins: the stress metrics of dataset 1 count A and Bf (Bs has sweight 0):
- * MAE 0.01/12, RMSE sqrt(0.0001/12), R^2 over their twelve components;
- * dataset 2: MAE 0.02/6, RMSE sqrt(0.0004/6).
- * Before the fix: Bs's six components of 0.5 were included. */
+/* Pins: the stress metrics of dataset 1 count A and Bf (Bs has sweight 0),
+ * eighteen entries, A's xy and yx off by 0.01: MAE 0.02/18 and RMSE
+ * sqrt(0.0002/18), in GPa, R^2 over their eighteen entries; dataset 2 (C's
+ * zz off by 0.02): MAE 0.02/9, RMSE sqrt(0.0004/9), in GPa.
+ * Before the fix: Bs's entries of 0.5 were included. */
 TEST_CASE("Analytics: the stress metrics leave out structures with stress weight 0",
           "[analytics][weight0]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
   const Analytics a(truth, pred);
-  const auto mae = a.calc_s_mae();
-  const auto rmse = a.calc_s_rmse();
+  const auto mae = a.calc_s_mae_gpa();
+  const auto rmse = a.calc_s_rmse_gpa();
   const auto rsq = a.calc_s_r_sq();
   REQUIRE(mae.size() == 2);
-  CHECK(mae(0) == Approx(0.01 / 12).epsilon(kRel));
-  CHECK(mae(1) == Approx(0.02 / 6).epsilon(kRel));
-  CHECK(rmse(0) == Approx(std::sqrt(0.0001 / 12)).epsilon(kRel));
-  CHECK(rmse(1) == Approx(std::sqrt(0.0004 / 6)).epsilon(kRel));
-  const double obs[12] = {0.1, 0.0, 0.0, 0.2, 0.0, 0.3,   // A
-                          0.2, 0.0, 0.0, 0.2, 0.0, 0.2};  // Bf
-  CHECK(rsq(0) == Approx(r_sq(obs, 0.0001)).epsilon(kRel));
+  CHECK(mae(0) == Approx(kC * 0.02 / 18).epsilon(kRel));
+  CHECK(mae(1) == Approx(kC * 0.02 / 9).epsilon(kRel));
+  CHECK(rmse(0) == Approx(kC * std::sqrt(0.0002 / 18)).epsilon(kRel));
+  CHECK(rmse(1) == Approx(kC * std::sqrt(0.0004 / 9)).epsilon(kRel));
+  const double obs[18] = {0.1, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.3,   // A
+                          0.2, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.2};  // Bf
+  double mean = 0.0;
+  for (double o : obs) mean += o / 18.0;
+  double ss_tot = 0.0;
+  for (double o : obs) ss_tot += (o - mean) * (o - mean);
+  CHECK(rsq(0) == Approx(1.0 - 0.0002 / ss_tot).epsilon(kRel));
 }
 
 /* Pins: the energy metrics count every structure, whatever its force and
@@ -201,13 +211,15 @@ TEST_CASE("Analytics: the energy metrics count structures with force or stress w
 }
 
 /* Pins: the PC_FRMSE partials (analytics_grad::frmse_per_dataset) and the
- * PC_SRMSE partials (analytics_grad::srmse) leave out what the metrics leave
- * out: no force partial for Bf, no stress partial for Bs, and A's are
- * -d / (N metric) with N = 12 and the dataset-1 metric (frmse_per_dataset
- * does not average over the datasets; srmse divides by their number, 2).
+ * PC_SRMSE_GPA partials (analytics_grad::srmse_gpa) leave out what the
+ * metrics leave out: no force partial for Bf, no stress partial for Bs; A's
+ * force partial is -d / (N metric) with N = 12 and the dataset-1 metric
+ * (frmse_per_dataset does not average over the datasets), its xy stress
+ * partial -c^2 m d / (9 n metric) with m = 2, n = 2 and the dataset-1
+ * metric in GPa, divided by the number of datasets, 2 (srmse_gpa averages).
  * Before the fix: Bf's force cells and Bs's stress cells were emitted, and
  * the metrics in the denominators included them. */
-TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structures "
+TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE_GPA partials leave out structures "
           "with weight 0",
           "[analytics][weight0][pc_dataset]") {
   const StructureDB truth = reference();
@@ -227,7 +239,7 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structur
   CHECK(f.at({0, 4}) == Approx(0.0).margin(1e-15));
 
   std::map<std::pair<std::size_t, std::size_t>, double> s;
-  analytics_grad::srmse(
+  analytics_grad::srmse_gpa(
       truth, pred, 1.0,
       [&](std::size_t i, PredCellKind kind, std::size_t comp, double v) {
         CHECK(kind == PredCellKind::STRESS);
@@ -235,9 +247,10 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE partials leave out structur
       });
   for (const auto &cell : s) CHECK(cell.first.first != 2);
   CHECK(s.count({1, 0}) == 1);  // Bf counts in the stress metrics
-  const double srmse1 = std::sqrt(0.0001 / 12);
+  const double srmse1 = kC * std::sqrt(0.0002 / 18);
   REQUIRE(s.count({0, 1}) == 1);  // xy
-  CHECK(s.at({0, 1}) == Approx(-0.01 / (2 * 12 * srmse1)).epsilon(kRel));
+  CHECK(s.at({0, 1}) ==
+        Approx(-kC * kC * 2 * 0.01 / (2 * 9 * 2 * srmse1)).epsilon(kRel));
 }
 
 /* Pins: a dataset in which every structure has force
@@ -284,7 +297,7 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     REQUIRE(f.count({0, 0}) == 1);
     CHECK(f.at({0, 0}) == Approx(-0.3 / (12 * std::sqrt(0.09 / 12))).epsilon(kRel));
     CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Forces, "t", {"a", "b"}));
-    CHECK(a.calc_s_rmse()(1) == Approx(std::sqrt(0.0004 / 6)).epsilon(kRel));
+    CHECK(a.calc_s_rmse_gpa()(1) == Approx(kC * std::sqrt(0.0004 / 9)).epsilon(kRel));
     for (std::size_t i = 0; i < truth.size(); ++i) truth(i).fweight = 0.0;
     CHECK_THROWS_WITH(require_metric_structures(truth, MetricQuantity::Forces, "t",
                                                 {"a.tadah", "b.tadah"}),
@@ -296,17 +309,17 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     StructureDB truth = reference();
     truth(3).sweight = 0.0;  // C
     const Analytics a(truth, pred);
-    const auto mae = a.calc_s_mae();
-    const auto rmse = a.calc_s_rmse();
+    const auto mae = a.calc_s_mae_gpa();
+    const auto rmse = a.calc_s_rmse_gpa();
     const auto rsq = a.calc_s_r_sq();
-    CHECK(mae(0) == Approx(0.01 / 12).epsilon(kRel));
-    CHECK(rmse(0) == Approx(std::sqrt(0.0001 / 12)).epsilon(kRel));
+    CHECK(mae(0) == Approx(kC * 0.02 / 18).epsilon(kRel));
+    CHECK(rmse(0) == Approx(kC * std::sqrt(0.0002 / 18)).epsilon(kRel));
     CHECK(is_nan_bits(mae(1)));
     CHECK(is_nan_bits(rmse(1)));
     CHECK(is_nan_bits(rsq(1)));
     std::size_t cells_c = 0;
     std::map<std::pair<std::size_t, std::size_t>, double> s;
-    CHECK_NOTHROW(analytics_grad::srmse(
+    CHECK_NOTHROW(analytics_grad::srmse_gpa(
         truth, pred, 1.0,
         [&](std::size_t i, PredCellKind, std::size_t comp, double v) {
           cells_c += i == 3;
@@ -315,7 +328,9 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
     CHECK(cells_c == 0);
     // The mean over the measured datasets (one here), not over all.
     REQUIRE(s.count({0, 1}) == 1);
-    CHECK(s.at({0, 1}) == Approx(-0.01 / (1 * 12 * std::sqrt(0.0001 / 12))).epsilon(kRel));
+    CHECK(s.at({0, 1}) == Approx(-kC * kC * 2 * 0.01 /
+                                 (1 * 9 * 2 * kC * std::sqrt(0.0002 / 18)))
+                              .epsilon(kRel));
     CHECK_NOTHROW(require_metric_structures(truth, MetricQuantity::Stress, "t"));
     CHECK(a.calc_f_rmse()(1) == Approx(std::sqrt(0.16 / 6)).epsilon(kRel));
     for (std::size_t i = 0; i < truth.size(); ++i) truth(i).sweight = 0.0;
