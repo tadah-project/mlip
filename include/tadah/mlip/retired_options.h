@@ -23,7 +23,8 @@ const core::BlueprintKey *retired_task_option(const std::string &task,
  *  of the task @p task, named by its command-line option and its short
  *  form ("--force (-F)"; its key in upper case without one). TaskFactory
  *  refuses the option with it, and MLIPUserConfigParser a line of a TASK
- *  section that gives it. */
+ *  section that gives it, or of the GLOBAL section, whose keys reach the
+ *  task (unless the option has an only_with). */
 std::string retired_task_option_text(const std::string &task,
                                      const core::BlueprintKey &option);
 
