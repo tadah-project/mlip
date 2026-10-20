@@ -1,4 +1,5 @@
 #include "tadah/mlip/mlip_user_config_parser.h"
+#include "tadah/mlip/retired_options.h"
 #include "tadah/core/core_user_config_parser.h"
 #include "tadah/core/blueprint_parser.h"
 #include "tadah/core/logger.h"
@@ -157,6 +158,28 @@ MLIPUserConfigParser::parseNamed(
     } else {
       ctx = backendParser_->parse(sectionLines, namedSections[i].first_line,
                                   source);
+    }
+
+    // A line of a TASK section that gives an option the task retires
+    // (TASK data balance with RESCALE) is refused, with why: its own lines
+    // only, as the GLOBAL section sets keys of every task of the file.
+    if (namedSections[i].task) {
+      for (std::size_t l = 0; l < sectionLines.size(); ++l) {
+        std::istringstream words(sectionLines[l]);
+        std::string key;
+        if (!(words >> key) || key[0] == '#') continue;
+        const core::BlueprintKey *option =
+            retired_task_option(sectionName, key);
+        if (!option || !ctx.has_stored(core::to_upper(key))) continue;
+        std::string task_line = core::to_lower(sectionName);
+        std::replace(task_line.begin(), task_line.end(), '.', ' ');
+        throw std::runtime_error(
+            core::to_upper(key) + " (line " +
+            std::to_string(namedSections[i].first_line + l) +
+            (source.empty() ? std::string() : " of " + source) +
+            ") in TASK " + task_line + ": " +
+            retired_task_option_text(sectionName, *option));
+      }
     }
 
     // Put it in the vec
