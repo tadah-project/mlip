@@ -1881,3 +1881,52 @@ TEST_CASE("OALGO 3 with LAMBDA other than 0 is refused before the fit when "
           }) == "<no exception>");
   }
 }
+
+// fitted_intercept_columns gives the intercept columns a fit of a
+// configuration fits, 0-based, before any fit: those of the fit's function
+// (a kernel's: of the basis the fit draws, which starts with the intercept
+// vectors) less those FIXINDEX pins; none for BIAS false, Kern_RBF and M_KRR
+// implementation 2, which runs no least squares over intercept columns.
+// tadah hpo counts them for OPTIM LAMBDA under OALGO 3. On ATOM Nb Ta, BIAS
+// true, D2_BP 3: M_BLR BF_Linear {0, 1}; FIXINDEX 1 {1}; FIXINDEX 1-2 {};
+// BIAS false {}; M_KRR Kern_Quadratic (SBASIS 6) {0, 1}; Kern_RBF {};
+// Kern_Linear 2 {}.
+// Before the fix: the function is not public (the test does not compile).
+TEST_CASE("fitted_intercept_columns gives the intercept columns a fit fits",
+          "[descriptors_calc][bias][oalgo3]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  auto cols = [&](Context c) {
+    Trainer te(c, ws);
+    return tadah::mlip::fitted_intercept_columns(te.context, *te.fb);
+  };
+  using V = std::vector<std::size_t>;
+  const Context blr = make_context({"Nb", "Ta"}, true);
+  CHECK(cols(blr) == V{0, 1});
+  Context one = blr;
+  one.add("FIXINDEX", "1");
+  one.add("FIXWEIGHT", -7.6);
+  CHECK(cols(one) == V{1});
+  Context both = blr;
+  both.add("FIXINDEX", "1-2");
+  both.add("FIXWEIGHT", -7.6);
+  both.add("FIXWEIGHT", -8.9);
+  CHECK(cols(both).empty());
+  CHECK(cols(make_context({"Nb", "Ta"}, false)).empty());
+  Context q = blr;
+  set_model(q, "M_KRR", "Kern_Quadratic");
+  q.add("SBASIS", 6);
+  CHECK(cols(q) == V{0, 1});
+  Context rbf = blr;
+  set_model(rbf, "M_KRR", "Kern_RBF");
+  rbf.add("SBASIS", 6);
+  rbf.add("MPARAMS", 1.0);
+  CHECK(cols(rbf).empty());
+  Context krr2 = blr;
+  krr2.remove("MODEL");
+  krr2.add("MODEL", "M_KRR");
+  krr2.add("MODEL", "Kern_Linear");
+  krr2.add("MODEL", 2);
+  krr2.add("SBASIS", 5);
+  CHECK(cols(krr2).empty());
+}
