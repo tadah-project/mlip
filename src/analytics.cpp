@@ -56,18 +56,24 @@ void require_metric_structures(const StructureDB &truth, MetricQuantity q,
 {
     for (bool m : measured_datasets(truth, q))
         if (m) return;
-    const bool forces = q == MetricQuantity::Forces;
-    std::string msg = who + (forces ? ": no dataset has a structure with forces"
-                                    : ": no dataset has a stress tensor");
+    const char *data = q == MetricQuantity::Energy   ? "a structure with an energy"
+                       : q == MetricQuantity::Forces ? "a structure with forces"
+                                                     : "a stress tensor";
+    const char *weight = q == MetricQuantity::Energy   ? "energy weight 0 (eweight)"
+                         : q == MetricQuantity::Forces ? "force weight 0 (fweight)"
+                                                       : "stress weight 0 (sweight)";
+    const char *metrics = q == MetricQuantity::Energy   ? "energy"
+                          : q == MetricQuantity::Forces ? "force"
+                                                        : "stress";
+    std::string msg = who + ": no dataset has " + data;
     if (!dataset_names.empty()) {
         msg += " (";
         for (std::size_t d = 0; d < dataset_names.size(); ++d)
             msg += (d ? ", " : "") + dataset_names[d];
         msg += ")";
     }
-    msg += std::string(": every structure has ")
-        + (forces ? "force weight 0 (fweight)" : "stress weight 0 (sweight)")
-        + ", so the " + (forces ? "force" : "stress") + " metrics have nothing to measure";
+    msg += std::string(": every structure has ") + weight + ", so the " + metrics
+        + " metrics have nothing to measure";
     throw std::runtime_error(msg);
 }
 
@@ -87,10 +93,12 @@ tadah::core::t_type Analytics::calc_e_mae() const{
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
         // assume stp(i).natoms()==st(i).natoms()
-        emae += std::abs(st(i).energy - stp(i).energy)/st(i).natoms();
-        N++;
+        if (counts_in_metric(st(i), MetricQuantity::Energy)) {
+            emae += std::abs(st(i).energy - stp(i).energy)/st(i).natoms();
+            N++;
+        }
         if (i+1==st.dbidx[dbidx+1]) {
-            emae_vec(dbidx)=emae/N;
+            emae_vec(dbidx)=N ? emae/N : std::numeric_limits<double>::quiet_NaN();  // not measured
             emae=0;
             N=0;
             dbidx++;
@@ -155,12 +163,12 @@ tadah::core::t_type Analytics::calc_e_rrmse() const {
   size_t dbidx=0;
   size_t N=0;
   for (size_t i=0; i<st.size(); ++i) {
-    if (st(i).energy != 0.0) {
+    if (st(i).energy != 0.0 && counts_in_metric(st(i), MetricQuantity::Energy)) {
       errmse += std::pow((st(i).energy - stp(i).energy)/st(i).energy,2);
       N++;
     }
     if (i+1==st.dbidx[dbidx+1]) {
-      errmse_vec(dbidx)=std::sqrt(errmse/N);
+      errmse_vec(dbidx)=N ? std::sqrt(errmse/N) : std::numeric_limits<double>::quiet_NaN();  // not measured
       errmse=0;
       N=0;
       dbidx++;
@@ -177,10 +185,12 @@ tadah::core::t_type Analytics::calc_e_rmse() const{
     size_t N=0;
     for (size_t i=0; i<st.size(); ++i) {
         // assume stp(i).natoms()==st(i).natoms()
-        ermse += std::pow((st(i).energy - stp(i).energy)/st(i).natoms(),2);
-        N++;
+        if (counts_in_metric(st(i), MetricQuantity::Energy)) {
+            ermse += std::pow((st(i).energy - stp(i).energy)/st(i).natoms(),2);
+            N++;
+        }
         if (i+1==st.dbidx[dbidx+1]) {
-            ermse_vec(dbidx)=std::sqrt(ermse/N);
+            ermse_vec(dbidx)=N ? std::sqrt(ermse/N) : std::numeric_limits<double>::quiet_NaN();  // not measured
             ermse=0;
             N=0;
             dbidx++;
@@ -248,17 +258,21 @@ tadah::core::t_type Analytics::calc_e_r_sq() const {
         const size_t end   = st.dbidx[dbidx + 1];
         assert(end >= begin);
 
-        const size_t n = end - begin;
+        size_t n = 0;
+        for (size_t i = begin; i < end; ++i)
+            if (counts_in_metric(st(i), MetricQuantity::Energy)) ++n;
         tadah::core::t_type obs(n);
         tadah::core::t_type pred(n);
 
-        for (size_t j = 0; j < n; ++j) {
-            const size_t i = begin + j;
+        size_t j = 0;
+        for (size_t i = begin; i < end; ++i) {
+            if (!counts_in_metric(st(i), MetricQuantity::Energy)) continue;
             obs(j)  = st(i).energy  / st(i).natoms();
             pred(j) = stp(i).energy / st(i).natoms();
+            ++j;
         }
 
-        e_r_sq_vec(dbidx) = Statistics::r_sq(obs, pred);
+        e_r_sq_vec(dbidx) = n ? Statistics::r_sq(obs, pred) : std::numeric_limits<double>::quiet_NaN();  // not measured
     }
 
     return e_r_sq_vec;

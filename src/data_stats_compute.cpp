@@ -144,7 +144,9 @@ DataStats compute_data_stats(StructureDB& stdb,
     const Structure& st = stdb(s);
     out.n_atoms += st.natoms();
 
-    if (st.natoms() > 0) {
+    // A structure with eweight 0 has no energy of its own, one with
+    // fweight 0 no forces (placeholders): their statistics leave them out.
+    if (st.natoms() > 0 && st.eweight != 0.0) {
       e_per_atom.push_back(st.energy / static_cast<double>(st.natoms()));
     }
 
@@ -174,9 +176,11 @@ DataStats compute_data_stats(StructureDB& stdb,
       nn_count_per_elem[Si].push_back(n_count);
 
       // Force-norm tracking: Atom inherits force[3] components.
-      const double fx = ai.force[0], fy = ai.force[1], fz = ai.force[2];
-      const double fn = std::sqrt(fx*fx + fy*fy + fz*fz);
-      f_norms.push_back(fn);
+      if (st.fweight != 0.0) {
+        const double fx = ai.force[0], fy = ai.force[1], fz = ai.force[2];
+        const double fn = std::sqrt(fx*fx + fy*fy + fz*fz);
+        f_norms.push_back(fn);
+      }
     }
   }
 

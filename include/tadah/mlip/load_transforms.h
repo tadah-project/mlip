@@ -91,6 +91,13 @@ struct LoadTransformReport {
  *  6. COM force zeroing (ZERO_COM_FORCE).
  *  7. Per-dataset weights: w_final[i] = WDBFILE[i] * N_i^(-WDBFILE_AUTO).
  *  8. Equilibrium-volume diagnostic.
+ *
+ * A structure with eweight 0 has no energy of its own (tadah data convert
+ * stores a placeholder): steps 1, 3, 5 and 8 leave its energy out (it is
+ * neither filtered by energy nor reweighted). One with fweight 0 has no
+ * forces: FFILTER leaves it out. Refused before any transform changes a
+ * weight: a WDBFILE value below 0 (naming the dataset), WDBFILE_AUTO
+ * outside [0, 1] and EWEIGHT_TEMP <= 0.
  */
 LoadTransformReport
 apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context);
@@ -116,11 +123,12 @@ void apply_eshift(StructureDB &stdb,
 /**
  * Derive ESHIFT[Z] from isolated-atom configurations (natoms == 1).
  *
- * - Group all single-atom configs by Z; eshift[Z] = mean energy.
+ * - Group all single-atom configs with an energy (eweight != 0) by Z;
+ *   eshift[Z] = mean energy.
  * - If multiple configs with the same Z disagree by more than
  *   @p spread_warn_threshold_eV, log INFO with the spread.
- * - Species in @p stdb that have no isolated-atom config get eshift[Z] = 0
- *   and a WARNING is logged.
+ * - Species in @p stdb that have no such isolated-atom config get
+ *   eshift[Z] = 0 and a WARNING is logged.
  *
  * Used to implement the ESHIFT_ATOM key.
  */
@@ -132,7 +140,8 @@ derive_eshift_from_isolated_atoms(const StructureDB &stdb,
  * Derive ESHIFT[Z] by least-squares atomic-energy fit over the database.
  *
  * Solves min ||y - M beta||^2 where y[i] = total energy of config i and
- * M[i, k] = count of species k in config i. Returns eshift[Z(k)] = beta_k.
+ * M[i, k] = count of species k in config i, over the configs with an energy
+ * (eweight != 0). Returns eshift[Z(k)] = beta_k.
  *
  * Used to implement the ESHIFT_DBATOM key.
  */
@@ -142,6 +151,8 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb);
 /**
  * Drop configurations whose per-atom energy or peak per-atom force violates
  * the supplied thresholds. Returns {n_dropped_energy, n_dropped_force}.
+ * The energy of a config with eweight 0 and the forces of one with fweight
+ * 0 are placeholders: the energy (force) thresholds do not read them.
  *
  * Pass std::nullopt for any threshold to disable that filter.
  */
@@ -154,7 +165,8 @@ OutlierCounts apply_outlier_filter(StructureDB &stdb,
 /**
  * Multiply eweight, fweight, sweight of every config in dataset i by w[i].
  * Datasets are identified via StructureDB::dbidx. @p w must have the same
- * length as the number of datasets.
+ * length as the number of datasets, and each value be a finite number >= 0
+ * (std::runtime_error otherwise).
  */
 void apply_per_db_weights(StructureDB &stdb,
                           const std::vector<double> &w);
@@ -172,9 +184,10 @@ auto_balance_db_weights(const StructureDB &stdb, double alpha);
 /**
  * Apply Boltzmann eweight reweighting:
  *     eweight *= exp(-(E/N - E_min)/(kB * T_kelvin))
- * where E_min is the minimum per-atom energy in the dataset.
+ * where E_min is the minimum per-atom energy of the configs with an energy
+ * (eweight != 0); a config with eweight 0 keeps it.
  *
- * Throws std::invalid_argument if T_kelvin <= 0.
+ * Throws std::invalid_argument if T_kelvin is not > 0.
  */
 void apply_boltzmann_eweight(StructureDB &stdb, double T_kelvin);
 

@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cmath>
+#include <tadah/mlip/data_weights.h>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/descriptors_calc.h>
@@ -84,7 +85,7 @@ class DesignMatrix : public DesignMatrixBase {
 public:
 
   F f;
-  tadah::mlip::memory::DesignMatrixWorkspace *ws;
+  tadah::mlip::memory::DesignMatrixWorkspace *ws = nullptr;
   /** Whether the rows are weighted by sqrt(weight * EWEIGHT/FWEIGHT/SWEIGHT)
    *  (a fit); false builds the rows as they are, for a prediction
    *  (M_BLR/M_KRR predict with error estimates). */
@@ -101,7 +102,7 @@ public:
    *  linear NORM model, whose weights act on the raw descriptors
    *  (weights_on_raw_descriptors). */
   bool normalise_descriptors = true;
-  bool w_copy_=false;  // keep copy of Phi and T witoout weights
+  bool w_copy_=false;  // keep a copy of Phi and T without the row factors
 
   /** The observations of the last build: the rows of the structures with a
    *  non-zero weight (sqrt(weight x EWEIGHT/FWEIGHT/SWEIGHT) > 0), without
@@ -183,6 +184,7 @@ public:
      * D2, D3 and DM calculators are not used.
      */
   void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb, bool wcopy) {
+    if (apply_weights) require_valid_weights(stdb, context);
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
@@ -212,6 +214,13 @@ public:
     parallel_for(stdb.size(), [&](size_t s) {
       build(rows[s], stdb(s), st_desc_db(s));
     });
+    // The row factors, as the build from a DescriptorsCalc applies them.
+    if (w_copy_) {
+      copyAndScale();
+    }
+    else {
+      scale();
+    }
   };
 
   /** \brief Calculate descriptors and build design matrix. */
@@ -219,6 +228,7 @@ public:
   void build(const StructureDB &stdb, Normaliser &norm,
              DC &dc, bool wcopy) {
     //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(context);
+    if (apply_weights) require_valid_weights(stdb, context);
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
@@ -343,6 +353,67 @@ public:
   tadah::core::t_type &getTlabels() { return ws->Tlabels; }
   bool hasCopy() { return w_copy_; }
 
+  /** The values the weights @p w predict for the structures of the last
+   *  build, from its rows without the row factors: the energy of each
+   *  structure, and with FORCE (STRESS) its forces (its stress tensor). The
+   *  rows are those of the copy a build with wcopy true keeps (or of the
+   *  matrix of a build with apply_weights false); the ridge rows after the
+   *  data rows are not read.
+   *  @param stdb The StructureDB of the last build (its atom counts).
+   *  @param w The weights, one per column.
+   *  @throws std::logic_error when the last build kept no rows without the
+   *  factors, or @p w has another size than the columns.
+   *  @throws std::runtime_error when @p stdb has other structures or rows
+   *  than the last build. */
+  StructureDB predict_built(const StructureDB &stdb,
+                            const tadah::core::t_type &w) const {
+    if (!ws || (!w_copy_ && apply_weights))
+      throw std::logic_error(
+          "DesignMatrix::predict_built: the last build kept no rows without "
+          "the row factors (wcopy false)");
+    const tadah::core::phi_type &P = w_copy_ ? ws->Phi_cpy : ws->Phi;
+    if (w.size() != P.cols())
+      throw std::logic_error("DesignMatrix::predict_built: " +
+                             std::to_string(w.size()) + " weights for " +
+                             std::to_string(P.cols()) + " columns");
+    size_t rows_of_stdb = 0;
+    for (size_t s = 0; s < stdb.size(); ++s)
+      rows_of_stdb += 1 + (force ? 3 * stdb(s).natoms() : 0) + (stress ? 6 : 0);
+    if (stdb.size() != built_structures_ || rows_of_stdb != data_rows_)
+      throw std::runtime_error(
+          "the StructureDB has " + std::to_string(stdb.size()) +
+          " structures (" + std::to_string(rows_of_stdb) + " rows), the last "
+          "fit " + std::to_string(built_structures_) + " structures (" +
+          std::to_string(data_rows_) + " rows): it predicts the structures "
+          "it was fitted to");
+    StructureDB out;
+    out.dbidx = stdb.dbidx;
+    out.structures.resize(stdb.size());
+    auto row = [&](size_t i) {
+      double v = 0.0;
+      for (size_t j = 0; j < P.cols(); ++j) v += P(i, j) * w(j);
+      return v;
+    };
+    size_t i = 0;
+    for (size_t s = 0; s < stdb.size(); ++s) {
+      out(s).label = stdb(s).label;
+      out(s).energy = row(i++);
+      if (force) {
+        out(s).atoms.resize(stdb(s).natoms());
+        for (size_t a = 0; a < stdb(s).natoms(); ++a)
+          for (size_t k = 0; k < 3; ++k) out(s).atoms[a].force[k] = row(i++);
+      }
+      if (stress) {
+        for (size_t x = 0; x < 3; ++x)
+          for (size_t y = x; y < 3; ++y) {
+            out(s).stress(x, y) = row(i++);
+            if (x != y) out(s).stress(y, x) = out(s).stress(x, y);
+          }
+      }
+    }
+    return out;
+  }
+
   void resize(size_t rows, size_t cols, bool wcopy=false) {
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
     set_zero();
@@ -404,6 +475,8 @@ private:
   double sweightglob;
   size_t n_obs_ = 0;
   std::array<bool, 3> fitted_types_{{false, false, false}};
+  size_t built_structures_ = 0;  // the structures of the last build
+  size_t data_rows_ = 0;         // its rows without the ridge rows
 
   // resize Phi and T and set all elements to zero
   void calc_mn(const StructureDB &stdb) {
@@ -415,6 +488,8 @@ private:
       if (stress) rows+=6;
       if (force) rows+=stdb(s).natoms()*3;
     }
+    built_structures_ = stdb.size();
+    data_rows_ = rows;
 
 
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
@@ -426,27 +501,41 @@ private:
     }
   }
 
+  // The standard deviations of the reference energies per atom, forces and
+  // stresses of the structures that have them: a structure with eweight 0
+  // (fweight 0, sweight 0) has no energy (forces, stress) of its own, only a
+  // placeholder. With fewer than two values a deviation is not computed
+  // (it stays as it was) and not logged.
   void compute_stdevs(const StructureDB &stdb) {
-    tadah::core::t_type evec(stdb.size());
-    tadah::core::Matrix svec(stdb.size(),6);
-    size_t num_forces=0;
+    size_t n_e = 0, n_s = 0, num_forces = 0;
     for (size_t s=0; s<stdb.size(); ++s) {
-      evec(s) = stdb(s).energy/stdb(s).natoms();
-      if (stress) {
+      if (stdb(s).eweight != 0.0) ++n_e;
+      if (stdb(s).sweight != 0.0) ++n_s;
+      if (stdb(s).fweight != 0.0) num_forces += 3*stdb(s).natoms();
+    }
+    tadah::core::t_type evec(n_e);
+    tadah::core::Matrix svec(n_s,6);
+    size_t ie = 0, is = 0;
+    for (size_t s=0; s<stdb.size(); ++s) {
+      if (stdb(s).eweight != 0.0)
+        evec(ie++) = stdb(s).energy/stdb(s).natoms();
+      if (stress && stdb(s).sweight != 0.0) {
         size_t j=0;
         for (size_t x=0; x<3; ++x) {
           for (size_t y=x; y<3; ++y) {
-            svec(s,j++)=stdb(s).stress(x,y);
+            svec(is,j++)=stdb(s).stress(x,y);
           }
         }
+        ++is;
       }
-      num_forces +=3*stdb(s).natoms();
     }
 
-    e_std_dev = evec.std_dev(evec.mean(), evec.size()-1);
-    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Energy standard deviation (eV/atom): ", e_std_dev);
+    if (n_e > 1) {
+      e_std_dev = evec.std_dev(evec.mean(), evec.size()-1);
+      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Energy standard deviation (eV/atom): ", e_std_dev);
+    }
 
-    if (stress) {
+    if (stress && n_s > 1) {
       std::string s_std_dev_str;
       for (size_t j=0; j<6; ++j) {
         s_std_dev[j] = svec.col(j).std_dev(svec.col(j).mean(), svec.col(j).size()-1);
@@ -455,10 +544,11 @@ private:
       tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Stress standard deviation (eV/A^3): ", s_std_dev_str);
     }
 
-    if (force) {
+    if (force && num_forces > 1) {
       size_t j=0;
       tadah::core::t_type fvec(num_forces);
       for (size_t s=0; s<stdb.size(); ++s) {
+        if (stdb(s).fweight == 0.0) continue;
         for (const Atom &a : stdb(s).atoms) {
           fvec(j++) = a.force(0);
           fvec(j++) = a.force(1);

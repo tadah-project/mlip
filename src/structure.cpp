@@ -147,6 +147,21 @@ double finite_value(const std::string &tok, const std::string &what) {
   return v;
 }
 
+/* finite_value() of a weight (eweight, fweight, sweight), which must also
+ * be >= 0: 0 leaves the structure's energy, forces or stress out of a fit,
+ * and a negative weight is none. */
+double weight_value(const std::string &tok, const std::string &what) {
+  const double v = finite_value(tok, what);
+  if (v < 0.0)
+    throw std::runtime_error(what + " '" + tok + "' is negative: a weight is "
+                             "a number >= 0 (0 leaves the structure's " +
+                             (what == "eweight"   ? "energy"
+                              : what == "fweight" ? "forces"
+                                                  : "stress") +
+                             " out of a fit)");
+  return v;
+}
+
 std::vector<std::string> tokens_of(const std::string &line) {
   std::vector<std::string> t;
   std::istringstream in(line);
@@ -203,9 +218,9 @@ int Structure::read(std::ifstream &ifs) {
   std::getline(ifs, line);
   std::vector<std::string> tok = tokens_of(line);
   if (tok.size() == 3) {
-    eweight = finite_value(tok[0], "eweight");
-    fweight = finite_value(tok[1], "fweight");
-    sweight = finite_value(tok[2], "sweight");
+    eweight = weight_value(tok[0], "eweight");
+    fweight = weight_value(tok[1], "fweight");
+    sweight = weight_value(tok[2], "sweight");
     std::getline(ifs, line);
     tok = tokens_of(line);
     if (tok.empty() || tok.size() > 2)

@@ -112,7 +112,8 @@ public:
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
 
-    bool wcopy=false;
+    // The rows without the row factors are kept for predict(StructureDB&).
+    bool wcopy=true;
     desmat.build(st_desc_db,stdb, wcopy);
     train(desmat);
   }
@@ -145,7 +146,8 @@ public:
       context.add("STRESS", stress);
     }
 
-    bool wcopy=false;
+    // The rows without the row factors are kept for predict(StructureDB&).
+    bool wcopy=true;
     desmat.build(stdb,norm,dc,wcopy);
     train(desmat);
   }
@@ -226,68 +228,55 @@ public:
     return predict_with_error<BF>(context_pred, bf, weights, norm, stdb, dc,
                               value_error, false);
   }
+  /** The values the last fit of this model predicts for the structures
+   *  it was fitted to, @p stdb (their energies, and their forces and
+   *  stresses when the fit had them), from the rows of its design matrix
+   *  without the row factors: the values of predict(Context, StructureDB,
+   *  DescriptorsCalc) for them, whatever their weights.
+   *  @throws std::runtime_error for a model without a fit of its own (one
+   *  built from a potential's WEIGHTS), and for a StructureDB with other
+   *  structures than the fit's. */
   StructureDB predict(StructureDB &stdb) {
-    if(!trained) throw std::runtime_error("This object is not trained!\n\
-Hint: check different predict() methods.");
-
-    tadah::core::phi_type &Phi = desmat.getPhi();
-
-    // compute energy, forces and stresses
-    tadah::core::aed_type Tpred = T_dgemv(Phi, weights);
-
-    // double eweightglob=context.template get<double>("EWEIGHT");
-    // double fweightglob=context.template get<double>("FWEIGHT");
-    // double sweightglob=context.template get<double>("SWEIGHT");
-
-    // Construct StructureDB object with predicted values
-    StructureDB stdb_;
-    stdb_.structures.resize(stdb.size());
-    size_t s=0;
-    size_t i=0;
-    while (i<Phi.rows()) {
-
-      stdb_(s).energy = Tpred(i++);
-      if (context.template get<bool>("FORCE")) {
-        stdb_(s).atoms.resize(stdb(s).natoms());
-        for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          for (size_t k=0; k<3; ++k) {
-            stdb_(s).atoms[a].force[k] = Tpred(i++);
-          }
-        }
-      }
-      if (context.template get<bool>("STRESS")) {
-        for (size_t x=0; x<3; ++x) {
-          for (size_t y=x; y<3; ++y) {
-            stdb_(s).stress(x,y) = Tpred(i++);
-            if (x!=y)
-              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-          }
-        }
-      }
-      s++;
+    if (!fit_rows_)
+      throw std::runtime_error(
+          "M_BLR::predict(StructureDB&) predicts the structures of the "
+          "model's last fit from its design matrix: this model has no fit "
+          "of its own (it was built from a potential's WEIGHTS); "
+          "predict(Context, StructureDB, DescriptorsCalc) predicts any "
+          "structures.");
+    try {
+      return desmat.predict_built(stdb, fit_weights_);
+    } catch (const std::runtime_error &e) {
+      throw std::runtime_error(std::string("M_BLR::predict(StructureDB&): ") +
+                               e.what());
     }
-    return stdb_;
   }
 
 private:
   std::string label="M_BLR";
   DesignMatrix<BF> desmat;
+  /** The weights of the last fit as it solved them, on the columns of the
+   *  design matrix (before a NORM model's are converted to the raw
+   *  descriptors): predict(StructureDB&) multiplies its rows by them. */
+  tadah::core::t_type fit_weights_;
+  /** Whether this object fitted a design matrix (predict(StructureDB&)). */
+  bool fit_rows_ = false;
 
   /** The noise variance of each row type of the last fit (WNOISE). */
   PerRowType noise_by_type;
 
   template <typename D>
   void train(D &desmat) {
-    // TODO 
-    // the train method destroys the Phi matrix
-    // In consequence, we cannot use it for quick prediction
-    // The simple solution, for now, is to make a copy of the Phi matrix
-    //tadah::core::phi_type &Phi = desmat.Phi;
-    tadah::core::phi_type Phi = desmat.getPhi();
+    // The solve overwrites the weighted rows it is given: the design
+    // matrix keeps a copy of the rows without the factors (a build with
+    // wcopy true), which predict(StructureDB&) reads.
+    tadah::core::phi_type &Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
-    //tadah::core::t_type &T = desmat.T;
     noise_by_type = PerRowType();
+    fit_rows_ = false;
     tadah::models::M_BLR_Train<BF>::train(Phi, T, desmat.n_observations());
+    fit_weights_ = weights;
+    fit_rows_ = desmat.hasCopy();
 
     if (weights_on_raw_descriptors(context, bf))
       to_raw_descriptors(*this, norm,

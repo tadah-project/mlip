@@ -1,7 +1,9 @@
 #include <tadah/mlip/load_transforms.h>
 
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/structure_transformations.h>
 
 #include <algorithm>
@@ -24,6 +26,14 @@ std::string fmt_g(Stream &&s, double x, int prec = 6) {
   s.precision(prec);
   s << x;
   return s.str();
+}
+
+/* Refuses a WDBFILE_AUTO alpha outside [0, 1]. */
+void require_wdbfile_auto(double alpha) {
+  if (!(alpha >= 0.0 && alpha <= 1.0))
+    throw std::invalid_argument(
+        "WDBFILE_AUTO " + tadah::core::format_roundtrip(alpha) +
+        ": alpha must be in [0, 1] (0 leaves the weights as they are)");
 }
 
 std::string two_decimal(double x) {
@@ -92,10 +102,11 @@ void apply_eshift(StructureDB &stdb,
 std::map<int, double>
 derive_eshift_from_isolated_atoms(const StructureDB &stdb,
                                   double spread_warn_threshold_eV) {
-  // Z -> list of energies of isolated-atom configs of that species
+  // Z -> list of energies of isolated-atom configs of that species; a
+  // structure with eweight 0 has no energy of its own (a placeholder).
   std::map<int, std::vector<double>> by_Z;
   for (const auto &st : stdb) {
-    if (st.natoms() == 1) {
+    if (st.natoms() == 1 && st.eweight != 0.0) {
       by_Z[st.atoms[0].Z].push_back(st.energy);
     }
   }
@@ -106,7 +117,8 @@ derive_eshift_from_isolated_atoms(const StructureDB &stdb,
     if (it == by_Z.end()) {
       core::Logger::instance().log(
           core::LogLevel::WARNING,
-          "ESHIFT_ATOM: no isolated-atom configuration in dataset for element ",
+          "ESHIFT_ATOM: no isolated-atom configuration with an energy "
+          "(eweight not 0) in dataset for element ",
           e.symbol, " (Z=", std::to_string(e.Z),
           "); using ESHIFT[", e.symbol, "]=0.0");
       out[e.Z] = 0.0;
@@ -152,7 +164,9 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb) {
   std::vector<double> Mty(K, 0.0);
   std::vector<double> row_counts(K, 0.0);
 
+  // A structure with eweight 0 has no energy of its own: not fitted.
   for (const auto &st : stdb) {
+    if (st.eweight == 0.0) continue;
     std::fill(row_counts.begin(), row_counts.end(), 0.0);
     auto natoms_map = st.get_natoms_map();
     for (const auto &p : natoms_map) {
@@ -194,7 +208,10 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb) {
 
   double sse_before = 0.0;
   double sse_after = 0.0;
+  std::size_t n_fitted = 0;
   for (const auto &st : stdb) {
+    if (st.eweight == 0.0) continue;
+    ++n_fitted;
     std::fill(row_counts.begin(), row_counts.end(), 0.0);
     auto natoms_map = st.get_natoms_map();
     for (const auto &p : natoms_map) {
@@ -208,7 +225,7 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb) {
     sse_before += y * y;
     sse_after += (y - yhat) * (y - yhat);
   }
-  const double n = static_cast<double>(stdb.size());
+  const double n = static_cast<double>(n_fitted);
   if (n > 0) {
     core::Logger::instance().log(
         core::LogLevel::INFO,
@@ -254,17 +271,20 @@ OutlierCounts apply_outlier_filter(StructureDB &stdb,
         new_structures.push_back(st);
         continue;
       }
+      // A structure with eweight 0 has no energy of its own, one with
+      // fweight 0 no forces (placeholders): the filters do not read them.
       bool drop = false;
+      const bool has_energy = st.eweight != 0.0;
       const double e_per_atom = st.energy / static_cast<double>(n);
-      if (emin_per_atom && e_per_atom < *emin_per_atom) {
+      if (has_energy && emin_per_atom && e_per_atom < *emin_per_atom) {
         drop = true;
         ++c.energy;
       }
-      if (!drop && emax_per_atom && e_per_atom > *emax_per_atom) {
+      if (!drop && has_energy && emax_per_atom && e_per_atom > *emax_per_atom) {
         drop = true;
         ++c.energy;
       }
-      if (!drop && fmax_per_atom) {
+      if (!drop && fmax_per_atom && st.fweight != 0.0) {
         for (const auto &a : st.atoms) {
           if (a.force.norm() > *fmax_per_atom) {
             drop = true;
@@ -285,6 +305,12 @@ OutlierCounts apply_outlier_filter(StructureDB &stdb,
 void apply_per_db_weights(StructureDB &stdb,
                           const std::vector<double> &w) {
   if (w.empty()) return;
+  for (std::size_t d = 0; d < w.size(); ++d)
+    if (!detail::is_finite_bits(w[d]) || !(w[d] >= 0.0))
+      throw std::runtime_error(
+          "apply_per_db_weights: the weight of dataset " +
+          std::to_string(d + 1) + ", " + core::format_roundtrip(w[d]) +
+          ", is not a finite number >= 0");
   std::vector<size_t> dbidx = stdb.dbidx;
   if (dbidx.empty()) {
     dbidx = {0, stdb.size()};
@@ -308,10 +334,7 @@ void apply_per_db_weights(StructureDB &stdb,
 
 std::vector<double>
 auto_balance_db_weights(const StructureDB &stdb, double alpha) {
-  if (alpha < 0.0 || alpha > 1.0) {
-    throw std::invalid_argument(
-        "WDBFILE_AUTO alpha must be in [0, 1]; got " + std::to_string(alpha));
-  }
+  require_wdbfile_auto(alpha);
   std::vector<size_t> dbidx = stdb.dbidx;
   if (dbidx.empty()) {
     dbidx = {0, stdb.size()};
@@ -326,25 +349,31 @@ auto_balance_db_weights(const StructureDB &stdb, double alpha) {
 }
 
 void apply_boltzmann_eweight(StructureDB &stdb, double T_kelvin) {
-  if (T_kelvin <= 0.0) {
-    throw std::invalid_argument("EWEIGHT_TEMP must be > 0; got " +
-                                std::to_string(T_kelvin));
+  if (!(T_kelvin > 0.0)) {
+    throw std::invalid_argument(
+        "EWEIGHT_TEMP " + core::format_roundtrip(T_kelvin) +
+        ": the temperature of the Boltzmann weights must be > 0 K (without "
+        "the key no reweighting applies)");
   }
   if (stdb.size() == 0) return;
 
+  // The structures with an energy of their own: one with eweight 0 has a
+  // placeholder, which neither sets the minimum nor is reweighted.
   double e_min = std::numeric_limits<double>::infinity();
+  bool any = false;
   for (const auto &st : stdb) {
-    if (st.natoms() == 0) continue;
+    if (st.natoms() == 0 || st.eweight == 0.0) continue;
     const double e_per = st.energy / static_cast<double>(st.natoms());
-    if (e_per < e_min) e_min = e_per;
+    if (!any || e_per < e_min) e_min = e_per;
+    any = true;
   }
-  if (!std::isfinite(e_min)) return;
+  if (!any) return;
 
   const double inv_kT = 1.0 / (kB_eV_per_K * T_kelvin);
   double w_min = std::numeric_limits<double>::infinity();
   double w_max = -std::numeric_limits<double>::infinity();
   for (auto &st : stdb) {
-    if (st.natoms() == 0) continue;
+    if (st.natoms() == 0 || st.eweight == 0.0) continue;
     const double e_per = st.energy / static_cast<double>(st.natoms());
     const double f = std::exp(-(e_per - e_min) * inv_kT);
     st.eweight *= f;
@@ -505,13 +534,12 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
   }
 
   // 5. Boltzmann eweight (after ESHIFT so it uses the shifted energies).
+  // A value <= 0 is refused (apply_boltzmann_eweight).
   if (context.contains("EWEIGHT_TEMP")) {
     double T = context.get<double>("EWEIGHT_TEMP");
-    if (T > 0.0) {
-      apply_boltzmann_eweight(stdb, T);
-      report.eweight_temp = T;
-      report.applied = true;
-    }
+    apply_boltzmann_eweight(stdb, T);
+    report.eweight_temp = T;
+    report.applied = true;
   }
 
   // 6. COM-force zeroing.
@@ -528,9 +556,31 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     w_user.assign(context.size("WDBFILE"), 1.0);
     context.get("WDBFILE", w_user);
   }
+  {
+    // A dataset's weight is a number >= 0 (0 leaves the dataset out of the
+    // fit); the Context refuses one that is not finite.
+    std::vector<size_t> dbidx = stdb.dbidx;
+    if (dbidx.empty()) dbidx = {0, stdb.size()};
+    const std::size_t n_db = dbidx.size() - 1;
+    for (std::size_t d = 0; d < w_user.size(); ++d) {
+      if (w_user[d] >= 0.0) continue;
+      std::string text = "WDBFILE";
+      for (const std::string &v : context("WDBFILE")) text += " " + v;
+      std::string file;
+      if (context.has_stored("DBFILE") && context.size("DBFILE") == n_db &&
+          d < n_db)
+        file = " (" + context("DBFILE")[d] + ")";
+      throw std::runtime_error(
+          text + ": the weight of dataset " + std::to_string(d + 1) + " of " +
+          std::to_string(n_db) + file + ", " +
+          core::format_roundtrip(w_user[d]) + ", is negative: a dataset's "
+          "weight is a number >= 0 (0 leaves the dataset out of the fit)");
+    }
+  }
   double alpha = 0.0;
   if (context.contains("WDBFILE_AUTO")) {
     alpha = context.get<double>("WDBFILE_AUTO");
+    require_wdbfile_auto(alpha);  // 0 (no balancing) included
   }
   if (!w_user.empty() || alpha > 0.0) {
     std::vector<size_t> dbidx = stdb.dbidx;
@@ -571,7 +621,7 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     double e_min = std::numeric_limits<double>::infinity();
     const Structure *eq = nullptr;
     for (const auto &st : stdb) {
-      if (st.natoms() == 0) continue;
+      if (st.natoms() == 0 || st.eweight == 0.0) continue;  // no energy
       const double e_per = st.energy / static_cast<double>(st.natoms());
       if (e_per < e_min) {
         e_min = e_per;
