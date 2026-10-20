@@ -21,9 +21,11 @@ void DesignMatrixWorkspace::allocate(size_t m_, size_t n_) {
   }
 }
 
-bool DesignMatrixWorkspace::isSufficient(size_t m_, size_t n_) const {
+bool DesignMatrixWorkspace::isSufficient(size_t m_, size_t n_,
+                                         bool wcopy_) const {
   return (Phi.rows() == m_ && Phi.cols() == n_
-      && T.size() == m_ && Tlabels.size() == m_);
+      && T.size() == m_ && Tlabels.size() == m_
+      && (!wcopy_ || wcopy));
 }
 
 } // namespace memory

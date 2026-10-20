@@ -46,6 +46,22 @@ bool basis_drawn_from_training_data(const tadah::core::Context &ctx);
  *  token, 1 when there is none (M_KRR::train). */
 int krr_implementation(const tadah::core::Context &ctx);
 
+/** Refuses an M_KRR implementation other than 1 and 2 (the third value of
+ *  `MODEL M_KRR <kernel> [1|2]`): "MODEL M_KRR <kernel> <n>: M_KRR has
+ *  implementation 1 ... and implementation 2 ...; <n> is neither." A
+ *  MODEL without the third value (implementation 1) and another model are
+ *  accepted. M_KRR::train calls it; tadah hpo calls it when a run starts.
+ *  @throws std::runtime_error */
+void require_krr_implementation(const tadah::core::Context &ctx);
+
+/** The LAMBDA rules of the fit of @p ctx, checked without a fit, with the
+ *  fit's messages: those of M_KRR implementation 2 (MODELS
+ *  require_krr_implementation2_lambda) for `MODEL M_KRR <kernel> 2`, else
+ *  those of LinearRegressor::train (require_lambda_for_oalgo), which fits
+ *  M_BLR and M_KRR implementation 1. tadah hpo calls it when a run starts.
+ *  @throws std::runtime_error naming the value. */
+void require_fit_lambda(const tadah::core::Context &ctx);
+
 /** True for M_KRR implementation 2, `MODEL M_KRR <kernel> 2` with any
  *  kernel, Kern_Linear too: its solve (MODELS M_KRR_Train::train2) fits
  *  the targets of SBASIS basis vectors drawn from the training structures,

@@ -88,20 +88,58 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  too), whose solve (K + LAMBDA I) w = T fits the basis vectors' targets,
  *  not the structures' energies, and pins no weight, is not checked.
  *
- *  A no-op for BIAS false and for a function without intercept columns
- *  (Kern_RBF). An atom of an element not in ATOM is refused
+ *  A weight of the data that is negative or not finite is refused first
+ *  (require_valid_weights), for BIAS false too. Otherwise a no-op for BIAS
+ *  false and for a function without intercept columns (Kern_RBF). An atom
+ *  of an element not in ATOM is refused
  *  (throw_element_not_in_atom). FIXINDEX is read as the fit reads it,
  *  with core::parse_fixindex and the fit's weight count
  *  (model_weight_count), and what that refuses, an index past the weights
  *  included, is thrown here, before the fit, with the fit's message.
  *  @throws std::runtime_error naming the species, the rank found, the
  *          intercept weights and the remedies, or core::parse_fixindex's
- *          refusal of FIXINDEX/FIXWEIGHT
+ *          refusal of FIXINDEX/FIXWEIGHT, or require_valid_weights' of a
+ *          weight
  *  @throws std::logic_error for a kernel whose basis vectors do not have
  *          DSIZE values (they would be evaluated past the descriptor) */
 void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
                                    const tadah::models::Function_Base &f);
+
+/** \brief The intercept columns the fit of @p ctx fits, 0-based, before any
+ *  fit: those of the fit's function (for a model whose basis its fit
+ *  draws, a kernel's of that basis, which starts with the intercept
+ *  vectors) that FIXINDEX and FIXWEIGHT do not pin, FIXINDEX read as the
+ *  fit reads it (core::parse_fixindex with model_weight_count; what that
+ *  refuses is thrown here, with its message). None for BIAS false and for
+ *  M_KRR implementation 2, whose solve runs no least squares over them.
+ *  @p f is the model's function, built from @p ctx, which holds DSIZE (a
+ *  Trainer's).
+ *  @throws std::runtime_error */
+std::vector<std::size_t>
+fitted_intercept_columns(const tadah::core::Context &ctx,
+                         const tadah::models::Function_Base &f);
+
+/** \brief Refuses OALGO 3 with a LAMBDA other than 0 when the fit of
+ *  @p ctx has an intercept column it fits, before any fit, with the fit's
+ *  message (models::LinearRegressor::require_oalgo3_intercepts: OALGO 3
+ *  penalises every weight alike, and a ridge penalty leaves the intercept
+ *  columns out; LAMBDA -1, the evidence approximation, needs BIAS false or
+ *  every intercept weight pinned).
+ *
+ *  The intercept columns are counted as the fit has them: those of the
+ *  fit's function (for a model whose basis its fit draws, a kernel's of
+ *  that basis, which starts with the intercept vectors) that FIXINDEX and
+ *  FIXWEIGHT do not pin, FIXINDEX read as the fit reads it (core::parse_
+ *  fixindex with model_weight_count; what that refuses is thrown here, with
+ *  its message). @p f is the model's function, built from @p ctx, which
+ *  holds DSIZE (a Trainer's). M_KRR implementation 2, whose solve does not
+ *  run the least squares of LinearRegressor, is not checked; nor is BIAS
+ *  false, which has no intercept column. tadah hpo calls it when a run
+ *  starts.
+ *  @throws std::runtime_error */
+void require_oalgo3_intercepts(const tadah::core::Context &ctx,
+                               const tadah::models::Function_Base &f);
 
 /** \brief The intercept weights of @p f as text, FIXINDEX numbering: "1
  *  (Nb) and 6 (Ta)" (a weight is labelled with its species when it is

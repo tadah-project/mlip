@@ -23,15 +23,21 @@ void require_predicted_forces(const StructureDB &truth,
                               const StructureDB &pred,
                               const char *who);
 
-/** What a force or stress metric measures. */
-enum class MetricQuantity { Forces, Stress };
+/** What a metric measures: the energies, the forces or the stresses. */
+enum class MetricQuantity { Forces, Stress, Energy };
 
 /** Whether structure @p s counts in the @p q metrics: a structure stored
- *  with force weight 0 (fweight) has no force data of its own, and one with
- *  stress weight 0 (sweight) no stress tensor (tadah data convert stores
- *  them so); the metrics leave them out, as training does. */
+ *  with energy weight 0 (eweight) has no energy of its own, one with force
+ *  weight 0 (fweight) no force data and one with stress weight 0 (sweight)
+ *  no stress tensor (the values stored for them are placeholders; tadah
+ *  data convert stores zero forces and stresses with fweight and sweight 0
+ *  for a file that gives none); the metrics leave them out, as training
+ *  does. */
 inline bool counts_in_metric(const Structure &s, MetricQuantity q) {
-    return (q == MetricQuantity::Forces ? s.fweight : s.sweight) != 0.0;
+    const double w = q == MetricQuantity::Energy   ? s.eweight
+                     : q == MetricQuantity::Forces ? s.fweight
+                                                   : s.sweight;
+    return w != 0.0;
 }
 
 /** For each dataset of @p truth, whether the @p q metrics measure it: a
@@ -47,21 +53,23 @@ double measured_mean(const tadah::core::t_type &v, const std::vector<bool> &meas
 /** Refuses @p truth when no dataset is measured by the @p q metrics (every
  *  structure has that weight 0): they would have nothing to measure. Throws
  *  std::runtime_error, prefixed with @p who, naming the files when
- *  @p dataset_names has them and the weight ("force weight 0 (fweight)",
- *  "stress weight 0 (sweight)"). A dataset of only such structures among
- *  others is not refused: it is not measured (measured_datasets()). */
+ *  @p dataset_names has them and the weight ("energy weight 0 (eweight)",
+ *  "force weight 0 (fweight)", "stress weight 0 (sweight)"). A dataset of
+ *  only such structures among others is not refused: it is not measured
+ *  (measured_datasets()). */
 void require_metric_structures(const StructureDB &truth, MetricQuantity q,
                                const std::string &who,
                                const std::vector<std::string> &dataset_names = {});
 
 /** Class for analysing and comparing datasets
  *
- *  Each metric is per dataset (DBFILE). The force metrics (calc_f_*) leave
- *  out the structures stored with force weight 0, and the stress metrics
- *  (calc_s_*) those with stress weight 0 (counts_in_metric()): they have no
- *  data of their own. A dataset without a structure that counts is not
- *  measured: its value is nan (measured_datasets(), measured_mean()). The energy metrics ignore the weights
- *  (calc_e_rrmse leaves out a structure whose reference energy is 0).
+ *  Each metric is per dataset (DBFILE). The energy metrics (calc_e_*) leave
+ *  out the structures stored with energy weight 0, the force metrics
+ *  (calc_f_*) those with force weight 0, and the stress metrics (calc_s_*)
+ *  those with stress weight 0 (counts_in_metric()): they have no data of
+ *  their own. A dataset without a structure that counts is not measured:
+ *  its value is nan (measured_datasets(), measured_mean()). calc_e_rrmse
+ *  also leaves out a structure whose reference energy is 0.
  */
 class Analytics {
     private:

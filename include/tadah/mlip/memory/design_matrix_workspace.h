@@ -43,9 +43,11 @@ public:
    *
    * @param m Number of rows in the matrix.
    * @param n Number of columns in the matrix.
+   * @param wcopy Whether the copy of Phi and T (Phi_cpy, T_cpy) is needed:
+   *        a workspace made without it is not sufficient then.
    * @return True if the workspace is sufficient, false otherwise.
    */
-  bool isSufficient(size_t m_, size_t n_) const;
+  bool isSufficient(size_t m_, size_t n_, bool wcopy = false) const;
 
   tadah::core::phi_type Phi, Phi_cpy; // Design matrix and space for its copy
   tadah::core::t_type T, T_cpy; // Target vector and space for its copy

@@ -17,6 +17,8 @@
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/training_datasets.h>
+#include <tadah/mlip/data_weights.h>
+#include <tadah/core/number_format.h>
 
 #include <limits>
 #include <stdexcept>
@@ -50,7 +52,9 @@ namespace mlip {
  * **Implementation 2** fits energies only, by solving
  * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
  * intercept vectors, with target 0, and the mean descriptors of drawn
- * structures, with their energies per atom). A non-linear kernel's weights
+ * structures, with their energies per atom). No weight of the data enters
+ * this solve: a fit that asks for forces, stresses or weights is refused
+ * (refuse_what_train2_ignores()). A non-linear kernel's weights
  * are w, and its potential records SBASIS and BASIS. Kern_Linear's are the
  * descriptor weights of its basis vectors, \f$ \sum_j w_j \mathbf{b}_j \f$
  * (converted to the raw descriptors with NORM, as implementation 1's): its
@@ -131,7 +135,21 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+    // The weights first: the checks below read them.
+    require_valid_weights(stdb, context);
     check_bias_constraints(context);
+
+    // Precomputed descriptors run implementation 1, whatever MODEL's third
+    // value: implementation 2 fits the mean descriptors of whole structures,
+    // which train(StructureDB, DescriptorsCalc) computes.
+    if (context.size("MODEL")==3 && context.template get<int>("MODEL",2)!=1)
+      throw std::runtime_error(
+          "MODEL M_KRR " + kernel.get_label() + " " +
+          context.template get<std::string>("MODEL",2) + ": the fit of "
+          "precomputed descriptors (train(StDescriptorsDB, StructureDB)) runs "
+          "implementation 1 only (MODEL M_KRR " + kernel.get_label() + " 1); "
+          "implementation 2 fits the mean descriptors of whole structures, "
+          "which train(StructureDB, DescriptorsCalc) computes.");
 
     // Precomputed descriptors: no basis is drawn on this path, so a
     // non-linear kernel would fit no column (or the columns of a basis
@@ -147,7 +165,8 @@ public:
     if(context.template get<bool>("NORM"))
       norm = Normaliser(context,st_desc_db);
 
-    bool wcopy=false;
+    // The rows without the row factors are kept for predict(StructureDB&).
+    bool wcopy=true;
     desmat.build(st_desc_db,stdb,wcopy);
     train(desmat);
   }
@@ -161,17 +180,15 @@ public:
       modelN=1;
       context.add("MODEL", modelN);
     }
+    require_krr_implementation(context);
     if (modelN==1)
       train1(stdb,dc);
-    else if (modelN==2)
-      train2(stdb,dc);
     else
-      throw
-    std::runtime_error(
-      "This KRR implementation does exist: "\
-      + std::to_string(modelN)+"\n");
+      train2(stdb,dc);
   }
   void train1(const StructureDB &stdb, DC_Base &dc) {
+    // The weights first: the intercept check below reads them.
+    require_valid_weights(stdb, context);
     // KRR on the design matrix: for a non-linear kernel the columns are
     // its basis vectors, drawn here from the (normalised) training AEDs
     if(context.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
@@ -207,12 +224,26 @@ public:
     // basis vectors, drawn above, or Kern_Linear's) must be determined by
     // the energy-weighted compositions.
     require_intercepts_determined(stdb, context, kernel);
-    bool wcopy=false;
+    // The rows without the row factors are kept for predict(StructureDB&).
+    bool wcopy=true;
     desmat.build(stdb,norm,dc,wcopy);
     train(desmat);
   }
 
+  /** Refuses what implementation 2 would ignore, before it fits
+   *  (refuse_what_krr_implementation2_ignores of its context: FORCE,
+   *  STRESS, the weights of the configuration, and a structure whose
+   *  eweight is not 1).
+   *  @throws std::runtime_error naming the key and its values (or the
+   *  structure and its eweight) and `MODEL M_KRR <kernel> 1`. */
+  void refuse_what_train2_ignores(const StructureDB &stdb) const {
+    refuse_what_krr_implementation2_ignores(context, stdb);
+  }
+
   void train2(const StructureDB &stdb, DC_Base &dc) {
+    require_valid_weights(stdb, context);
+    refuse_what_train2_ignores(stdb);
+    fit_rows_ = false;  // implementation 2 fits no design matrix
 
     // NEW (BASIC) IMPLEMENTATION OF KRR //
     std::string force=context.template get<std::string>("FORCE");
@@ -352,64 +383,54 @@ tadah::core::Context get_param_file() {
     return predict_with_error<K>(context_pred, kernel, weights, norm, stdb, dc,
                               value_error, false);
   }
+  /** The values the last fit of this model predicts for the structures
+   *  it was fitted to, @p stdb, from the rows of its design matrix without
+   *  the row factors, as M_BLR::predict(StructureDB&).
+   *  @throws std::runtime_error for a model without a fit of a design
+   *  matrix of its own (one built from a potential's WEIGHTS, or a fit of
+   *  implementation 2, which builds none), and for a StructureDB with other
+   *  structures than the fit's. */
   StructureDB predict(StructureDB &stdb) {
-    if(!trained) throw std::runtime_error("This object is not trained!\n\
-Hint: check different predict() methods.");
-
-    tadah::core::phi_type &Phi = desmat.getPhi();
-
-    // compute energy, forces and stresses
-    tadah::core::aed_type Tpred = T_dgemv(Phi, weights);
-
-    // double eweightglob=context.template get<double>("EWEIGHT");
-    // double fweightglob=context.template get<double>("FWEIGHT");
-    // double sweightglob=context.template get<double>("SWEIGHT");
-
-    // Construct StructureDB object with predicted values
-    StructureDB stdb_;
-    stdb_.structures.resize(stdb.size());
-    size_t s=0;
-    size_t i=0;
-    while (i<Phi.rows()) {
-
-      stdb_(s).energy = Tpred(i++);
-      if (context.template get<bool>("FORCE")) {
-        stdb_(s).atoms.resize(stdb(s).natoms());
-        for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          for (size_t k=0; k<3; ++k) {
-            stdb_(s).atoms[a].force[k] = Tpred(i++);
-          }
-        }
-      }
-      if (context.template get<bool>("STRESS")) {
-        for (size_t x=0; x<3; ++x) {
-          for (size_t y=x; y<3; ++y) {
-            stdb_(s).stress(x,y) = Tpred(i++);
-            if (x!=y)
-              stdb_(s).stress(y,x) = stdb_(s).stress(x,y);
-          }
-        }
-      }
-      s++;
+    if (!fit_rows_)
+      throw std::runtime_error(
+          "M_KRR::predict(StructureDB&) predicts the structures of the "
+          "model's last fit from its design matrix: this model has no fit "
+          "of its own (it was built from a potential's WEIGHTS, or fitted "
+          "by implementation 2, which builds no design matrix); "
+          "predict(Context, StructureDB, DescriptorsCalc) predicts any "
+          "structures.");
+    try {
+      return desmat.predict_built(stdb, fit_weights_);
+    } catch (const std::runtime_error &e) {
+      throw std::runtime_error(std::string("M_KRR::predict(StructureDB&): ") +
+                               e.what());
     }
-    return stdb_;
   }
 
 private:
   std::string label="M_KRR";
   Basis<K> basis;
   DesignMatrix<K> desmat;
+  /** The weights of the last fit of the design matrix as it solved them
+   *  (before Kern_Linear's NORM weights are converted to the raw
+   *  descriptors): predict(StructureDB&) multiplies its rows by them. */
+  tadah::core::t_type fit_weights_;
+  /** Whether this object fitted a design matrix (predict(StructureDB&)). */
+  bool fit_rows_ = false;
 
   /** The noise variance of each row type of the last fit (WNOISE). */
   PerRowType noise_by_type;
 
   template <typename D>
   void train(D &desmat) {
-    // TODO see comments in M_BLR
-    tadah::core::phi_type Phi = desmat.getPhi();
+    // The solve overwrites the weighted rows it is given (see M_BLR).
+    tadah::core::phi_type &Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
     noise_by_type = PerRowType();
+    fit_rows_ = false;
     tadah::models::M_KRR_Train<K>::train(Phi, T, desmat.n_observations());
+    fit_weights_ = weights;
+    fit_rows_ = desmat.hasCopy();
 
     if (weights_on_raw_descriptors(context, kernel))
       to_raw_descriptors(*this, norm,

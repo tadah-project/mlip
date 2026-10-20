@@ -39,7 +39,6 @@ class Trainer {
     NNFinder nnf; // const
     DM_Function_Base *fb = nullptr;
     M_Tadah_Base *model = nullptr;
-    DesignMatrix<DM_Function_Base&> dm;
     tadah::mlip::memory::IMLIPWorkspaceManager* workspaceManager_ = nullptr;
 
     ~Trainer() {
@@ -57,7 +56,6 @@ class Trainer {
             context.get<std::string>("MODEL",1),context)),
       model(tadah::core::factory<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&,tadah::mlip::memory::IMLIPWorkspaceManager&>
           (context.get<std::string>("MODEL",0),*fb,context,workspaceManager)),  // MODIFIES CONTEXT ON TRAINING
-      dm(*fb, context, workspaceManager), // does not modify context
       workspaceManager_(&workspaceManager)
   {
     // The descriptor of training (dc, DSIZE) is the descriptor of
