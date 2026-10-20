@@ -54,27 +54,45 @@ std::string upper_enorm(const core::Context &c) {
 }
 
 /* Singular values and right singular vectors of the m x n column-major
- * matrix @p a (destroyed): S (min(m, n), descending) and VT, min(m, n) x n
- * column-major. */
-void svd_right(std::vector<double> &a, int m, int n, std::vector<double> &S,
+ * matrix at @p a, of leading dimension @p lda (destroyed): S (min(m, n),
+ * descending) and VT, min(m, n) x n column-major. */
+void svd_right(double *a, int m, int n, int lda, std::vector<double> &S,
                std::vector<double> &VT) {
   const int k = std::min(m, n);
   S.assign(static_cast<std::size_t>(k), 0.0);
   VT.assign(static_cast<std::size_t>(k) * static_cast<std::size_t>(n), 0.0);
   if (k == 0) return;
   char jobu = 'N', jobvt = 'S';
-  int lda = m, ldu = 1, ldvt = k, info = 0, lwork = -1;
+  int ldu = 1, ldvt = k, info = 0, lwork = -1;
   double u = 0, wq = 0;
-  core::dgesvd_(&jobu, &jobvt, &m, &n, a.data(), &lda, S.data(), &u, &ldu,
+  core::dgesvd_(&jobu, &jobvt, &m, &n, a, &lda, S.data(), &u, &ldu,
                 VT.data(), &ldvt, &wq, &lwork, &info);
   lwork = std::max(1, static_cast<int>(wq));
   std::vector<double> work(static_cast<std::size_t>(lwork));
-  core::dgesvd_(&jobu, &jobvt, &m, &n, a.data(), &lda, S.data(), &u, &ldu,
+  core::dgesvd_(&jobu, &jobvt, &m, &n, a, &lda, S.data(), &u, &ldu,
                 VT.data(), &ldvt, work.data(), &lwork, &info);
   if (info != 0)
     throw std::runtime_error("effective_parameters: the singular value "
                              "decomposition did not converge (DGESVD info " +
                              std::to_string(info) + ")");
+}
+
+/* The most rows effective_parameters() reads in one block (at least the
+ * columns, so a block holds the ridge rows). */
+constexpr std::size_t kBlockRows = 1024;
+
+/* Rows k0 .. k0 + nb - 1 of @p w, with their factors, into rows r0 .. of
+ * the column-major array @p buf of leading dimension @p ld. */
+void copy_rows(const WeightedRows &w, std::size_t k0, std::size_t nb,
+               double *buf, std::size_t ld, std::size_t r0) {
+  for (std::size_t j = 0; j < w.cols.size(); ++j) {
+    const std::size_t c = w.cols[j];
+    double *col = buf + ld * j + r0;
+    for (std::size_t k = 0; k < nb; ++k) {
+      const std::size_t i = w.rows[k0 + k];
+      col[k] = w.factors(i) * w.Phi(i, c);
+    }
+  }
 }
 
 }  // namespace
@@ -355,10 +373,41 @@ EffectiveParameters effective_parameters(
                            " rows, " + std::to_string(labels.size()) +
                            " labels and " + std::to_string(row_dataset.size()) +
                            " datasets");
-  for (std::size_t i = 0; i < m; ++i)
-    if (row_dataset[i] >= n_datasets || labels(i) < 0 || labels(i) > 2)
+  core::t_type ones(m);  // the rows of Phi carry their factors
+  for (std::size_t i = 0; i < m; ++i) ones(i) = 1.0;
+  WeightedRows w{Phi, ones, labels, row_dataset, {}, {}};
+  w.rows.resize(m);
+  for (std::size_t i = 0; i < m; ++i) w.rows[i] = i;
+  w.cols.resize(n);
+  for (std::size_t j = 0; j < n; ++j) w.cols[j] = j;
+  return effective_parameters(w, n_datasets, lambda, unpenalised, oalgo,
+                              rcond);
+}
+
+EffectiveParameters effective_parameters(
+    const WeightedRows &w, std::size_t n_datasets, double lambda,
+    const std::vector<std::size_t> &unpenalised, int oalgo, double rcond) {
+  const std::size_t m = w.rows.size(), n = w.cols.size();
+  for (std::size_t k = 0; k < m; ++k) {
+    const std::size_t i = w.rows[k];
+    if (i >= w.Phi.rows() || i >= w.factors.size() || i >= w.labels.size() ||
+        i >= w.row_dataset.size())
+      throw std::logic_error("effective_parameters: row " + std::to_string(i) +
+                             " of a design matrix of " +
+                             std::to_string(w.Phi.rows()) + " rows, " +
+                             std::to_string(w.factors.size()) + " factors, " +
+                             std::to_string(w.labels.size()) + " labels and " +
+                             std::to_string(w.row_dataset.size()) +
+                             " datasets");
+    if (w.row_dataset[i] >= n_datasets || w.labels(i) < 0 || w.labels(i) > 2)
       throw std::logic_error("effective_parameters: row " + std::to_string(i) +
                              " has a type or dataset out of range");
+  }
+  for (std::size_t c : w.cols)
+    if (c >= w.Phi.cols())
+      throw std::logic_error("effective_parameters: column " +
+                             std::to_string(c) + " of " +
+                             std::to_string(w.Phi.cols()));
   for (std::size_t j : unpenalised)
     if (j >= n)
       throw std::logic_error("effective_parameters: unpenalised column " +
@@ -371,56 +420,137 @@ EffectiveParameters effective_parameters(
   g.by_dataset.assign(n_datasets, std::array<double, 3>{{0.0, 0.0, 0.0}});
   if (m == 0 || n == 0) return g;
 
-  // The directions: the right singular vectors of Phi (OALGO 3), whose
-  // values s give s^2 + lambda, or of A = [Phi; sqrt(lambda) P] (the
-  // others), whose values give the eigenvalues of H directly.
+  // The directions: the right singular vectors of the weighted rows A
+  // (OALGO 3), whose values s give s^2 + lambda, or of A = [rows;
+  // sqrt(lambda) P] (the others), whose values give the eigenvalues of H
+  // directly. They are those of the n x n triangle R of A = QR, which the
+  // blocks of rows build: R of [R; block] for each block in turn.
   const bool uniform = oalgo == 3;
   const bool ridge = !uniform && lambda > 0.0;
-  const std::size_t rows = ridge ? m + n : m;
-  std::vector<double> a(rows * n, 0.0);
-  for (std::size_t j = 0; j < n; ++j)
-    for (std::size_t i = 0; i < m; ++i) a[i + rows * j] = Phi(i, j);
-  if (ridge) {
-    std::vector<char> pen(n, 1);
+  std::vector<char> pen(n, 1);  // the penalised columns
+  if (!uniform)
     for (std::size_t j : unpenalised) pen[j] = 0;
+  const std::size_t total = m + (ridge ? n : 0);  // the rows of A
+  const std::size_t block =
+      std::min(std::max(m, ridge ? n : std::size_t{0}),
+               std::max(n, kBlockRows));
+  const std::size_t ld = n + block;
+  std::vector<double> buf(ld * n, 0.0);  // rows [0, n): R; then a block
+  std::vector<double> tau(n);
+  int N = static_cast<int>(n), LDA = static_cast<int>(ld), info = 0;
+  int lwork = -1;
+  {
+    int M = LDA;
+    double wq = 0;
+    core::dgeqrf_(&M, &N, buf.data(), &LDA, tau.data(), &wq, &lwork, &info);
+    lwork = std::max(N, static_cast<int>(wq));
+  }
+  std::vector<double> work(static_cast<std::size_t>(lwork));
+  auto factor = [&](std::size_t nb) {  // R of [R; the block of nb rows]
+    int M = static_cast<int>(n + nb);
+    core::dgeqrf_(&M, &N, buf.data(), &LDA, tau.data(), work.data(), &lwork,
+                  &info);
+    if (info != 0)
+      throw std::runtime_error("effective_parameters: the QR factorisation "
+                               "failed (DGEQRF info " +
+                               std::to_string(info) + ")");
+    for (std::size_t j = 0; j < n; ++j)  // R alone: no reflector below it
+      for (std::size_t i = j + 1; i < n; ++i) buf[i + ld * j] = 0.0;
+  };
+  for (std::size_t k0 = 0; k0 < m; k0 += block) {
+    const std::size_t nb = std::min(block, m - k0);
+    copy_rows(w, k0, nb, buf.data(), ld, n);
+    factor(nb);
+  }
+  if (ridge) {
     for (std::size_t j = 0; j < n; ++j)
-      if (pen[j]) a[m + j + rows * j] = std::sqrt(lambda);
+      for (std::size_t i = 0; i < n; ++i)
+        buf[n + i + ld * j] = i == j && pen[j] ? std::sqrt(lambda) : 0.0;
+    factor(n);
   }
   std::vector<double> S, VT;
-  svd_right(a, static_cast<int>(rows), static_cast<int>(n), S, VT);
-  const std::size_t k = S.size();
+  svd_right(buf.data(), N, N, LDA, S, VT);
+  // A has min(total, n) singular values; R's others are those of its zero
+  // rows. The directions the solve keeps: OALGO 1 (DGELSD) those above
+  // rcond times the largest (machine precision for rcond < 0), OALGO 3
+  // those above rcond times the largest (every one for rcond <= 0), OALGO 2
+  // (QR) and 4 (Cholesky) every one: they solve with every direction.
+  const std::size_t k = std::min(total, n);
   double thresh = 0.0;
-  if (k > 0) {
-    const double smax = S[0];
-    if (oalgo == 1)
-      thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
-               smax;
-    else if (oalgo == 3)
-      thresh = rcond > 0.0 ? rcond * smax : 0.0;
-    else
-      thresh = std::sqrt(static_cast<double>(n) *
-                         std::numeric_limits<double>::epsilon()) *
-               smax;
+  if (oalgo == 1)
+    thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
+             S[0];
+  else if (oalgo == 3 && rcond > 0.0)
+    thresh = rcond * S[0];
+  std::vector<std::size_t> kept;
+  for (std::size_t i = 0; i < k; ++i)
+    if (S[i] > thresh) kept.push_back(i);
+  if (kept.empty()) return g;
+
+  // The pairs of a dataset and a type that have rows, numbered.
+  constexpr std::size_t kNone = static_cast<std::size_t>(-1);
+  std::vector<std::size_t> pair_of(3 * n_datasets, kNone);
+  std::vector<std::size_t> pair_dataset, pair_type;
+  for (std::size_t q = 0; q < m; ++q) {
+    const std::size_t i = w.rows[q];
+    const std::size_t p = 3 * w.row_dataset[i] +
+                          static_cast<std::size_t>(w.labels(i));
+    if (pair_of[p] != kNone) continue;
+    pair_of[p] = pair_dataset.size();
+    pair_dataset.push_back(w.row_dataset[i]);
+    pair_type.push_back(static_cast<std::size_t>(w.labels(i)));
   }
-  std::vector<double> u(m);
-  for (std::size_t i = 0; i < k; ++i) {
-    if (!(S[i] > thresh)) continue;
-    ++g.retained;
-    const double denom = uniform ? S[i] * S[i] + lambda : S[i] * S[i];
-    for (std::size_t r = 0; r < m; ++r) {
-      double v = 0.0;
-      for (std::size_t j = 0; j < n; ++j) v += Phi(r, j) * VT[i + k * j];
-      u[r] = v;
+
+  // Each kept direction v_i's part of the rows of each pair, |A_qd v_i|^2,
+  // by blocks of rows (U = A_block V_kept), and its part of the prior,
+  // lambda |P v_i|^2 (P = I under OALGO 3). Their sum is v_i^T H v_i, the
+  // eigenvalue s_i^2 (s_i^2 + lambda under OALGO 3); each part is divided
+  // by that sum, so a direction's parts sum to 1 by construction, also for
+  // a direction of the rounding level, whose s_i from R is not |A v_i|.
+  const std::size_t r = kept.size(), pairs = pair_dataset.size();
+  std::vector<double> V(n * r);  // column-major, n x r
+  for (std::size_t c = 0; c < r; ++c)
+    for (std::size_t j = 0; j < n; ++j) V[j + n * c] = VT[kept[c] + n * j];
+  std::vector<double> part(pairs * r, 0.0);  // [pair * r + direction]
+  const std::size_t rows_block = std::min(m, std::max(n, kBlockRows));
+  std::vector<double> U(rows_block * r);
+  for (std::size_t k0 = 0; k0 < m; k0 += rows_block) {
+    const std::size_t nb = std::min(rows_block, m - k0);
+    copy_rows(w, k0, nb, buf.data(), ld, 0);
+    char tr = 'N';
+    int M = static_cast<int>(nb), R = static_cast<int>(r), LDU = M;
+    double one = 1.0, zero = 0.0;
+    core::dgemm_(&tr, &tr, &M, &R, &N, &one, buf.data(), &LDA, V.data(), &N,
+                 &zero, U.data(), &LDU);
+    for (std::size_t q = 0; q < nb; ++q) {
+      const std::size_t i = w.rows[k0 + q];
+      double *to = part.data() +
+                   r * pair_of[3 * w.row_dataset[i] +
+                               static_cast<std::size_t>(w.labels(i))];
+      for (std::size_t d = 0; d < r; ++d) to[d] += U[q + nb * d] * U[q + nb * d];
     }
-    for (std::size_t r = 0; r < m; ++r) {
-      const double c = u[r] * u[r] / denom;
-      const std::size_t t = static_cast<std::size_t>(labels(r));
-      g.by_type[t] += c;
-      g.by_dataset[row_dataset[r]][t] += c;
+  }
+  for (std::size_t d = 0; d < r; ++d) {
+    double data = 0.0;
+    for (std::size_t p = 0; p < pairs; ++p) data += part[p * r + d];
+    double prior = 0.0;
+    if (lambda > 0.0) {
+      for (std::size_t j = 0; j < n; ++j)
+        if (pen[j]) prior += V[j + n * d] * V[j + n * d];
+      prior *= lambda;
+    }
+    const double eigenvalue = data + prior;
+    // v^T H v = 0: a direction H does not reach (no row and no penalty).
+    if (!(eigenvalue > 0.0)) continue;
+    ++g.retained;
+    g.prior += prior / eigenvalue;
+    for (std::size_t p = 0; p < pairs; ++p) {
+      const double c = part[p * r + d] / eigenvalue;
+      g.by_type[pair_type[p]] += c;
+      g.by_dataset[pair_dataset[p]][pair_type[p]] += c;
     }
   }
   g.total = g.by_type[0] + g.by_type[1] + g.by_type[2];
-  g.prior = static_cast<double>(g.retained) - g.total;
   return g;
 }
 

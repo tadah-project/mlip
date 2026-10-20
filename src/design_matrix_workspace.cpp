@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <stdexcept>
 #include <tadah/core/lapack.h>
@@ -8,6 +9,11 @@ namespace mlip {
 namespace memory {
 
 DesignMatrixWorkspace::DesignMatrixWorkspace(bool wcopy): wcopy(wcopy) {}
+
+std::uint64_t DesignMatrixWorkspace::next_build_stamp() {
+  static std::atomic<std::uint64_t> last{0};
+  return ++last;
+}
 DesignMatrixWorkspace::~DesignMatrixWorkspace() {}
 
 void DesignMatrixWorkspace::allocate(size_t m_, size_t n_) {

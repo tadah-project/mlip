@@ -17,6 +17,7 @@
 #include <tadah/mlip/engines/hpotarget_retarget.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/fit_balance.h>
 #include <tadah/mlip/training_record.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
@@ -167,13 +168,15 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   // among its key lines (its DBFILE, UNCERTAINTY, VERBOSE, ...: they are
   // not written as key lines, so they move into the record rather than
   // being dropped) -- is the edit's, after a line naming the input. The
-  // edit's own inputs (-o, -v, NUMERIC) are not added.
+  // edit's own inputs (-o, -v, NUMERIC) are not added, and neither is the
+  // balance table of the input's fit (fit_balance.h): it describes the
+  // input's coefficients, which the edit changes.
   TrainingRecord record;
   record.lines.push_back("edited by tadah refit --edit from " + in_pot);
   {
     TrainingRecord input;
     try {
-      input = read_training_record(in_pot);
+      input = without_fit_balance(read_training_record(in_pot));
     } catch (const std::exception &e) {
       throw std::runtime_error(std::string("tadah refit --edit: ") +
                                e.what());

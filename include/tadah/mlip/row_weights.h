@@ -195,8 +195,10 @@ struct EffectiveParameters {
   std::vector<std::array<double, 3>> by_dataset;
   /** Their sum, sum_kept s_i^2/(s_i^2 + lambda) for a uniform ridge. */
   double total = 0.0;
-  /** The prior's share: the retained directions less @c total
-   *  (lambda tr(H^-1 I_pen)); 0 at lambda 0. */
+  /** The prior's effective parameters, lambda tr(H^+ I_pen) over the
+   *  retained directions (each direction's lambda |P v_i|^2 over its
+   *  eigenvalue of H), so that @c total and @c prior sum to @c retained;
+   *  0 at lambda 0. */
   double prior = 0.0;
   /** The directions the solve keeps (the rank of H on them). */
   std::size_t retained = 0;
@@ -211,13 +213,21 @@ struct EffectiveParameters {
  *  over the directions the solve of OALGO @p oalgo keeps:
  *   - OALGO 3 (SVD of Phi, a uniform ridge): the right singular vectors of
  *     Phi whose singular value is above @p rcond times the largest (all of
- *     them when rcond <= 0); gamma_q = sum_kept |Phi_q v_i|^2 /
- *     (s_i^2 + lambda);
+ *     them when rcond <= 0);
  *   - OALGO 1 (DGELSD of Phi and the ridge rows): the eigenvectors of H
  *     whose sqrt(eigenvalue) is above @p rcond times the largest (machine
  *     precision for rcond < 0);
- *   - OALGO 2 and 4: every eigenvector of H with a positive eigenvalue
- *     (above n eps times the largest).
+ *   - OALGO 2 (QR) and 4 (Cholesky): every eigenvector of H with a
+ *     positive eigenvalue. These solves refuse a design matrix without
+ *     full column rank and solve with every direction, however small its
+ *     eigenvalue (with lambda > 0, at least lambda on the penalised
+ *     columns).
+ *  A kept direction v_i contributes |Phi_q v_i|^2 / e_i to gamma_q and
+ *  lambda |I_pen v_i|^2 / e_i to the prior's, e_i = |Phi v_i|^2 + lambda
+ *  |I_pen v_i|^2 = v_i^T H v_i, its eigenvalue (s_i^2 + lambda under OALGO
+ *  3): its parts sum to 1, and those of every kept direction to the rank,
+ *  also for a direction at the rounding level of a design matrix whose
+ *  columns are dependent, whose singular value alone gives no such part.
  *  @throws std::logic_error for OALGO 3 with lambda != 0 and unpenalised
  *  columns (the fit refuses it), and for rows, labels and datasets of
  *  other sizes. */
@@ -226,6 +236,35 @@ EffectiveParameters effective_parameters(
     const std::vector<std::size_t> &row_dataset, std::size_t n_datasets,
     double lambda, const std::vector<std::size_t> &unpenalised, int oalgo,
     double rcond);
+
+/** Some rows of a design matrix with their factors, read where they are:
+ *  row k is @c factors(rows[k]) times row @c rows[k] of @c Phi on the
+ *  columns @c cols, of type @c labels(rows[k]) (0, 1, 2) and dataset
+ *  @c row_dataset[rows[k]]. */
+struct WeightedRows {
+  const core::phi_type &Phi;    ///< the rows without their factors
+  const core::t_type &factors;  ///< the factor of each row of Phi
+  const core::t_type &labels;   ///< the type of each row of Phi
+  const std::vector<std::size_t> &row_dataset;  ///< its dataset
+  std::vector<std::size_t> rows;  ///< the rows taken, ascending
+  std::vector<std::size_t> cols;  ///< the columns taken
+};
+
+/** effective_parameters() of the rows @p w, the same directions and the
+ *  same numbers, without a copy of them: the rows are read in blocks of
+ *  at most max(p, 1024) rows, whose QR factorisations stream into the p x p
+ *  triangle R of the rows (and of the ridge rows), whose SVD gives the
+ *  directions; a second pass of blocks gives the part of each direction of
+ *  the rows of each pair of a dataset and a type. Its memory is of the
+ *  order of (p + 1024 + G) p for p columns and the G <= 3 D pairs with rows
+ *  of the D datasets, not of the n rows. @p unpenalised indexes
+ *  @c w.cols.
+ *  @throws std::logic_error as effective_parameters(), and for a row,
+ *  column, type or dataset out of range.
+ *  @throws std::runtime_error when the QR factorisation or the SVD fails. */
+EffectiveParameters effective_parameters(
+    const WeightedRows &w, std::size_t n_datasets, double lambda,
+    const std::vector<std::size_t> &unpenalised, int oalgo, double rcond);
 
 }  // namespace mlip
 }  // namespace tadah

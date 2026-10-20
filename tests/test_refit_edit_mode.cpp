@@ -8,6 +8,7 @@
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/fit_balance.h>
 #include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/task.h>
 #include <tadah/mlip/engines/hpotarget_writer.h>
@@ -1322,6 +1323,51 @@ TEST_CASE_METHOD(PTFixture,
   const Context plain =
       tadah::core::CoreUserConfigParser().parse("plain_out.tadah");
   CHECK(out.storage_snapshot() == plain.storage_snapshot());
+}
+
+/* Pins: refit --edit of a potential of tadah train, whose training record
+ * ends with the balance table of its fit (in.tadah: "DBFILE train.db", then
+ * the lines of a table, fit_balance_lines), writes out.tadah whose record
+ * is "edited by tadah refit --edit from in.tadah" and "DBFILE train.db"
+ * without the table: the edit changes the coefficients (their number and
+ * values), which the table of the input's fit does not describe; so does
+ * an edit of a potential whose table is none.
+ * Before the fix: the edit's record copied the table, coefficients, rank,
+ * RMSE and shares of the input's fit. */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit leaves the balance table of the input's fit out "
+                 "of its training record",
+                 "[refit][edit][training_record][fit_balance]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("plain.tadah", make_knot_pot());
+  tadah::mlip::FitBalance b;
+  b.coefficients = 3;
+  b.retained = 3;
+  b.sigma = {"1", "", ""};
+  tadah::mlip::FitBalanceRow r;
+  r.n = 4;
+  r.rmse = 0.5;
+  r.rms_z = 0.5;
+  r.share = 1.0;
+  r.gamma = 3.0;
+  b.rows.push_back(r);
+  for (const tadah::mlip::FitBalance &table :
+       {b, tadah::mlip::no_fit_balance("a reason")}) {
+    std::ofstream in("in.tadah");
+    in << kRecordOpen << "\n# DBFILE train.db\n";
+    for (const std::string &l : tadah::mlip::fit_balance_lines(table))
+      in << "# " << l << "\n";
+    in << kRecordEnd << "\n" << slurp_file("plain.tadah");
+    in.close();
+    run_edit_capturing(edit_of("in.tadah", "out.tadah"));
+    INFO("out.tadah:\n" << slurp_file("out.tadah"));
+    CHECK(record_lines("out.tadah") ==
+          std::vector<std::string>{
+              "edited by tadah refit --edit from in.tadah",
+              "DBFILE train.db"});
+    fs::remove("out.tadah");
+    fs::remove("out.tadah.hpotarget");
+  }
 }
 
 /* Pins: refit --edit of a potential that has DBFILE, UNCERTAINTY and
