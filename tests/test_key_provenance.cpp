@@ -551,11 +551,16 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
   using tadah::mlip::potential_line_not_read;
   const std::set<std::string> pot_keys = {"ATOM", "WEIGHTS"};
   const std::set<std::string> pot_eshift = {"WEIGHTS", "ESHIFT"};
-  for (const char *k : {"EFILTER", "FFILTER", "EWEIGHT_TEMP", "ZERO_COM_FORCE",
-                        "WDBFILE", "WDBFILE_AUTO"}) {
+  for (const char *k : {"EFILTER", "FFILTER", "ZERO_COM_FORCE", "WDBFILE"}) {
     INFO("key " << k);
     CHECK(potential_line_not_read(pot_keys, k));
     CHECK_FALSE(potential_line_not_read({"ATOM", "DBFILE"}, k));
+  }
+  // The retired keys are no stored key of any parse (it records their
+  // lines, and a fit refuses them): the rule does not select them.
+  for (const char *k : {"EWEIGHT_TEMP", "WDBFILE_AUTO"}) {
+    INFO("key " << k);
+    CHECK_FALSE(potential_line_not_read(pot_keys, k));
   }
   for (const char *k : {"ESHIFT_ATOM", "ESHIFT_DBATOM", "UNCERTAINTY"}) {
     INFO("key " << k);
@@ -647,7 +652,7 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
   using tadah::mlip::training_record_keys;
   const std::vector<std::string> expected = {
       "EFILTER",     "FFILTER",      "ESHIFT_ATOM", "ESHIFT_DBATOM",
-      "EWEIGHT_TEMP", "ZERO_COM_FORCE", "WDBFILE",   "WDBFILE_AUTO",
+      "ZERO_COM_FORCE", "WDBFILE",
       "VALIDATION",  "HPOTARGET",    "CHECK",       "UNCERTAINTY",
       "VERBOSE",     "NUMERIC",      "OUTFILE",     "AUDIT",
       "AUDIT_SAMPLE", "HEALTH_LOG"};

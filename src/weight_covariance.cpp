@@ -1,6 +1,7 @@
 #include <tadah/mlip/weight_covariance.h>
 
 #include <tadah/mlip/normaliser.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/weight_provisioning.h>
 #include <tadah/models/functions/weights_fit.h>
 #include <tadah/models/m_krr_core.h>
@@ -36,14 +37,14 @@ std::string why_no_covariance(const tadah::core::Context &c) {
            ", and retrain the potential.";
   return kNoCovariance + ". An OALGO 3 fit writes them, so the potential is "
          "one of these: a potential of an earlier version of Tadah!, whose "
-         "SIGMA is ignored (it was computed with a transposed formula): "
-         "retrain it; the potential of a fit with no "
-         "more observations (rows with a non-zero weight) than effective "
+         "SIGMA is ignored (it was computed with a transposed formula): a "
+         "retrain, after its retired keys are converted, gives them; the "
+         "potential of a fit with no more observations than effective "
          "weights, whose noise variance is undefined (`tadah train` warned "
-         "'no weight covariance'): add data with a non-zero weight and "
-         "retrain it; or weights set from FIXWEIGHT without a fit (tadah hpo "
-         "with every weight pinned and no training data), which have no "
-         "covariance.";
+         "'no weight covariance'): more data with a priority above 0 and a "
+         "retrain give them; or weights set from FIXWEIGHT without a fit "
+         "(tadah hpo with every weight pinned and no training data), which "
+         "have no covariance.";
 }
 
 }  // namespace
@@ -76,6 +77,17 @@ WeightCovariance read_weight_covariance(const tadah::core::Context &c,
                                         std::size_t n_weights) {
   if (!c.has_stored("WCOV") || !c.has_stored("WNOISE"))
     throw std::runtime_error(why_no_covariance(c));
+  // A potential written before the error scales has a WNOISE in other
+  // units (the noise per unit row weight over the retired global weights,
+  // the energy's per structure), and no ESIGMA line: not read as if it
+  // were in the units of ESIGMA, FSIGMA and SSIGMA.
+  if (!c.has_stored("ESIGMA"))
+    throw std::runtime_error(
+        kNoCovariance + " in the units it gives: the potential has WNOISE "
+        "but no ESIGMA line, so a fit before the error scales (ESIGMA, "
+        "FSIGMA, SSIGMA) wrote it, with the noise of a total energy and in "
+        "the units of the retired weights. A retrain with OALGO 3 writes "
+        "WCOV and WNOISE with the error scales.");
   const std::string retrain =
       "`tadah train` writes WCOV and WNOISE of its own fit: retrain the "
       "potential";
@@ -128,26 +140,26 @@ void require_noise_of(const WeightCovariance &wc, bool force, bool stress) {
   if (!wc.noise.set[kEnergyRow])
     throw std::runtime_error(
         "--error: every prediction has an energy, but the potential's WNOISE "
-        "lists no E: its fit had no energies with a non-zero weight (EWEIGHT "
-        "0, or every structure's eweight 0), so it has no noise variance of "
-        "them, and no energy has a predictive standard deviation. Predict "
-        "without --error, or retrain the potential with energies of a "
-        "non-zero weight.");
+        "lists no E: its fit observed no energies (ENERGY false, or every "
+        "structure's energy priority 0), so it has no noise variance of "
+        "them, and no energy has a predictive standard deviation. A "
+        "prediction without --error, or a retrain with energies, gives "
+        "the energies.");
   struct Ask {
     bool asked;
     RowType type;
-    const char *what, *key, *weight, *flag;
+    const char *what, *key, *priority, *flag;
   };
-  for (const Ask &a : {Ask{force, kForceRow, "forces", "FORCE", "FWEIGHT", "-F"},
-                       Ask{stress, kStressRow, "stresses", "STRESS", "SWEIGHT", "-S"}}) {
+  for (const Ask &a : {Ask{force, kForceRow, "forces", "FORCE", "fweight", "-F"},
+                       Ask{stress, kStressRow, "stresses", "STRESS", "sweight", "-S"}}) {
     if (!a.asked || wc.noise.set[a.type]) continue;
     throw std::runtime_error(
         std::string("--error: ") + a.what + " were asked for (" + a.flag +
         ", " + a.key + " true), but the potential's WNOISE lists no " +
-        kTypeLetter[a.type] + ": its fit had no " + a.what + " with a "
-        "non-zero weight (" + a.key + " false or " + a.weight + " 0), so it "
-        "has no noise variance of them. Predict the " + a.what + " without "
-        "--error, or retrain the potential with " + a.what + ".");
+        kTypeLetter[a.type] + ": its fit observed no " + a.what + " (" +
+        a.key + " false, or every structure's " + a.priority + " 0), so it "
+        "has no noise variance of them. The " + a.what + " without --error, "
+        "or a retrain with " + a.what + ", give them.");
   }
 }
 
@@ -221,15 +233,11 @@ void to_raw_descriptors(tadah::models::M_Core &m, const Normaliser &norm,
 PerRowType noise_of_fitted_types(const tadah::core::Context &c,
                                  const std::array<bool, 3> &fitted, double s2) {
   PerRowType noise;
-  const char *weight_key[3] = {"EWEIGHT", "FWEIGHT", "SWEIGHT"};
+  const ErrorScales scales = ErrorScales::of(c);
   for (std::size_t t = 0; t < 3; ++t) {
     if (!fitted[t]) continue;
-    const double W = c.get<double>(weight_key[t]);
-    if (!(W > 0.0))
-      throw std::logic_error(std::string("noise_of_fitted_types: ") +
-                             weight_key[t] + " " + std::to_string(W) +
-                             " with rows of non-zero weight");
-    noise.value[t] = s2 / W;
+    const double sigma = scales.absolute(t);
+    noise.value[t] = s2 * sigma * sigma;
     noise.set[t] = true;
   }
   return noise;

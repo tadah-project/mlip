@@ -39,6 +39,18 @@ namespace mlip {
  *   of tasks, not a task: write 'TASK data <task>', <task> one of: balance,
  *   convert, ...'). Either error is thrown before any section is returned,
  *   so a task file with such a section runs none of its tasks.
+ * - A line that gives an option a task retires (the blueprint field
+ *   `retired` of the task's key, retired_task_option()) is refused, naming
+ *   the line, the task and why (retired_task_option_text()): a line of a
+ *   TASK section of that task, or of a file the section includes with
+ *   CONFIG ('RESCALE (line 4 of b.task) in TASK data balance: ...'), and a
+ *   line of the GLOBAL section, which sets the keys of every task of the
+ *   file, when a TASK section of the file retires its key ('RESCALE (line
+ *   1 of b.task) in the GLOBAL section reaches TASK data balance ...'),
+ *   with the TASK sections of the file that take the key, for which it
+ *   belongs in their section. A GLOBAL line of an option that acted only
+ *   with another (RetiredKey::only_with: FORCE of tadah data balance acted
+ *   only with RESCALE) is accepted: it sets the key for the other tasks.
  *
  * Depending on the merge flag, each task section can optionally be merged 
  * with the global context, if a global context exists, where task keys 

@@ -85,9 +85,6 @@ Context make_ream_context(bool bias = false) {
   c.add("DIMER", "false");
   c.add("FORCE", "false");
   c.add("STRESS", "false");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", bias ? "true" : "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);

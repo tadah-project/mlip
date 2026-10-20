@@ -738,3 +738,97 @@ TEST_CASE("tadah explain: the text of a command this program was built "
   CHECK(explain("data.split").find(msg) == std::string::npos);
   CHECK(explain("hpo.verbose").find(msg) == std::string::npos);
 }
+
+TEST_CASE("tadah explain: a retired key's text ends with why it is retired, "
+          "what replaces it and its conversion",
+          "[explain][retired]") {
+  /* Pins: `tadah explain EWEIGHT` and `tadah explain WDBFILE_AUTO` print the
+   * key's description, then a blank line and the lines "RETIRED: <reason>",
+   * "REPLACED BY: <replacement>" and "CONVERSION: <conversion>" of the
+   * blueprint's retired table, in this order (EWEIGHT's replacement names
+   * ESIGMA and ENERGY false, its conversion 1000/(N sqrt(EWEIGHT)); that of
+   * WDBFILE_AUTO names WDBFILE and n_d^-a); a retired key has no
+   * EXAMPLES; the text of ESIGMA, a key that is not retired, has no
+   * RETIRED line.
+   * Before the fix: the text of a retired key was its description alone. */
+  const std::string out = explain("EWEIGHT");
+  INFO(out);
+  const auto lines = lines_of(out);
+  const std::size_t r = std::find_if(lines.begin(), lines.end(),
+                                     [](const std::string &l) {
+                                       return l.rfind("RETIRED: ", 0) == 0;
+                                     }) -
+                        lines.begin();
+  REQUIRE(r < lines.size());
+  REQUIRE(r >= 2);
+  CHECK(lines[r - 1].empty());
+  CHECK_THAT(lines[r], Catch::Matchers::Contains("total energy"));
+  REQUIRE(r + 2 < lines.size());
+  CHECK_THAT(lines[r + 1], Catch::Matchers::StartsWith("REPLACED BY: ESIGMA") &&
+                               Catch::Matchers::Contains("ENERGY false"));
+  CHECK_THAT(lines[r + 2], Catch::Matchers::StartsWith("CONVERSION: ") &&
+                               Catch::Matchers::Contains("1000/(N sqrt(EWEIGHT))"));
+  CHECK(out.find("EXAMPLES:") == std::string::npos);
+
+  const std::string wa = explain("WDBFILE_AUTO");
+  INFO(wa);
+  CHECK_THAT(wa, Catch::Matchers::Contains("\nREPLACED BY: WDBFILE") &&
+                     Catch::Matchers::Contains("n_d^-a"));
+  CHECK(explain("ESIGMA").find("RETIRED:") == std::string::npos);
+}
+
+TEST_CASE("tadah explain: a retired option of a command gives why it is "
+          "retired, not the text of a key of its name",
+          "[explain][retired]") {
+  /* Pins: `tadah explain data.balance.rescale` (an option of Tadah! 1.5.0
+   * that data balance retired) prints its description, then the lines
+   * RETIRED, REPLACED BY and CONVERSION ("tadah data balance shifts
+   * energies only"), and not the text of RESCALE of analysis bfunc; so do
+   * data.balance.threshold, .force and .stress.
+   * Before the fix: data balance had no such option, and tadah explain
+   * printed the text of the configuration key RESCALE ("Rescales the
+   * output of a command (tadah analysis bfunc ...") and exited 0. */
+  for (const char *option : {"rescale", "threshold", "force", "stress"}) {
+    const std::string out = explain(std::string("data.balance.") + option);
+    INFO(option << ":\n" << out);
+    CHECK_THAT(out, Catch::Matchers::Contains("\nRETIRED: ") &&
+                        Catch::Matchers::Contains(
+                            "CONVERSION: No option converts it: tadah data "
+                            "balance shifts energies only"));
+    CHECK(out.find("analysis bfunc") == std::string::npos);
+  }
+}
+
+TEST_CASE("tadah explain: an inline role of a help text is shown as the text "
+          "the documentation shows",
+          "[explain]") {
+  /* Pins: the help texts are reStructuredText (the configuration-keys page
+   * renders them, and the CLI page shows an option's text in a
+   * parsed-literal block, which renders its roles), so explain_text_lines
+   * shows an inline role as its text: ':ref:`Title <label>`' as 'Title',
+   * ':ref:`LAMBDA`' as 'LAMBDA', ':code:`M`' as 'M', ':math:`x^2`' as 'x^2',
+   * two roles of one line each so, and a text with a back-quote but no
+   * role as it is; a line of a literal block is kept as written (RST does
+   * not read roles there). `tadah explain OALGO` (whose text cites LAMBDA,
+   * WCOV and WNOISE with :ref:) prints no ':ref:`' and the line "- The
+   * regularisation parameter is controlled by the LAMBDA key, which should
+   * be set separately to apply regularisation to the model.".
+   * Before the fix: the roles were printed as written (":ref:`LAMBDA`"). */
+  CHECK(explain_text_lines(
+            "The page :ref:`What a Fit Minimises <fit_objective>` and "
+            ":ref:`LAMBDA`.\n") ==
+        std::vector<std::string>{"The page What a Fit Minimises and LAMBDA."});
+  CHECK(explain_text_lines(":code:`M` = :math:`x^2`, `not a role`\n") ==
+        std::vector<std::string>{"M = x^2, `not a role`"});
+  CHECK(explain_text_lines("Literal::\n\n    :ref:`kept` here\n\nAfter "
+                           ":ref:`LAMBDA`\n") ==
+        std::vector<std::string>{"Literal:", "", "    :ref:`kept` here", "",
+                                 "After LAMBDA"});
+  const std::string oalgo = explain("OALGO");
+  INFO(oalgo);
+  CHECK(oalgo.find(":ref:`") == std::string::npos);
+  CHECK(has_line(lines_of(oalgo),
+                 "- The regularisation parameter is controlled by the LAMBDA "
+                 "key, which should be set separately to apply "
+                 "regularisation to the model."));
+}

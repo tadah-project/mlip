@@ -19,21 +19,11 @@
 
 namespace {
 
-constexpr double kB_eV_per_K = 8.617333262e-5;
-
 template <typename Stream>
 std::string fmt_g(Stream &&s, double x, int prec = 6) {
   s.precision(prec);
   s << x;
   return s.str();
-}
-
-/* Refuses a WDBFILE_AUTO alpha outside [0, 1]. */
-void require_wdbfile_auto(double alpha) {
-  if (!(alpha >= 0.0 && alpha <= 1.0))
-    throw std::invalid_argument(
-        "WDBFILE_AUTO " + tadah::core::format_roundtrip(alpha) +
-        ": alpha must be in [0, 1] (0 leaves the weights as they are)");
 }
 
 std::string two_decimal(double x) {
@@ -333,92 +323,6 @@ OutlierCounts apply_outlier_filter(StructureDB &stdb,
   return c;
 }
 
-void apply_per_db_weights(StructureDB &stdb,
-                          const std::vector<double> &w) {
-  if (w.empty()) return;
-  for (std::size_t d = 0; d < w.size(); ++d)
-    if (!detail::is_finite_bits(w[d]) || !(w[d] >= 0.0))
-      throw std::runtime_error(
-          "apply_per_db_weights: the weight of dataset " +
-          std::to_string(d + 1) + ", " + core::format_roundtrip(w[d]) +
-          ", is not a finite number >= 0");
-  std::vector<size_t> dbidx = stdb.dbidx;
-  if (dbidx.empty()) {
-    dbidx = {0, stdb.size()};
-  }
-  if (w.size() + 1 != dbidx.size()) {
-    throw std::runtime_error(
-        "apply_per_db_weights: weight vector size " +
-        std::to_string(w.size()) + " does not match number of datasets " +
-        std::to_string(dbidx.size() ? dbidx.size() - 1 : 0));
-  }
-  for (size_t d = 0; d + 1 < dbidx.size(); ++d) {
-    const double f = w[d];
-    if (f == 1.0) continue;
-    for (size_t i = dbidx[d]; i < dbidx[d + 1]; ++i) {
-      stdb(i).eweight *= f;
-      stdb(i).fweight *= f;
-      stdb(i).sweight *= f;
-    }
-  }
-}
-
-std::vector<double>
-auto_balance_db_weights(const StructureDB &stdb, double alpha) {
-  require_wdbfile_auto(alpha);
-  std::vector<size_t> dbidx = stdb.dbidx;
-  if (dbidx.empty()) {
-    dbidx = {0, stdb.size()};
-  }
-  std::vector<double> out(dbidx.size() ? dbidx.size() - 1 : 0, 1.0);
-  if (alpha == 0.0) return out;
-  for (size_t d = 0; d + 1 < dbidx.size(); ++d) {
-    const double n = static_cast<double>(dbidx[d + 1] - dbidx[d]);
-    out[d] = (n > 0.0) ? std::pow(n, -alpha) : 0.0;
-  }
-  return out;
-}
-
-void apply_boltzmann_eweight(StructureDB &stdb, double T_kelvin) {
-  if (!(T_kelvin > 0.0)) {
-    throw std::invalid_argument(
-        "EWEIGHT_TEMP " + core::format_roundtrip(T_kelvin) +
-        ": the temperature of the Boltzmann weights must be > 0 K (without "
-        "the key no reweighting applies)");
-  }
-  if (stdb.size() == 0) return;
-
-  // The structures with an energy of their own: one with eweight 0 has a
-  // placeholder, which neither sets the minimum nor is reweighted.
-  double e_min = std::numeric_limits<double>::infinity();
-  bool any = false;
-  for (const auto &st : stdb) {
-    if (st.natoms() == 0 || st.eweight == 0.0) continue;
-    const double e_per = st.energy / static_cast<double>(st.natoms());
-    if (!any || e_per < e_min) e_min = e_per;
-    any = true;
-  }
-  if (!any) return;
-
-  const double inv_kT = 1.0 / (kB_eV_per_K * T_kelvin);
-  double w_min = std::numeric_limits<double>::infinity();
-  double w_max = -std::numeric_limits<double>::infinity();
-  for (auto &st : stdb) {
-    if (st.natoms() == 0 || st.eweight == 0.0) continue;
-    const double e_per = st.energy / static_cast<double>(st.natoms());
-    const double f = std::exp(-(e_per - e_min) * inv_kT);
-    st.eweight *= f;
-    if (st.eweight < w_min) w_min = st.eweight;
-    if (st.eweight > w_max) w_max = st.eweight;
-  }
-  core::Logger::instance().log(
-      core::LogLevel::INFO,
-      "EWEIGHT_TEMP: Boltzmann reweighting at T=", std::to_string(T_kelvin),
-      " K (kB*T=", two_decimal(kB_eV_per_K * T_kelvin),
-      " eV); eweight in [", two_decimal(w_min), ", ",
-      two_decimal(w_max), "].");
-}
-
 void apply_com_force_zero(StructureDB &stdb) {
   std::size_t n_applied = 0;
   double max_residual = 0.0;
@@ -564,16 +468,7 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     core::Logger::instance().log(core::LogLevel::INFO, summary.str());
   }
 
-  // 5. Boltzmann eweight (after ESHIFT so it uses the shifted energies).
-  // A value <= 0 is refused (apply_boltzmann_eweight).
-  if (context.contains("EWEIGHT_TEMP")) {
-    double T = context.get<double>("EWEIGHT_TEMP");
-    apply_boltzmann_eweight(stdb, T);
-    report.eweight_temp = T;
-    report.applied = true;
-  }
-
-  // 6. COM-force zeroing.
+  // 5. COM-force zeroing.
   if (context.contains("ZERO_COM_FORCE") &&
       context.get<bool>("ZERO_COM_FORCE")) {
     apply_com_force_zero(stdb);
@@ -581,73 +476,7 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     report.applied = true;
   }
 
-  // 7. Per-dataset weights (composition of WDBFILE * WDBFILE_AUTO).
-  std::vector<double> w_user;
-  if (context.contains("WDBFILE") && context.size("WDBFILE") > 0) {
-    w_user.assign(context.size("WDBFILE"), 1.0);
-    context.get("WDBFILE", w_user);
-  }
-  {
-    // One value per dataset, each a number >= 0 (0 leaves the dataset out
-    // of the fit); the Context refuses one that is not finite. The count
-    // first: a value past the datasets weights no dataset.
-    std::vector<size_t> dbidx = stdb.dbidx;
-    if (dbidx.empty()) dbidx = {0, stdb.size()};
-    const std::size_t n_db = dbidx.size() - 1;
-    if (!w_user.empty() && w_user.size() != n_db) {
-      throw std::runtime_error(
-          "WDBFILE size (" + std::to_string(w_user.size()) +
-          ") does not match number of datasets (" + std::to_string(n_db) +
-          ").");
-    }
-    for (std::size_t d = 0; d < w_user.size(); ++d) {
-      if (w_user[d] >= 0.0) continue;
-      std::string text = "WDBFILE";
-      for (const std::string &v : context("WDBFILE")) text += " " + v;
-      std::string file;
-      if (context.has_stored("DBFILE") && context.size("DBFILE") == n_db)
-        file = " (" + context("DBFILE")[d] + ")";
-      throw std::runtime_error(
-          text + ": the weight of dataset " + std::to_string(d + 1) + " of " +
-          std::to_string(n_db) + file + ", " +
-          core::format_roundtrip(w_user[d]) + ", is negative: a dataset's "
-          "weight is a number >= 0 (0 leaves the dataset out of the fit)");
-    }
-  }
-  double alpha = 0.0;
-  if (context.contains("WDBFILE_AUTO")) {
-    alpha = context.get<double>("WDBFILE_AUTO");
-    require_wdbfile_auto(alpha);  // 0 (no balancing) included
-  }
-  if (!w_user.empty() || alpha > 0.0) {
-    std::vector<size_t> dbidx = stdb.dbidx;
-    if (dbidx.empty()) dbidx = {0, stdb.size()};
-    const std::size_t n_db = dbidx.size() ? dbidx.size() - 1 : 0;
-    std::vector<double> w_auto = (alpha > 0.0)
-                                     ? auto_balance_db_weights(stdb, alpha)
-                                     : std::vector<double>(n_db, 1.0);
-    std::vector<double> w_final(n_db, 1.0);
-    std::vector<std::size_t> counts(n_db, 0);
-    for (std::size_t d = 0; d < n_db; ++d) {
-      const double user = w_user.empty() ? 1.0 : w_user[d];
-      w_final[d] = user * w_auto[d];
-      counts[d] = dbidx[d + 1] - dbidx[d];
-    }
-    apply_per_db_weights(stdb, w_final);
-    report.wdbfile_applied = w_final;
-    report.wdbfile_counts = counts;
-    report.applied = true;
-    std::ostringstream s;
-    s << "WDBFILE applied:";
-    for (std::size_t d = 0; d < n_db; ++d) {
-      s << " ds" << d << "(N=" << counts[d] << ", w=" << two_decimal(w_final[d])
-        << ")";
-    }
-    if (alpha > 0.0) s << "  [WDBFILE_AUTO alpha=" << two_decimal(alpha) << "]";
-    core::Logger::instance().log(core::LogLevel::INFO, s.str());
-  }
-
-  // 8. Equilibrium-volume diagnostic.
+  // 6. Equilibrium-volume diagnostic.
   if (stdb.size() > 0) {
     double e_min = std::numeric_limits<double>::infinity();
     const Structure *eq = nullptr;

@@ -150,9 +150,6 @@ Context model_context(double rc2b, double rcmb) {
   c.add("DIMER", "false");
   c.add("FORCE", "true");
   c.add("STRESS", "true");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);

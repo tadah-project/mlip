@@ -15,6 +15,7 @@
 #include <tadah/mlip/models/basis.h>
 #include <tadah/core/intercept_layout.h>
 #include <tadah/mlip/intercepts.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
 #include <tadah/mlip/training_datasets.h>
 #include <tadah/mlip/data_weights.h>
@@ -50,11 +51,13 @@ namespace mlip {
  * records SBASIS and BASIS with the weights.
  *
  * **Implementation 2** fits energies only, by solving
- * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
+ * \f$ (K + \lambda \sigma^2 I) w = T \f$ on SBASIS basis vectors (the n0
  * intercept vectors, with target 0, and the mean descriptors of drawn
- * structures, with their energies per atom). No weight of the data enters
- * this solve: a fit that asks for forces, stresses or weights is refused
- * (refuse_what_train2_ignores()). A non-linear kernel's weights
+ * structures, with their energies per atom), \f$ \sigma \f$ = ESIGMA in
+ * eV: the residuals of the energies per atom over ESIGMA, as every fit
+ * weighs them (row_weights.h). No priority of the data enters this solve:
+ * a fit that asks for forces, stresses, priorities or ENORM SQRT is
+ * refused (refuse_what_train2_ignores()). A non-linear kernel's weights
  * are w, and its potential records SBASIS and BASIS. Kern_Linear's are the
  * descriptor weights of its basis vectors, \f$ \sum_j w_j \mathbf{b}_j \f$
  * (converted to the raw descriptors with NORM, as implementation 1's): its
@@ -135,7 +138,9 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
-    // The weights first: the checks below read them.
+    // The settings of the fit first (retired keys, error scales), then the
+    // priorities of the data: the checks below read them.
+    require_fit_settings(context, "M_KRR::train");
     require_valid_weights(stdb, context);
     check_bias_constraints(context);
 
@@ -171,6 +176,9 @@ public:
     train(desmat);
   }
   void train(const StructureDB &stdb, DC_Base &dc) {
+    // The settings of the fit first (retired keys, error scales), whatever
+    // the implementation.
+    require_fit_settings(context, "M_KRR::train");
     check_bias_constraints(context);
     int modelN;
     if (context.size("MODEL")==3) {
@@ -268,13 +276,18 @@ public:
     // so it keeps no basis.
     if (kernel.get_label()!="Kern_Linear")
       kernel.set_basis(basis.b);
-    tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
+    // The energies per atom over ESIGMA, as every fit weighs them
+    // (ENORM ATOM: implementation 2 refuses SQRT).
+    tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T,
+                                          ErrorScales::of(context).esigma);
     // With NORM the basis vectors are normalised descriptors: Kern_Linear's
     // weights go to the raw descriptors, as implementation 1's do
     // (train(desmat)), since its prediction does not normalise.
     if (weights_on_raw_descriptors(context, kernel))
       to_raw_descriptors(*this, norm,
                          tadah::core::n_intercept_columns(context));
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
+                                        fit_scales_info(context));
   }
 
   /** Every prediction from descriptors (also through predict(c, stdb, dc)
@@ -323,6 +336,9 @@ tadah::core::Context get_param_file() {
     int modelN=context.template get<int>("MODEL",2);
     c.add("MODEL", modelN);
 
+    // The error scales and switches of the fit, the defaults included: a
+    // retrain from the potential reads them.
+    write_fit_scales(c);
     if (c.contains("WEIGHTS")) {
       c.remove("WEIGHTS");
     }
@@ -438,6 +454,8 @@ private:
     if (this->has_covariance())
       noise_by_type = noise_of_fitted_types(context, desmat.fitted_types(),
                                             this->noise_variance);
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
+                                        fit_scales_info(context));
   }
 
   // Do we want to confuse user with those and make them public?

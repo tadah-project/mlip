@@ -49,23 +49,6 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     }
   }
 
-  bool force = taskContext.get<bool>("FORCE");
-  bool stress = taskContext.get<bool>("STRESS");
-
-  // floating point thresholds for rescaling (energy/atom, force, stress)
-  // 3 defaults are always set in context before run() is called
-  size_t expectedThresholds = 1 + (force ? 1 : 0) + (stress ? 1 : 0);
-  std::vector<double> thresholdVec(taskContext.size("THRESHOLD"));
-  taskContext.get("THRESHOLD", thresholdVec);
-  if (taskContext.get<bool>("RESCALE")) {
-    if (thresholdVec.size() < expectedThresholds) {
-      throw std::runtime_error("Not enough THRESHOLD values for the selected FORCE/STRESS flags.");
-    }
-  }
-  // If user provided exact count, use positional indexing (stress at force?2:1).
-  // If more values than needed (e.g. 3 defaults), use fixed indexing (stress always at 2).
-  size_t stressIdx = (thresholdVec.size() == expectedThresholds) ? (force ? 2 : 1) : 2;
-
   std::vector<bool> indicesBool;  // what structures to process
   size_t numStructures = 0;
   for (const auto &stdb : inStdbs) {
@@ -104,54 +87,6 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     }
   }
 
-  if (taskContext.get<bool>("RESCALE")) {
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataBalanceEngine: Applying RESCALE...");
-
-    size_t currentIndex = 0;
-    for (auto &stdb : inStdbs) {
-      for (auto &s: stdb) {
-        if (!indicesBool[currentIndex++]) continue;
-        // A weight of 0 marks a quantity the structure has no data for (the
-        // DFT readers write it for a structure without forces or stress) or
-        // that is excluded: rescaling keeps it 0.
-        // ENERGY WEIGHT (threshold is per atom)
-        if (s.eweight != 0.0) {
-          if (std::fabs(s.energy) / s.natoms() < thresholdVec[0]) {
-            s.eweight = 1.0;
-          } else {
-            s.eweight = 1.0 / std::fabs(s.energy);
-          }
-        }
-
-        // FORCE WEIGHT
-        if (force && s.fweight != 0.0) {
-          double fweight = 0.0;
-          for (auto &atom : s) {
-            double fnorm = atom.force.norm();
-            fweight += fnorm;
-          }
-          // If total force norm is near zero, set fweight safely
-          if (std::fabs(fweight) < thresholdVec[1]) {
-            s.fweight = 1.0;
-          } else {
-            s.fweight = 1.0 / fweight;
-          }
-        }
-
-        // STRESS WEIGHT
-        if (stress && s.sweight != 0.0) {
-          double sweight = s.stress.norm();
-          if (std::fabs(sweight) < thresholdVec[stressIdx]) {
-            s.sweight = 1.0;
-          } else {
-            s.sweight = 1.0 / sweight;
-          }
-        }
-      }
-    }
-  }
-
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "DataBalanceEngine: Dumping output....");
   std::vector<std::string> outFiles(taskContext.size("OUTFILE"));
@@ -180,38 +115,26 @@ void DataBalanceEngine::validate(const tadah::mlip::Task &task) {
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
                              "Validating DataBalanceEngine...");
   core::Context taskContext = task.getContext();
-  bool doRescale = taskContext.get<bool>("RESCALE");
-  bool doEshift = taskContext.contains("ESHIFT") && taskContext.size("ESHIFT");
-  if (!doRescale && !doEshift) {
-    throw std::runtime_error("DataBalanceEngine requires either RESCALE and/or ESHIFT option.");
-  }
-
-  if (doRescale) {
-    bool force = taskContext.get<bool>("FORCE");
-    bool stress = taskContext.get<bool>("STRESS");
-    size_t expectedThresholds = 1 + (force ? 1 : 0) + (stress ? 1 : 0);
-    std::vector<double> thresholds(taskContext.size("THRESHOLD"));
-    taskContext.get("THRESHOLD", thresholds);
-    if (thresholds.size() < expectedThresholds) {
-      throw std::runtime_error("Not enough THRESHOLD values for the selected FORCE/STRESS flags.");
-    }
-    for (const auto &th : thresholds) {
-      if (th <= 0.0) {
-        throw std::runtime_error("THRESHOLD values must be positive.");
-      }
-    }
-  }
-
-  size_t numOutFiles = taskContext.size("OUTFILE");
-  size_t numInFiles = taskContext.size("DBFILE");
-  bool merge = taskContext.get<bool>("MERGE");
-  if (!merge && numInFiles != numOutFiles) {
-    throw std::runtime_error("Number of input and output files must match.");
-  } else if (merge && numOutFiles != 1) {
-    throw std::runtime_error("Number of output files must be 1 when MERGE is true.");
-  } else if (numInFiles != numOutFiles) {
-    throw std::runtime_error("Number of input and output files must match.");
-  }
+  if (!(taskContext.contains("ESHIFT") && taskContext.size("ESHIFT") > 0))
+    throw std::runtime_error(
+        "tadah data balance shifts the energies of its input files by a "
+        "reference energy per element: --eshift (ESHIFT) gives them, one per "
+        "element of the files in the order of the atomic numbers, and the "
+        "run has none.");
+  const size_t numOutFiles = taskContext.size("OUTFILE");
+  const size_t numInFiles = taskContext.size("DBFILE");
+  const bool merge = taskContext.get<bool>("MERGE");
+  if (merge && numOutFiles != 1)
+    throw std::runtime_error(
+        "tadah data balance --merge writes the structures of its " +
+        std::to_string(numInFiles) + " input file(s) to one output file, "
+        "and --outfile names " + std::to_string(numOutFiles) + ".");
+  if (!merge && numInFiles != numOutFiles)
+    throw std::runtime_error(
+        "tadah data balance writes one output file per input file: " +
+        std::to_string(numInFiles) + " input file(s) and " +
+        std::to_string(numOutFiles) + " output file(s) (--merge writes "
+        "them all to one).");
 }
 
 

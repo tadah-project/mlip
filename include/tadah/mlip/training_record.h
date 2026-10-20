@@ -46,12 +46,14 @@ class KeyProvenance;
  *  program that loads it takes its verbosity or output from it. */
 
 /** The keys that prepared the training data, in the order their
- *  transforms apply (apply_load_transforms): EFILTER and FFILTER (which
- *  structures were fitted), ESHIFT_ATOM and ESHIFT_DBATOM (how the run
- *  derived ESHIFT from its data: the values they produced are the
- *  potential's ESHIFT line), EWEIGHT_TEMP (the Boltzmann weights),
- *  ZERO_COM_FORCE (the reference forces), WDBFILE and WDBFILE_AUTO (the
- *  weight of each dataset). The model does not use them: a potential
+ *  transforms apply (apply_load_transforms), and WDBFILE: EFILTER and
+ *  FFILTER (which structures were fitted), ESHIFT_ATOM and ESHIFT_DBATOM
+ *  (how the run derived ESHIFT from its data: the values they produced are
+ *  the potential's ESHIFT line), ZERO_COM_FORCE (the reference forces) and
+ *  WDBFILE (the priority of each dataset in the fit). The retired
+ *  WDBFILE_AUTO and EWEIGHT_TEMP, which a potential of an earlier version
+ *  has as key lines, are not among them: no parse stores them (a fit
+ *  refuses them, retired_keys.h). The model does not use them: a potential
  *  lists them in its training record (training_record_keys), tadah
  *  predict ignores them in a potential
  *  (ignore_potential_dataset_keys) and a retrain from a potential does not
@@ -298,7 +300,11 @@ TrainingRecord read_training_record(const std::string &path);
 
 /** Writes the potential @p pot: the training record @p record
  *  (write_training_record), then pot.write_potential(os, sig_digits) of a
- *  copy of @p pot without the keys of training_record_keys(). The body of
+ *  copy of @p pot without the keys of training_record_keys(), then, as
+ *  they were written, the lines of retired keys @p pot records
+ *  (core::Context::retired_keys(): refit --edit of a potential of an
+ *  earlier version keeps them, so a fit of the edited potential refuses
+ *  them as it refuses the input; a fit writes none, it refuses them). The body of
  *  every potential file tadah writes (TrainEngine::dumpPotFile: tadah
  *  train, tadah refit and refit --edit; Tadah.HPO's
  *  PotHeaderWriter::write_potential_body: best_pot.tadah, its rank-local

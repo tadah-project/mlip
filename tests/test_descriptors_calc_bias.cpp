@@ -119,9 +119,6 @@ Context make_context(const std::vector<std::string> &atoms, bool bias,
   c.add("DIMER", "false");
   c.add("FORCE", "false");
   c.add("STRESS", "false");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", bias ? "true" : "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);
@@ -675,9 +672,11 @@ std::vector<double> solve(std::vector<std::vector<double>> A,
 
 // Pins: with ATOM Nb Ta, BIAS true and LAMBDA 0.5, the trained weights are
 // the ridge solution that leaves exactly the two intercepts unpenalised:
-// (Phi^T Phi + 0.5 diag(0, 0, 1, ..., 1)) w = Phi^T T, with Phi built here
-// from the species counts and the summed BIAS false descriptors (1e-8
-// relative).
+// (Phi^T W Phi + 0.5 diag(0, 0, 1, ..., 1)) w = Phi^T W T, with Phi built
+// here from the species counts and the summed BIAS false descriptors and W
+// the weight of each structure's energy, 1/(N ESIGMA)^2 (the energy per
+// atom over its error scale; ESIGMA 1000 meV/atom, so that the ridge
+// weighs on the fit; 1e-8 relative).
 // Before the fix: 1 + 3 weights instead of 2 + 3 (one shared intercept;
 // the ridge left the first descriptor weight unpenalised as the second
 // species' intercept).
@@ -690,6 +689,7 @@ TEST_CASE("BIAS true with two species: LAMBDA penalises every descriptor "
   const double lambda = 0.5;
   Context c = make_context({"Nb", "Ta"}, true);
   set(c, "LAMBDA", "0.5");
+  set(c, "ESIGMA", "1000");
   Trainer tr(c, ws);
   tr.train(db);
   const auto &w = tr.model->get_weights();
@@ -706,9 +706,11 @@ TEST_CASE("BIAS true with two species: LAMBDA penalises every descriptor "
     row[1] = count_of(db(s), kTa);
     for (std::size_t a = 0; a < d.naed(); ++a)
       for (std::size_t k = 0; k < D; ++k) row[2 + k] += d.get_aed(a)(k);
+    const double sigma = static_cast<double>(db(s).natoms()) * 1.0;  // eV
+    const double W = 1.0 / (sigma * sigma);
     for (std::size_t i = 0; i < n; ++i) {
-      b[i] += row[i] * db(s).energy;
-      for (std::size_t j = 0; j < n; ++j) A[i][j] += row[i] * row[j];
+      b[i] += W * row[i] * db(s).energy;
+      for (std::size_t j = 0; j < n; ++j) A[i][j] += W * row[i] * row[j];
     }
   }
   for (std::size_t k = 2; k < n; ++k) A[k][k] += lambda;
@@ -846,11 +848,13 @@ TEST_CASE("A stale multi-species BIAS potential used as a training "
 // for OALGO 1, 2, 3 and 4, with std::runtime_error naming the species, the
 // rank and the remedies (BIAS false, varied compositions, FIXINDEX);
 // pinning the Nb intercept with FIXINDEX 1 / FIXWEIGHT -7.6 makes the same
-// data train; varied compositions train; with ATOM Ta (one intercept) data
-// without any energy weight (EWEIGHT 0, forces fitted) are refused too.
+// data train; varied compositions train; with ATOM Ta (one intercept) a fit
+// that observes no energy (ENERGY false, forces fitted) is refused too,
+// naming ENERGY false.
 // Before the fix: the fixed-stoichiometry data trained with an arbitrary
 // split of the energy between the species (one shared intercept: no
-// refusal); the EWEIGHT 0 fit trained with an undetermined intercept.
+// refusal); the fit without energies (EWEIGHT 0 then, ENERGY false now)
+// trained with an undetermined intercept.
 TEST_CASE("BIAS true refuses training data whose compositions cannot "
           "determine the per-species intercepts",
           "[descriptors_calc][bias][composition]") {
@@ -884,19 +888,20 @@ TEST_CASE("BIAS true refuses training data whose compositions cannot "
     Trainer tr(c, ws);
     CHECK_NOTHROW(tr.train(varied));
   }
-  SECTION("ATOM Ta, no energy weight") {
+  SECTION("ATOM Ta, no energy observed") {
     StructureDB ta;
     for (unsigned s = 0; s < 4; ++s)
       ta.add(bcc_cell(std::vector<std::string>(16, "Ta"), 800 + s));
     ta.dbidx = {0, ta.size()};
     Context c = make_context({"Ta"}, true);
     set(c, "FORCE", "true");
-    set(c, "EWEIGHT", "0");
+    set(c, "ENERGY", "false");
     Trainer tr(c, ws);
     const std::string m = refusal_of([&] { tr.train(ta); });
     INFO(m);
     CHECK(m.find("cannot determine") != std::string::npos);
-    CHECK(m.find("energy weight") != std::string::npos);
+    CHECK(m.find("observes the energy of no training structure (ENERGY "
+                 "false") != std::string::npos);
   }
 }
 
@@ -974,7 +979,7 @@ TEST_CASE("The composition refusal names only the remedies the "
     CHECK(m.find("FIXINDEX") == std::string::npos);
     CHECK(m.find("BIAS false") == std::string::npos);
     CHECK(m.find("ESHIFT_DBATOM") == std::string::npos);
-    CHECK(m.find("add energy-weighted structures of other compositions") !=
+    CHECK(m.find("add structures of other compositions with energies") !=
           std::string::npos);
     CHECK(m.find("NORM false") != std::string::npos);
   }
@@ -1553,7 +1558,6 @@ TEST_CASE("The composition check of a non-linear kernel takes its "
     k.add("ATOM", "Nb");
     k.add("ATOM", "Ta");
     k.add("BIAS", "true");
-    k.add("EWEIGHT", 1.0);
     k.add("VERBOSE", 0);
     k.addInternal("DSIZE", 5);
     if (impl > 0) {

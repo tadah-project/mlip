@@ -74,9 +74,6 @@ Context make_context(const std::vector<std::string> &model, bool force,
   c.add("DIMER", "false");
   c.add("FORCE", force ? "true" : "false");
   c.add("STRESS", stress ? "true" : "false");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
   c.add("BIAS", "false");
   c.add("NORM", "false");
   for (const auto &m : model) c.add("MODEL", m);

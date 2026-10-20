@@ -9,7 +9,10 @@ namespace mlip {
 namespace engines {
 
 /**
- * @brief Provides dataset balancing functionality.
+ * @brief tadah data balance: shifts the energies of datasets by a
+ * reference energy per element (ESHIFT), one output file per input file or,
+ * with MERGE, one for all; the priorities of the structures are written as
+ * they are.
  */
 class DataBalanceEngine : public IEngine {
 public:

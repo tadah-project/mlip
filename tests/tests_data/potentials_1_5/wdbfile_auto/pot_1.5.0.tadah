@@ -1,0 +1,31 @@
+ATOM              Ta
+BIAS              true
+CGRID2B           1.000000000000000000   2.399999999999999911   3.899999999999999911   5.299999999999999822
+DBFILE            a.dat
+DBFILE            b.dat
+DIMER             false   0   false
+ESHIFT_ATOM       false
+ESHIFT_DBATOM     false
+EWEIGHT           2.5
+FORCE             true
+FWEIGHT           50
+INIT2B            true
+INITMB            false
+LAMBDA            1e-3
+LSCALE            1.0
+MODEL             M_BLR   BF_Linear
+NORM              false
+OALGO             1
+RCTYPE2B          Cut_Cos
+RCUT2B            5.3
+SGRID2B           0.100000000000000006   0.200000000000000011   0.500000000000000000   1.000000000000000000
+STRESS            false
+SWEIGHT           1.0
+TYPE2B            D2_Blip   4   4   Ta   Ta
+UNCERTAINTY       false
+WATOM             73
+WDBFILE           1   3
+WDBFILE_AUTO      0.7
+WEIGHTS           -5.334372928528838820   0.520289144193738173   -0.484024674669704669   -0.041639226180220312   -0.079609277276613766
+ZERO_COM_FORCE    false
+

@@ -1,10 +1,12 @@
 #include "tadah/mlip/mlip_user_config_parser.h"
+#include "tadah/mlip/retired_options.h"
 #include "tadah/core/core_user_config_parser.h"
 #include "tadah/core/blueprint_parser.h"
 #include "tadah/core/logger.h"
 #include "tadah/core/utils.h"
 
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
@@ -12,6 +14,45 @@
 
 namespace tadah {
 namespace mlip {
+
+namespace {
+
+/* "TASK data balance": the TASK line of the blueprint task @p task
+ * ("DATA.balance"). */
+std::string task_line(const std::string &task) {
+  std::string line = core::to_lower(task);
+  std::replace(line.begin(), line.end(), '.', ' ');
+  return "TASK " + line;
+}
+
+/* "line 4 of b.task" ("line 4" for lines of no file). */
+std::string line_of(std::size_t line, const std::string &source) {
+  return "line " + std::to_string(line) +
+         (source.empty() ? std::string() : " of " + source);
+}
+
+/* True when the blueprint task @p task has the option @p key (any letter
+ * case) and does not retire it (RESCALE of tadah analysis bfunc). */
+bool takes_option(const std::string &task, const std::string &key) {
+  const auto &tasks = core::BlueprintParser::getTasksMapRef();
+  const auto it = tasks.find(task);
+  if (it == tasks.end()) return false;
+  const std::string wanted = core::to_lower(key);
+  auto is = [&](const core::BlueprintKey &k) {
+    const auto dot = k.keyName.rfind('.');
+    const std::string name = core::to_lower(
+        dot == std::string::npos ? k.keyName : k.keyName.substr(dot + 1));
+    return name == wanted && !k.isRetired();
+  };
+  for (const core::BlueprintKey &k : it->second.blueprintKeys)
+    if (is(k)) return true;
+  for (const auto &group : it->second.groups)
+    for (const core::BlueprintKey &k : group.blueprintKeys)
+      if (is(k)) return true;
+  return false;
+}
+
+}  // namespace
 
 MLIPUserConfigParser::MLIPUserConfigParser(const tadah::core::IUserConfigParser* backend)
   : backendParser_(
@@ -104,6 +145,30 @@ MLIPUserConfigParser::parseNamed(
   // The blueprint tasks, for validation
   const auto &taskMap = tadah::core::BlueprintParser::getTasksMapRef();
 
+  // A line refused for an option a task retires (RESCALE of tadah data
+  // balance): the task and the option, or no option.
+  struct Refusal {
+    std::string task;
+    const core::BlueprintKey *option = nullptr;
+  };
+  // The line of @p key in section @p s is refused when its task retires
+  // the key (the lines of a TASK section, and of the files it includes
+  // with CONFIG, are that task's), and, in the GLOBAL section, which sets
+  // the keys of every task of the file, when a TASK section of the file
+  // retires it, unless the option acted only with another (only_with:
+  // tadah data balance --force acted only with --rescale, and a GLOBAL
+  // FORCE line is for the other tasks).
+  auto refused = [&namedSections](const Section &s, const std::string &key) {
+    if (s.task) return Refusal{s.name, retired_task_option(s.name, key)};
+    for (const Section &t : namedSections) {
+      if (!t.task) continue;
+      const core::BlueprintKey *option = retired_task_option(t.name, key);
+      if (option && option->retired.only_with.empty())
+        return Refusal{t.name, option};
+    }
+    return Refusal{};
+  };
+
   // Parse each section. If it's not "GLOBAL", validate it using blueprint tasks.
   for (std::size_t i = 0; i < namedSections.size(); ++i) {
     const std::string &sectionName = namedSections[i].name;
@@ -148,16 +213,51 @@ MLIPUserConfigParser::parseNamed(
 
     // Parse the lines for this section to produce a Context. Its errors
     // name the line of the input (and the input's file). Under a rule, the
-    // section is one file of it: the keys of its own lines decide.
-    core::Context ctx;
-    if (skip) {
-      skipped->emplace_back();
-      ctx = backendParser_->parse(sectionLines, namedSections[i].first_line,
-                                  source, *skip, skipped->back());
-    } else {
-      ctx = backendParser_->parse(sectionLines, namedSections[i].first_line,
-                                  source);
+    // section is one file of it: the keys of its own lines decide. The
+    // lines of an option a task retires (refused) are read under a rule
+    // too, so that the line, in the section or in a file it includes with
+    // CONFIG, is named below.
+    const Section &section = namedSections[i];
+    const core::KeyLineRule rule =
+        [&](const std::set<std::string> &file_keys, const std::string &key) {
+          return refused(section, key).option != nullptr ||
+                 (skip && (*skip)(file_keys, key));
+        };
+    std::vector<core::SkippedKeyLine> lines;
+    core::Context ctx = backendParser_->parse(
+        sectionLines, section.first_line, source, rule, lines);
+
+    // A line that gives an option a task the section reaches retires (TASK
+    // data balance with RESCALE, or a GLOBAL RESCALE with a TASK data
+    // balance section) is refused, with why.
+    for (const core::SkippedKeyLine &line : lines) {
+      const Refusal r = refused(section, line.key);
+      if (!r.option) continue;
+      std::string msg = line.key + " (" + line_of(line.line, line.source) +
+                        ") in ";
+      if (section.task) {
+        msg += task_line(r.task) + ": " +
+               retired_task_option_text(r.task, *r.option);
+      } else {
+        msg += "the GLOBAL section reaches " + task_line(r.task) +
+               " (the GLOBAL section sets the keys of every task of the "
+               "file): " + retired_task_option_text(r.task, *r.option);
+        // The TASK sections of the file that take the key: the line may
+        // be meant for them.
+        std::string meant;
+        for (const Section &t : namedSections) {
+          if (!t.task || !takes_option(t.name, line.key)) continue;
+          meant += (meant.empty() ? "" : " or ") + task_line(t.name) + " (" +
+                   line_of(t.first_line - 1, source) + ")";
+        }
+        if (!meant.empty())
+          msg += " A " + line.key + " line meant for " + meant +
+                 " belongs in that TASK section.";
+      }
+      throw std::runtime_error(msg);
     }
+    // The lines of the caller's rule.
+    if (skip) skipped->push_back(std::move(lines));
 
     // Put it in the vec
     resultVec.push_back(std::make_pair(sectionName, ctx));

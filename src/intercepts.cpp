@@ -1,5 +1,6 @@
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/data_weights.h>
+#include <tadah/mlip/row_weights.h>
 
 #include <tadah/core/core_types.h>
 #include <tadah/core/intercept_layout.h>
@@ -285,9 +286,10 @@ void require_intercepts_determined(const StructureDB &stdb,
   if (n_int == 0) return;
   const auto col = tadah::core::intercept_columns_by_Z(ctx);
 
-  // The distinct species-count vectors of the energy-weighted structures
-  // (an atom of an element not in ATOM is refused).
-  const double eweightglob = ctx.get<double>("EWEIGHT");
+  // The distinct species-count vectors of the structures whose energies
+  // the fit observes (ENERGY true and an energy priority, eweight times
+  // WDBFILE, above 0; an atom of an element not in ATOM is refused).
+  const RowWeights rw(ctx, stdb);
   std::map<std::vector<std::size_t>, std::size_t> compositions;
   std::size_t n_weighted = 0;
   for (std::size_t s = 0; s < stdb.size(); ++s) {
@@ -303,13 +305,13 @@ void require_intercepts_determined(const StructureDB &stdb,
                                                         : " ('" + st.label + "')"));
       ++counts[c];
     }
-    if (!(st.eweight * eweightglob > 0.0)) continue;
+    if (!(rw.energy_priority(s) > 0.0)) continue;
     ++n_weighted;
     ++compositions[counts];
   }
 
   // M_KRR implementation 2, with any kernel (Kern_Linear too), solves
-  // (K + LAMBDA I) w = T on its basis vectors (the intercept vectors with
+  // (K + LAMBDA sigma^2 I) w = T on its basis vectors (the intercept vectors with
   // the target 0, the structures' mean AEDs with their energies per atom),
   // not the least squares of the structures' energies: nothing to refuse,
   // and it pins no weight (its solve refuses FIXINDEX).
@@ -374,11 +376,14 @@ void require_intercepts_determined(const StructureDB &stdb,
       (fitted.size() == 1 ? " is fitted" : " are fitted") + pinned_note;
   std::string data;
   if (n_weighted == 0) {
-    data = "no training structure has an energy weight (eweight x EWEIGHT > "
-           "0), while " + fitted_n;
+    data = "the fit observes the energy of no training structure (ENERGY " +
+           std::string(ctx.get<bool>("ENERGY") ? "true" : "false") +
+           "; an energy priority, eweight x WDBFILE, above 0), while " +
+           fitted_n;
   } else {
-    data = "over the " + plural(n_weighted, "energy-weighted structure") +
-           " (eweight x EWEIGHT > 0) the fitted intercept columns have "
+    data = "over the " + plural(n_weighted, "structure") +
+           " whose energies the fit observes (energy priority, eweight x "
+           "WDBFILE, above 0) the fitted intercept columns have "
            "rank " + std::to_string(basis.size()) + ", while " + fitted_n +
            ": ";
     if (compositions.size() == 1) {
@@ -406,7 +411,7 @@ void require_intercepts_determined(const StructureDB &stdb,
   // needs BIAS true (check_bias_constraints), and FIXINDEX is refused.
   const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
   const std::string other_compositions =
-      "add energy-weighted structures of other compositions (for example of "
+      "add structures of other compositions with energies (for example of "
       "the pure elements, or an isolated atom of each species)";
   std::string remedies;
   if (norm) {

@@ -7,27 +7,29 @@
 //   WCOV    N, then the N x N covariance of the WEIGHTS, column-major, in the
 //           parameterisation of the WEIGHTS (with NORM true and a linear
 //           function: of the weights of the raw descriptors);
-//   WNOISE  for each row type the fit had rows of with a non-zero weight (E
-//           energies, F forces, S stresses), the noise variance of one such
-//           row in raw units, s^2 / W_t, with W_t the global EWEIGHT,
-//           FWEIGHT or SWEIGHT and s^2 = RSS / (n_obs - gamma), RSS the
-//           weighted residual sum of squares, n_obs the rows with a
-//           non-zero weight and gamma the effective number of weights.
+//   WNOISE  for each row type the fit observed (E energies, F forces, S
+//           stresses), the noise variance of one observation of priority 1
+//           in the units of the data, s^2 sigma_t^2, with sigma_t the
+//           absolute error scale of the type (ESIGMA/1000 eV, the energy's
+//           per atom; FSIGMA a eV/A) and s^2 = RSS / (n_obs - gamma), RSS
+//           the weighted residual sum of squares, n_obs the observations
+//           and gamma the effective number of weights.
 // predict --error reports for each predicted value the standard deviation
-// of the prediction, sqrt(phi^T WCOV phi + WNOISE_t), and predicts what
-// `tadah predict` predicts.
+// of the prediction, sqrt(phi^T WCOV phi + v), v = N^2 WNOISE_E for the
+// energy of a structure of N atoms (ENORM ATOM) and WNOISE_F for a force
+// component, and predicts what `tadah predict` predicts.
 //
 // The references are computed here in long double from the library's raw
 // descriptors (DescriptorsCalc, no normalisation): the energy row of a
 // structure is the sum of its atoms' descriptors, a force row the
-// derivative sum of the linear model, the row weights eweight x EWEIGHT
-// and fweight x FWEIGHT.
+// derivative sum of the linear model, the row weights eweight / (N
+// ESIGMA)^2 and fweight / FSIGMA^2 (the rule of row_weights.h).
 //
 // Data: six sheared and rattled Ta cells of 3 atoms (the sixth with force
-// weight 0: its 9 force rows are not observations), D2_Blip with 3
+// priority 0: its 9 force rows are not observations), D2_Blip with 3
 // functions, Cut_Cos at 5 A, INITMB false (DSIZE 3, or 4 with BIAS true),
-// FORCE true, EWEIGHT 2, FWEIGHT 0.5. The targets are arbitrary smooth
-// numbers, so the fit has residuals.
+// FORCE true, ESIGMA 50 meV/atom, FSIGMA 1.4 eV/A. The targets are
+// arbitrary smooth numbers, so the fit has residuals.
 
 #include "catch2/catch.hpp"
 
@@ -105,9 +107,8 @@ Context make_context(const std::string &model, const std::string &fn,
   c.add("DIMER", "false 0 false");
   c.add("FORCE", "true");
   c.add("STRESS", "false");
-  c.add("EWEIGHT", 2.0);
-  c.add("FWEIGHT", 0.5);
-  c.add("SWEIGHT", 1.0);
+  c.add("ESIGMA", 50);
+  c.add("FSIGMA", 1.4);
   c.add("BIAS", norm ? "true" : "false");
   c.add("NORM", norm ? "true" : "false");
   c.add("VERBOSE", 0);
@@ -172,18 +173,39 @@ struct LoadedPotential {
             ctx.get<std::string>("MODEL", 0), *fb, ctx)) {}
 };
 
+/* The error scales of the cases: ESIGMA 50 meV/atom (0.05 eV) and FSIGMA
+ * 1.4 eV/A. */
+const LD kESigma = 0.05L;
+const LD kFSigma = 1.4L;
+
 /* One row of the linear model's design matrix in raw descriptors: the
  * value it predicts is phi . w. type 0 energy, 1 force. */
 struct Row {
   std::vector<LD> phi;
   LD target = 0, weight = 0;
   int type = 0;
+  std::size_t natoms = 0;  // of its structure
 };
 
+/* The WNOISE of each type for the noise variance per unit row weight s2:
+ * s2 sigma^2, sigma the absolute error scale in the units of the data. */
+double wnoise_e(double s2) { return s2 * static_cast<double>(kESigma * kESigma); }
+double wnoise_f(double s2) { return s2 * static_cast<double>(kFSigma * kFSigma); }
+
+/* The noise variance of the observation of row @p x: N^2 WNOISE_E for the
+ * energy of a structure of N atoms (ENORM ATOM: WNOISE E is per atom),
+ * WNOISE_F for a force component. */
+double row_noise(const Row &x, double s2) {
+  const double n = static_cast<double>(x.natoms);
+  return x.type == 0 ? n * n * wnoise_e(s2) : wnoise_f(s2);
+}
+
 /* The rows of every structure of @p db (neighbour lists computed), in the
- * order of the design matrix: the energy, then 3 force rows per atom. */
-std::vector<Row> raw_rows(const StructureDB &db, DescriptorsCalc<> &dc,
-                          double eweight, double fweight) {
+ * order of the design matrix: the energy, then 3 force rows per atom, each
+ * with its weight, priority / sigma^2: eweight / (N kESigma)^2 for the
+ * energy (its residual per atom over ESIGMA), fweight / kFSigma^2 for a
+ * force component. */
+std::vector<Row> raw_rows(const StructureDB &db, DescriptorsCalc<> &dc) {
   std::vector<Row> rows;
   for (std::size_t s = 0; s < db.size(); ++s) {
     const Structure &st = db(s);
@@ -194,8 +216,10 @@ std::vector<Row> raw_rows(const StructureDB &db, DescriptorsCalc<> &dc,
     for (std::size_t a = 0; a < std.naed(); ++a)
       for (std::size_t d = 0; d < D; ++d) e.phi[d] += std.get_aed(a)(d);
     e.target = st.energy;
-    e.weight = st.eweight * eweight;
+    const LD sE = static_cast<LD>(st.natoms()) * kESigma;
+    e.weight = st.eweight / (sE * sE);
     e.type = 0;
+    e.natoms = st.natoms();
     rows.push_back(e);
     for (std::size_t a = 0; a < st.natoms(); ++a) {
       for (std::size_t k = 0; k < 3; ++k) {
@@ -208,8 +232,9 @@ std::vector<Row> raw_rows(const StructureDB &db, DescriptorsCalc<> &dc,
             f.phi[d] -= std.fd[a][jj](d, k) - std.fd[j][aa](d, k);
         }
         f.target = st.atoms[a].force[k];
-        f.weight = st.fweight * fweight;
+        f.weight = st.fweight / (kFSigma * kFSigma);
         f.type = 1;
+        f.natoms = st.natoms();
         rows.push_back(f);
       }
     }
@@ -337,7 +362,8 @@ const std::array<std::array<const char *, 2>, 2> kLinearModels = {
  *  - the potential's WCOV is N = 3 (4) and s^2 (Phi^T W Phi + lambda I)^-1
  *    of the raw rows (1e-8 relative), s^2 = RSS/(51 - gamma), and its
  *    WEIGHTS the raw-descriptor solution (1e-8);
- *  - WNOISE holds E s^2/2 and F s^2/0.5 (1e-8) and no S;
+ *  - WNOISE holds E s^2 ESIGMA^2 and F s^2 FSIGMA^2 (ESIGMA 0.05 eV per
+ *    atom, FSIGMA 1.4 eV/A; 1e-8) and no S;
  *  - predict with errors predicts what predict predicts (1e-10 relative);
  *  - each error is sqrt(phi^T WCOV phi + WNOISE_t) (1e-8 relative) and
  *    none is negative.
@@ -364,7 +390,7 @@ TEST_CASE("predict --error: the predictive standard deviation of the "
         tr.train(db);
         const Context pot = tr.get_param_file();
 
-        const std::vector<Row> rows = raw_rows(db, tr.dc, 2.0, 0.5);
+        const std::vector<Row> rows = raw_rows(db, tr.dc);
         const Reference ref = reference_fit(rows, std::stold(lambda));
         REQUIRE(ref.n_obs == 51);
         const std::size_t N = norm ? 4 : 3;
@@ -389,8 +415,8 @@ TEST_CASE("predict --error: the predictive standard deviation of the "
           CHECK(static_cast<double>(dmax / rmax) < 1e-8);
         }
         const double s2 = static_cast<double>(ref.s2);
-        CHECK(wnoise_of(pot, "E") == Approx(s2 / 2.0).epsilon(1e-8));
-        CHECK(wnoise_of(pot, "F") == Approx(s2 / 0.5).epsilon(1e-8));
+        CHECK(wnoise_of(pot, "E") == Approx(wnoise_e(s2)).epsilon(1e-8));
+        CHECK(wnoise_of(pot, "F") == Approx(wnoise_f(s2)).epsilon(1e-8));
         CHECK(wnoise_of(pot, "S") == -1.0);
 
         LoadedPotential lp(pot);
@@ -412,7 +438,7 @@ TEST_CASE("predict --error: the predictive standard deviation of the "
         }
         for (const Row &x : rows) {
           INFO("row " << i << " (type " << x.type << ")");
-          const double noise = x.type == 0 ? s2 / 2.0 : s2 / 0.5;
+          const double noise = row_noise(x, s2);
           const double expected =
               std::sqrt(static_cast<double>(quad(ref.Sigma, x.phi)) + noise);
           CHECK(err(i) == Approx(expected).epsilon(1e-8));
@@ -514,9 +540,11 @@ TEST_CASE("A fit without a covariance writes none, whatever its Context "
 
 /* Pins: OALGO 3 with FIXINDEX 1-3 (every weight pinned, nothing solved):
  * the potential has WCOV 3 and nine zeros (no weight has a variance) and
- * WNOISE E RSS/51/2 and F RSS/51/0.5 (s^2 = RSS/n_obs: no weight is
- * fitted), RSS the weighted residuals of the pinned weights (1e-10
- * relative); predict with errors gives sqrt(WNOISE_t) for every value.
+ * WNOISE E s^2 ESIGMA^2 and F s^2 FSIGMA^2 with s^2 = RSS/51 (s^2 =
+ * RSS/n_obs: no weight is fitted), RSS the weighted residuals of the pinned
+ * weights (1e-10 relative); predict with errors gives the square root of
+ * the noise of each value's observation (N^2 WNOISE E for an energy,
+ * WNOISE F for a force component) for every value.
  * Before the fix: no WCOV and no WNOISE (and no SIGMA). */
 TEST_CASE("predict --error with every weight pinned: the noise alone",
           "[predict_error][fixed_weights]") {
@@ -529,7 +557,7 @@ TEST_CASE("predict --error with every weight pinned: the noise alone",
   StructureDB db = training_db();
   tr.train(db);
   const Context pot = tr.get_param_file();
-  const std::vector<Row> rows = raw_rows(db, tr.dc, 2.0, 0.5);
+  const std::vector<Row> rows = raw_rows(db, tr.dc);
   const LD w_pin[3] = {0.25L, -0.5L, 0.75L};
   LD rss = 0;
   for (const Row &x : rows) {
@@ -544,15 +572,15 @@ TEST_CASE("predict --error with every weight pinned: the noise alone",
     CHECK(wcov[0] == 3.0);
     for (std::size_t k = 1; k < 10; ++k) CHECK(wcov[k] == 0.0);
   }
-  CHECK(wnoise_of(pot, "E") == Approx(s2 / 2.0).epsilon(1e-10));
-  CHECK(wnoise_of(pot, "F") == Approx(s2 / 0.5).epsilon(1e-10));
+  CHECK(wnoise_of(pot, "E") == Approx(wnoise_e(s2)).epsilon(1e-10));
+  CHECK(wnoise_of(pot, "F") == Approx(wnoise_f(s2)).epsilon(1e-10));
   if (wcov.size() == 10 && pot.has_stored("WNOISE")) {
     LoadedPotential lp(pot);
     tadah::core::aed_type err;
     lp.model->predict(lp.ctx, db, lp.dc, err);
     REQUIRE(err.size() >= rows.size());
     for (std::size_t i = 0; i < rows.size(); ++i)
-      CHECK(err(i) == Approx(std::sqrt(rows[i].type == 0 ? s2 / 2.0 : s2 / 0.5))
+      CHECK(err(i) == Approx(std::sqrt(row_noise(rows[i], s2)))
                           .epsilon(1e-10));
   }
 }
@@ -565,12 +593,13 @@ TEST_CASE("predict --error with every weight pinned: the noise alone",
  *  - a WCOV whose count is not N*N+1 (N = 3 with 8 values after it),
  *    naming WCOV, N = 3 and the 10 values it needs;
  *  - forces asked for (FORCE true) of a potential whose fit had no force
- *    rows (FORCE false: WNOISE has E only), or none of non-zero weight
- *    (FWEIGHT 0), naming the forces and WNOISE;
+ *    rows (FORCE false: WNOISE has E only), or none of a priority above 0
+ *    (every structure's fweight 0), naming the forces and WNOISE;
  * for M_BLR BF_Linear and M_KRR Kern_Linear (OALGO 3, LAMBDA 1e-3).
  * Before the fix: the first threw "Sigma matrix is not computed." (no
  * SIGMA), which names neither WCOV nor OALGO 3; with FORCE true and a fit
- * without forces (or with FWEIGHT 0) the errors were computed, no
+ * without forces (or with FWEIGHT 0, the retired global weight) the
+ * errors were computed, no
  * exception; a WCOV could not be set (Context::add threw "Key not allowed:
  * WCOV"). */
 TEST_CASE("predict --error refuses a covariance that does not fit the "
@@ -580,10 +609,12 @@ TEST_CASE("predict --error refuses a covariance that does not fit the "
   for (const auto &mf : kLinearModels) {
     DYNAMIC_SECTION(mf[0] << " " << mf[1]) {
       StructureDB db = training_db();
-      auto train = [&](Context c) {
+      auto train = [&](Context c, double fweight = -1.0) {
         MLIPWorkspaceManager ws;
         Trainer tr(c, ws);
         StructureDB tdb = training_db();
+        if (fweight >= 0.0)
+          for (std::size_t s = 0; s < tdb.size(); ++s) tdb(s).fweight = fweight;
         tr.train(tdb);
         return tr.get_param_file();
       };
@@ -598,13 +629,14 @@ TEST_CASE("predict --error refuses a covariance that does not fit the "
         CHECK(m.find("WCOV") != std::string::npos);
         CHECK(m.find("OALGO 3") != std::string::npos);
       }
-      for (const char *what : {"FORCE false", "FWEIGHT 0"}) {
+      for (const char *what : {"FORCE false", "every fweight 0"}) {
         Context c = base;
-        if (std::string(what) == "FORCE false")
+        const bool off = std::string(what) == "FORCE false";
+        if (off) {
           set_key(c, "FORCE", "false");
-        else
-          set_key(c, "FWEIGHT", "0");
-        Context p = train(c);
+          c.remove("FSIGMA");  // the default: FORCE false refuses another
+        }
+        Context p = train(c, off ? -1.0 : 0.0);
         CHECK(wnoise_of(p, "F") == -1.0);
         set_key(p, "FORCE", "true");  // predict -F
         const std::string m = refusal_of_predict(p, db);
@@ -639,10 +671,10 @@ TEST_CASE("predict --error refuses a covariance that does not fit the "
  * species) and NORM true, M_BLR BF_Linear and M_KRR Kern_Linear (OALGO 3,
  * LAMBDA 0) write the covariance of the raw-descriptor weights: WCOV is
  * s^2 (Phi^T W Phi)^-1 of the raw rows (both intercept columns and the 3
- * D2_Blip columns, N = 5; 1e-8 relative), WNOISE E and F are s^2/2 and
- * s^2/0.5 with s^2 = RSS/(51 - 5), and predict with errors predicts what
- * predict predicts with sqrt(phi^T WCOV phi + WNOISE_t) for every row
- * (1e-8). The cells have 1 to 3 Nb atoms, so the energies determine both
+ * D2_Blip columns, N = 5; 1e-8 relative), WNOISE E and F are s^2
+ * ESIGMA^2 and s^2 FSIGMA^2 with s^2 = RSS/(51 - 5), and predict with
+ * errors predicts what predict predicts with sqrt(phi^T WCOV phi + v) for
+ * every row, v the noise of its observation (1e-8). The cells have 1 to 3 Nb atoms, so the energies determine both
  * intercepts.
  * Before the fix: no WCOV and no WNOISE (the potentials had SIGMA); the
  * WEIGHTS were already those of the raw descriptors (the per-species
@@ -670,7 +702,7 @@ TEST_CASE("predict --error with two species, BIAS and NORM: the covariance "
       Trainer tr(c, ws);
       tr.train(db);
       const Context pot = tr.get_param_file();
-      const std::vector<Row> rows = raw_rows(db, tr.dc, 2.0, 0.5);
+      const std::vector<Row> rows = raw_rows(db, tr.dc);
       const Reference ref = reference_fit(rows, 0.0L);
       REQUIRE(ref.n_obs == 51);
       REQUIRE(ref.w.size() == 5);
@@ -688,8 +720,8 @@ TEST_CASE("predict --error with two species, BIAS and NORM: the covariance "
         }
       CHECK(static_cast<double>(dmax / rmax) < 1e-8);
       const double s2 = static_cast<double>(ref.s2);
-      CHECK(wnoise_of(pot, "E") == Approx(s2 / 2.0).epsilon(1e-8));
-      CHECK(wnoise_of(pot, "F") == Approx(s2 / 0.5).epsilon(1e-8));
+      CHECK(wnoise_of(pot, "E") == Approx(wnoise_e(s2)).epsilon(1e-8));
+      CHECK(wnoise_of(pot, "F") == Approx(wnoise_f(s2)).epsilon(1e-8));
 
       LoadedPotential lp(pot);
       tadah::core::aed_type err;
@@ -701,7 +733,7 @@ TEST_CASE("predict --error with two species, BIAS and NORM: the covariance "
       REQUIRE(err.size() >= rows.size());
       for (std::size_t i = 0; i < rows.size(); ++i) {
         INFO("row " << i);
-        const double noise = rows[i].type == 0 ? s2 / 2.0 : s2 / 0.5;
+        const double noise = row_noise(rows[i], s2);
         CHECK(err(i) == Approx(std::sqrt(static_cast<double>(
                                    quad(ref.Sigma, rows[i].phi)) + noise))
                             .epsilon(1e-8));

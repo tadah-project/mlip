@@ -92,7 +92,11 @@ void set_explain_hook(ExplainHook hook, std::string what);
  * shows it: 'text::' as 'text:', 'text ::' as 'text', and a paragraph of
  * '::' alone, with the blank line after it, not at all. Inside the literal
  * block it opens (the lines indented more than that paragraph, and blank
- * lines), and inside a line, '::' is text; other RST markup is printed as
+ * lines), and inside a line, '::' is text. Outside a literal block an
+ * inline role is shown as the documentation shows it, by its text:
+ * ':ref:`Title <label>`' as 'Title', ':ref:`LAMBDA`' as 'LAMBDA',
+ * ':math:`x^2`' as 'x^2' (the CLI page renders an option's text in a
+ * parsed-literal block, which reads roles). Other RST markup is printed as
  * written.
  */
 std::vector<std::string> explain_text_lines(const std::string &text);
@@ -102,10 +106,12 @@ std::vector<std::string> explain_text_lines(const std::string &text);
  *        @p key.
  *
  * Its long description, or its description when it has none, as
- * explain_text_lines renders it, one line each; then, when it has
- * examples, a blank line, "EXAMPLES: " and each line of each example
- * (an example of several lines is one value per line) indented by two
- * spaces.
+ * explain_text_lines renders it, one line each; for a retired key
+ * (BlueprintKey::isRetired()) then a blank line and the lines "RETIRED:
+ * <reason>", "REPLACED BY: <replacement>" and "CONVERSION: <conversion>";
+ * then, when it has examples, a blank line, "EXAMPLES: " and each line of
+ * each example (an example of several lines is one value per line)
+ * indented by two spaces.
  */
 std::string explain_key_text(const core::BlueprintKey &key);
 

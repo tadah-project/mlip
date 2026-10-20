@@ -17,6 +17,7 @@
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/output/output.h>
 #include <tadah/mlip/preflight_audit.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
 #include <tadah/mlip/training_datasets.h>
@@ -63,9 +64,9 @@ void warn_noise_without_energies(const core::Context &param_file) {
   if (wc.noise.set[kEnergyRow]) return;
   core::Logger::instance().log(
       core::LogLevel::WARNING,
-      "tadah train: the fit has no energies with a non-zero weight (EWEIGHT "
-      "0, or every structure's eweight 0), so the potential's WNOISE has no "
-      "E: `tadah predict --error` and `tadah properties pairwise --error` "
+      "tadah train: the fit observed no energies (ENERGY false, or every "
+      "structure's energy priority 0), so the potential's WNOISE has no E: "
+      "`tadah predict --error` and `tadah properties pairwise --error` "
       "refuse it (every prediction has an energy). Its WCOV, and the "
       "standard deviations of --uncertainty, are those of the fit.");
 }
@@ -121,6 +122,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // retrain does not read: the record is the retrain's.
   const TrainingRecord record =
       training_record(context, task.getKeyProvenance());
+  // A retired key (a potential of an earlier version given as the
+  // configuration has them as key lines), an error scale a fit cannot take
+  // and one of a quantity the fit does not observe are refused before any
+  // dataset is read; the fit checks the same (M_BLR, M_KRR train).
+  require_fit_settings(context, "tadah train");
   // The datasets to fit: a configuration without DBFILE (a potential, which
   // has no DBFILE line, given as it is) is refused, saying how to retrain,
   // before anything is read; one dataset listed twice would be fitted twice.
@@ -168,9 +174,10 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "Loading structures...");
   StructureDB stdb(tr.context);
 
-  // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER, WDBFILE etc.)
-  // before any neighbour-finding or descriptor calculation, so downstream code
-  // sees the already-transformed positions, energies, and weights.
+  // Apply load-time transforms (LSCALE, ESHIFT, EFILTER/FFILTER,
+  // ZERO_COM_FORCE) before any neighbour-finding or descriptor calculation,
+  // so downstream code sees the already-transformed positions, energies and
+  // forces (WDBFILE, the priority of each dataset, applies in the fit).
   LoadTransformReport report = apply_load_transforms(stdb, tr.context);
   hint_embf0_reference(tr, report);
   // BIAS true: the energy-weighted compositions must determine the
@@ -293,7 +300,8 @@ void TrainEngine::dumpPotFile(const std::string &outfile,
   // UNCERTAINTY, which a 1.5.x potential edited by refit --edit has) nor
   // its training data (a refit --edit potential is a copy of its input's
   // context, which may be an M_BLR potential written with its DBFILE) and
-  // the keys that prepared it (EFILTER, the ESHIFT toggles, WDBFILE, ...:
+  // the keys that prepared or weighted it (EFILTER, the ESHIFT toggles,
+  // WDBFILE, ...:
   // the resolved ESHIFT and LSCALE are key lines):
   // write_potential_with_record leaves out the keys of
   // training_record_keys() and writes the record of the run above the key

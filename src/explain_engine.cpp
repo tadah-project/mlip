@@ -72,6 +72,59 @@ std::vector<std::string> dedented_lines(const std::string &text) {
   return lines;
 }
 
+// Whether @p ch may be part of the name of an RST role (':ref:',
+// ':hpo:key:').
+bool role_name_char(char ch) {
+  return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_' ||
+         ch == '-' || ch == '+' || ch == '.';
+}
+
+// @p line with each inline role ':name:`content`' replaced by the text
+// the documentation shows: the title of 'Title <target>', else the
+// content without a leading '!' or '~' (the no-link and short forms). A
+// role starts a word: a ':' at the start of the line or after a character
+// that cannot end a name.
+std::string render_roles(const std::string &line) {
+  std::string out;
+  std::size_t i = 0;
+  while (i < line.size()) {
+    if (line[i] == ':' && (i == 0 || !role_name_char(line[i - 1]))) {
+      // ':' name (':' name)* ':' '`' content '`'
+      std::size_t j = i + 1;
+      bool named = false;
+      while (j < line.size() && role_name_char(line[j])) {
+        while (j < line.size() && role_name_char(line[j])) ++j;
+        if (j < line.size() && line[j] == ':') {
+          named = true;
+          ++j;
+          if (j < line.size() && line[j] == '`') break;
+        } else {
+          named = false;
+          break;
+        }
+      }
+      if (named && j < line.size() && line[j] == '`') {
+        const std::size_t close = line.find('`', j + 1);
+        if (close != std::string::npos && close > j + 1) {
+          std::string content = line.substr(j + 1, close - j - 1);
+          const std::size_t lt = content.rfind('<');
+          if (!content.empty() && content.back() == '>' &&
+              lt != std::string::npos && lt > 0)
+            content = rstrip(content.substr(0, lt));
+          else if (content[0] == '!' || content[0] == '~')
+            content.erase(0, 1);
+          out += content;
+          i = close + 1;
+          continue;
+        }
+      }
+    }
+    out += line[i];
+    ++i;
+  }
+  return out;
+}
+
 // The key named `name` (lower case, the last part of its blueprint name)
 // among a command's options and its groups' options; nullptr if none.
 const core::BlueprintKey *find_option(const core::BlueprintTask &task,
@@ -158,7 +211,7 @@ std::vector<std::string> explain_text_lines(const std::string &text) {
       ln = ends_with(ln, " ::") ? rstrip(ln.substr(0, ln.size() - 3))
                                 : ln.substr(0, ln.size() - 1);
     }
-    out.push_back(ln);
+    out.push_back(render_roles(ln));
   }
   return out;
 }
@@ -168,6 +221,13 @@ std::string explain_key_text(const core::BlueprintKey &key) {
   for (const auto &line : explain_text_lines(
            key.longDescription.empty() ? key.description : key.longDescription))
     out += line + "\n";
+  // A retired key: why, what replaces it and how a value of it converts
+  // (a fit refuses it, with the same conversion).
+  if (key.isRetired()) {
+    out += "\nRETIRED: " + key.retired.reason + "\n";
+    out += "REPLACED BY: " + key.retired.replacement + "\n";
+    out += "CONVERSION: " + key.retired.conversion + "\n";
+  }
   if (!key.examples.empty()) {
     out += "\nEXAMPLES: \n";
     for (const auto &example : key.examples) {

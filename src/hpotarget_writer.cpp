@@ -250,12 +250,18 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
 
   os << "LOSS L2\n"
      << "FAILSCORE 1e16\n"
-     << "# Energy RMSE on the validation data (<target> <weight>):\n"
+     << "# RMSEs on the validation data (<target> <weight>). Under LOSS L2\n"
+     << "# each weight is 1/a^2, a the accuracy of the default error scale\n"
+     << "# of the quantity: 1 meV/atom (ESIGMA), 0.1 eV/A (FSIGMA) and\n"
+     << "# 0.5 GPa (SSIGMA), so each term counts its RMSE in units of a.\n"
      << "PC_ERMSE 0 1\n"
      << "# Force RMSE — needs validation data with reference forces; the\n"
      << "# validation predicts forces for it although the refit potential\n"
      << "# is fitted to energies only.\n"
-     << "# PC_FRMSE 0 1\n"
+     << "# PC_FRMSE 0 100\n"
+     << "# Stress RMSE in GPa (the nine entries of each tensor) — needs\n"
+     << "# validation data with reference stresses.\n"
+     << "# PC_SRMSE_GPA 0 4\n"
      << "# LAMMPS-computed observables can be scored with PC_LAMMPS lines\n"
      << "# (see the docs).\n\n";
 

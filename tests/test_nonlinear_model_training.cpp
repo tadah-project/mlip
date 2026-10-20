@@ -162,9 +162,15 @@ Context make_context(const ModelSpec &m, bool bias = false) {
   c.add("DIMER", "false");
   c.add("FORCE", energies_only ? "false" : "true");
   c.add("STRESS", energies_only ? "false" : "true");
-  c.add("EWEIGHT", 1.0);
-  c.add("FWEIGHT", 1.0);
-  c.add("SWEIGHT", 1.0);
+  // The error scales of the reference rows (weight_rows): about unit
+  // weights, so that LAMBDA weighs on the fits. Implementation 2 of M_KRR
+  // (energies only) takes no error scale: it refuses one other than the
+  // default.
+  if (!energies_only) {
+    c.add("ESIGMA", 1000);
+    c.add("FSIGMA", 1);
+    c.add("SSIGMA", 160.2);
+  }
   c.add("BIAS", bias ? "true" : "false");
   c.add("NORM", "false");
   c.add("VERBOSE", 0);
@@ -346,13 +352,21 @@ Reference reference_of(Trainer &tr, const ModelSpec &m) {
   return r;
 }
 
+/* The error scales of the cases (make_context): ESIGMA 1000 meV/atom (1
+ * eV), FSIGMA 1 eV/A and SSIGMA 160.2 GPa (160.2 x 6.241509074e-3 eV/A^3,
+ * about 1), so that the rows weigh about alike and LAMBDA tells. */
+const ld kESigma = 1.0L;
+const ld kFSigma = 1.0L;
+const ld kSSigma = 160.2L * 6.241509074e-3L;
+
 /* Energy, force and stress rows of the structures (each with its neighbour
  * list) and their targets, in DesignMatrix's order: per structure the
  * energy, the forces atom by atom, then the stress xx xy xz yy yz zz. A
  * force row is -sum over the neighbours j of i of
  * [grad phi(x_i) . fd_ij(:,k) - grad phi(x_j) . fd_ji(:,k)]; a stress row
  * (1/V) sum_i sum_j 0.5 (r_i - r_j)_x [grad phi(x_i) . fd_ij(:,y) -
- * grad phi(x_j) . fd_ji(:,y)]. */
+ * grad phi(x_j) . fd_ji(:,y)]. The rows are those of the model's values,
+ * without the factors of the fit (weight_rows applies them). */
 void build_rows(const Reference &ref, DescriptorsCalc<> &dc,
                 const StructureDB &db, Rows &A, std::vector<ld> &T) {
   A.clear();
@@ -411,6 +425,28 @@ void build_rows(const Reference &ref, DescriptorsCalc<> &dc,
         A.push_back(row);
         T.push_back(st.stress(x, y));
       }
+  }
+}
+
+/* The rows of build_rows and their targets multiplied by the factors of
+ * the fit's rule (priority 1, the error scales of the cases): 1/(N
+ * kESigma) for the energy of a structure of N atoms (its residual per atom
+ * over ESIGMA), 1/kFSigma for a force component, sqrt(m)/kSSigma for a
+ * stress entry, m = 2 off the diagonal (the nine entries of the tensor). */
+void weight_rows(const StructureDB &db, Rows &A, std::vector<ld> &T) {
+  std::size_t r = 0;
+  auto scale = [&](ld factor) {
+    for (ld &v : A[r]) v *= factor;
+    T[r] *= factor;
+    ++r;
+  };
+  for (std::size_t s = 0; s < db.size(); ++s) {
+    const std::size_t na = db(s).natoms();
+    scale(1.0L / (static_cast<ld>(na) * kESigma));
+    for (std::size_t k = 0; k < 3 * na; ++k) scale(1.0L / kFSigma);
+    for (int x = 0; x < 3; ++x)
+      for (int y = x; y < 3; ++y)
+        scale((x == y ? 1.0L : std::sqrt(2.0L)) / kSSigma);
   }
 }
 
@@ -560,7 +596,10 @@ void check_fit(Trained &t, const ModelSpec &m) {
   Rows A;
   std::vector<ld> T;
   build_rows(ref, t.tr->dc, t.db, A, T);
-  const LsSolution sol = least_squares(A, T);
+  Rows Aw = A;
+  std::vector<ld> Tw = T;
+  weight_rows(t.db, Aw, Tw);
+  const LsSolution sol = least_squares(Aw, Tw);
   INFO("reference rcond (min/max |R_kk|) " << static_cast<double>(sol.rcond));
   REQUIRE(sol.rcond > 1e-9);  // full rank, well enough conditioned
   const t_type w = t.tr->model->get_weights();
@@ -962,6 +1001,7 @@ TEST_CASE("A basis vector with K(b, b) = 0 is an ordinary column",
   Rows A;
   std::vector<ld> T;
   build_rows(ref, t.tr->dc, t.db, A, T);
+  weight_rows(t.db, A, T);
   const LsSolution sol = least_squares(A, T, active);
   INFO("reference rcond " << static_cast<double>(sol.rcond));
   REQUIRE(sol.rcond > 1e-9);
@@ -1015,6 +1055,7 @@ TEST_CASE("The intercept columns of each non-linear function are left out "
       Rows A;
       std::vector<ld> T;
       build_rows(ref, t.tr->dc, t.db, A, T);
+      weight_rows(t.db, A, T);
       const LsSolution sol = ridge(A, T, lambda, n_int);
       const LsSolution other = ridge(A, T, lambda, 1 - n_int);
       const t_type w = t.tr->model->get_weights();
@@ -1052,6 +1093,7 @@ TEST_CASE("OALGO 3 with BIAS true trains a kernel without intercept columns "
     Rows A;
     std::vector<ld> T;
     build_rows(ref, t.tr->dc, t.db, A, T);
+    weight_rows(t.db, A, T);
     const LsSolution sol = ridge(A, T, 0.01L, 0);
     const t_type w = t.tr->model->get_weights();
     INFO("weights   " << to_text(w) << "\nreference " << to_text(sol.w));

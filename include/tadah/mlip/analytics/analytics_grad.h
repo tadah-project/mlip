@@ -13,15 +13,16 @@
  * where:
  *   i     = structure index in the validation StructureDB
  *   kind  = ENERGY (one cell per structure), FORCE (3 * natoms cells per
- *           structure), or STRESS (6 cells per structure, x<=y order)
+ *           structure), or STRESS (6 cells per structure, x<=y order: the
+ *           predicted entries of the symmetric tensor)
  *   comp  = within-structure cell index (0 for ENERGY; 3*a+k for FORCE;
  *           the linearised Voigt-like 6-cell index for STRESS, matching
  *           Analytics' iteration order x in [0..3), y in [x..3))
  *   value = d(metric)/d(predicted cell), with units consistent with
- *           Analytics (eV/atom for energy metrics, raw eV/A and eV/A^3 for
- *           force / stress unless the host scales the metric afterward;
- *           any post-scaling done by the host applies as a constant
- *           multiplier in the chain rule)
+ *           Analytics (eV/atom for energy metrics, eV/A for force metrics
+ *           and GPa for the stress metric of the nine entries of each
+ *           tensor; any post-scaling done by the host applies as a
+ *           constant multiplier in the chain rule)
  *
  * Multi-segment aggregation: the mean over the measured segments,
  *
@@ -38,7 +39,7 @@
  * Sign conventions match Analytics:
  *   E_diff_i      = E_truth_i - E_pred_i              (per-structure)
  *   F_diff_iak    = F_truth_iak - F_pred_iak          (per-component)
- *   S_diff_ixy    = S_truth_ixy - S_pred_ixy          (per-component, x<=y)
+ *   S_diff_ixy    = S_truth_ixy - S_pred_ixy          (per-entry, x<=y)
  *
  * with d/dpred = -d/ddiff for every metric below. The closed-form
  * derivatives are derived directly from the Analytics formulas in
@@ -48,6 +49,7 @@
 #include <tadah/core/core_types.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/analytics/analytics.h>
+#include <tadah/mlip/row_weights.h>  // kGPaInEvPerA3
 
 #include <cmath>
 #include <stdexcept>
@@ -64,6 +66,9 @@ namespace analytics_grad {
  * of a predicted StructureDB in the same order Analytics iterates. */
 inline std::size_t energy_cells_per_struct(const Structure&) { return 1; }
 inline std::size_t force_cells_per_struct (const Structure& s) { return 3 * s.natoms(); }
+/* The stress cells: the six predicted entries x <= y of the symmetric
+ * tensor, of which the stress metric reads nine (srmse_gpa_per_dataset: an
+ * off-diagonal cell's partial carries both of its entries). */
 inline std::size_t stress_cells_per_struct(const Structure&) { return 6; }
 
 /* The energy cells: a structure stored with energy weight 0 (eweight) has
@@ -401,72 +406,84 @@ void frmse(const StructureDB& truth, const StructureDB& pred,
         });
 }
 
-/* d(srmse)/d(S_pred_ixy) where
- *   metric_s = sqrt((1/N_s^S) * sum_{i in s with sweight != 0, x, y>=x} (S_truth_ixy - S_pred_ixy)^2)
- *   scalar   = (1/S_seg) * sum_{measured s} metric_s
- *
- * S_seg is the number of measured segments (N_s^S > 0): the scalar is the
- * mean over them, as Analytics' measured_mean() takes it.
- *
- * N_s^S = 6 * (#structures in segment s with sweight != 0) is the
- * per-segment stress-cell count. A structure with stress weight 0
- * (counts_in_metric()) is left out, as in Analytics::calc_s_rmse: none of
- * its cells is emitted; a segment without such structures is not measured
- * and emits nothing. Voigt-like 6-cell ordering matches Analytics:
- * (xx, xy, xz, yy, yz, zz). */
+/* d(srmse_gpa_s)/d(S_pred_ixy) for each dataset s, where
+ *   metric_s = c * sqrt((1/(9 n_s)) * sum_{i in s with sweight != 0}
+ *                       sum_{x <= y} m_xy (S_truth_ixy - S_pred_ixy)^2)
+ * is Analytics::calc_s_rmse_gpa: the root mean square of the nine entries
+ * of each residual tensor (m_xy = 2 for an off-diagonal entry, which the
+ * symmetric tensor has twice, 1 on the diagonal), in GPa (c =
+ * 1/kGPaInEvPerA3: the data hold eV/A^3), n_s the structures of s with a
+ * stress tensor. A cell is one of the six predicted entries x <= y
+ * (stress_cells_per_struct; an off-diagonal entry of the symmetric
+ * prediction is one value), its partial
+ *   -scale * c^2 * m_xy * (S_truth_ixy - S_pred_ixy) / (9 n_s metric_s).
+ * A structure with stress priority 0 (counts_in_metric()) is left out, as
+ * in Analytics: none of its cells is emitted; a dataset without a stress
+ * tensor is not measured and emits nothing. set_dydp(s, i, kind, comp,
+ * partial) as frmse_per_dataset's: no average over the datasets, which a
+ * PC_SRMSE_GPA line with dataset targets weights one by one. */
 template<class F>
-void srmse(const StructureDB& truth, const StructureDB& pred,
-           double scale, F set_dydp)
+void srmse_gpa_per_dataset(const StructureDB& truth, const StructureDB& pred,
+                           double scale, F set_dydp)
 {
     if (truth.size() != pred.size())
-        throw std::runtime_error("analytics_grad::srmse: size mismatch");
+        throw std::runtime_error("analytics_grad::srmse_gpa: size mismatch");
+    if (truth.dbidx != pred.dbidx)
+        throw std::runtime_error("analytics_grad::srmse_gpa: dataset layout mismatch");
     if (truth.dbidx.size() < 2) return;
     const std::size_t S = truth.dbidx.size() - 1;
     if (truth.size() == 0) return;
+    const double c = 1.0 / kGPaInEvPerA3;
+    auto m_of = [](std::size_t x, std::size_t y) { return x == y ? 1.0 : 2.0; };
     std::vector<double> metric_per_seg(S, 0.0);
-    std::vector<std::size_t> N_S_per_seg(S, 0);
+    std::vector<std::size_t> n_per_seg(S, 0);
     for (std::size_t s = 0; s < S; ++s) {
-        const std::size_t lo = truth.dbidx[s];
-        const std::size_t hi = truth.dbidx[s + 1];
         double sumsq = 0.0;
-        std::size_t N_S_cells = 0;
-        for (std::size_t i = lo; i < hi; ++i) {
+        std::size_t n = 0;
+        for (std::size_t i = truth.dbidx[s]; i < truth.dbidx[s + 1]; ++i) {
             if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
-            for (std::size_t x = 0; x < 3; ++x) {
+            ++n;
+            for (std::size_t x = 0; x < 3; ++x)
                 for (std::size_t y = x; y < 3; ++y) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
-                    sumsq += d * d;
-                    ++N_S_cells;
+                    sumsq += m_of(x, y) * d * d;
                 }
-            }
         }
-        N_S_per_seg[s] = N_S_cells;
-        if (N_S_cells > 0)
-            metric_per_seg[s] = std::sqrt(sumsq / static_cast<double>(N_S_cells));
+        n_per_seg[s] = n;
+        if (n > 0)
+            metric_per_seg[s] = c * std::sqrt(sumsq / (9.0 * static_cast<double>(n)));
     }
-    std::size_t S_measured = 0;  // the segments the scalar averages
-    for (std::size_t s = 0; s < S; ++s) S_measured += N_S_per_seg[s] > 0;
     for (std::size_t s = 0; s < S; ++s) {
         if (!(metric_per_seg[s] > 0.0)) continue;
-        const std::size_t lo = truth.dbidx[s];
-        const std::size_t hi = truth.dbidx[s + 1];
-        const std::size_t N_S_cells = N_S_per_seg[s];
-        for (std::size_t i = lo; i < hi; ++i) {
+        const double n = static_cast<double>(n_per_seg[s]);
+        for (std::size_t i = truth.dbidx[s]; i < truth.dbidx[s + 1]; ++i) {
             if (!counts_in_metric(truth(i), MetricQuantity::Stress)) continue;
             std::size_t comp = 0;
-            for (std::size_t x = 0; x < 3; ++x) {
-                for (std::size_t y = x; y < 3; ++y) {
+            for (std::size_t x = 0; x < 3; ++x)
+                for (std::size_t y = x; y < 3; ++y, ++comp) {
                     const double d = truth(i).stress(x, y) - pred(i).stress(x, y);
-                    const double v = -scale * d
-                                   / (static_cast<double>(S_measured)
-                                      * static_cast<double>(N_S_cells)
-                                      * metric_per_seg[s]);
-                    set_dydp(i, PredCellKind::STRESS, comp, v);
-                    ++comp;
+                    set_dydp(s, i, PredCellKind::STRESS, comp,
+                             -scale * c * c * m_of(x, y) * d
+                                 / (9.0 * n * metric_per_seg[s]));
                 }
-            }
         }
     }
+}
+
+/* d(srmse_gpa)/d(S_pred_ixy) of the mean of the per-dataset metrics of
+ * srmse_gpa_per_dataset over the measured datasets (those with a stress
+ * tensor), as Analytics' measured_mean() takes it: each partial divided by
+ * their number. */
+template<class F>
+void srmse_gpa(const StructureDB& truth, const StructureDB& pred,
+               double scale, F set_dydp)
+{
+    std::size_t count = 0;
+    for (bool m : measured_datasets(truth, MetricQuantity::Stress)) count += m;
+    srmse_gpa_per_dataset(truth, pred, scale,
+        [&](std::size_t, std::size_t i, PredCellKind kind, std::size_t comp, double partial) {
+            set_dydp(i, kind, comp, partial / static_cast<double>(count));
+        });
 }
 
 }  // namespace analytics_grad

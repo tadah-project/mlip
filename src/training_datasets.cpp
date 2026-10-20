@@ -77,8 +77,8 @@ void require_distinct_training_datasets(const tadah::core::Context &ctx) {
       "DBFILE lists one dataset twice: entry " + std::to_string(i + 1) +
       " (" + files[i] + ") and entry " + std::to_string(j + 1) + " (" +
       files[j] + ") are one file, so each of its structures would be "
-      "fitted twice. List each dataset once; to give a dataset more "
-      "weight, use WDBFILE. An M_BLR potential written by an earlier "
+      "fitted twice. List each dataset once; to give a dataset a higher "
+      "priority, use WDBFILE. An M_BLR potential written by an earlier "
       "version of Tadah! records the DBFILE it was trained on: remove that "
       "line from a potential used as the training configuration.");
 }
