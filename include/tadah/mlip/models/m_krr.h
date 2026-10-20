@@ -235,7 +235,7 @@ public:
    *  STRESS, the weights of the configuration, and a structure whose
    *  eweight is not 1).
    *  @throws std::runtime_error naming the key and its values (or the
-   *  structure and its eweight) and MODEL M_KRR <kernel> 1. */
+   *  structure and its eweight) and `MODEL M_KRR <kernel> 1`. */
   void refuse_what_train2_ignores(const StructureDB &stdb) const {
     refuse_what_krr_implementation2_ignores(context, stdb);
   }
