@@ -6,6 +6,7 @@
 #include <tadah/core/retired_keys.h>
 #include <tadah/core/utils.h>
 #include <tadah/mlip/detail/cell_geometry.h>
+#include <tadah/models/zero_rows.h>
 
 #include <algorithm>
 #include <cmath>
@@ -329,13 +330,9 @@ ObservationCount count_observations(const core::phi_type &Phi,
                                     const core::t_type &factors,
                                     const core::t_type &labels) {
   ObservationCount n;
-  const std::size_t rows = std::min(data_rows, Phi.rows());
-  std::vector<char> nonzero(rows, 0);
-  for (std::size_t j = 0; j < Phi.cols(); ++j)
-    for (std::size_t i = 0; i < rows; ++i)
-      if (!nonzero[i] && Phi(i, j) != 0.0) nonzero[i] = 1;
-  for (std::size_t i = 0; i < rows; ++i) {
-    if (!nonzero[i] || !(factors(i) > 0.0)) continue;
+  const std::vector<char> zero = models::zero_rows(Phi, data_rows);
+  for (std::size_t i = 0; i < zero.size(); ++i) {
+    if (zero[i] || !(factors(i) > 0.0)) continue;
     const std::size_t t = static_cast<std::size_t>(labels(i));
     if (t > 2)
       throw std::logic_error("count_observations: row type " +

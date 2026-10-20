@@ -28,8 +28,8 @@
 //
 // A row is multiplied by its factor sqrt(W_i) (DesignMatrix). A row whose
 // design-matrix row is zero in every column (a force that is zero by
-// symmetry) carries no information and is not an observation, nor is a row
-// of priority 0. Every caller -- DesignMatrix (both builds), the intercept
+// symmetry; zero to rounding, models::zero_rows()) carries no information
+// and is not an observation, nor is a row of priority 0. Every caller -- DesignMatrix (both builds), the intercept
 // check, the weight covariance and its noise, predict --error and the
 // analytic gradients of tadah hpo -- takes the rule from here.
 
@@ -167,7 +167,10 @@ void write_fit_scales(core::Context &c);
 std::string fit_scales_info(const core::Context &c);
 
 /** The observations of a design matrix (DesignMatrix): a data row of
- *  factor > 0 that is not zero in every column. */
+ *  factor > 0 that is not zero in every column (models::zero_rows(): no
+ *  value above 1e-10 of the largest magnitude of its column, so the
+ *  rounding of sums that cancel, as in the force rows of an atom at a
+ *  centre of symmetry, does not make a row an observation). */
 struct ObservationCount {
   std::size_t total = 0;
   std::array<std::size_t, 3> by_type{{0, 0, 0}};  ///< E, F, S
@@ -176,8 +179,9 @@ struct ObservationCount {
 };
 
 /** The observations among the first @p data_rows rows of @p Phi, whose
- *  factors are @p factors and types @p labels (0, 1, 2); @p Phi may hold
- *  the rows with or without the factors. */
+ *  factors are @p factors and types @p labels (0, 1, 2); @p Phi holds the
+ *  rows without the factors (the zero rows are those of the design
+ *  matrix, whatever the priorities). */
 ObservationCount count_observations(const core::phi_type &Phi,
                                     std::size_t data_rows,
                                     const core::t_type &factors,
