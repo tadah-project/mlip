@@ -106,6 +106,20 @@ void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
                                    const tadah::models::Function_Base &f);
 
+/** \brief The intercept columns the fit of @p ctx fits, 0-based, before any
+ *  fit: those of the fit's function (for a model whose basis its fit
+ *  draws, a kernel's of that basis, which starts with the intercept
+ *  vectors) that FIXINDEX and FIXWEIGHT do not pin, FIXINDEX read as the
+ *  fit reads it (core::parse_fixindex with model_weight_count; what that
+ *  refuses is thrown here, with its message). None for BIAS false and for
+ *  M_KRR implementation 2, whose solve runs no least squares over them.
+ *  @p f is the model's function, built from @p ctx, which holds DSIZE (a
+ *  Trainer's).
+ *  @throws std::runtime_error */
+std::vector<std::size_t>
+fitted_intercept_columns(const tadah::core::Context &ctx,
+                         const tadah::models::Function_Base &f);
+
 /** \brief Refuses OALGO 3 with a LAMBDA other than 0 when the fit of
  *  @p ctx has an intercept column it fits, before any fit, with the fit's
  *  message (models::LinearRegressor::require_oalgo3_intercepts: OALGO 3

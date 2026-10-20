@@ -165,16 +165,24 @@ std::string weights_text(const tadah::core::Context &ctx,
 
 }  // namespace
 
+std::vector<std::size_t>
+fitted_intercept_columns(const tadah::core::Context &ctx,
+                         const tadah::models::Function_Base &fn) {
+  if (tadah::core::n_intercept_columns(ctx) == 0) return {};
+  if (is_krr_implementation_2(ctx)) return {};
+  std::unique_ptr<DM_Function_Base> hold;
+  const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
+  return fitted_intercept_columns(ctx, fn, f);
+}
+
 void require_oalgo3_intercepts(const tadah::core::Context &ctx,
                                const tadah::models::Function_Base &fn) {
   if (tadah::core::n_intercept_columns(ctx) == 0) return;
   if (is_krr_implementation_2(ctx)) return;
   if (ctx.get<int>("OALGO", 0) != 3 || ctx.get<double>("LAMBDA", 0) == 0.0)
     return;
-  std::unique_ptr<DM_Function_Base> hold;
-  const tadah::models::Function_Base &f = fit_function(ctx, fn, hold);
   tadah::models::LinearRegressor::require_oalgo3_intercepts(
-      ctx, fitted_intercept_columns(ctx, fn, f).size());
+      ctx, fitted_intercept_columns(ctx, fn).size());
 }
 
 std::string intercept_weights_text(const tadah::core::Context &ctx,
