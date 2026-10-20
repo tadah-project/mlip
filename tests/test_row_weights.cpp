@@ -292,6 +292,94 @@ TEST_CASE("Effective parameters per quantity and dataset", "[row_weights]") {
   }
 }
 
+/* Guard: the effective parameters of 3000 rows of 6 columns, more rows than
+ * one block of the computation, equal tr(H^-1 H_qd) per type and dataset
+ * and lambda tr(H^-1 I_pen) for the prior, H = Phi^T Phi + lambda I_pen
+ * inverted by hand (Gauss-Jordan in long double; H has full rank, so every
+ * direction is kept): OALGO 3 at LAMBDA 0.5 (a uniform ridge), OALGO 1 at
+ * LAMBDA 0.5 with column 0 unpenalised, OALGO 2 at LAMBDA 0; 1e-9. A pass
+ * over the first block of rows alone fails it. */
+TEST_CASE("Effective parameters of more rows than a block, by hand",
+          "[row_weights]") {
+  const std::size_t m = 3000, n = 6;
+  tadah::core::phi_type Phi(m, n);
+  tadah::core::t_type labels(m);
+  std::vector<std::size_t> ds(m);
+  for (std::size_t i = 0; i < m; ++i) {
+    for (std::size_t j = 0; j < n; ++j)
+      Phi(i, j) = std::sin(0.37 * static_cast<double>(i * (j + 1)) + 0.11 * j) +
+                  (j == i % n ? 0.5 : 0.0);
+    labels(i) = static_cast<double>(i % 3);
+    ds[i] = (i / 7) % 2;
+  }
+  struct Case {
+    int oalgo;
+    double lambda;
+    std::vector<std::size_t> unpenalised;
+  };
+  for (const Case &k : {Case{3, 0.5, {}}, Case{1, 0.5, {0}}, Case{2, 0.0, {}}}) {
+    DYNAMIC_SECTION("OALGO " << k.oalgo << ", LAMBDA " << k.lambda) {
+      // H, its blocks of each type and dataset, and H^-1, in long double.
+      using LD = long double;
+      std::vector<LD> H(n * n, 0), Hqd(3 * 2 * n * n, 0);
+      for (std::size_t i = 0; i < m; ++i) {
+        const std::size_t q = static_cast<std::size_t>(labels(i));
+        for (std::size_t a = 0; a < n; ++a)
+          for (std::size_t b = 0; b < n; ++b) {
+            const LD v = static_cast<LD>(Phi(i, a)) * Phi(i, b);
+            H[a * n + b] += v;
+            Hqd[((q * 2 + ds[i]) * n + a) * n + b] += v;
+          }
+      }
+      std::vector<LD> pen(n, 1);
+      for (std::size_t j : k.unpenalised) pen[j] = 0;
+      for (std::size_t a = 0; a < n; ++a) H[a * n + a] += k.lambda * pen[a];
+      std::vector<LD> A = H, inv(n * n, 0);
+      for (std::size_t a = 0; a < n; ++a) inv[a * n + a] = 1;
+      for (std::size_t c = 0; c < n; ++c) {
+        const LD p = A[c * n + c];
+        for (std::size_t j = 0; j < n; ++j) {
+          A[c * n + j] /= p;
+          inv[c * n + j] /= p;
+        }
+        for (std::size_t r = 0; r < n; ++r) {
+          if (r == c) continue;
+          const LD f = A[r * n + c];
+          for (std::size_t j = 0; j < n; ++j) {
+            A[r * n + j] -= f * A[c * n + j];
+            inv[r * n + j] -= f * inv[c * n + j];
+          }
+        }
+      }
+      auto trace = [&](const LD *B) {
+        LD t = 0;
+        for (std::size_t a = 0; a < n; ++a)
+          for (std::size_t b = 0; b < n; ++b) t += inv[a * n + b] * B[b * n + a];
+        return static_cast<double>(t);
+      };
+      LD prior = 0;
+      for (std::size_t a = 0; a < n; ++a) prior += inv[a * n + a] * pen[a];
+      prior *= k.lambda;
+
+      const auto g = tadah::mlip::effective_parameters(
+          Phi, labels, ds, 2, k.lambda, k.unpenalised, k.oalgo, 1e-8);
+      CHECK(g.retained == n);
+      for (std::size_t q = 0; q < 3; ++q) {
+        double all = 0;
+        for (std::size_t d = 0; d < 2; ++d) {
+          const double ref = trace(&Hqd[(q * 2 + d) * n * n]);
+          INFO("type " << q << ", dataset " << d);
+          CHECK(g.by_dataset[d][q] == Approx(ref).epsilon(1e-9));
+          all += ref;
+        }
+        CHECK(g.by_type[q] == Approx(all).epsilon(1e-9));
+      }
+      CHECK(g.prior == Approx(static_cast<double>(prior)).epsilon(1e-9).margin(1e-14));
+      CHECK(g.total + g.prior == Approx(static_cast<double>(n)).epsilon(1e-12));
+    }
+  }
+}
+
 /* Pins: the effective parameters of a fit's weighted design matrix (two
  * datasets of Ta cells, FORCE and STRESS true) sum to sum_kept
  * s_i^2/(s_i^2 + lambda), s_i the singular values of the weighted matrix
