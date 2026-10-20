@@ -10,8 +10,10 @@
 // each of them determines. After a first line (LAMBDA, ENORM SQRT, the
 // coefficients and the rank) and the error scales of the quantities the
 // fit observes (ENERGY, FORCE, STRESS true), one row per quantity over
-// every dataset, then, with several datasets, one per dataset, and the
-// prior's row:
+// every dataset (the entries of every dataset pooled), then, with several
+// datasets, one per dataset, and the prior's row. The rows are of the
+// training data as the fit read it (after EFILTER, FFILTER and
+// ZERO_COM_FORCE); a dataset of WDBFILE 0 has rows without entries:
 //
 //   n        the observations (count_observations(): rows of priority > 0
 //            that are not zero in every column; at most six per stress
@@ -20,8 +22,9 @@
 //            metric over every row of priority > 0, those zero by
 //            symmetry included: the energy per atom in meV/atom, the force
 //            components in eV/Å, the nine entries of each stress tensor in
-//            GPa (an off-diagonal entry counted twice, m_i = 2), the
-//            entries the metrics of tadah predict -A run over;
+//            GPa (an off-diagonal entry counted twice, m_i = 2): the
+//            row of a dataset is the metric of tadah predict -A of it
+//            with the same filters; NaN ("-") without such an entry;
 //   r/sigma  the root mean square of residual / error scale over the same
 //            entries (sigma_i of each row: N^q ESIGMA for the energy of a
 //            structure of N atoms, q 1 or 1/2 under ENORM SQRT, the
@@ -30,17 +33,19 @@
 //            sum; the prior's row has lambda |w|^2_pen over it, so the
 //            rows of every dataset and the prior's sum to 1;
 //   gamma    the effective parameters, tr(H^+ H_q) over the directions the
-//            solve keeps (effective_parameters()); the prior's row has the
-//            rest of the rank, lambda tr(H^+ I_pen), so the rows of every
-//            dataset and the prior's sum to the rank, sum_kept s_i^2 /
-//            (s_i^2 + lambda) without the prior for a uniform ridge.
+//            solve keeps (effective_parameters(): every direction under
+//            OALGO 2 and 4); the prior's row has the rest of the rank,
+//            lambda tr(H^+ I_pen), so the rows of every dataset and the
+//            prior's sum to the rank, sum_kept s_i^2 / (s_i^2 + lambda)
+//            without the prior for a uniform ridge.
 //
 // The rows of a dataset sum to its row of every dataset (n, share, gamma).
 // Computing the table is one O(n p^2) pass over the n rows and p
 // coefficients of the fit, which reads the fit's design matrix in blocks:
-// its memory is of the order of p^2 + 1024 p, not a copy of the rows. It is
-// computed once per potential written: tadah train after its fit, tadah
-// hpo for each evaluation that may become its new best. The table is
+// its memory is of the order of (p + 1024 + 3 D) p for D datasets, not a
+// copy of the rows. It is computed once per potential written: tadah train
+// after its fit, tadah hpo for each evaluation that may become its new
+// best. The table is
 // printed (print_fit_balance) and kept in the potential's training record
 // (add_fit_balance), from which it is read back (read_fit_balance).
 
@@ -110,8 +115,10 @@ FitBalance no_fit_balance(const std::string &why);
  *  that of tadah train and of tadah hpo, which skips such a fit. */
 FitBalance all_pinned_fit_balance();
 
-/** The widest line of a table: 78 characters, 80 in a training record
- *  after its "# ". */
+/** The widest line of a table of fewer than 10^7 observations per row:
+ *  78 characters, 80 in a training record after its "# " (the column n is
+ *  as wide as its largest count, a row one character wider per digit
+ *  beyond seven). */
 constexpr std::size_t kFitBalanceWidth = 78;
 
 /** The scales of one row of a design matrix, besides its factor. */
