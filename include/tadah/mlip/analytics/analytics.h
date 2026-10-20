@@ -64,10 +64,10 @@ void require_metric_structures(const StructureDB &truth, MetricQuantity q,
 /** Class for analysing and comparing datasets
  *
  *  Each metric is per dataset (DBFILE). The energy metrics (calc_e_*) leave
- *  out the structures stored with energy weight 0, the force metrics
- *  (calc_f_*) those with force weight 0, and the stress metrics (calc_s_*)
- *  those with stress weight 0 (counts_in_metric()): they have no data of
- *  their own. A dataset without a structure that counts is not measured:
+ *  out the structures stored with energy priority 0, the force metrics
+ *  (calc_f_*) those with force priority 0, and the stress metrics
+ *  (calc_s_*, the nine entries of each tensor) those with stress priority 0
+ *  (counts_in_metric()): they have no data of their own. A dataset without a structure that counts is not measured:
  *  its value is nan (measured_datasets(), measured_mean()). calc_e_rrmse
  *  also leaves out a structure whose reference energy is 0.
  */
@@ -88,11 +88,13 @@ class Analytics {
          *  atom (require_predicted_forces()). */
         tadah::core::t_type calc_f_mae() const;
 
-        /** Return Stress Mean Absolute Error for each DBFILE.
-         *
-         *  Calculated using 6 independent components.
+        /** Return the stress Mean Absolute Error for each DBFILE, in GPa:
+         *  the mean of |S_ab - S'_ab| over the nine entries of each tensor,
+         *  sum m |dS| / (9 n) over the six entries x <= y with m = 2 for an
+         *  off-diagonal one (the tensor is symmetric), divided by
+         *  kGPaInEvPerA3 (row_weights.h: the data hold eV/A^3).
          */
-        tadah::core::t_type calc_s_mae() const;
+        tadah::core::t_type calc_s_mae_gpa() const;
 
         /** Return Energy/atom Relative Root Mean Square Error for each DBFILE. */
         tadah::core::t_type calc_e_rrmse() const;
@@ -103,11 +105,15 @@ class Analytics {
         /** Return Force Root Mean Square Error for each DBFILE. */
         tadah::core::t_type calc_f_rmse() const;
 
-        /** Return Stress Root Mean Square Error for each DBFILE.
-         *
-         *  Calculated using 6 independent components.
+        /** Return the stress Root Mean Square Error for each DBFILE, in GPa:
+         *  the root mean square of the nine entries of each residual
+         *  tensor, sqrt(sum m dS^2 / (9 n)) over the six entries x <= y
+         *  with m = 2 for an off-diagonal one, divided by kGPaInEvPerA3: the
+         *  Frobenius norm of the residual tensor that a fit minimises
+         *  (row_weights.h), the same for a rotated cell. PC_SRMSE_GPA of
+         *  tadah hpo and tadah predict -A report it.
          */
-        tadah::core::t_type calc_s_rmse() const;
+        tadah::core::t_type calc_s_rmse_gpa() const;
 
         /** Return Energy/atom coefficient of determination for each DBFILE. */
         tadah::core::t_type calc_e_r_sq() const;
@@ -115,7 +121,9 @@ class Analytics {
         /** Return Force coefficient of determination for each DBFILE. */
         tadah::core::t_type calc_f_r_sq() const;
 
-        /** Return Stress coefficient of determination for each DBFILE. */
+        /** Return the stress coefficient of determination for each DBFILE,
+         *  over the nine entries of each tensor (an off-diagonal entry of
+         *  the six x <= y twice). */
         tadah::core::t_type calc_s_r_sq() const;
 
 };

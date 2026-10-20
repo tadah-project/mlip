@@ -236,8 +236,9 @@ int PredictEngine::run(mlip::Task &task) {
 
     if (taskContext.get<bool>("STRESS")) {
       std::cout << std::endl;
-      print_metric("Stress MAE", a.calc_s_mae(), 1.0, &measured_s);
-      print_metric("Stress RMSE", a.calc_s_rmse(), 1.0, &measured_s);
+      // the nine entries of each tensor, in GPa
+      print_metric("Stress MAE", a.calc_s_mae_gpa(), 1.0, &measured_s);
+      print_metric("Stress RMSE", a.calc_s_rmse_gpa(), 1.0, &measured_s);
       print_metric("Stress R^2", a.calc_s_r_sq(), 1.0, &measured_s);
     }
 

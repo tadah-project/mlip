@@ -1,5 +1,6 @@
 #include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/analytics/statistics.h>
+#include <tadah/mlip/row_weights.h>  // kGPaInEvPerA3
 
 #include <algorithm>
 #include <limits>
@@ -133,7 +134,7 @@ tadah::core::t_type Analytics::calc_f_mae() const{
     return fmae_vec;
 }
 
-tadah::core::t_type Analytics::calc_s_mae() const {
+tadah::core::t_type Analytics::calc_s_mae_gpa() const {
 
     tadah::core::t_type smae_vec(st.dbidx.size()-1);
     double smae=0;
@@ -143,12 +144,15 @@ tadah::core::t_type Analytics::calc_s_mae() const {
         const bool counts = counts_in_metric(st(i), MetricQuantity::Stress);
         for (size_t x=0; counts && x<3; ++x) {
             for (size_t y=x; y<3; ++y) {
-                smae += std::abs(st(i).stress(x,y) - stp(i).stress(x,y));
-                N++;
+                // the nine entries: an off-diagonal one twice
+                smae += (x == y ? 1.0 : 2.0) *
+                        std::abs(st(i).stress(x,y) - stp(i).stress(x,y));
             }
         }
+        if (counts) N += 9;
         if (i+1==st.dbidx[dbidx+1]) {
-            smae_vec(dbidx)=N ? smae/N : std::numeric_limits<double>::quiet_NaN();  // not measured
+            smae_vec(dbidx)=N ? smae/N/kGPaInEvPerA3
+                              : std::numeric_limits<double>::quiet_NaN();  // not measured
             smae=0;
             N=0;
             dbidx++;
@@ -225,7 +229,7 @@ tadah::core::t_type Analytics::calc_f_rmse() const{
     return frmse_vec;
 }
 
-tadah::core::t_type Analytics::calc_s_rmse() const {
+tadah::core::t_type Analytics::calc_s_rmse_gpa() const {
 
     tadah::core::t_type srmse_vec(st.dbidx.size()-1);
     double srmse=0;
@@ -235,12 +239,15 @@ tadah::core::t_type Analytics::calc_s_rmse() const {
         const bool counts = counts_in_metric(st(i), MetricQuantity::Stress);
         for (size_t x=0; counts && x<3; ++x) {
             for (size_t y=x; y<3; ++y) {
-                srmse += std::pow(st(i).stress(x,y) - stp(i).stress(x,y),2);
-                N++;
+                // the nine entries: an off-diagonal one twice
+                srmse += (x == y ? 1.0 : 2.0) *
+                         std::pow(st(i).stress(x,y) - stp(i).stress(x,y),2);
             }
         }
+        if (counts) N += 9;
         if (i+1==st.dbidx[dbidx+1]) {
-            srmse_vec(dbidx)=N ? std::sqrt(srmse/N) : std::numeric_limits<double>::quiet_NaN();  // not measured
+            srmse_vec(dbidx)=N ? std::sqrt(srmse/N)/kGPaInEvPerA3
+                               : std::numeric_limits<double>::quiet_NaN();  // not measured
             srmse=0;
             N=0;
             dbidx++;
@@ -319,16 +326,19 @@ tadah::core::t_type Analytics::calc_s_r_sq() const {
         size_t n_structs = 0;
         for (size_t i = begin; i < end; ++i)
             if (counts_in_metric(st(i), MetricQuantity::Stress)) ++n_structs;
-        tadah::core::t_type obs(6 * n_structs);
-        tadah::core::t_type pred(6 * n_structs);
+        // the nine entries of each tensor: of the six x <= y, an
+        // off-diagonal one twice
+        tadah::core::t_type obs(9 * n_structs);
+        tadah::core::t_type pred(9 * n_structs);
 
         size_t idx = 0;
         for (size_t i = begin; i < end; ++i) {
             if (!counts_in_metric(st(i), MetricQuantity::Stress)) continue;
             for (size_t x = 0; x < 3; ++x) {
-                for (size_t y = x; y < 3; ++y) {
-                    obs(idx) = st(i).stress(x, y);
-                    pred(idx) = stp(i).stress(x, y);
+                for (size_t y = 0; y < 3; ++y) {
+                    const size_t a = std::min(x, y), b = std::max(x, y);
+                    obs(idx) = st(i).stress(a, b);
+                    pred(idx) = stp(i).stress(a, b);
                     idx++;
                 }
             }
