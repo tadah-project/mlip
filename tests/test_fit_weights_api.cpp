@@ -30,7 +30,10 @@
 #include <tadah/core/context.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
+#include <tadah/mlip/task.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
@@ -41,8 +44,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <utility>
@@ -509,6 +514,70 @@ TEST_CASE("A fit with BIAS true refuses a negative weight as a weight",
       }
     }
   }
+}
+
+/* Pins: the check that the energies determine the intercepts (BIAS true),
+ * which tadah train and tadah hpo make before any fit, refuses an invalid
+ * weight as a weight: require_intercepts_determined with EWEIGHT -1, and
+ * TrainEngine::run (tadah train) of a dataset file with BIAS true and
+ * EWEIGHT -1, name EWEIGHT -1 and not the intercepts. With EWEIGHT 1 the
+ * check passes (a pin).
+ * Before the fix: both were refused as 'BIAS true: the training data cannot
+ * determine the per-species energy constants (the intercepts) ...'. */
+TEST_CASE("The intercept check of tadah train refuses a negative weight as "
+          "a weight",
+          "[fit_weights][refusal]") {
+  PeriodicTable::initialize();
+  Context c = make_context({"M_BLR", "BF_Linear"});
+  set_key(c, "BIAS", "true");
+  set_key(c, "FORCE", "false");
+  set_key(c, "STRESS", "false");
+  MLIPWorkspaceManager ws;
+  Trainer tr(c, ws);
+  CHECK(refusal([&] {
+          tadah::mlip::require_intercepts_determined(training_db(), tr.context,
+                                                     *tr.fb);
+        }) == "no exception");
+  Context cn = tr.context;
+  set_key(cn, "EWEIGHT", "-1");
+  CHECK_THAT(refusal([&] {
+               tadah::mlip::require_intercepts_determined(training_db(), cn,
+                                                          *tr.fb);
+             }),
+             Contains("EWEIGHT -1") && Contains(">= 0") &&
+                 !Contains("intercept"));
+
+  const fs::path dir = fs::temp_directory_path() /
+                       ("tadah_fit_weights_train_" + std::to_string(::getpid()));
+  fs::create_directories(dir);
+  const fs::path db_file = dir / "train.tadah";
+  {
+    std::ofstream os(db_file);
+    const StructureDB db = training_db();
+    for (std::size_t s = 0; s < db.size(); ++s) db(s).dump_to_file(os);
+  }
+  const fs::path old_cwd = fs::current_path();
+  fs::current_path(dir);
+  Context tc = c;
+  set_key(tc, "EWEIGHT", "-1");
+  set_key(tc, "DBFILE", db_file.string());
+  std::string what = "no exception";
+  {
+    std::ostringstream captured;
+    std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+    try {
+      tadah::mlip::Task task("train", tc);
+      tadah::mlip::engines::TrainEngine().run(task);
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    std::cout.rdbuf(old_buf);
+  }
+  fs::current_path(old_cwd);
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  CHECK_THAT(what, Contains("EWEIGHT -1") && Contains(">= 0") &&
+                       !Contains("intercept"));
 }
 
 /* Pins: a dataset file whose second structure has the weights line
