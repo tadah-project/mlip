@@ -471,45 +471,47 @@ EffectiveParameters effective_parameters(
   std::vector<double> S, VT;
   svd_right(buf.data(), N, N, LDA, S, VT);
   // A has min(total, n) singular values; R's others are those of its zero
-  // rows.
+  // rows. The directions the solve keeps: OALGO 1 (DGELSD) those above
+  // rcond times the largest (machine precision for rcond < 0), OALGO 3
+  // those above rcond times the largest (every one for rcond <= 0), OALGO 2
+  // (QR) and 4 (Cholesky) every one: they solve with every direction.
   const std::size_t k = std::min(total, n);
   double thresh = 0.0;
-  {
-    const double smax = S[0];
-    if (oalgo == 1)
-      thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
-               smax;
-    else if (oalgo == 3)
-      thresh = rcond > 0.0 ? rcond * smax : 0.0;
-    else
-      thresh = std::sqrt(static_cast<double>(n) *
-                         std::numeric_limits<double>::epsilon()) *
-               smax;
-  }
+  if (oalgo == 1)
+    thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
+             S[0];
+  else if (oalgo == 3 && rcond > 0.0)
+    thresh = rcond * S[0];
   std::vector<std::size_t> kept;
-  std::vector<double> denom;
-  for (std::size_t i = 0; i < k; ++i) {
-    if (!(S[i] > thresh)) continue;
-    kept.push_back(i);
-    denom.push_back(uniform ? S[i] * S[i] + lambda : S[i] * S[i]);
-    // The prior's part of the direction, lambda |P v_i|^2 / denom: what
-    // the rest of the rank is, without the rounding of the difference.
-    if (lambda > 0.0) {
-      double pv = 0.0;
-      for (std::size_t j = 0; j < n; ++j)
-        if (pen[j]) pv += VT[i + n * j] * VT[i + n * j];
-      g.prior += lambda * pv / denom.back();
-    }
-  }
-  g.retained = kept.size();
+  for (std::size_t i = 0; i < k; ++i)
+    if (S[i] > thresh) kept.push_back(i);
   if (kept.empty()) return g;
 
-  // Each row's part of the kept directions, |a_k . v_i|^2 / denom_i, by
-  // blocks of rows: U = A_block V_kept.
-  const std::size_t r = kept.size();
+  // The pairs of a dataset and a type that have rows, numbered.
+  constexpr std::size_t kNone = static_cast<std::size_t>(-1);
+  std::vector<std::size_t> pair_of(3 * n_datasets, kNone);
+  std::vector<std::size_t> pair_dataset, pair_type;
+  for (std::size_t q = 0; q < m; ++q) {
+    const std::size_t i = w.rows[q];
+    const std::size_t p = 3 * w.row_dataset[i] +
+                          static_cast<std::size_t>(w.labels(i));
+    if (pair_of[p] != kNone) continue;
+    pair_of[p] = pair_dataset.size();
+    pair_dataset.push_back(w.row_dataset[i]);
+    pair_type.push_back(static_cast<std::size_t>(w.labels(i)));
+  }
+
+  // Each kept direction v_i's part of the rows of each pair, |A_qd v_i|^2,
+  // by blocks of rows (U = A_block V_kept), and its part of the prior,
+  // lambda |P v_i|^2 (P = I under OALGO 3). Their sum is v_i^T H v_i, the
+  // eigenvalue s_i^2 (s_i^2 + lambda under OALGO 3); each part is divided
+  // by that sum, so a direction's parts sum to 1 by construction, also for
+  // a direction of the rounding level, whose s_i from R is not |A v_i|.
+  const std::size_t r = kept.size(), pairs = pair_dataset.size();
   std::vector<double> V(n * r);  // column-major, n x r
   for (std::size_t c = 0; c < r; ++c)
     for (std::size_t j = 0; j < n; ++j) V[j + n * c] = VT[kept[c] + n * j];
+  std::vector<double> part(pairs * r, 0.0);  // [pair * r + direction]
   const std::size_t rows_block = std::min(m, std::max(n, kBlockRows));
   std::vector<double> U(rows_block * r);
   for (std::size_t k0 = 0; k0 < m; k0 += rows_block) {
@@ -522,12 +524,30 @@ EffectiveParameters effective_parameters(
                  &zero, U.data(), &LDU);
     for (std::size_t q = 0; q < nb; ++q) {
       const std::size_t i = w.rows[k0 + q];
-      const std::size_t t = static_cast<std::size_t>(w.labels(i));
-      double c = 0.0;
-      for (std::size_t d = 0; d < r; ++d)
-        c += U[q + nb * d] * U[q + nb * d] / denom[d];
-      g.by_type[t] += c;
-      g.by_dataset[w.row_dataset[i]][t] += c;
+      double *to = part.data() +
+                   r * pair_of[3 * w.row_dataset[i] +
+                               static_cast<std::size_t>(w.labels(i))];
+      for (std::size_t d = 0; d < r; ++d) to[d] += U[q + nb * d] * U[q + nb * d];
+    }
+  }
+  for (std::size_t d = 0; d < r; ++d) {
+    double data = 0.0;
+    for (std::size_t p = 0; p < pairs; ++p) data += part[p * r + d];
+    double prior = 0.0;
+    if (lambda > 0.0) {
+      for (std::size_t j = 0; j < n; ++j)
+        if (pen[j]) prior += V[j + n * d] * V[j + n * d];
+      prior *= lambda;
+    }
+    const double eigenvalue = data + prior;
+    // v^T H v = 0: a direction H does not reach (no row and no penalty).
+    if (!(eigenvalue > 0.0)) continue;
+    ++g.retained;
+    g.prior += prior / eigenvalue;
+    for (std::size_t p = 0; p < pairs; ++p) {
+      const double c = part[p * r + d] / eigenvalue;
+      g.by_type[pair_type[p]] += c;
+      g.by_dataset[pair_dataset[p]][pair_type[p]] += c;
     }
   }
   g.total = g.by_type[0] + g.by_type[1] + g.by_type[2];

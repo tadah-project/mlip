@@ -197,9 +197,8 @@ struct EffectiveParameters {
   double total = 0.0;
   /** The prior's effective parameters, lambda tr(H^+ I_pen) over the
    *  retained directions (each direction's lambda |P v_i|^2 over its
-   *  eigenvalue of H): the retained directions less @c total, computed per
-   *  direction rather than as that difference, whose rounding could make
-   *  it negative; 0 at lambda 0. */
+   *  eigenvalue of H), so that @c total and @c prior sum to @c retained;
+   *  0 at lambda 0. */
   double prior = 0.0;
   /** The directions the solve keeps (the rank of H on them). */
   std::size_t retained = 0;
@@ -214,13 +213,21 @@ struct EffectiveParameters {
  *  over the directions the solve of OALGO @p oalgo keeps:
  *   - OALGO 3 (SVD of Phi, a uniform ridge): the right singular vectors of
  *     Phi whose singular value is above @p rcond times the largest (all of
- *     them when rcond <= 0); gamma_q = sum_kept |Phi_q v_i|^2 /
- *     (s_i^2 + lambda);
+ *     them when rcond <= 0);
  *   - OALGO 1 (DGELSD of Phi and the ridge rows): the eigenvectors of H
  *     whose sqrt(eigenvalue) is above @p rcond times the largest (machine
  *     precision for rcond < 0);
- *   - OALGO 2 and 4: every eigenvector of H with a positive eigenvalue
- *     (above n eps times the largest).
+ *   - OALGO 2 (QR) and 4 (Cholesky): every eigenvector of H with a
+ *     positive eigenvalue. These solves refuse a design matrix without
+ *     full column rank and solve with every direction, however small its
+ *     eigenvalue (with lambda > 0, at least lambda on the penalised
+ *     columns).
+ *  A kept direction v_i contributes |Phi_q v_i|^2 / e_i to gamma_q and
+ *  lambda |I_pen v_i|^2 / e_i to the prior's, e_i = |Phi v_i|^2 + lambda
+ *  |I_pen v_i|^2 = v_i^T H v_i, its eigenvalue (s_i^2 + lambda under OALGO
+ *  3): its parts sum to 1, and those of every kept direction to the rank,
+ *  also for a direction at the rounding level of a design matrix whose
+ *  columns are dependent, whose singular value alone gives no such part.
  *  @throws std::logic_error for OALGO 3 with lambda != 0 and unpenalised
  *  columns (the fit refuses it), and for rows, labels and datasets of
  *  other sizes. */
@@ -247,9 +254,11 @@ struct WeightedRows {
  *  same numbers, without a copy of them: the rows are read in blocks of
  *  at most max(p, 1024) rows, whose QR factorisations stream into the p x p
  *  triangle R of the rows (and of the ridge rows), whose SVD gives the
- *  directions; a second pass of blocks gives each row's part of them. Its
- *  memory is of the order of p^2 + 1024 p for p columns, not of the n
- *  rows. @p unpenalised indexes @c w.cols.
+ *  directions; a second pass of blocks gives the part of each direction of
+ *  the rows of each pair of a dataset and a type. Its memory is of the
+ *  order of (p + 1024 + G) p for p columns and the G <= 3 D pairs with rows
+ *  of the D datasets, not of the n rows. @p unpenalised indexes
+ *  @c w.cols.
  *  @throws std::logic_error as effective_parameters(), and for a row,
  *  column, type or dataset out of range.
  *  @throws std::runtime_error when the QR factorisation or the SVD fails. */

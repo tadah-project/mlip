@@ -415,13 +415,14 @@ std::vector<std::string> fit_balance_lines(const FitBalance &b) {
 std::vector<std::string> fit_balance_legend() {
   return {
       "  quantity  energy per atom, force component or stress tensor",
-      "  dataset   all: every dataset; k: the k-th DBFILE entry",
+      "  dataset   all: every dataset's entries together; k: the k-th DBFILE entry",
       "  n         observations: entries of priority > 0 not zero by symmetry",
       "  RMSE      root mean square residual of every entry of priority > 0",
       "  unit      of RMSE: meV/atom, eV/Å, GPa (nine entries per stress tensor)",
       "  r/sigma   root mean square of residual / error scale, the same entries",
       "  share     part of the minimised sum; prior: the LAMBDA term",
       "  gamma     effective parameters",
+      "  -         RMSE and r/sigma of a row without an entry of priority > 0",
       "  Over the rows 'all' and the prior's: share sums to 1, gamma to the rank.",
   };
 }
