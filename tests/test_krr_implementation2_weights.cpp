@@ -15,6 +15,11 @@
 // the fit of precomputed descriptors (train(StDescriptorsDB, StructureDB)),
 // which runs implementation 1, refuses MODEL M_KRR <kernel> 2.
 //
+// The refusals are checked on a configuration and its data without a fit
+// (refuse_what_krr_implementation2_ignores; tadah hpo checks them when a
+// run starts), and an implementation other than 1 and 2 is refused naming
+// both (require_krr_implementation, which M_KRR::train calls).
+//
 // Data: three Ta cells of 3, 4 and 3 atoms, D2_Blip with 3 functions,
 // Kern_RBF (MPARAMS 1.5), SBASIS 3, LAMBDA 1e-6.
 
@@ -23,10 +28,12 @@
 #include <tadah/core/context.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/data_weights.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
+#include <tadah/mlip/weight_provisioning.h>
 
 #include <array>
 #include <cmath>
@@ -231,4 +238,120 @@ TEST_CASE("The fit of precomputed descriptors refuses M_KRR implementation 2",
                  Contains("train(StructureDB, DescriptorsCalc)"));
   set_key(c, "MODEL", "M_KRR Kern_Linear 1");
   CHECK(fit_precomputed(c) == "no exception");
+}
+
+/* The refusals of implementation 2 are checked on the configuration and
+ * the data without a fit: refuse_what_krr_implementation2_ignores throws
+ * the message of the fit for each setting and for an eweight other than 1,
+ * and nothing when the fit fits.
+ * Before the fix: the function did not exist (the test does not compile);
+ * only M_KRR::train2 made the checks. */
+TEST_CASE("The refusals of M_KRR implementation 2 are checked without a fit",
+          "[krr][train2][refusal]") {
+  PeriodicTable::initialize();
+  auto checked = [](const Context &c, const StructureDB &db) {
+    try {
+      tadah::mlip::refuse_what_krr_implementation2_ignores(c, db);
+    } catch (const std::exception &e) {
+      return std::string(e.what());
+    }
+    return std::string("no exception");
+  };
+  const std::vector<std::pair<std::string, std::string>> keys = {
+      {"FORCE", "true"},        {"STRESS", "true"},     {"WDBFILE", "2"},
+      {"EWEIGHT", "2"},         {"FWEIGHT", "0.5"},     {"SWEIGHT", "2"},
+      {"WDBFILE_AUTO", "0.5"},  {"EWEIGHT_TEMP", "300"}};
+  for (const auto &kv : keys) {
+    DYNAMIC_SECTION(kv.first << " " << kv.second) {
+      Context c = make_context();
+      set_key(c, kv.first, kv.second);
+      const std::string msg = checked(c, training_db());
+      CHECK(msg != "no exception");
+      CHECK(msg == fit(c, training_db()));
+    }
+  }
+  SECTION("eweight 0") {
+    StructureDB db = training_db();
+    db(2).eweight = 0.0;
+    const std::string msg = checked(make_context(), db);
+    CHECK_THAT(msg, Contains("eweight 0") && Contains("structure 3 of 3"));
+    CHECK(msg == fit(make_context(), db));
+  }
+  SECTION("every weight 1 (a pin)") {
+    CHECK(checked(make_context(), training_db()) == "no exception");
+  }
+}
+
+/* An M_KRR implementation other than 1 and 2 (the third value of MODEL) is
+ * refused by the fit, naming the MODEL line and both implementations;
+ * require_krr_implementation makes the same check without a fit, and
+ * accepts implementations 1 and 2, a MODEL without the third value and
+ * another model.
+ * Before the fix: the fit said 'This KRR implementation does exist: 3',
+ * which says the opposite and names neither the MODEL line nor the
+ * implementations; require_krr_implementation did not exist. */
+TEST_CASE("An M_KRR implementation other than 1 and 2 is refused, naming "
+          "both",
+          "[krr][refusal]") {
+  PeriodicTable::initialize();
+  for (const char *impl : {"3", "0"}) {
+    DYNAMIC_SECTION("implementation " << impl) {
+      Context c = make_context();
+      set_key(c, "MODEL", std::string("M_KRR Kern_RBF ") + impl);
+      const std::string msg = fit(c, training_db());
+      CHECK_THAT(msg, Contains(std::string("MODEL M_KRR Kern_RBF ") + impl) &&
+                          Contains("implementation 1") &&
+                          Contains("implementation 2") &&
+                          !Contains("does exist"));
+      std::string checked = "no exception";
+      try {
+        tadah::mlip::require_krr_implementation(c);
+      } catch (const std::exception &e) {
+        checked = e.what();
+      }
+      CHECK(checked == msg);
+    }
+  }
+  for (const char *model :
+       {"M_KRR Kern_RBF 1", "M_KRR Kern_RBF 2", "M_KRR Kern_RBF",
+        "M_BLR BF_Linear"}) {
+    DYNAMIC_SECTION(model << " (a pin)") {
+      Context c = make_context();
+      set_key(c, "MODEL", model);
+      CHECK_NOTHROW(tadah::mlip::require_krr_implementation(c));
+    }
+  }
+}
+
+/* The LAMBDA rules of the fit of a configuration are checked without a
+ * fit: require_fit_lambda throws what the fit of M_KRR implementation 2
+ * (M_KRR_Train::train2), or of M_KRR implementation 1 and M_BLR
+ * (LinearRegressor::train), throws for LAMBDA -1, -2 and 0 1e-12 (with
+ * OALGO 1), and nothing for LAMBDA 1e-6.
+ * Before the fix: the function did not exist (the test does not
+ * compile). */
+TEST_CASE("The LAMBDA rules of a fit are checked without a fit",
+          "[krr][lambda][refusal]") {
+  PeriodicTable::initialize();
+  auto checked = [](const Context &c) {
+    try {
+      tadah::mlip::require_fit_lambda(c);
+    } catch (const std::exception &e) {
+      return std::string(e.what());
+    }
+    return std::string("no exception");
+  };
+  for (const char *model :
+       {"M_KRR Kern_RBF 2", "M_KRR Kern_RBF 1", "M_BLR BF_Linear"}) {
+    for (const char *lambda : {"-1", "-2", "0 1e-12", "1e-6"}) {
+      DYNAMIC_SECTION(model << ", LAMBDA " << lambda) {
+        Context c = make_context();
+        set_key(c, "MODEL", model);
+        set_key(c, "LAMBDA", lambda);
+        const std::string fitted = fit(c, training_db());
+        CHECK(checked(c) == fitted);
+        CHECK((fitted == "no exception") == (std::string(lambda) == "1e-6"));
+      }
+    }
+  }
 }
