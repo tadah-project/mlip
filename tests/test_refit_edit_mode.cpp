@@ -6,6 +6,7 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
+#include <tadah/core/key_notice.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/key_provenance.h>
@@ -1061,51 +1062,67 @@ TEST_CASE_METHOD(PTFixture,
   }
 }
 
-/* Pins: `tadah refit --edit` writes no weight covariance of its input: the
- * edited weights are not those any fit computed a covariance for, so the
- * edited potential (an --add of a phi basis function) has none of SIGMA,
- * WCOV and WNOISE, whichever the input carries (a SIGMA line, as Tadah!
- * 1.0.0 to 1.5.0 and the 1.6.0 development builds wrote it; WCOV and
- * WNOISE, as an OALGO 3 fit writes them, for its 6 weights).
- * Before the fix: the input's SIGMA was copied into the edited potential
- * beside the edited weights; WCOV and WNOISE were not keys (Context::add
- * threw "Key not allowed: WCOV"). */
+/* Pins: `tadah refit --edit` writes no SIGMA of its input (a deprecated
+ * key: the matrix Tadah! 1.0.0 to 1.5.0 wrote for an OALGO 3 fit, here
+ * added to the input's context in code, 6 + 36 values), and keeps the WCOV
+ * and WNOISE lines of an input of a development build of Tadah! 1.6.0
+ * (retired keys) as they are, after the key lines, as it keeps every
+ * retired line: a fit of the edited potential refuses them as it refuses
+ * the input's. (An --add of a phi basis function.)
+ * Before the fix (uncertainty output not part of Tadah! 1.6.0): the input's
+ * WCOV and WNOISE were its weight covariance, which the edit removed: the
+ * edited potential had neither line. Before WCOV and WNOISE: the input's
+ * SIGMA was copied into the edited potential beside the edited weights. */
 TEST_CASE_METHOD(PTFixture,
-                 "refit --edit writes no weight covariance of its input",
-                 "[refit][edit][weight_covariance]") {
+                 "refit --edit writes no SIGMA of its input and keeps its "
+                 "WCOV and WNOISE lines as retired lines",
+                 "[refit][edit][uncertainty]") {
+  auto key_lines_of = [](const std::string &text, const std::string &key) {
+    std::vector<std::string> out;
+    std::istringstream lines(text);
+    for (std::string line; std::getline(lines, line);) {
+      std::istringstream ls(line);
+      std::string k;
+      if ((ls >> k) && k == key) out.push_back(line);
+    }
+    return out;
+  };
   for (const char *which : {"SIGMA", "WCOV and WNOISE"}) {
     DYNAMIC_SECTION(which) {
       ScopedTempDir tmp;
       Context in = make_knot_pot();
+      const std::string wcov = "WCOV     2     1 0 0 1";
+      const std::string wnoise = "WNOISE     E 0.01";
       if (std::string(which) == "SIGMA") {
         in.add("SIGMA", 6);
         for (int k = 0; k < 36; ++k) in.add("SIGMA", k % 7 == 0 ? 1.0 : 0.0);
+        TrainEngine::dumpPotFile("in.tadah", in);
       } else {
-        in.add("WCOV", 6);
-        for (int k = 0; k < 36; ++k) in.add("WCOV", k % 7 == 0 ? 1.0 : 0.0);
-        in.add("WNOISE", "E 0.01");
+        TrainEngine::dumpPotFile("in.tadah", in);
+        std::ofstream("in.tadah", std::ios::app) << wcov << "\n"
+                                                << wnoise << "\n";
       }
-      TrainEngine::dumpPotFile("in.tadah", in);
       Context c;
       c.add("EDIT", std::string("in.tadah"));
       c.add("FUNC", std::string("phi"));
       c.add("ADD", 3.6);
       Task task("refit", c);
-      REQUIRE(RefitEngine().run(task) == EXIT_SUCCESS);
+      {
+        tadah::core::IgnoredKeyNoticeCapture quiet;
+        REQUIRE(RefitEngine().run(task) == EXIT_SUCCESS);
+      }
       std::ifstream f("pot_edited.tadah");
       const std::string text((std::istreambuf_iterator<char>(f)),
                              std::istreambuf_iterator<char>());
       INFO(text);
-      for (const char *key : {"SIGMA", "WCOV", "WNOISE"}) {
-        INFO(key);
-        std::istringstream lines(text);
-        bool found = false;
-        for (std::string line; std::getline(lines, line);) {
-          std::istringstream ls(line);
-          std::string k;
-          if ((ls >> k) && k == key) found = true;
-        }
-        CHECK_FALSE(found);
+      CHECK(key_lines_of(text, "SIGMA").empty());
+      if (std::string(which) == "SIGMA") {
+        CHECK(key_lines_of(text, "WCOV").empty());
+        CHECK(key_lines_of(text, "WNOISE").empty());
+      } else {
+        CHECK(key_lines_of(text, "WCOV") == std::vector<std::string>{wcov});
+        CHECK(key_lines_of(text, "WNOISE") ==
+              std::vector<std::string>{wnoise});
       }
     }
   }
