@@ -62,14 +62,18 @@ public:
  *     | stress yz
  *     | stress zz
  *
- * We need to know: \ref STRESS, \ref FORCE
+ * It reads \ref FORCE and \ref STRESS (which rows there are) and, for a
+ * fit (apply_weights), \ref EWEIGHT, \ref FWEIGHT and \ref SWEIGHT.
  *
- * Scalling factors \ref FWEIGHT, \ref  SWEIGHT
- *
- * Default scalling:
- *  - Forces are scaled by 1/N_i/3 where N_i is a number of atoms in the i-th structure.
- *  - Stresses are scaled by 1/6.
- *  - Energies are scaled by 1/N_i
+ * Row factors (compute_wfactors): a fit multiplies each row and its target
+ * by the square root of the product of the structure's weight and the
+ * global weight: sqrt(eweight x EWEIGHT) for the energy row (the total
+ * energy of the structure, in eV), sqrt(fweight x FWEIGHT) for each of its
+ * 3N force rows and sqrt(sweight x SWEIGHT) for each of its 6 stress rows
+ * (xx, xy, xz, yy, yz, zz). No factor depends on the number of atoms: the
+ * least-squares sum runs over the squared residuals of the total energies,
+ * of the force components and of the six stress entries, each times its
+ * weights. A row of weight 0 is a zero row: no observation.
  *
  * @tparam F tadah::models::Function_Base child -> tadah::models::BF_Base or tadah::models::Kern_Base
  *
