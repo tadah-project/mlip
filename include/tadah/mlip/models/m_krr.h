@@ -252,6 +252,7 @@ public:
     require_valid_weights(stdb, context);
     refuse_what_train2_ignores(stdb);
     fit_rows_ = false;  // implementation 2 fits no design matrix
+    fit_by_train2_ = false;
 
     // NEW (BASIC) IMPLEMENTATION OF KRR //
     std::string force=context.template get<std::string>("FORCE");
@@ -280,6 +281,7 @@ public:
     // (ENORM ATOM: implementation 2 refuses SQRT).
     tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T,
                                           ErrorScales::of(context).esigma);
+    fit_by_train2_ = true;
     // With NORM the basis vectors are normalised descriptors: Kern_Linear's
     // weights go to the raw descriptors, as implementation 1's do
     // (train(desmat)), since its prediction does not normalise.
@@ -423,6 +425,26 @@ tadah::core::Context get_param_file() {
     }
   }
 
+  /** The balance table of the last fit (fit_balance.h), from the rows of
+   *  its design matrix and the coefficients it solved for; none for a fit
+   *  of implementation 2, which solves a kernel matrix of the mean
+   *  descriptors of structures it draws, not the rows of the observations
+   *  of the fit. */
+  FitBalance fit_balance() const override {
+    if (fit_by_train2_)
+      return no_fit_balance(
+          "MODEL M_KRR " + kernel.get_label() + " 2 solves a kernel matrix "
+          "of the mean descriptors of the structures it draws, not the "
+          "observations of a fit");
+    if (!fit_rows_) return M_Tadah_Base::fit_balance();
+    try {
+      return desmat.balance(fit_weights_, kernel.intercept_columns(context));
+    } catch (const std::runtime_error &e) {
+      return no_fit_balance(std::string("it could not be computed: ") +
+                            e.what());
+    }
+  }
+
 private:
   std::string label="M_KRR";
   Basis<K> basis;
@@ -433,6 +455,8 @@ private:
   tadah::core::t_type fit_weights_;
   /** Whether this object fitted a design matrix (predict(StructureDB&)). */
   bool fit_rows_ = false;
+  /** Whether the last fit was one of implementation 2 (fit_balance()). */
+  bool fit_by_train2_ = false;
 
   /** The noise variance of each row type of the last fit (WNOISE). */
   PerRowType noise_by_type;
@@ -444,6 +468,7 @@ private:
     tadah::core::t_type T = desmat.getT();
     noise_by_type = PerRowType();
     fit_rows_ = false;
+    fit_by_train2_ = false;
     tadah::models::M_KRR_Train<K>::train(Phi, T, desmat.n_observations());
     fit_weights_ = weights;
     fit_rows_ = desmat.hasCopy();

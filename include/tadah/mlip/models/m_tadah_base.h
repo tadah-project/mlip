@@ -7,6 +7,7 @@
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/normaliser.h>
 #include <tadah/mlip/descriptors_calc_base.h>
+#include <tadah/mlip/fit_balance.h>
 #include <tadah/core/core_types.h>
 #include <tadah/models/m_core.h>
 #include <tadah/models/m_predict.h>
@@ -175,6 +176,20 @@ public:
                                           tadah::core::aed_type &value_error)=0;
 
   virtual StructureDB predict(StructureDB &stdb)=0;
+
+  /** \brief The balance table of the model's last fit (fit_balance.h): how
+   *  its minimised sum and its effective parameters are shared among the
+   *  energies, forces and stresses of each dataset. One O(n p^2) pass over
+   *  the n rows and p coefficients of the fit, from the design matrix the
+   *  fit keeps: call it right after the fit, before the model fits again.
+   *  A model without a fit of its own (built from a potential's WEIGHTS),
+   *  and a fit without a design matrix of its observations, have none
+   *  (FitBalance::none says why), as has a fit whose table cannot be
+   *  computed (its SVD does not converge). */
+  virtual FitBalance fit_balance() const {
+    return no_fit_balance("the model has no fit of its own: its "
+                          "coefficients are a potential's WEIGHTS");
+  }
 
 };
 //template<> inline Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::Map Registry<M_Tadah_Base,DM_Function_Base&,tadah::core::Context&>::registry{};

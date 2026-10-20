@@ -402,6 +402,10 @@ EffectiveParameters effective_parameters(
                          std::numeric_limits<double>::epsilon()) *
                smax;
   }
+  // The penalised columns: every one under a uniform ridge.
+  std::vector<char> pen(n, 1);
+  if (!uniform)
+    for (std::size_t j : unpenalised) pen[j] = 0;
   std::vector<double> u(m);
   for (std::size_t i = 0; i < k; ++i) {
     if (!(S[i] > thresh)) continue;
@@ -418,9 +422,16 @@ EffectiveParameters effective_parameters(
       g.by_type[t] += c;
       g.by_dataset[row_dataset[r]][t] += c;
     }
+    // The prior's part of the direction, lambda |P v_i|^2 / denom: what
+    // the rest of the rank is, without the rounding of the difference.
+    if (lambda > 0.0) {
+      double pv = 0.0;
+      for (std::size_t j = 0; j < n; ++j)
+        if (pen[j]) pv += VT[i + k * j] * VT[i + k * j];
+      g.prior += lambda * pv / denom;
+    }
   }
   g.total = g.by_type[0] + g.by_type[1] + g.by_type[2];
-  g.prior = static_cast<double>(g.retained) - g.total;
   return g;
 }
 

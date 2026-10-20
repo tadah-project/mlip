@@ -264,6 +264,18 @@ public:
     }
   }
 
+  /** The balance table of the last fit (fit_balance.h), from the rows of
+   *  its design matrix and the coefficients it solved for. */
+  FitBalance fit_balance() const override {
+    if (!fit_rows_) return M_Tadah_Base::fit_balance();
+    try {
+      return desmat.balance(fit_weights_, bf.intercept_columns(context));
+    } catch (const std::runtime_error &e) {
+      return no_fit_balance(std::string("it could not be computed: ") +
+                            e.what());
+    }
+  }
+
 private:
   std::string label="M_BLR";
   DesignMatrix<BF> desmat;
