@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <tadah/mlip/data_weights.h>
+#include <tadah/mlip/fit_balance.h>
 #include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
@@ -172,6 +173,8 @@ public:
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
+    ws->build_stamp = build_stamp_ =
+        tadah::mlip::memory::DesignMatrixWorkspace::next_build_stamp();
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
@@ -217,6 +220,8 @@ public:
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
+    ws->build_stamp = build_stamp_ =
+        tadah::mlip::memory::DesignMatrixWorkspace::next_build_stamp();
     ws->Phi.set_zero();
     ws->T.set_zero();
     ws->Tlabels.set_zero();
@@ -412,6 +417,38 @@ public:
     return out;
   }
 
+  /** The balance table of the fit of the last build (fit_balance.h): its
+   *  rows without the row factors and their reference values (the copy a
+   *  build with wcopy true keeps), their factors, types, datasets and error
+   *  scales, the coefficients @p w the fit solved for (one per column, the
+   *  FIXINDEX ones included) and the solve of the configuration the
+   *  design matrix was built with (FitSolve::of: LAMBDA, or the ALPHA/BETA
+   *  of LAMBDA -1 that the fit wrote into it, OALGO, FIXINDEX), whose ridge
+   *  leaves @p intercepts out (Function_Base::intercept_columns()). One
+   *  O(n p^2) pass over the n rows and p columns, which reads the rows
+   *  where they are, in blocks: no copy of them.
+   *  @throws std::logic_error when the last build kept no rows without the
+   *  factors (a fit builds with wcopy true), when another design matrix has
+   *  been built in the workspace since, and for @p w of another size than
+   *  the columns.
+   *  @throws std::runtime_error when the QR factorisation or the SVD
+   *  fails, std::bad_alloc without the memory of its blocks. */
+  FitBalance balance(const tadah::core::t_type &w,
+                     const std::vector<size_t> &intercepts) const {
+    if (!ws || !w_copy_)
+      throw std::logic_error(
+          "DesignMatrix::balance: the last build kept no rows without the "
+          "row factors (a fit's build with wcopy true)");
+    if (ws->build_stamp != build_stamp_)
+      throw std::logic_error(
+          "DesignMatrix::balance: the workspace holds the rows of another "
+          "design matrix built since the fit");
+    const tadah::core::phi_type &P = ws->Phi_cpy;
+    return fit_balance(P, data_rows_, ws->T_cpy, ws->wfactors, ws->Tlabels,
+                       row_dataset_, n_datasets_, row_scale_, w,
+                       FitSolve::of(context, P.cols(), intercepts), context);
+  }
+
   void resize(size_t rows, size_t cols, bool wcopy=false) {
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
     set_zero();
@@ -427,32 +464,42 @@ public:
   void compute_wfactors(const StructureDB &stdb) {
     n_obs_ = 0;
     row_dataset_.clear();
+    row_scale_.clear();
     std::vector<std::size_t> dbidx = stdb.dbidx;
     if (dbidx.size() < 2) dbidx = {0, stdb.size()};
+    n_datasets_ = dbidx.size() - 1;
     std::vector<std::size_t> dataset(stdb.size(), 0);
     for (std::size_t d = 0; d + 1 < dbidx.size(); ++d)
       for (std::size_t s = dbidx[d]; s < dbidx[d + 1] && s < stdb.size(); ++s)
         dataset[s] = d;
     const RowWeights rw(context, stdb);
     size_t j=0;
-    auto row = [&](double w, std::size_t s) {
+    // Each row's factor and dataset, and its error scale, multiplicity and
+    // metric factor (balance()).
+    auto row = [&](double w, std::size_t s, const FitRowScale &scale) {
       ws->wfactors(j++) = w;
       row_dataset_.push_back(dataset[s]);
+      row_scale_.push_back(scale);
     };
     for (size_t s=0; s<stdb.size(); ++s) {
-      row(rw.energy_factor(s), s);
+      const double natoms = static_cast<double>(stdb(s).natoms());
+      row(rw.energy_factor(s), s,
+          FitRowScale{rw.energy_sigma(s), 1.0, 1000.0 / natoms});
       if (force) {
         const double fscale = rw.force_factor(s);
+        const FitRowScale fs{rw.force_sigma(s), 1.0, 1.0};
         for (size_t a=0; a<stdb(s).natoms(); ++a) {
-          row(fscale, s);
-          row(fscale, s);
-          row(fscale, s);
+          row(fscale, s, fs);
+          row(fscale, s, fs);
+          row(fscale, s, fs);
         }
       }
       if (stress) {
         for (int x=0; x<3; ++x) {
           for (int y=x; y<3; ++y) {
-            row(rw.stress_factor(s, x, y), s);
+            row(rw.stress_factor(s, x, y), s,
+                FitRowScale{rw.stress_sigma(s), x == y ? 1.0 : 2.0,
+                            1.0 / kGPaInEvPerA3});
           }
         }
       }
@@ -471,6 +518,12 @@ private:
   bool stress;
   size_t n_obs_ = 0;
   std::vector<std::size_t> row_dataset_;  // row_datasets()
+  std::size_t n_datasets_ = 1;            // the datasets of the last build
+  // The error scale, multiplicity and metric factor of each row of the
+  // structures of the last build (balance()).
+  std::vector<FitRowScale> row_scale_;
+  // The workspace's build_stamp of the last build (balance()).
+  std::uint64_t build_stamp_ = 0;
 
   /* The observations of the rows just built (before the factors are
    * applied): a row of factor > 0 that is not zero in every column

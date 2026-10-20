@@ -3,6 +3,8 @@
 
 #include <tadah/core/core_types.h>
 
+#include <cstdint>
+
 namespace tadah {
 namespace mlip {
 namespace memory {
@@ -53,6 +55,14 @@ public:
   tadah::core::t_type T, T_cpy; // Target vector and space for its copy
   tadah::core::t_type Tlabels; // 0-Energy, 1-Force, 2-Stress  // TODO should be array of int not double
   tadah::core::t_type wfactors; // Weighting factors for Phi
+
+  /** The stamp of the build whose rows the workspace holds: each
+   *  DesignMatrix::build takes a new one (next_build_stamp()) and keeps it,
+   *  so a design matrix tells its own rows from those of another design
+   *  matrix built in the same workspace since (DesignMatrix::balance). */
+  std::uint64_t build_stamp = 0;
+  /** A stamp no build of the process has had (from 1, increasing). */
+  static std::uint64_t next_build_stamp();
 
 private:
   // Disable copying

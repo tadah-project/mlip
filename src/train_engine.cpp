@@ -7,6 +7,7 @@
 #include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/fit_balance.h>
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/load_transforms.h>
@@ -181,7 +182,19 @@ int TrainEngine::run(tadah::mlip::Task &task) {
 
   tadah::core::Context param_file = tr.model->get_param_file();
   stamp_into_param_file(param_file, report);
-  dumpPotFile(context.get<std::string>("OUTFILE"), param_file, record);
+  // The balance table of the fit (one O(n p^2) pass over its rows, from the
+  // design matrix the fit keeps): the last lines of the potential's
+  // training record, and printed once the potential is written.
+  const FitBalance balance = tr.model->fit_balance();
+  TrainingRecord written = record;
+  add_fit_balance(written, balance);
+  dumpPotFile(context.get<std::string>("OUTFILE"), param_file, written);
+
+  // At VERBOSE 1 and above; the legend of the columns after the first
+  // table of the run.
+  if (core::Logger::instance().getLogLevel() >= core::LogLevel::WARNING)
+    print_fit_balance(std::cout, fit_balance_lines(balance),
+                      balance.computed() && first_fit_balance_legend());
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {

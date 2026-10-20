@@ -17,6 +17,19 @@ endif()
 include(Catch)
 catch_discover_tests(test_mlip)
 
+# The memory of the balance table of a fit: an executable of its own, as
+# it replaces the global operator new to count and refuse allocations.
+add_executable(test_mlip_fit_balance_memory
+    fit_balance_memory/test_fit_balance_memory.cpp)
+target_link_libraries(test_mlip_fit_balance_memory PRIVATE
+    Catch2 tadah.mlip tadah.core tadah.models)
+target_include_directories(test_mlip_fit_balance_memory PRIVATE ../include)
+if(TADAH_ENABLE_OPENMP)
+    target_link_libraries(test_mlip_fit_balance_memory PUBLIC
+        OpenMP::OpenMP_CXX)
+endif()
+catch_discover_tests(test_mlip_fit_balance_memory)
+
 # parallel_for rethrows the lowest failing index's exception; with one
 # thread (the suite's setting) that index is always the first to throw, so
 # a hidden case checks the rule with several threads in an entry of its own.
