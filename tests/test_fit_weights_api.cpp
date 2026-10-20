@@ -242,8 +242,9 @@ TEST_CASE("train of precomputed descriptors applies the weights of the data",
         }
         REQUIRE(ref.has_stored("WNOISE"));
         REQUIRE(pre.has_stored("WNOISE"));
-        CHECK(values(ref, "WNOISE") == values(pre, "WNOISE"));
-        CHECK(values(ref, "WCOV") == values(pre, "WCOV"));
+        // The lines as written (WNOISE holds row-type labels and values).
+        CHECK(ref("WNOISE") == pre("WNOISE"));
+        CHECK(ref("WCOV") == pre("WCOV"));
       }
     }
   }
