@@ -452,14 +452,16 @@ TEST_CASE("TrainEngine::run records the run's DBFILE and run inputs in the "
                        "VERBOSE 0", "NUMERIC 9", "OUTFILE pot.tadah",
                        "AUDIT off", "AUDIT_SAMPLE 64", "HEALTH_LOG full"});
   // After the keys, the balance table of the fit of the two datasets: its
-  // first line, the column header, the energy rows of both datasets and of
-  // each, and the prior's row (fit_balance.h).
-  REQUIRE(r.balance.size() == 6);
+  // first line, the error scale of the energies, the column header, the
+  // energy rows of both datasets and of each, and the prior's row
+  // (fit_balance.h).
+  REQUIRE(r.balance.size() == 7);
   CHECK(r.balance[0].rfind("Fit balance: LAMBDA 0; ", 0) == 0);
-  CHECK(r.balance[2].rfind("  energy    all ", 0) == 0);
-  CHECK(r.balance[3].rfind("  energy    1 ", 0) == 0);
-  CHECK(r.balance[4].rfind("  energy    2 ", 0) == 0);
-  CHECK(r.balance[5].rfind("  prior ", 0) == 0);
+  CHECK(r.balance[1].rfind("  error scales: ESIGMA ", 0) == 0);
+  CHECK(r.balance[3].rfind("  energy    all ", 0) == 0);
+  CHECK(r.balance[4].rfind("  energy    1 ", 0) == 0);
+  CHECK(r.balance[5].rfind("  energy    2 ", 0) == 0);
+  CHECK(r.balance[6].rfind("  prior ", 0) == 0);
   for (const char *key : kRecordKeys) {
     INFO("key " << key);
     CHECK(pot_line("pot.tadah", key).empty());

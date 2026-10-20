@@ -1,26 +1,31 @@
 // test_fit_balance.cpp
 //
 // The balance table of a fit (fit_balance.h): per quantity and per dataset
-// the observations n of the fit, the error scale, the RMSE in the unit of
-// the quantity's metric (meV/atom, eV/Å, GPa over the nine entries of a
-// stress tensor), the root mean square of residual / error scale, the share
+// the observations n of the fit, the RMSE in the unit of the quantity's
+// metric over every entry of priority > 0 (meV/atom, eV/Å, GPa over the
+// nine entries of a stress tensor: those of tadah predict -A), the root
+// mean square of residual / error scale over the same entries, the share
 // of the sum the fit minimises and the effective parameters gamma, with the
-// prior's row (the LAMBDA penalty and the rest of the rank).
+// error scales and the prior's row (the LAMBDA penalty and the rest of the
+// rank); its lines, at most 78 characters wide.
 //
 // The references are independent of the code under test: a solve by hand
 // of a fit whose only coefficients the data determine are the intercepts of
 // two species (2 x 2 algebra in long double), an SVD of the weighted design
 // matrix (LAPACK dgesvd) for the sum of the effective parameters, sum_kept
-// s_i^2 / (s_i^2 + lambda), and the predictions of the trained model for
-// the RMSE of each quantity in its metric's unit.
+// s_i^2 / (s_i^2 + lambda), the predictions of the trained model for the
+// RMSE of each quantity in its metric's unit (Analytics, the metrics of
+// tadah predict -A), and the lines of a table written out by hand.
 
 #include "catch2/catch.hpp"
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/lapack.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/registry.h>
+#include <tadah/mlip/analytics/analytics.h>
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/descriptors_calc.h>
 #include <tadah/mlip/design_matrix/design_matrix.h>
@@ -43,6 +48,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -87,6 +93,30 @@ std::size_t display_width(const std::string &s) {
   for (unsigned char ch : s)
     if ((ch & 0xC0) != 0x80) ++n;
   return n;
+}
+
+/* The widest line of a table: 78 characters, 80 in a training record after
+ * its "# " (a terminal; the documentation's code blocks). */
+constexpr std::size_t kWidth = 78;
+
+/* Fails the test for a line of @p lines wider than kWidth. */
+void check_width(const std::vector<std::string> &lines) {
+  for (const std::string &l : lines) {
+    INFO("'" << l << "'");
+    CHECK(display_width(l) <= kWidth);
+  }
+}
+
+/* The text of the paragraph that begins at lines[@p first]: that line and
+ * the lines after it that continue it (four blanks), joined by a blank. */
+std::string paragraph(const std::vector<std::string> &lines,
+                      std::size_t first) {
+  REQUIRE(first < lines.size());
+  std::string text = lines[first];
+  for (std::size_t k = first + 1;
+       k < lines.size() && lines[k].rfind("    ", 0) == 0; ++k)
+    text += " " + lines[k].substr(lines[k].find_first_not_of(' '));
+  return text;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +317,26 @@ StructureDB ta_db() {
   return db;
 }
 
+/* A cubic bcc cell of two Ta atoms of edge @p a: each atom is at a centre
+ * of symmetry, so the rows of its six force components are zero, and the
+ * cubic symmetry makes the rows of its off-diagonal stress entries zero.
+ * Its reference forces and off-diagonal stresses are not zero (the noise
+ * of a reference calculation), so their residuals are not either. */
+Structure bcc_cell(double a, double energy_shift) {
+  Structure st;
+  st.cell.load(a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+  st.add_atom(Atom(Element("Ta"), 0.0, 0.0, 0.0, 0.02, -0.015, 0.01));
+  st.add_atom(Atom(Element("Ta"), 0.5 * a, 0.5 * a, 0.5 * a, -0.01, 0.025,
+                   -0.02));
+  st.energy = -16.0 + energy_shift;
+  for (int x = 0; x < 3; ++x)
+    for (int y = x; y < 3; ++y) {
+      st.stress(x, y) = x == y ? 0.012 - 0.002 * x : 0.003 + 0.001 * (x + y);
+      st.stress(y, x) = st.stress(x, y);
+    }
+  return st;
+}
+
 /* The singular values of the weighted design matrix of a fit of @p db with
  * @p c (an independent build: DesignMatrix with the row factors, no ridge
  * rows), by LAPACK dgesvd. */
@@ -360,9 +410,10 @@ Fitted fit(const Context &c, const StructureDB &db) {
 
 /* Every row of each quantity and dataset of @p b sums over the datasets to
  * the row of every dataset (n exactly; RMSE and RMS r/sigma by their sums
- * of squares over the observations, which are 1.5 per stress observation
- * for each of its nine entries, as for n; share and gamma), and the shares
- * of the quantities and the prior's sum to 1. */
+ * of squares over the entries of priority > 0, which for cells with no row
+ * zero by symmetry are 1.5 per stress observation, its nine entries over
+ * its six, as for n; share and gamma), and the shares of the quantities
+ * and the prior's sum to 1. */
 void check_sums(const FitBalance &b) {
   double share = b.prior_share;
   for (std::size_t q = 0; q < 3; ++q) {
@@ -567,6 +618,116 @@ TEST_CASE("Fit balance: gamma sums to sum s^2/(s^2 + lambda), the shares to 1",
   }
 }
 
+/* Pins: the RMSE of each quantity runs over every entry of priority > 0,
+ * the entries zero by symmetry included, and so is the metric of tadah
+ * predict -A (Analytics::calc_e_rmse, calc_f_rmse and calc_s_rmse_gpa of
+ * the potential's predictions), per dataset and, over a single dataset of
+ * every structure, for the row of every dataset (1e-8); the RMS of r/sigma
+ * runs over the same entries (ESIGMA 5, FSIGMA 0.2 0.1 with each
+ * structure's own force RMS, SSIGMA 0.3 0.05 with its own stress RMS;
+ * 1e-8). n counts the observations only: a fit of a 3-atom and a 4-atom
+ * irregular cell and of a bcc cell of two atoms, whose six force
+ * components and three off-diagonal stress entries are zero rows, has 21
+ * force and 15 stress observations (9 and 9 in the first dataset, the
+ * 3-atom cell and the bcc cell), for 27 force components and 27 stress
+ * entries. OALGO 1, LAMBDA 1e-3 and OALGO 3, LAMBDA 0.
+ * Before the fix: the RMSE and r/sigma ran over the observations only: the
+ * bcc cell's forces and off-diagonal stresses, whose residuals are their
+ * reference values, were left out, and neither was the metric. */
+TEST_CASE("Fit balance: RMSE and r/sigma over every entry, as the metrics",
+          "[fit_balance]") {
+  PeriodicTable::initialize();
+  StructureDB db;
+  db.add(ta_cell(3, 3.6, -0.021));
+  db.add(bcc_cell(3.3, 0.017));
+  db.add(ta_cell(4, 4.1, 0.008));
+  db.dbidx = {0, 2, 3};
+  struct Case {
+    int oalgo;
+    const char *lambda;
+  };
+  for (const Case k : {Case{1, "1e-3"}, Case{3, "0"}}) {
+    DYNAMIC_SECTION("OALGO " << k.oalgo << ", LAMBDA " << k.lambda) {
+      Context c = ta_context(k.oalgo, k.lambda);
+      set_key(c, "SSIGMA", "0.3 0.05");
+      const Fitted f = fit(c, db);
+      const FitBalance &b = f.balance;
+      INFO(b.none);
+      REQUIRE(b.computed());
+      REQUIRE(b.datasets == 2);
+      CHECK(row_of(b, 0, 0).n == 3);
+      CHECK(row_of(b, 1, 0).n == 21);
+      CHECK(row_of(b, 1, 1).n == 9);
+      CHECK(row_of(b, 1, 2).n == 12);
+      CHECK(row_of(b, 2, 0).n == 15);
+      CHECK(row_of(b, 2, 1).n == 9);
+      CHECK(row_of(b, 2, 2).n == 6);
+
+      LoadedPotential loaded(f.pot);
+      StructureDB d = db;
+      tadah::mlip::NNFinder nnf;
+      nnf.calc(d, loaded.ctx);
+      const StructureDB pred = loaded.model->predict(loaded.ctx, d, loaded.dc);
+      StructureDB one = d;  // every structure in one dataset
+      one.dbidx = {0, d.size()};
+      const tadah::mlip::Analytics per(d, pred), all(one, pred);
+      const tadah::core::t_type e = per.calc_e_rmse(), fr = per.calc_f_rmse(),
+                                sr = per.calc_s_rmse_gpa();
+      const tadah::core::t_type e0 = all.calc_e_rmse(), f0 = all.calc_f_rmse(),
+                                s0 = all.calc_s_rmse_gpa();
+      CHECK(row_of(b, 0, 0).rmse == Approx(1000.0 * e0(0)).epsilon(1e-8));
+      CHECK(row_of(b, 1, 0).rmse == Approx(f0(0)).epsilon(1e-8));
+      CHECK(row_of(b, 2, 0).rmse == Approx(s0(0)).epsilon(1e-8));
+      for (std::size_t ds = 1; ds <= 2; ++ds) {
+        INFO("dataset " << ds);
+        CHECK(row_of(b, 0, ds).rmse == Approx(1000.0 * e(ds - 1)).epsilon(1e-8));
+        CHECK(row_of(b, 1, ds).rmse == Approx(fr(ds - 1)).epsilon(1e-8));
+        CHECK(row_of(b, 2, ds).rmse == Approx(sr(ds - 1)).epsilon(1e-8));
+      }
+
+      // The RMS of residual / error scale over the same entries, by hand:
+      // sigma_s = sqrt(a^2 + (b M_s)^2), M_s the RMS of the structure's own
+      // reference force components (stress entries).
+      const double kG = tadah::mlip::kGPaInEvPerA3;
+      std::array<std::array<double, 3>, 3> z2{}, cnt{};  // [dataset][q]
+      for (std::size_t i = 0; i < d.size(); ++i) {
+        const std::size_t ds = i < 2 ? 1 : 2;
+        const double N = static_cast<double>(d(i).natoms());
+        const double ze = (d(i).energy - pred(i).energy) / N / 5e-3;
+        double fm = 0, sm = 0;
+        for (const Atom &a : d(i).atoms)
+          for (int x = 0; x < 3; ++x) fm += a.force[x] * a.force[x];
+        for (int x = 0; x < 3; ++x)
+          for (int y = 0; y < 3; ++y) sm += d(i).stress(x, y) * d(i).stress(x, y);
+        const double fs = std::sqrt(0.04 + 0.01 * fm / (3.0 * N));
+        const double ss = std::sqrt(std::pow(0.3 * kG, 2) + 0.0025 * sm / 9.0);
+        double fz = 0, sz = 0;
+        for (std::size_t a = 0; a < d(i).natoms(); ++a)
+          for (int x = 0; x < 3; ++x)
+            fz += std::pow((d(i).atoms[a].force[x] - pred(i).atoms[a].force[x]) /
+                               fs, 2);
+        for (int x = 0; x < 3; ++x)
+          for (int y = 0; y < 3; ++y)
+            sz += std::pow((d(i).stress(x, y) - pred(i).stress(x, y)) / ss, 2);
+        for (std::size_t dd : {std::size_t{0}, ds}) {
+          z2[dd][0] += ze * ze;
+          cnt[dd][0] += 1;
+          z2[dd][1] += fz;
+          cnt[dd][1] += 3.0 * N;
+          z2[dd][2] += sz;
+          cnt[dd][2] += 9;
+        }
+      }
+      for (std::size_t dd = 0; dd <= 2; ++dd)
+        for (std::size_t q = 0; q < 3; ++q) {
+          INFO("dataset " << dd << ", quantity " << q);
+          CHECK(row_of(b, q, dd).rms_z ==
+                Approx(std::sqrt(z2[dd][q] / cnt[dd][q])).epsilon(1e-8));
+        }
+    }
+  }
+}
+
 /* Pins: the prior's effective parameters, lambda tr(H^-1), at a LAMBDA
  * far below the squared singular values of the weighted design matrix
  * (1e-7, OALGO 3) equal sum_kept lambda / (s_i^2 + lambda) of an
@@ -622,19 +783,53 @@ TEST_CASE("Fit balance with a pinned coefficient", "[fit_balance]") {
                            Contains("FIXINDEX pins 1") && Contains("rank 2"));
 }
 
+/* Pins: a fit whose FIXINDEX pins every coefficient (FIXINDEX 1 2 3 of the
+ * three, OALGO 1 and 3) solves for none, and its table is none, saying so:
+ * the one line "Fit balance: none (FIXINDEX pins every coefficient: none
+ * was fitted)", the line tadah hpo records for a run whose FIXINDEX pins
+ * every coefficient (it skips the fit).
+ * Before the fix: a table of 0 coefficients, rank 0, with the rows of the
+ * quantities, where tadah hpo records none. */
+TEST_CASE("Fit balance: none when FIXINDEX pins every coefficient",
+          "[fit_balance]") {
+  PeriodicTable::initialize();
+  for (int oalgo : {1, 3}) {
+    DYNAMIC_SECTION("OALGO " << oalgo) {
+      Context c = ta_context(oalgo, "0");
+      c.add("FIXINDEX", "1 2 3");
+      c.add("FIXWEIGHT", "0.5 0.2 0.1");
+      const Fitted f = fit(c, ta_db());
+      CHECK(!f.balance.computed());
+      CHECK(f.balance.none ==
+            "FIXINDEX pins every coefficient: none was fitted");
+      CHECK(tadah::mlip::fit_balance_lines(f.balance) ==
+            std::vector<std::string>{"Fit balance: none (FIXINDEX pins every "
+                                     "coefficient: none was fitted)"});
+    }
+  }
+}
+
 /* Pins: the table survives the potential: written into a potential's
  * training record after its DBFILE line (write_potential_with_record) and
  * read back (read_training_record, read_fit_balance), it has the same
  * lines, its numbers those printed (4 significant digits from 0.001 to
  * 9999, 3 in exponent form: 5e-3 relative of the computed ones), and the
  * potential's key lines parse as before (no
- * key is read from the table). A record without a table reads none, and a
- * table cut short is refused naming the line. Before the fix: no balance
- * table. */
+ * key is read from the table); so does a table whose first line and error
+ * scales are wrapped (LAMBDA -1, FIXINDEX 2 and ENORM SQRT). A record
+ * without a table reads none, and a table cut short is refused naming the
+ * line. Before the fix: no balance table. */
 TEST_CASE("Fit balance survives writing and reading the potential",
           "[fit_balance]") {
   PeriodicTable::initialize();
-  const Fitted f = fit(ta_context(3, "1e-2"), ta_db());
+  Context wrapped = ta_context(3, "-1");
+  wrapped.add("FIXINDEX", "2");
+  wrapped.add("FIXWEIGHT", "0.5");
+  wrapped.add("ENORM", "SQRT");
+  const std::vector<Context> contexts = {ta_context(3, "1e-2"), wrapped};
+  for (std::size_t which = 0; which < contexts.size(); ++which) {
+  DYNAMIC_SECTION((which == 0 ? "LAMBDA 1e-2" : "LAMBDA -1, FIXINDEX, SQRT")) {
+  const Fitted f = fit(contexts[which], ta_db());
   REQUIRE(f.balance.computed());
   tadah::mlip::TrainingRecord rec;
   rec.lines.push_back("DBFILE a.tadah b.tadah");
@@ -675,7 +870,10 @@ TEST_CASE("Fit balance survives writing and reading the potential",
   }
   CHECK(read->prior_share == Approx(f.balance.prior_share).epsilon(5e-3));
   CHECK(read->prior_gamma == Approx(f.balance.prior_gamma).epsilon(5e-3));
-  CHECK(read->lambda_used == Approx(f.balance.lambda_used).epsilon(1e-12));
+  // LAMBDA as given, and the evidence approximation's to its 6 digits.
+  CHECK(read->lambda == f.balance.lambda);
+  CHECK(read->lambda_used ==
+        Approx(f.balance.lambda_used).epsilon(which == 0 ? 1e-12 : 1e-6));
 
   const Context parsed = tadah::core::CoreUserConfigParser().parse(path.string());
   REQUIRE(parsed.size("WEIGHTS") == f.pot.size("WEIGHTS"));
@@ -697,58 +895,217 @@ TEST_CASE("Fit balance survives writing and reading the potential",
   } catch (const std::runtime_error &e) {
     CHECK_THAT(e.what(), Contains("balance") && Contains("prior"));
   }
+  }
+  }
 }
 
-/* Pins: the lines of a table of three quantities in three datasets and its
- * legend are at most 80 characters wide (a terminal; the documentation's
- * code blocks); the first line begins "Fit balance: LAMBDA", the column
- * header names quantity, dataset, n, sigma, RMSE, unit, r/sigma, share and
- * gamma, each row begins with its quantity (energy, force, stress) and the
- * last with prior; the unit is meV/atom, eV/Å or GPa; the legend has one
- * line per column, each beginning with its name. print_fit_balance prints
- * the lines and, when asked, the legend after them; the legend is asked
- * for once per process (first_fit_balance_legend). Before the fix: no
- * balance table. */
-TEST_CASE("Fit balance lines and legend", "[fit_balance]") {
+/* A table written out by hand (FitBalance): two datasets of energies and
+ * forces, numbers from 9.88e-04 to 1.00e+04, a dataset without an energy
+ * observation and LAMBDA 0. */
+static FitBalance hand_table() {
+  FitBalance b;
+  b.lambda = 0.0;
+  b.lambda_used = 0.0;
+  b.coefficients = 9;
+  b.retained = 9;
+  b.datasets = 2;
+  b.sigma = {"1", "0.1 0", ""};
+  auto row = [&](std::size_t q, std::size_t d, std::size_t n, double rmse,
+                 double rms_z, double share, double gamma) {
+    FitBalanceRow r;
+    r.quantity = q;
+    r.dataset = d;
+    r.n = n;
+    r.rmse = rmse;
+    r.rms_z = rms_z;
+    r.share = share;
+    r.gamma = gamma;
+    b.rows.push_back(r);
+  };
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  row(0, 0, 100, 0.152, 1.52, 0.3411, 4.14);
+  row(0, 1, 60, 0.0009876, 0.5, 5.98e-4, 2.0);
+  row(0, 2, 0, nan, nan, 0.0, 0.0);
+  row(1, 0, 16200, 1234.0, 9999.7, 0.6589, 4.86);
+  row(1, 1, 9000, 0.01659, 0.1659, 0.6, 3.0);
+  row(1, 2, 7200, 0.02, 0.2, 0.0589, 1.86);
+  b.prior_share = 0.0;
+  b.prior_gamma = 0.0;
+  return b;
+}
+
+/* Pins: the lines of a table: the first line "Fit balance: LAMBDA <l>;
+ * <p> coefficients, rank <r>", the line of the error scales of the
+ * quantities with a row ("  error scales: ESIGMA 1 meV/atom; FSIGMA 0.1 0
+ * eV/Å"), the column header (quantity, dataset, n, RMSE, unit, r/sigma,
+ * share, gamma), one row per quantity and dataset and the prior's row; the
+ * columns two blanks apart after an indent of two, as wide as their widest
+ * entry, numbers to the right. A number has 4 significant digits with its
+ * trailing zeros from 0.001 to 9999 (0.1520, 1.520, 4.140, 0.5000, 0.02000,
+ * 1234) and 3 in exponent form otherwise (9.88e-04, 5.98e-04, and 1.00e+04
+ * for 9999.7, which rounds to 10000); 0 is "0", and a row without an
+ * observation has "-" for RMSE and r/sigma.
+ * Before the fix: an error scale was a column of every row, "%.4g" dropped
+ * the trailing zeros (0.152, 4.14), and 9999.7 printed as "1e+04". */
+TEST_CASE("Fit balance lines: the layout and the numbers", "[fit_balance]") {
+  const std::vector<std::string> expected = {
+      "Fit balance: LAMBDA 0; 9 coefficients, rank 9",
+      "  error scales: ESIGMA 1 meV/atom; FSIGMA 0.1 0 eV/Å",
+      "  quantity  dataset      n      RMSE  unit       r/sigma     share  gamma",
+      "  energy    all        100    0.1520  meV/atom     1.520    0.3411  4.140",
+      "  energy    1           60  9.88e-04  meV/atom    0.5000  5.98e-04  2.000",
+      "  energy    2            0         -  meV/atom         -         0      0",
+      "  force     all      16200      1234  eV/Å      1.00e+04    0.6589  4.860",
+      "  force     1         9000   0.01659  eV/Å        0.1659    0.6000  3.000",
+      "  force     2         7200   0.02000  eV/Å        0.2000   0.05890  1.860",
+      "  prior" + std::string(58, ' ') + "0" + std::string(6, ' ') + "0"};
+  CHECK(tadah::mlip::fit_balance_lines(hand_table()) == expected);
+}
+
+/* Pins: every line of a table is at most 78 characters wide (80 in a
+ * training record, after its "# "):
+ *  - three datasets of energies, forces and stresses, the second of
+ *    WDBFILE 1e-4 (numbers in exponent form), and error scales of 17
+ *    significant digits, as tadah hpo searches them: printed to 4 (ESIGMA
+ *    5.207, FSIGMA 0.1235 0.05679, SSIGMA 0.5123 0.01235), the line of the
+ *    error scales wrapped after a "; ", its next line indented by four;
+ *  - LAMBDA -1 with FIXINDEX 2 and ENORM SQRT: the first line names the
+ *    lambda of the evidence approximation (6 digits) and ENORM SQRT and is
+ *    wrapped after a "; " ("    2 coefficients (FIXINDEX pins 1 more), rank
+ *    2"), and ESIGMA is in meV per sqrt(atom);
+ *  - the none line of M_KRR implementation 2, wrapped at blanks, which
+ *    reads back as its reason.
+ * Before the fix: the error scales were a column of every row, printed to
+ * 17 digits (lines of 93 characters), the first line of LAMBDA -1 with
+ * FIXINDEX was 104 wide and did not name ENORM SQRT, and the none line of
+ * M_KRR implementation 2 was 150 wide. */
+TEST_CASE("Fit balance lines are at most 78 characters wide", "[fit_balance]") {
   PeriodicTable::initialize();
-  StructureDB db = ta_db();
-  db.dbidx = {0, 1, 2, 3};
-  Context c = ta_context(3, "1e-2");
-  c.add("WDBFILE", "1 0.5 2");
-  const Fitted f = fit(c, db);
-  REQUIRE(f.balance.computed());
-  REQUIRE(f.balance.datasets == 3);
-  const std::vector<std::string> lines = tadah::mlip::fit_balance_lines(f.balance);
-  REQUIRE(lines.size() == 2 + 3 * 4 + 1);
-  CHECK_THAT(lines[0], StartsWith("Fit balance: LAMBDA 0.01; 3 coefficients"));
-  for (const char *col : {"quantity", "dataset", "n", "sigma", "RMSE", "unit",
-                          "r/sigma", "share", "gamma"})
-    CHECK_THAT(lines[1], Contains(col));
-  const char *quantity[3] = {"energy", "force", "stress"};
-  const char *unit[3] = {"meV/atom", "eV/Å", "GPa"};
-  for (std::size_t q = 0; q < 3; ++q)
-    for (std::size_t d = 0; d < 4; ++d) {
-      const std::string &l = lines[2 + 4 * q + d];
-      INFO(l);
-      CHECK_THAT(l, StartsWith(std::string("  ") + quantity[q]));
-      CHECK_THAT(l, Contains(unit[q]));
-      CHECK_THAT(l, Contains(d == 0 ? " all " : " " + std::to_string(d) + " "));
-    }
-  CHECK_THAT(lines.back(), StartsWith("  prior"));
-  for (const std::string &l : lines) {
-    INFO(l);
-    CHECK(display_width(l) <= 80);
+  SECTION("three datasets, error scales of 17 digits") {
+    StructureDB db = ta_db();
+    db.dbidx = {0, 1, 2, 3};
+    Context c = ta_context(3, "1e-2");
+    c.add("WDBFILE", "1 1e-4 2");
+    set_key(c, "ESIGMA", "5.206733702981638");
+    set_key(c, "FSIGMA", "0.1234567890123 0.0567891234567");
+    set_key(c, "SSIGMA", "0.512345678901 0.0123456789012");
+    const Fitted f = fit(c, db);
+    INFO(f.balance.none);
+    REQUIRE(f.balance.computed());
+    REQUIRE(f.balance.datasets == 3);
+    CHECK(f.balance.sigma[0] == "5.207");
+    CHECK(f.balance.sigma[1] == "0.1235 0.05679");
+    CHECK(f.balance.sigma[2] == "0.5123 0.01235");
+    const std::vector<std::string> lines =
+        tadah::mlip::fit_balance_lines(f.balance);
+    REQUIRE(lines.size() == 1 + 2 + 1 + 3 * 4 + 1);
+    CHECK_THAT(lines[0], StartsWith("Fit balance: LAMBDA 0.01; 3 coefficients"));
+    CHECK(lines[1] ==
+          "  error scales: ESIGMA 5.207 meV/atom; FSIGMA 0.1235 0.05679 eV/Å;");
+    CHECK(lines[2] == "    SSIGMA 0.5123 0.01235 GPa");
+    CHECK(lines[3].substr(0, 20) == "  quantity  dataset ");
+    const char *quantity[3] = {"energy", "force", "stress"};
+    const char *unit[3] = {"meV/atom", "eV/Å", "GPa"};
+    bool exponent = false;
+    for (std::size_t q = 0; q < 3; ++q)
+      for (std::size_t d = 0; d < 4; ++d) {
+        const std::string &l = lines[4 + 4 * q + d];
+        INFO(l);
+        CHECK_THAT(l, StartsWith(std::string("  ") + quantity[q]));
+        CHECK_THAT(l, Contains(unit[q]));
+        CHECK_THAT(l, Contains(d == 0 ? " all " : " " + std::to_string(d) + " "));
+        exponent = exponent || l.find("e-0") != std::string::npos;
+      }
+    CHECK(exponent);
+    CHECK_THAT(lines.back(), StartsWith("  prior"));
+    check_width(lines);
   }
+  SECTION("LAMBDA -1, FIXINDEX and ENORM SQRT") {
+    Context c = ta_context(3, "-1");
+    c.add("FIXINDEX", "2");
+    c.add("FIXWEIGHT", "0.5");
+    c.add("ENORM", "SQRT");
+    const Fitted f = fit(c, ta_db());
+    INFO(f.balance.none);
+    REQUIRE(f.balance.computed());
+    const double lam =
+        f.pot.get<double>("ALPHA") / f.pot.get<double>("BETA");
+    const std::vector<std::string> lines =
+        tadah::mlip::fit_balance_lines(f.balance);
+    REQUIRE(lines.size() >= 5);
+    CHECK(lines[0] == "Fit balance: LAMBDA -1 (evidence approximation: " +
+                          tadah::core::format_sig(lam, 6) + "); ENORM SQRT;");
+    CHECK(lines[1] == "    2 coefficients (FIXINDEX pins 1 more), rank 2");
+    CHECK(lines[2] ==
+          "  error scales: ESIGMA 5 meV per sqrt(atom); FSIGMA 0.2 0.1 eV/Å;");
+    CHECK(lines[3] == "    SSIGMA 0.3 0 GPa");
+    CHECK(lines[4].substr(0, 20) == "  quantity  dataset ");
+    check_width(lines);
+  }
+  SECTION("the none line of M_KRR implementation 2") {
+    Context c = ta_context(3, "1e-6");
+    set_key(c, "FORCE", "false");
+    set_key(c, "STRESS", "false");
+    c.remove("FSIGMA");
+    c.remove("SSIGMA");
+    set_key(c, "ESIGMA", "1");
+    c.remove("MODEL");
+    c.add("MODEL", "M_KRR");
+    c.add("MODEL", "Kern_RBF");
+    c.add("MODEL", 2);
+    c.add("MPARAMS", 1.5);
+    c.add("SBASIS", 3);
+    StructureDB db = ta_db();
+    db.dbidx = {0, 3};
+    const Fitted f = fit(c, db);
+    REQUIRE(!f.balance.computed());
+    const std::vector<std::string> lines =
+        tadah::mlip::fit_balance_lines(f.balance);
+    REQUIRE(lines.size() > 1);
+    for (std::size_t k = 1; k < lines.size(); ++k)
+      CHECK_THAT(lines[k], StartsWith("    "));
+    CHECK(paragraph(lines, 0) == "Fit balance: none (" + f.balance.none + ")");
+    check_width(lines);
+    tadah::mlip::TrainingRecord rec;
+    rec.lines.push_back("DBFILE a.tadah");
+    tadah::mlip::add_fit_balance(rec, f.balance);
+    CHECK(tadah::mlip::fit_balance_record_lines(rec) == lines);
+    const auto read = tadah::mlip::read_fit_balance(rec);
+    REQUIRE(read.has_value());
+    CHECK(read->none == f.balance.none);
+  }
+}
+
+/* Pins: the legend of the columns: one line per column, each beginning
+ * with its name (quantity, dataset, n, RMSE, unit, r/sigma, share, gamma),
+ * then the line on what sums: the rows of every dataset ("all") with the
+ * prior's, whose shares sum to 1 and whose gamma sum to the rank (the rows
+ * of the datasets repeat them); every line at most 78 wide. n counts the
+ * observations, RMSE runs over every entry of priority > 0.
+ * print_fit_balance prints the lines and, when asked, the legend after
+ * them; the legend is asked for once per process (first_fit_balance_legend).
+ * Before the fix: a line for sigma, and "gamma ... with the prior's, the
+ * rank", which a table of several datasets contradicts (its gamma column
+ * sums to twice the rank). */
+TEST_CASE("Fit balance legend", "[fit_balance]") {
   const std::vector<std::string> legend = tadah::mlip::fit_balance_legend();
   REQUIRE(legend.size() == 9);
   std::size_t i = 0;
-  for (const char *col : {"quantity", "dataset", "n", "sigma", "RMSE", "unit",
+  for (const char *col : {"quantity", "dataset", "n", "RMSE", "unit",
                           "r/sigma", "share", "gamma"}) {
     INFO(legend[i]);
     CHECK_THAT(legend[i], StartsWith(std::string("  ") + col + " "));
-    CHECK(display_width(legend[i]) <= 80);
     ++i;
   }
+  CHECK_THAT(legend[2], Contains("observations"));
+  CHECK_THAT(legend[3], Contains("every entry of priority > 0"));
+  CHECK_THAT(legend[8], Contains("all") && Contains("prior") &&
+                            Contains("share sums to 1") &&
+                            Contains("gamma to the rank"));
+  check_width(legend);
+
+  const std::vector<std::string> lines =
+      tadah::mlip::fit_balance_lines(hand_table());
   std::ostringstream with, without;
   tadah::mlip::print_fit_balance(with, lines, true);
   tadah::mlip::print_fit_balance(without, lines, false);
@@ -763,9 +1120,10 @@ TEST_CASE("Fit balance lines and legend", "[fit_balance]") {
 
 /* Pins: a model without a fit of its own (a Trainer that did not train)
  * and a fit of M_KRR implementation 2, which solves a kernel matrix of the
- * mean descriptors of drawn structures, have no table: one line "Fit
- * balance: none (...)" that names why, which the record keeps and reads
- * back. Before the fix: no balance table. */
+ * mean descriptors of drawn structures, have no table: "Fit balance: none
+ * (...)" that names why, wrapped at blanks to lines of at most 78
+ * characters, which the record keeps and reads back. Before the fix: no
+ * balance table. */
 TEST_CASE("Fit balance: none without a fit of observations", "[fit_balance]") {
   PeriodicTable::initialize();
   {
@@ -775,6 +1133,9 @@ TEST_CASE("Fit balance: none without a fit of observations", "[fit_balance]") {
     const FitBalance b = tr.model->fit_balance();
     CHECK(!b.computed());
     CHECK_THAT(b.none, Contains("no fit"));
+    const std::vector<std::string> lines = tadah::mlip::fit_balance_lines(b);
+    CHECK(paragraph(lines, 0) == "Fit balance: none (" + b.none + ")");
+    check_width(lines);
   }
   Context c = ta_context(3, "1e-6");
   set_key(c, "FORCE", "false");
@@ -795,8 +1156,8 @@ TEST_CASE("Fit balance: none without a fit of observations", "[fit_balance]") {
   CHECK(!f.balance.computed());
   CHECK_THAT(f.balance.none, Contains("MODEL M_KRR Kern_RBF 2"));
   const std::vector<std::string> lines = tadah::mlip::fit_balance_lines(f.balance);
-  REQUIRE(lines.size() == 1);
-  CHECK(lines[0] == "Fit balance: none (" + f.balance.none + ")");
+  CHECK(paragraph(lines, 0) == "Fit balance: none (" + f.balance.none + ")");
+  check_width(lines);
   tadah::mlip::TrainingRecord rec;
   tadah::mlip::add_fit_balance(rec, f.balance);
   const auto read = tadah::mlip::read_fit_balance(rec);
