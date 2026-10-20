@@ -106,6 +106,27 @@ void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
                                    const tadah::models::Function_Base &f);
 
+/** \brief Refuses OALGO 3 with a LAMBDA other than 0 when the fit of
+ *  @p ctx has an intercept column it fits, before any fit, with the fit's
+ *  message (models::LinearRegressor::require_oalgo3_intercepts: OALGO 3
+ *  penalises every weight alike, and a ridge penalty leaves the intercept
+ *  columns out; LAMBDA -1, the evidence approximation, needs BIAS false or
+ *  every intercept weight pinned).
+ *
+ *  The intercept columns are counted as the fit has them: those of the
+ *  fit's function (for a model whose basis its fit draws, a kernel's of
+ *  that basis, which starts with the intercept vectors) that FIXINDEX and
+ *  FIXWEIGHT do not pin, FIXINDEX read as the fit reads it (core::parse_
+ *  fixindex with model_weight_count; what that refuses is thrown here, with
+ *  its message). @p f is the model's function, built from @p ctx, which
+ *  holds DSIZE (a Trainer's). M_KRR implementation 2, whose solve does not
+ *  run the least squares of LinearRegressor, is not checked; nor is BIAS
+ *  false, which has no intercept column. tadah hpo calls it when a run
+ *  starts.
+ *  @throws std::runtime_error */
+void require_oalgo3_intercepts(const tadah::core::Context &ctx,
+                               const tadah::models::Function_Base &f);
+
 /** \brief The intercept weights of @p f as text, FIXINDEX numbering: "1
  *  (Nb) and 6 (Ta)" (a weight is labelled with its species when it is
  *  non-zero for that species alone). */
