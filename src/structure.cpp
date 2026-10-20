@@ -147,14 +147,14 @@ double finite_value(const std::string &tok, const std::string &what) {
   return v;
 }
 
-/* finite_value() of a weight (eweight, fweight, sweight), which must also
- * be >= 0: 0 leaves the structure's energy, forces or stress out of a fit,
- * and a negative weight is none. */
+/* finite_value() of a priority (eweight, fweight, sweight), which must
+ * also be >= 0: 0 leaves the structure's energy, forces or stress out of a
+ * fit, and a negative priority is none. */
 double weight_value(const std::string &tok, const std::string &what) {
   const double v = finite_value(tok, what);
   if (v < 0.0)
-    throw std::runtime_error(what + " '" + tok + "' is negative: a weight is "
-                             "a number >= 0 (0 leaves the structure's " +
+    throw std::runtime_error(what + " '" + tok + "' is negative: a priority "
+                             "is a number >= 0 (0 leaves the structure's " +
                              (what == "eweight"   ? "energy"
                               : what == "fweight" ? "forces"
                                                   : "stress") +
