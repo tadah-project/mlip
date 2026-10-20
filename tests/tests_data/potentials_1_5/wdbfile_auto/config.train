@@ -1,0 +1,21 @@
+DBFILE       a.dat b.dat
+ATOM         Ta
+WATOM        73
+INIT2B       true
+INITMB       false
+TYPE2B       D2_Blip 4 4 Ta Ta
+RCUT2B       5.3
+RCTYPE2B     Cut_Cos
+SGRID2B      0.1 0.2 0.5 1.0
+CGRID2B      1.0 2.4 3.9 5.3
+MODEL        M_BLR BF_Linear
+OALGO        1
+LAMBDA       1e-3
+BIAS         true
+NORM         false
+FORCE        true
+STRESS       false
+EWEIGHT      2.5
+FWEIGHT      50
+WDBFILE      1 3
+WDBFILE_AUTO 0.7

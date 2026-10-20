@@ -22,6 +22,14 @@
 // FWEIGHT 100, three 54-atom bcc Ta cells), as it wrote it: its EWEIGHT,
 // FWEIGHT, SWEIGHT and WDBFILE_AUTO lines are lines 8, 10, 23 and 27, and
 // it has SIGMA, DBFILE, UNCERTAINTY and the ESHIFT toggles.
+//
+// tests_data/potentials_1_5/wdbfile_auto/ holds a fit of tadah 1.5.0 with
+// WDBFILE and WDBFILE_AUTO both set: config.train (DBFILE a.dat b.dat, the
+// first 4 and the next 2 structures of the Quick Start's db.train, 54 atoms
+// each; D2_Blip 4 4 Ta Ta, M_BLR BF_Linear, BIAS true, OALGO 1, LAMBDA
+// 1e-3, FORCE true, EWEIGHT 2.5, FWEIGHT 50, WDBFILE 1 3, WDBFILE_AUTO
+// 0.7) and pot_1.5.0.tadah, the potential `tadah train -c config.train` of
+// tadah 1.5.0 wrote there.
 
 #include "catch2/catch.hpp"
 
@@ -43,6 +51,7 @@
 #include <tadah/mlip/task_factory.h>
 #include <tadah/mlip/trainer.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -179,48 +188,6 @@ std::size_t retired_notices(const std::vector<std::string> &notices) {
   return n;
 }
 
-/* A refit potential (D2_Knot5 + DM_REAM, every weight pinned), as
- * test_refit_edit_mode.cpp builds it. */
-Context knot_potential() {
-  Context c;
-  c.add("MODEL", "M_BLR");
-  c.add("MODEL", "BF_Linear");
-  c.add("ATOM", "Ta");
-  c.add("WATOM", 1.0);
-  c.add("BIAS", "false");
-  c.add("NORM", "false");
-  c.add("FORCE", "false");
-  c.add("STRESS", "false");
-  c.add("LAMBDA", 0);
-  c.add("OALGO", 2);
-  c.add("INIT2B", "true");
-  c.add("TYPE2B", "D2_Knot5");
-  c.add("TYPE2B", 3);
-  c.add("TYPE2B", 0);
-  c.add("TYPE2B", "Ta");
-  c.add("TYPE2B", "Ta");
-  for (double v : {5.0, 3.0, 4.2}) c.add("CGRID2B", v);
-  c.add("RCUT2B", 5.0);
-  c.add("RCTYPE2B", "Cut_Dummy");
-  c.add("INITMB", "true");
-  c.add("TYPEMB", "DM_REAM");
-  for (int v : {2, 2, 0, 2, 3, 0, 0, 0}) c.add("TYPEMB", v);
-  c.add("TYPEMB", "Ta");
-  c.add("TYPEMB", "Ta");
-  for (double v : {4.8, 2.5}) c.add("CGRIDMB", v);
-  for (double v : {0.01, -1.2}) c.add("AMPGRIDMB", v);
-  c.add("RHOFORM", "SIGNED");
-  for (double v : {0.9, -2.9, 0.1}) c.add("CEMBFUNC", v);
-  c.add("RCUTMB", 4.8);
-  c.add("RCTYPEMB", "Cut_Dummy");
-  for (double v : {1.5, -900.0, 12.0, 220.0, -160.0, 5300.0})
-    c.add("WEIGHTS", v);
-  c.add("FIXINDEX", "1-6");
-  for (double v : {1.5, -900.0, 12.0, 220.0, -160.0, 5300.0})
-    c.add("FIXWEIGHT", v);
-  return c;
-}
-
 }  // namespace
 
 /* Pins: a fit refuses a configuration that records a retired key, through
@@ -289,8 +256,8 @@ TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
   CHECK_THAT(what, Contains("tadah train") &&
                        Contains("EWEIGHT 1.0 (line 8 of " + f + ")") &&
                        Contains("FWEIGHT 100 (line 10 of " + f + ")") &&
-                       Contains("SWEIGHT 1.0 (line 23 of " + f + ")") &&
-                       Contains("WDBFILE_AUTO 0.0 (line 27 of " + f + ")") &&
+                       Contains("SWEIGHT 1.0 (line 23 of " + f) &&
+                       Contains("WDBFILE_AUTO 0.0 (line 27 of " + f) &&
                        Contains("SSIGMA = 160.2/sqrt(SWEIGHT)"));
   CHECK_FALSE(fs::exists("pot.tadah"));
   CHECK(retired_notices(notices) == 1);
@@ -416,14 +383,13 @@ TEST_CASE("A potential written by a fit has no retired line and retrains",
   CHECK(retired_notices(notices) == 0);
 }
 
-/* Pins: tadah refit --edit of a refit potential of Tadah! 1.5.0 (its key
- * lines and, appended as that version wrote them, EWEIGHT 1.0, FWEIGHT 1.0,
- * SWEIGHT 1.0 and WDBFILE_AUTO 0.0) loads it with one notice, writes the
- * edited potential with those four lines as they are and with no ESIGMA,
- * FSIGMA, SSIGMA, ENORM or ENERGY line, and tadah train -c of the edited
- * potential (with a DBFILE line) is refused naming the four lines of the
- * edited file: the edit cannot turn a potential of retired keys into one
- * that retrains with the default error scales.
+/* Pins: tadah refit --edit of the potential of Tadah! 1.5.0 (FUNC phi,
+ * ADD 3.0) loads it with one notice, writes the edited potential with its
+ * EWEIGHT, FWEIGHT, SWEIGHT and WDBFILE_AUTO lines as they are and with no
+ * ESIGMA, FSIGMA, SSIGMA, ENORM or ENERGY line, and tadah train -c of the
+ * edited potential (with a DBFILE line) is refused naming the four lines
+ * of the edited file: the edit cannot turn a potential of retired keys
+ * into one that retrains with the default error scales.
  * Before the fix: the parse stored the four keys and the edit wrote them
  * back as key lines, and a retrain read them as weights. */
 TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
@@ -431,18 +397,17 @@ TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
           "[retired][refit]") {
   PeriodicTable::initialize();
   ScratchCwd cwd;
-  tadah::mlip::engines::TrainEngine::dumpPotFile("in.tadah", knot_potential());
-  const std::vector<std::string> retired = {
-      "EWEIGHT           1.0", "FWEIGHT           1.0",
-      "SWEIGHT           1.0", "WDBFILE_AUTO      0.0"};
-  {
-    std::ofstream app("in.tadah", std::ios::app);
-    for (const std::string &l : retired) app << l << "\n";
+  const std::string old_text = slurp(kOldPot);
+  std::vector<std::string> retired;
+  for (const char *key : {"EWEIGHT", "FWEIGHT", "SWEIGHT", "WDBFILE_AUTO"}) {
+    const std::vector<std::string> l = key_lines(old_text, key);
+    REQUIRE(l.size() == 1);
+    retired.push_back(l.front());
   }
   Context c;
-  c.add("EDIT", std::string("in.tadah"));
+  c.add("EDIT", kOldPot.string());
   c.add("FUNC", std::string("phi"));
-  c.add("ADD", 3.6);
+  c.add("ADD", 3.0);
   c.add("OUTFILE", std::string("edited.tadah"));
   c.add("HPOFILEOUT", std::string("edited.hpotarget"));
   Task task("refit", c);
@@ -476,6 +441,137 @@ TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
   CHECK_THAT(what, Contains("EWEIGHT 1.0 (line") &&
                        Contains("of edited.tadah") &&
                        Contains("WDBFILE_AUTO 0.0") && Contains("retired"));
+}
+
+/* Pins: the refusal of a retrain of the potential of Tadah! 1.5.0 (FORCE
+ * true, STRESS false; CONFIG of it and a DBFILE of four 2-atom cells)
+ * marks the lines a deletion converts, SWEIGHT 1.0 (STRESS false here)
+ * and WDBFILE_AUTO 0.0, and not EWEIGHT and FWEIGHT; the configuration
+ * converted as the refusal says -- those two lines deleted, EWEIGHT 1.0 as
+ * ESIGMA = 1000/(N sqrt(EWEIGHT)) = 500 for the 2-atom cells, FWEIGHT 100
+ * as FSIGMA = 1/sqrt(FWEIGHT) = 0.1, its DBFILE line (the data of the
+ * 1.5.0 fit) for db.tadah -- trains and writes a potential.
+ * Before the fix: the refusal gave SSIGMA = 160.2/sqrt(SWEIGHT) for the
+ * SWEIGHT line too, and the configuration converted so (SSIGMA 160.2) was
+ * refused again, as SSIGMA other than its default with STRESS false. */
+TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
+          "trains",
+          "[retired][fit]") {
+  PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_db("db.tadah");
+  {
+    std::ofstream cfg("retrain.train");
+    cfg << "CONFIG " << kOldPot.string() << "\nDBFILE db.tadah\n";
+  }
+  std::vector<std::string> notices;
+  const std::string what = run_input(
+      CommandInput("TRAIN", {{"config", {"retrain.train"}}}),
+      [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); }, notices);
+  const std::string f = kOldPot.string();
+  CHECK_THAT(what,
+             Contains("EWEIGHT 1.0 (line 8 of " + f + ")") &&
+                 Contains("FWEIGHT 100 (line 10 of " + f + ")") &&
+                 Contains("SWEIGHT 1.0 (line 23 of " + f +
+                          "; STRESS false here: converted by deleting the "
+                          "line)") &&
+                 Contains("WDBFILE_AUTO 0.0 (line 27 of " + f +
+                          "; 0: converted by deleting the line)"));
+  {
+    std::istringstream in(slurp(kOldPot));
+    std::ofstream out("converted.tadah");
+    for (std::string l; std::getline(in, l);) {
+      std::istringstream ls(l);
+      std::string key;
+      ls >> key;
+      // DBFILE: the data of the 1.5.0 fit, which the test does not have
+      // (the retrain reads db.tadah).
+      if (key == "SWEIGHT" || key == "WDBFILE_AUTO" || key == "DBFILE")
+        continue;
+      if (key == "EWEIGHT") l = "ESIGMA 500";
+      if (key == "FWEIGHT") l = "FSIGMA 0.1";
+      out << l << "\n";
+    }
+  }
+  {
+    std::ofstream cfg("converted.train");
+    cfg << "CONFIG converted.tadah\nDBFILE db.tadah\n";
+  }
+  const std::string converted = run_input(
+      CommandInput("TRAIN", {{"config", {"converted.train"}},
+                             {"outfile", {"new.tadah"}}}),
+      [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); }, notices);
+  INFO(converted);
+  CHECK(converted.empty());
+  CHECK(fs::exists("new.tadah"));
+}
+
+/* Pins (an oracle of Tadah! 1.5.0): WDBFILE_AUTO a multiplied the WDBFILE
+ * value of each dataset by n_d^-a. The refusal of the 1.5.0 configuration
+ * with WDBFILE 1 3 and WDBFILE_AUTO 0.7 gives that conversion, and the
+ * converted configuration -- WDBFILE 1 x 4^-0.7 3 x 2^-0.7 (4 and 2
+ * structures), ESIGMA = 1000/(54 sqrt(2.5)) for EWEIGHT 2.5 and the
+ * 54-atom cells, FSIGMA = 1/sqrt(50) for FWEIGHT 50 -- fits the WEIGHTS of
+ * the potential tadah 1.5.0 wrote, to 1e-10 relative.
+ * Before the fix: the conversion said WDBFILE with the values n_d^-a
+ * (WDBFILE_AUTO 0 no WDBFILE), which leaves out WDBFILE 1 3: WEIGHTS
+ * -23.17 and 1.656 for 1.5.0's -23.84 and 1.588 in such a fit. */
+TEST_CASE("WDBFILE_AUTO converts as each WDBFILE value times n_d^-a: a fit "
+          "of Tadah! 1.5.0 is reproduced",
+          "[retired][fit][wdbfile_auto]") {
+  PeriodicTable::initialize();
+  const fs::path dir =
+      fs::absolute("tests_data/potentials_1_5/wdbfile_auto");
+  ScratchCwd cwd;
+  for (const char *f : {"a.dat", "b.dat", "config.train"})
+    fs::copy_file(dir / f, f);
+  std::vector<std::string> notices;
+  const std::string what = run_input(
+      CommandInput("TRAIN", {{"config", {"config.train"}}}),
+      [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); }, notices);
+  CHECK_THAT(what, Contains("WDBFILE_AUTO 0.7 (line 21 of config.train)") &&
+                       Contains("Each WDBFILE value (1 for every dataset "
+                                "without WDBFILE) multiplied by n_d^-a"));
+  {
+    std::istringstream in(slurp("config.train"));
+    std::ofstream out("converted.train");
+    for (std::string l; std::getline(in, l);) {
+      std::istringstream ls(l);
+      std::string key;
+      ls >> key;
+      if (key == "EWEIGHT" || key == "FWEIGHT" || key == "WDBFILE" ||
+          key == "WDBFILE_AUTO")
+        continue;
+      out << l << "\n";
+    }
+    out.precision(17);
+    out << "ESIGMA " << 1000.0 / (54.0 * std::sqrt(2.5)) << "\n"
+        << "FSIGMA " << 1.0 / std::sqrt(50.0) << "\n"
+        << "WDBFILE " << 1.0 * std::pow(4.0, -0.7) << " "
+        << 3.0 * std::pow(2.0, -0.7) << "\n";
+  }
+  REQUIRE(run_input(CommandInput("TRAIN", {{"config", {"converted.train"}},
+                                           {"outfile", {"new.tadah"}}}),
+                    [](Task &t) { tadah::mlip::engines::TrainEngine().run(t); },
+                    notices)
+              .empty());
+  auto weights = [](const fs::path &p) {
+    IgnoredKeyNoticeCapture quiet;
+    const Context c = tadah::core::CoreUserConfigParser().parse(p.string());
+    std::vector<double> w(c.size("WEIGHTS"));
+    c.get("WEIGHTS", w);
+    return w;
+  };
+  const std::vector<double> ref = weights(dir / "pot_1.5.0.tadah");
+  const std::vector<double> got = weights("new.tadah");
+  REQUIRE(got.size() == ref.size());
+  REQUIRE_FALSE(ref.empty());
+  double scale = 0.0;
+  for (double v : ref) scale = std::max(scale, std::fabs(v));
+  for (std::size_t i = 0; i < ref.size(); ++i) {
+    INFO("weight " << i << ": " << got[i] << " against " << ref[i]);
+    CHECK(std::fabs(got[i] - ref[i]) <= 1e-10 * scale);
+  }
 }
 
 /* Pins: the command-line options of the retired keys, --wdbfile-auto and
