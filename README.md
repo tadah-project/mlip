@@ -24,8 +24,8 @@ toolchain. Implements the engines that back every `tadah` subcommand:
 - **Error scales of a fit** — the weight of every row of a design
   matrix from `ESIGMA`, `FSIGMA`, `SSIGMA`, `ENORM` and `ENERGY` and
   the priorities of the data (`WDBFILE` and each structure's
-  weights), its observations and its effective parameters
-  (`row_weights.h`).
+  `eweight`, `fweight` and `sweight`), its observations and its
+  effective parameters (`row_weights.h`).
 
 ## You don't need to use this directly
 
