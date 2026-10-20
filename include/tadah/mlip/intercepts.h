@@ -88,15 +88,18 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  too), whose solve (K + LAMBDA I) w = T fits the basis vectors' targets,
  *  not the structures' energies, and pins no weight, is not checked.
  *
- *  A no-op for BIAS false and for a function without intercept columns
- *  (Kern_RBF). An atom of an element not in ATOM is refused
+ *  A weight of the data that is negative or not finite is refused first
+ *  (require_valid_weights), for BIAS false too. Otherwise a no-op for BIAS
+ *  false and for a function without intercept columns (Kern_RBF). An atom
+ *  of an element not in ATOM is refused
  *  (throw_element_not_in_atom). FIXINDEX is read as the fit reads it,
  *  with core::parse_fixindex and the fit's weight count
  *  (model_weight_count), and what that refuses, an index past the weights
  *  included, is thrown here, before the fit, with the fit's message.
  *  @throws std::runtime_error naming the species, the rank found, the
  *          intercept weights and the remedies, or core::parse_fixindex's
- *          refusal of FIXINDEX/FIXWEIGHT
+ *          refusal of FIXINDEX/FIXWEIGHT, or require_valid_weights' of a
+ *          weight
  *  @throws std::logic_error for a kernel whose basis vectors do not have
  *          DSIZE values (they would be evaluated past the descriptor) */
 void require_intercepts_determined(const StructureDB &stdb,

@@ -31,8 +31,9 @@ std::string structure_in_data(const StructureDB &stdb, std::size_t s,
  *  weight: the fit multiplies its rows by the square root, so a weight
  *  below 0 is not a number, and two of them cancel. Called first by every
  *  fit of M_BLR and M_KRR (their train methods, before anything else reads
- *  the weights; implementation 2 of M_KRR included), and by
- *  DesignMatrix::build of a fit.
+ *  the weights; implementation 2 of M_KRR included), by
+ *  require_intercepts_determined (which tadah train and tadah hpo call
+ *  before a fit) and by DesignMatrix::build of a fit.
  *  @throws std::runtime_error naming the weight, its value and the
  *  structure or key. */
 void require_valid_weights(const StructureDB &stdb,

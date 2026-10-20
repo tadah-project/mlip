@@ -1,4 +1,5 @@
 #include <tadah/mlip/intercepts.h>
+#include <tadah/mlip/data_weights.h>
 
 #include <tadah/core/core_types.h>
 #include <tadah/core/intercept_layout.h>
@@ -232,6 +233,9 @@ void throw_element_not_in_atom(const tadah::core::Element &e,
 void require_intercepts_determined(const StructureDB &stdb,
                                    const tadah::core::Context &ctx,
                                    const tadah::models::Function_Base &fn) {
+  // The weights first: the check reads them, and a negative or non-finite
+  // weight is refused as such, not as intercepts the data cannot determine.
+  require_valid_weights(stdb, ctx);
   const std::size_t n_int = tadah::core::n_intercept_columns(ctx);
   if (n_int == 0) return;
   const auto col = tadah::core::intercept_columns_by_Z(ctx);
