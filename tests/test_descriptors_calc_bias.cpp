@@ -1788,3 +1788,96 @@ TEST_CASE("The KRR basis draw takes SBASIS from N + 1 to the candidates "
   CHECK(prep(10) == "<no exception>");
   CHECK(basis.b.cols() == 10);
 }
+
+// OALGO 3 penalises every weight alike, so a fit with an intercept column
+// it fits refuses a LAMBDA other than 0 (LinearRegressor::train, MODELS).
+// require_oalgo3_intercepts, which tadah hpo calls when a run starts, gives
+// that refusal for the configuration and the model's function before any
+// fit, counting the intercept columns as the fit does: those of the fit's
+// function (a kernel's: of the basis the fit draws), less those FIXINDEX
+// and FIXWEIGHT pin. On data of varied compositions (ATOM Nb Ta, BIAS
+// true, D2_BP 3, OALGO 3):
+//   - M_BLR BF_Linear (intercepts: weights 1 and 2) with LAMBDA -1 and
+//     1e-3: refused by the fit and by require_oalgo3_intercepts with the
+//     same message (2 intercept columns; for LAMBDA -1 the evidence
+//     approximation's); FIXINDEX 1 pins one, and both refuse naming 1;
+//     FIXINDEX 1-2 pins both, and both pass (the fit fits); LAMBDA 0 and
+//     BIAS false pass;
+//   - M_KRR Kern_Quadratic (SBASIS 6, intercepts: the weights of the
+//     intercept basis vectors e_0, e_1) with LAMBDA 1e-3: the same message
+//     from both; Kern_RBF (no intercept column) passes.
+// Before the fix: the test does not compile (require_oalgo3_intercepts
+// does not exist); tadah hpo --check passed every such configuration, and
+// each evaluation of the run refused it.
+TEST_CASE("OALGO 3 with LAMBDA other than 0 is refused before the fit when "
+          "the fit has an intercept column",
+          "[descriptors_calc][bias][oalgo3]") {
+  PeriodicTable::initialize();
+  MLIPWorkspaceManager ws;
+  StructureDB varied = make_db(kVaried, false, 100);
+  auto blr = [](const char *lambda) {
+    Context c = make_context({"Nb", "Ta"}, true);
+    set(c, "OALGO", "3");
+    set(c, "LAMBDA", lambda);
+    return c;
+  };
+  // The refusals of the fit and of require_oalgo3_intercepts.
+  auto both = [&](Context c) {
+    Trainer tr(c, ws);
+    const std::string fit = refusal_of([&] { tr.train(varied); });
+    Trainer te(c, ws);
+    const std::string before = refusal_of([&] {
+      tadah::mlip::require_oalgo3_intercepts(te.context, *te.fb);
+    });
+    return std::make_pair(fit, before);
+  };
+  for (const char *lambda : {"-1", "1e-3"}) DYNAMIC_SECTION(
+      "M_BLR BF_Linear, LAMBDA " << lambda) {
+    const auto r = both(blr(lambda));
+    INFO("fit: " << r.first << "\nbefore: " << r.second);
+    CHECK(r.first.find("2 intercept column(s)") != std::string::npos);
+    CHECK(r.second == r.first);
+    Context one = blr(lambda);
+    one.add("FIXINDEX", "1");
+    one.add("FIXWEIGHT", -7.6);
+    const auto r1 = both(one);
+    INFO("FIXINDEX 1: fit: " << r1.first << "\nbefore: " << r1.second);
+    CHECK(r1.first.find("1 intercept column(s)") != std::string::npos);
+    CHECK(r1.second == r1.first);
+    Context pinned = blr(lambda);
+    pinned.add("FIXINDEX", "1-2");
+    pinned.add("FIXWEIGHT", -7.6);
+    pinned.add("FIXWEIGHT", -8.9);
+    const auto r2 = both(pinned);
+    INFO("FIXINDEX 1-2: fit: " << r2.first << "\nbefore: " << r2.second);
+    CHECK(r2.first == "<no exception>");
+    CHECK(r2.second == "<no exception>");
+  }
+  SECTION("M_BLR BF_Linear, LAMBDA 0, and BIAS false (pins)") {
+    const auto r0 = both(blr("0"));
+    CHECK(r0.first == "<no exception>");
+    CHECK(r0.second == "<no exception>");
+    Context nb = blr("1e-3");
+    set(nb, "BIAS", "false");
+    const auto rb = both(nb);
+    CHECK(rb.first == "<no exception>");
+    CHECK(rb.second == "<no exception>");
+  }
+  SECTION("M_KRR Kern_Quadratic refuses, Kern_RBF passes") {
+    Context q = blr("1e-3");
+    set_model(q, "M_KRR", "Kern_Quadratic");
+    q.add("SBASIS", 6);
+    const auto rq = both(q);
+    INFO("Kern_Quadratic: fit: " << rq.first << "\nbefore: " << rq.second);
+    CHECK(rq.first.find("2 intercept column(s)") != std::string::npos);
+    CHECK(rq.second == rq.first);
+    Context rbf = blr("1e-3");
+    set_model(rbf, "M_KRR", "Kern_RBF");
+    rbf.add("SBASIS", 6);
+    rbf.add("MPARAMS", 1.0);
+    Trainer te(rbf, ws);
+    CHECK(refusal_of([&] {
+            tadah::mlip::require_oalgo3_intercepts(te.context, *te.fb);
+          }) == "<no exception>");
+  }
+}
