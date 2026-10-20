@@ -37,6 +37,7 @@
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/normaliser.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
@@ -527,7 +528,8 @@ TEST_CASE("A fit refuses an error scale for a quantity that is off",
 /* Pins: ENERGY false fits as every structure's eweight 0 (its energies are
  * no observations: the fits agree to 1e-12 relative), the design matrix
  * counts no energy observation (DesignMatrix::n_observations(): the force
- * rows only), and the potential records ENERGY false.
+ * rows only; count_observations of its rows without the factors: no
+ * energy, every force component), and the potential records ENERGY false.
  * Before the fix: ENERGY was not a key. */
 TEST_CASE("ENERGY false: no energy is an observation", "[error_scales]") {
   PeriodicTable::initialize();
@@ -547,10 +549,14 @@ TEST_CASE("ENERGY false: no energy is an observation", "[error_scales]") {
   tadah::mlip::DM_BF_Linear bf(c);
   tadah::mlip::DesignMatrix<tadah::mlip::DM_BF_Linear> dm(bf, c);
   tadah::mlip::Normaliser norm(c);
-  dm.build(db, norm, dc, false);
+  dm.build(db, norm, dc, true);
   CHECK(dm.n_observations() == 3 * (2 + 3 + 4));
-  CHECK_FALSE(dm.fitted_types()[0]);
-  CHECK(dm.fitted_types()[1]);
+  const tadah::mlip::ObservationCount n = tadah::mlip::count_observations(
+      dm.ws->Phi_cpy, 3 + 3 * (2 + 3 + 4), dm.ws->wfactors, dm.getTlabels());
+  CHECK(n.total == dm.n_observations());
+  CHECK(n.by_type[0] == 0);
+  CHECK(n.by_type[1] == 3 * (2 + 3 + 4));
+  CHECK(n.by_type[2] == 0);
 
   Context cc = c;
   MLIPWorkspaceManager ws;
