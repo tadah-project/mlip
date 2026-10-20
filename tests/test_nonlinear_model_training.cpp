@@ -134,8 +134,10 @@ const ModelSpec &model_named(const std::string &name) {
 constexpr std::size_t kSbasis = 5;  // e0 + 4 drawn AEDs
 
 /* The training configuration: D2_Blip (3 functions) on Ta, Cut_Cos 5 A,
- * FORCE and STRESS true, LAMBDA 0, OALGO 1, SBASIS kSbasis. */
+ * FORCE and STRESS true (false for M_KRR implementation 2, which fits
+ * energies only and refuses them), LAMBDA 0, OALGO 1, SBASIS kSbasis. */
 Context make_context(const ModelSpec &m, bool bias = false) {
+  const bool energies_only = m.model.size() == 3 && m.model[2] == "2";
   Context c;
   c.add("ATOM", "Ta");
   c.add("WATOM", 1);
@@ -158,8 +160,8 @@ Context make_context(const ModelSpec &m, bool bias = false) {
   c.add("DIMER", "false");
   c.add("DIMER", 0);
   c.add("DIMER", "false");
-  c.add("FORCE", "true");
-  c.add("STRESS", "true");
+  c.add("FORCE", energies_only ? "false" : "true");
+  c.add("STRESS", energies_only ? "false" : "true");
   c.add("EWEIGHT", 1.0);
   c.add("FWEIGHT", 1.0);
   c.add("SWEIGHT", 1.0);
