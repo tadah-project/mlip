@@ -5,8 +5,10 @@
 // output file per input file or, with MERGE, all to one; the priorities of
 // the structures (eweight, fweight, sweight) are written as they are. Its
 // rescaling of the priorities (RESCALE, with THRESHOLD, FORCE and STRESS),
-// which replaced the priorities of the data by inverse magnitudes, is no
-// option of the command (blueprint: test_blueprint_retired.cpp).
+// which replaced the priorities of the data by inverse magnitudes, is
+// retired: a TASK data balance section or a command line that gives one
+// of its options is refused with the reason (blueprint:
+// test_blueprint_retired.cpp).
 
 #include "catch2/catch.hpp"
 
@@ -14,11 +16,17 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/engines/data_balance_engine.h>
+#include <tadah/mlip/itask_input.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/task.h>
+#include <tadah/mlip/task_factory.h>
 
 #include <filesystem>
+#include <fstream>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <string>
 #include <unistd.h>
 
@@ -137,4 +145,78 @@ TEST_CASE("tadah data balance shifts energies; --merge writes several input "
   Context none = balance({"a.tadah"}, {"x.tadah"}, false);
   none.remove("ESHIFT");
   CHECK_THAT(refusal(none), Contains("--eshift"));
+}
+
+namespace {
+
+using KV = std::unordered_map<std::string, std::vector<std::string>>;
+
+/* A task input: a task name and its options, as the command line gives
+ * them. */
+struct Input : tadah::mlip::ITaskInput {
+  std::string task;
+  KV kv;
+  Input(std::string t, KV k) : task(std::move(t)), kv(std::move(k)) {}
+  std::string getTaskName() const override { return task; }
+  KV getKeyValueData() const override { return kv; }
+};
+
+/* What TaskFactory throws for @p input, "" when it makes the tasks. */
+std::string factory_error(const Input &input) {
+  try {
+    (void)tadah::mlip::TaskFactory().createTasksFromInput(input);
+  } catch (const std::exception &e) {
+    return e.what();
+  }
+  return "";
+}
+
+}  // namespace
+
+/* Pins: a TASK data balance section of a task file that gives RESCALE,
+ * THRESHOLD, FORCE or STRESS, the options of the rescaling Tadah! 1.5.0
+ * applied, is refused before any task runs, naming the key, its line of
+ * the file, the command and why ("tadah data balance shifts energies
+ * only"); a GLOBAL section's FORCE true (the setting of another task of
+ * the file) is accepted; the command line's --rescale, --threshold,
+ * --force and --stress are refused alike, naming the option.
+ * Before the fix: the task file ran, the four keys ignored (the output
+ * kept the priorities, where 1.5.0 rescaled them), and the command line
+ * did not know the options. */
+TEST_CASE("tadah data balance refuses the options of the retired rescaling",
+          "[data_balance][retired]") {
+  tadah::core::PeriodicTable::initialize();
+  ScratchCwd cwd;
+  write_file("db4.dat", 2, -11.2);
+  for (const std::string line :
+       {"RESCALE true", "THRESHOLD 0.1", "FORCE true", "STRESS true"}) {
+    const std::string key = line.substr(0, line.find(' '));
+    INFO(key);
+    {
+      std::ofstream t("b4.task");
+      t << "TASK data balance\n  DBFILE db4.dat\n  ESHIFT -8.0\n  " << line
+        << "\n  OUTFILE balX.dat\n";
+    }
+    CHECK_THAT(factory_error(Input("", {{"task", {"b4.task"}}})),
+               Contains(key) && Contains("line 4 of b4.task") &&
+                   Contains("tadah data balance") &&
+                   Contains("tadah data balance shifts energies only"));
+    std::string option = key;
+    for (char &ch : option) ch = static_cast<char>(std::tolower(ch));
+    std::vector<std::string> value = {"true"};
+    if (key == "THRESHOLD") value = {"0.1"};
+    CHECK_THAT(factory_error(Input("DATA.balance",
+                                   {{"dbfile", {"db4.dat"}},
+                                    {"eshift", {"-8.0"}},
+                                    {"outfile", {"balX.dat"}},
+                                    {option, value}})),
+               Contains("--" + option) &&
+                   Contains("tadah data balance shifts energies only"));
+  }
+  {
+    std::ofstream t("b5.task");
+    t << "FORCE true\nTASK data balance\n  DBFILE db4.dat\n  ESHIFT -8.0\n"
+         "  OUTFILE balX.dat\n";
+  }
+  CHECK(factory_error(Input("", {{"task", {"b5.task"}}})).empty());
 }

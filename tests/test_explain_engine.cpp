@@ -777,6 +777,28 @@ TEST_CASE("tadah explain: a retired key's text ends with why it is retired, "
   CHECK(explain("ESIGMA").find("RETIRED:") == std::string::npos);
 }
 
+TEST_CASE("tadah explain: a retired option of a command gives why it is "
+          "retired, not the text of a key of its name",
+          "[explain][retired]") {
+  /* Pins: `tadah explain data.balance.rescale` (an option of Tadah! 1.5.0
+   * that data balance retired) prints its description, then the lines
+   * RETIRED, REPLACED BY and CONVERSION ("tadah data balance shifts
+   * energies only"), and not the text of RESCALE of analysis bfunc; so do
+   * data.balance.threshold, .force and .stress.
+   * Before the fix: data balance had no such option, and tadah explain
+   * printed the text of the configuration key RESCALE ("Rescales the
+   * output of a command (tadah analysis bfunc ...") and exited 0. */
+  for (const char *option : {"rescale", "threshold", "force", "stress"}) {
+    const std::string out = explain(std::string("data.balance.") + option);
+    INFO(option << ":\n" << out);
+    CHECK_THAT(out, Catch::Matchers::Contains("\nRETIRED: ") &&
+                        Catch::Matchers::Contains(
+                            "CONVERSION: No option converts it: tadah data "
+                            "balance shifts energies only"));
+    CHECK(out.find("analysis bfunc") == std::string::npos);
+  }
+}
+
 TEST_CASE("tadah explain: an inline role of a help text is shown as the text "
           "the documentation shows",
           "[explain]") {
