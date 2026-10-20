@@ -361,7 +361,7 @@ TEST_CASE("provision_fixed_weights without FIXINDEX and FIXWEIGHT names the "
  * values for weights. provision_fixed_weights after a fit of its Trainer
  * is pinned in test_trainer_sigma.cpp ("provision_fixed_weights after a
  * fit of its Trainer").
- * Before uncertainty output left Tadah! 1.6.0: the configuration carried
+ * Before uncertainty output was removed: the configuration carried
  * WCOV and WNOISE too, which training_context removed (they are retired
  * keys, which no Context stores). Before fix/hpo-trainer-reuse (neither
  * Trainer::training_context nor provision_fixed_weights removed a SIGMA):

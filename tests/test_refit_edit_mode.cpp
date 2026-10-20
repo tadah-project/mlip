@@ -1070,8 +1070,8 @@ TEST_CASE_METHOD(PTFixture,
  * (retired keys) as they are, after the key lines, as it keeps every
  * retired line: a fit of the edited potential refuses them as it refuses
  * the input's. (An --add of a phi basis function.)
- * Before the fix (uncertainty output not part of Tadah! 1.6.0): the input's
- * WCOV and WNOISE were its weight covariance, which the edit removed: the
+ * Before uncertainty output was removed: the input's WCOV and WNOISE
+ * were its weight covariance, which the edit removed: the
  * edited potential had neither line. Before WCOV and WNOISE: the input's
  * SIGMA was copied into the edited potential beside the edited weights. */
 TEST_CASE_METHOD(PTFixture,

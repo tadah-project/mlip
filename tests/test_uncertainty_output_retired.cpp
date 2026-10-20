@@ -1,8 +1,8 @@
 // test_uncertainty_output_retired.cpp
 //
-// Uncertainty output is not part of Tadah! 1.6.0: the errors of Tadah!
-// 1.0.0 to 1.5.0 were not standard deviations, and no calibrated estimate
-// replaces them. The predictions and the fit are unaffected.
+// Uncertainty output is removed: the errors of Tadah! 1.0.0 to 1.5.0 were
+// not standard deviations, and no calibrated estimate replaces them. The
+// predictions and the fit are unaffected.
 //
 //  - tadah predict --error and tadah properties pairwise --error are
 //    retired options of those tasks, refused on the command line and in a
@@ -54,10 +54,10 @@ using tadah::mlip::Trainer;
 using tadah::mlip::memory::MLIPWorkspaceManager;
 namespace fs = std::filesystem;
 
-const std::string kNotPart =
-    "Uncertainty output is not part of Tadah! 1.6.0: the errors of Tadah! "
-    "1.0.0 to 1.5.0 were not standard deviations, and no calibrated "
-    "estimate replaces them.";
+const std::string kRemoved =
+    "Uncertainty output is removed: the errors of Tadah! 1.0.0 to 1.5.0 "
+    "were not standard deviations, and no calibrated estimate replaces "
+    "them.";
 
 /* The working directory of a case. */
 struct ScratchCwd {
@@ -157,16 +157,17 @@ std::string fit(const std::vector<std::string> &lines, Context &pot) {
  * option's own (the task's, although its key ERROR is retired too):
  * "--error of tadah predict is retired: tadah predict --error wrote an
  * error computed from SIGMA beside every predicted value (some of the
- * errors negative). Uncertainty output is not part of Tadah! 1.6.0: the
- * errors of Tadah! 1.0.0 to 1.5.0 were not standard deviations, and no
- * calibrated estimate replaces them. Replaced by: nothing in Tadah! 1.6.0.
- * Deleting the option converts it: ...", likewise "--error of tadah
+ * errors negative). Uncertainty output is removed: the errors of Tadah!
+ * 1.0.0 to 1.5.0 were not standard deviations, and no calibrated estimate
+ * replaces them. Replaced by: nothing. Deleting the option converts it:
+ * ...", likewise "--error of tadah
  * properties pairwise is retired: ...", and "--uncertainty: UNCERTAINTY is
  * a retired key: tadah train --uncertainty wrote weights.tadah, ...". The
  * same commands without the option make their task.
  * Before the fix: each option was taken; then the reasons said that the
  * options gave standard deviations, too narrow for many structures (what
- * a development build gave, not a release). */
+ * a development build gave, not a release); then that uncertainty output
+ * was not part of Tadah! 1.6.0, replaced by "nothing in Tadah! 1.6.0". */
 TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
           "--uncertainty",
           "[uncertainty][retired][cli]") {
@@ -182,8 +183,8 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
              StartsWith("--error of tadah predict is retired: tadah predict "
                         "--error wrote an error computed from SIGMA beside "
                         "every predicted value") &&
-                 Contains(kNotPart) &&
-                 Contains("Replaced by: nothing in Tadah! 1.6.0. Deleting "
+                 Contains(kRemoved) &&
+                 Contains("Replaced by: nothing. Deleting "
                           "the option converts it"));
   CHECK(factory_error(Input("PREDICT", predict)).empty());
 
@@ -198,8 +199,8 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
                         "tadah properties pairwise --error wrote an error "
                         "computed from SIGMA beside every value of the "
                         "energy curve") &&
-                 Contains(kNotPart) &&
-                 Contains("Replaced by: nothing in Tadah! 1.6.0."));
+                 Contains(kRemoved) &&
+                 Contains("Replaced by: nothing."));
   CHECK(factory_error(Input("PROPERTIES.pairwise", pairwise)).empty());
 
   CHECK_THAT(factory_error(Input("TRAIN", {{"config", {"config.train"}},
@@ -208,8 +209,8 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
                         "train --uncertainty wrote weights.tadah, each "
                         "coefficient of the fit beside a diagonal entry of "
                         "SIGMA.") &&
-                 Contains(kNotPart) &&
-                 Contains("Replaced by: nothing in Tadah! 1.6.0."));
+                 Contains(kRemoved) &&
+                 Contains("Replaced by: nothing."));
 }
 
 /* Pins: a task file that gives ERROR in a TASK predict or TASK properties
@@ -234,19 +235,19 @@ TEST_CASE("A task file is refused for ERROR in a predict or properties "
                            "  ERROR true\n  DBFILE db.tadah\n"),
              StartsWith("ERROR (line 3 of p.task) in TASK predict: --error of "
                         "tadah predict is retired: ") &&
-                 Contains(kNotPart));
+                 Contains(kRemoved));
   CHECK_THAT(run("q.task", "TASK properties pairwise\n  POTENTIAL pot.tadah\n"
                            "  OUTFILE pair.txt\n  RANGE 2 5 4\n"
                            "  ATOMPAIR Ta Ta\n  ERROR false\n"),
              StartsWith("ERROR (line 6 of q.task) in TASK properties "
                         "pairwise: --error of tadah properties pairwise is "
                         "retired: ") &&
-                 Contains(kNotPart));
+                 Contains(kRemoved));
   CHECK_THAT(run("g.task", "ERROR true\nTASK predict\n  POTENTIAL pot.tadah\n"
                            "  DBFILE db.tadah\n"),
              StartsWith("ERROR (line 1 of g.task) in the GLOBAL section "
                         "reaches TASK predict") &&
-                 Contains(kNotPart));
+                 Contains(kRemoved));
   CHECK(run("ok.task", "TASK predict\n  POTENTIAL pot.tadah\n"
                        "  DBFILE db.tadah\n")
             .empty());
@@ -315,7 +316,7 @@ TEST_CASE("A fit refuses a configuration with WCOV, WNOISE or UNCERTAINTY",
   const std::string error =
       fit(model_lines("M_BLR BF_Linear", {"ERROR true"}), pot);
   CHECK_THAT(error, Contains("ERROR true (line 16" + mark) &&
-                        Contains(kNotPart) &&
+                        Contains(kRemoved) &&
                         Contains(keys.at("ERROR").retired.conversion));
   CHECK_FALSE(pot.has_stored("ERROR"));
   CHECK(fit(model_lines("M_BLR BF_Linear", {}), pot).empty());

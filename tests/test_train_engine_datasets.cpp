@@ -234,8 +234,7 @@ std::vector<std::string> pot_line(const fs::path &p, const std::string &key) {
  *     them";
  *   - M_BLR with FIXINDEX 1 alone (FIXWEIGHT 0.25), which fits weight 2: no
  *     such WARNING.
- * Not a refusal: such a fit can be deliberate (under OALGO 3 it gives the
- * noise of the data about the pinned weights).
+ * Not a refusal: such a fit can be deliberate.
  * Before the fix: no WARNING: tadah train exited 0 with the input weights
  * and said nothing (a run before the fix: a dense refit potential,
  * FIXINDEX 1-171, retrained on eos_bcc.tadahdb, WEIGHTS byte-identical). */

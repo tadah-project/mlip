@@ -192,8 +192,8 @@ TEST_CASE("A DM_Embed trainer writes no legacy many-body cutoff key",
  * as the configuration, three times in a row) gives the weights of the
  * first fit, bit for bit, and no potential has WCOV, WNOISE or SIGMA, for
  * M_BLR BF_Linear and M_KRR Kern_Linear.
- * Before the fix (uncertainty output not part of Tadah! 1.6.0): each
- * potential had the WCOV and WNOISE of its fit (this case pinned them,
+ * Before uncertainty output was removed: each potential
+ * had the WCOV and WNOISE of its fit (this case pinned them,
  * bit for bit the first fit's). Before fix/hpo-trainer-reuse (SIGMA, 10
  * values, was then the covariance): M_BLR's retrains wrote 20, then 30
  * values (each fit appended its SIGMA to the one in the configuration);
@@ -237,8 +237,8 @@ TEST_CASE("Retraining from an OALGO 3 potential gives the weights of its "
  * Kern_Linear; a retrain with OALGO 3 and FIXINDEX pinning every weight
  * (M_BLR, the fit that solves nothing) writes the FIXWEIGHT values as its
  * weights, and no WCOV or WNOISE.
- * Before the fix (uncertainty output not part of Tadah! 1.6.0): the pinned
- * retrain wrote the covariance of pinned weights, WCOV 3 and nine zeros,
+ * Before uncertainty output was removed: the pinned retrain
+ * wrote the covariance of pinned weights, WCOV 3 and nine zeros,
  * with a WNOISE. Before fix/hpo-trainer-reuse: the potentials kept the
  * configuration's 10 SIGMA values beside weights of another fit; M_KRR's
  * retrain threw "This object is already trained!". */
@@ -288,8 +288,8 @@ TEST_CASE("Retraining an OALGO 3 potential with OALGO 1 or every weight "
  * with no fit: the model is trained, its weights are the FIXWEIGHT values,
  * and neither tr.context nor the potential has SIGMA, WCOV or WNOISE (a fit
  * writes nothing into its context).
- * Before the fix (uncertainty output not part of Tadah! 1.6.0): the
- * potential of the first fit had WCOV and WNOISE, which the provisioning
+ * Before uncertainty output was removed: the potential
+ * of the first fit had WCOV and WNOISE, which the provisioning
  * removed (this case pinned both). */
 TEST_CASE("provision_fixed_weights after a fit of its Trainer",
           "[trainer][sigma]") {

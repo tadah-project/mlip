@@ -1360,7 +1360,7 @@ void set_basis(Context &c, const std::vector<std::vector<double>> &vectors) {
 // SBASIS 7" and "the potential has WEIGHTS but no basis vectors (SBASIS and
 // BASIS)"; the OALGO 1 fit kept the potential's SIGMA (26 values), and the
 // OALGO 3 fit appended its own to it (52 values, the potential's first).
-// Before uncertainty output left Tadah! 1.6.0: an OALGO 3 potential had the
+// Before uncertainty output was removed: an OALGO 3 potential had the
 // WCOV and WNOISE of its fit, which this case checked.
 TEST_CASE("A Trainer built from a potential reads none of the potential's "
           "fit",
