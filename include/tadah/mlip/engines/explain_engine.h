@@ -92,7 +92,11 @@ void set_explain_hook(ExplainHook hook, std::string what);
  * shows it: 'text::' as 'text:', 'text ::' as 'text', and a paragraph of
  * '::' alone, with the blank line after it, not at all. Inside the literal
  * block it opens (the lines indented more than that paragraph, and blank
- * lines), and inside a line, '::' is text; other RST markup is printed as
+ * lines), and inside a line, '::' is text. Outside a literal block an
+ * inline role is shown as the documentation shows it, by its text:
+ * ':ref:`Title <label>`' as 'Title', ':ref:`LAMBDA`' as 'LAMBDA',
+ * ':math:`x^2`' as 'x^2' (the CLI page renders an option's text in a
+ * parsed-literal block, which reads roles). Other RST markup is printed as
  * written.
  */
 std::vector<std::string> explain_text_lines(const std::string &text);
