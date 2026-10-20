@@ -1078,28 +1078,34 @@ TEST_CASE("Fit balance lines are at most 78 characters wide", "[fit_balance]") {
 
 /* Pins: the legend of the columns: one line per column, each beginning
  * with its name (quantity, dataset, n, RMSE, unit, r/sigma, share, gamma),
- * then the line on what sums: the rows of every dataset ("all") with the
- * prior's, whose shares sum to 1 and whose gamma sum to the rank (the rows
- * of the datasets repeat them); every line at most 78 wide. n counts the
+ * a line on what "-" means (a row without an entry of priority > 0 has no
+ * RMSE and no r/sigma), then the line on what sums: the rows of every
+ * dataset ("all") with the prior's, whose shares sum to 1 and whose gamma
+ * sum to the rank (the rows of the datasets repeat them); every line at
+ * most 78 wide. "all" pools the entries of every dataset, n counts the
  * observations, RMSE runs over every entry of priority > 0.
  * print_fit_balance prints the lines and, when asked, the legend after
  * them; the legend is asked for once per process (first_fit_balance_legend).
  * Before the fix: a line for sigma, and "gamma ... with the prior's, the
  * rank", which a table of several datasets contradicts (its gamma column
- * sums to twice the rank). */
+ * sums to twice the rank); "all: every dataset", which reads as a mean
+ * over the datasets, and no line on "-". */
 TEST_CASE("Fit balance legend", "[fit_balance]") {
   const std::vector<std::string> legend = tadah::mlip::fit_balance_legend();
-  REQUIRE(legend.size() == 9);
+  REQUIRE(legend.size() == 10);
   std::size_t i = 0;
   for (const char *col : {"quantity", "dataset", "n", "RMSE", "unit",
-                          "r/sigma", "share", "gamma"}) {
+                          "r/sigma", "share", "gamma", "-"}) {
     INFO(legend[i]);
     CHECK_THAT(legend[i], StartsWith(std::string("  ") + col + " "));
     ++i;
   }
+  CHECK_THAT(legend[1], Contains("all: every dataset's entries together"));
   CHECK_THAT(legend[2], Contains("observations"));
   CHECK_THAT(legend[3], Contains("every entry of priority > 0"));
-  CHECK_THAT(legend[8], Contains("all") && Contains("prior") &&
+  CHECK_THAT(legend[8], Contains("RMSE and r/sigma") &&
+                            Contains("without an entry of priority > 0"));
+  CHECK_THAT(legend[9], Contains("all") && Contains("prior") &&
                             Contains("share sums to 1") &&
                             Contains("gamma to the rank"));
   check_width(legend);

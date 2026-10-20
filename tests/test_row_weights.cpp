@@ -42,6 +42,7 @@
 #include <tadah/models/dc_selector.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -121,6 +122,98 @@ std::vector<double> singular_values(std::vector<double> a, int m, int n) {
                        &ldu, &vt, &ldvt, work.data(), &lwork, &info);
   REQUIRE(info == 0);
   return s;
+}
+
+/* An independent reference of the effective parameters of the rows of
+ * @p Phi in two datasets (@p ds 0 or 1): the triangle R of a Householder
+ * QR of [Phi; sqrt(lambda) P] in long double (P the diagonal of 1 for each
+ * penalised column, @p pen), R^-1 by back substitution, then per type and
+ * dataset the sum of the leverages |a_k R^-1|^2 of its rows, tr(H^-1
+ * H_qd) with H = R^T R, and the prior's lambda |P R^-1|_F^2, lambda
+ * tr(H^-1 P^T P). R^-1 has the condition number of [Phi; sqrt(lambda) P],
+ * not that of H, its square. */
+struct QrReference {
+  std::array<std::array<double, 3>, 2> by_dataset{};
+  double prior = 0.0;
+};
+
+QrReference qr_reference(const tadah::core::phi_type &Phi,
+                         const tadah::core::t_type &labels,
+                         const std::vector<std::size_t> &ds, double lambda,
+                         const std::vector<int> &pen) {
+  using LD = long double;
+  const std::size_t m = Phi.rows(), n = Phi.cols();
+  const std::size_t rows = m + (lambda > 0.0 ? n : 0);
+  std::vector<LD> a(rows * n, 0);  // column-major
+  for (std::size_t j = 0; j < n; ++j) {
+    for (std::size_t i = 0; i < m; ++i) a[i + rows * j] = Phi(i, j);
+    if (lambda > 0.0 && pen[j]) a[m + j + rows * j] = std::sqrt(static_cast<LD>(lambda));
+  }
+  for (std::size_t k = 0; k < n; ++k) {  // Householder: column k
+    LD norm = 0;
+    for (std::size_t i = k; i < rows; ++i) norm += a[i + rows * k] * a[i + rows * k];
+    norm = std::sqrt(norm);
+    const LD alpha = a[k + rows * k] > 0 ? -norm : norm;
+    std::vector<LD> v(rows, 0);
+    for (std::size_t i = k; i < rows; ++i) v[i] = a[i + rows * k];
+    v[k] -= alpha;
+    LD vv = 0;
+    for (std::size_t i = k; i < rows; ++i) vv += v[i] * v[i];
+    for (std::size_t j = k; j < n; ++j) {
+      LD d = 0;
+      for (std::size_t i = k; i < rows; ++i) d += v[i] * a[i + rows * j];
+      d *= 2 / vv;
+      for (std::size_t i = k; i < rows; ++i) a[i + rows * j] -= d * v[i];
+    }
+  }
+  std::vector<LD> inv(n * n, 0);  // R^-1, row-major, upper
+  for (std::size_t c = 0; c < n; ++c) {
+    inv[c * n + c] = 1 / a[c + rows * c];
+    for (std::size_t r = c; r-- > 0;) {
+      LD s = 0;
+      for (std::size_t k = r + 1; k <= c; ++k) s += a[r + rows * k] * inv[k * n + c];
+      inv[r * n + c] = -s / a[r + rows * r];
+    }
+  }
+  QrReference ref;
+  std::array<std::array<LD, 3>, 2> sum{};
+  for (std::size_t i = 0; i < m; ++i) {
+    LD h = 0;
+    for (std::size_t c = 0; c < n; ++c) {
+      LD x = 0;
+      for (std::size_t j = 0; j <= c; ++j) x += static_cast<LD>(Phi(i, j)) * inv[j * n + c];
+      h += x * x;
+    }
+    sum[ds[i]][static_cast<std::size_t>(labels(i))] += h;
+  }
+  for (std::size_t d = 0; d < 2; ++d)
+    for (std::size_t q = 0; q < 3; ++q)
+      ref.by_dataset[d][q] = static_cast<double>(sum[d][q]);
+  LD prior = 0;
+  for (std::size_t j = 0; j < n; ++j)
+    if (pen[j])
+      for (std::size_t c = j; c < n; ++c) prior += inv[j * n + c] * inv[j * n + c];
+  ref.prior = static_cast<double>(lambda * prior);
+  return ref;
+}
+
+/* 3000 rows of 6 columns, more than one block of the computation, in three
+ * types and two datasets; column j scaled by 10^(-8 j / 5), so that the
+ * singular values run from 40 to 4e-7 (condition number 1e8). */
+void graded_design(tadah::core::phi_type &Phi, tadah::core::t_type &labels,
+                   std::vector<std::size_t> &ds) {
+  const std::size_t m = 3000, n = 6;
+  Phi = tadah::core::phi_type(m, n);
+  labels = tadah::core::t_type(m);
+  ds.assign(m, 0);
+  for (std::size_t i = 0; i < m; ++i) {
+    for (std::size_t j = 0; j < n; ++j)
+      Phi(i, j) = (std::sin(0.37 * static_cast<double>(i * (j + 1)) + 0.11 * j) +
+                   (j == i % n ? 0.5 : 0.0)) *
+                  std::pow(10.0, -8.0 * static_cast<double>(j) / 5.0);
+    labels(i) = static_cast<double>(i % 3);
+    ds[i] = (i / 7) % 2;
+  }
 }
 
 }  // namespace
@@ -376,6 +469,123 @@ TEST_CASE("Effective parameters of more rows than a block, by hand",
       }
       CHECK(g.prior == Approx(static_cast<double>(prior)).epsilon(1e-9).margin(1e-14));
       CHECK(g.total + g.prior == Approx(static_cast<double>(n)).epsilon(1e-12));
+    }
+  }
+}
+
+/* Pins: OALGO 2 (QR) and OALGO 4 (Cholesky) solve with every direction of
+ * [A; sqrt(lambda) P]: they refuse a matrix without full column rank, and
+ * with LAMBDA > 0 every eigenvalue of H on the penalised columns is at least
+ * lambda. So on a design of condition number 1e8 (graded_design) their
+ * effective parameters keep every direction: the rank is 6, and per type and
+ * dataset gamma equals tr(H^-1 H_qd), and the prior's lambda tr(H^-1 P^T P),
+ * of an independent QR in long double (qr_reference), 1e-6; at LAMBDA 0
+ * (OALGO 2) and at LAMBDA 1e-13, of the order of the smallest singular
+ * value squared (4e-7^2), so that the prior determines about a third of
+ * that direction (OALGO 2; OALGO 4 also with column 0 unpenalised). The
+ * data's gamma and the prior's sum to 6.
+ * Before the fix: a direction whose singular value was at or below
+ * sqrt(n eps) times the largest (1.5e-6) was dropped: rank 5, and at LAMBDA
+ * 1e-13 the prior's gamma 0.0004 where the reference gives 0.381, the
+ * data's 5.000 where it gives 5.619. */
+TEST_CASE("Effective parameters under OALGO 2 and 4 keep every direction",
+          "[row_weights]") {
+  tadah::core::phi_type Phi;
+  tadah::core::t_type labels;
+  std::vector<std::size_t> ds;
+  graded_design(Phi, labels, ds);
+  const std::size_t n = Phi.cols();
+  struct Case {
+    int oalgo;
+    double lambda;
+    std::vector<std::size_t> unpenalised;
+  };
+  for (const Case &k : {Case{2, 0.0, {}}, Case{2, 1e-13, {}},
+                        Case{4, 1e-13, {}}, Case{4, 1e-13, {0}}}) {
+    DYNAMIC_SECTION("OALGO " << k.oalgo << ", LAMBDA " << k.lambda
+                             << ", unpenalised " << k.unpenalised.size()) {
+      std::vector<int> pen(n, 1);
+      for (std::size_t j : k.unpenalised) pen[j] = 0;
+      const QrReference ref = qr_reference(Phi, labels, ds, k.lambda, pen);
+      const auto g = tadah::mlip::effective_parameters(
+          Phi, labels, ds, 2, k.lambda, k.unpenalised, k.oalgo, 1e-8);
+      CHECK(g.retained == n);
+      double data = 0;
+      for (std::size_t q = 0; q < 3; ++q) {
+        double all = 0;
+        for (std::size_t d = 0; d < 2; ++d) {
+          INFO("type " << q << ", dataset " << d);
+          CHECK(g.by_dataset[d][q] == Approx(ref.by_dataset[d][q]).epsilon(1e-6));
+          all += ref.by_dataset[d][q];
+        }
+        INFO("type " << q);
+        CHECK(g.by_type[q] == Approx(all).epsilon(1e-6));
+        data += all;
+      }
+      CHECK(g.total == Approx(data).epsilon(1e-6));
+      if (k.lambda > 0.0) {
+        CHECK(ref.prior > 0.1);  // the prior determines part of a direction
+        CHECK(g.prior == Approx(ref.prior).epsilon(1e-6));
+      } else {
+        CHECK(g.prior == 0.0);
+      }
+      CHECK(data + ref.prior == Approx(static_cast<double>(n)).epsilon(1e-9));
+      CHECK(g.total + g.prior == Approx(static_cast<double>(n)).epsilon(1e-12));
+    }
+  }
+}
+
+/* Pins: with a rank threshold of 0 (OALGO 1 0 and OALGO 3 0, and OALGO 3
+ * with a negative one) every direction of a positive computed singular
+ * value is kept, those of the rounding of a design whose last column
+ * repeats its first included; each kept direction's parts, the rows' and
+ * the prior's, sum to 1, so the effective parameters sum to the rank and
+ * each type's lies between 0 and its rows (1000), at LAMBDA 0 and 1e-3.
+ * The rank is 5 or 6, as the rounding of the repeated column leaves a
+ * singular value of 0 or above. With the default threshold (1e-8) the rank
+ * is 5 and the data's gamma 5 at LAMBDA 0.
+ * Before the fix: a direction's part of row k was |a_k v|^2 / s^2, with s
+ * the singular value of the triangle of the rows, at the rounding level
+ * and unrelated to |A v|: under OALGO 1 0, OALGO 3 0 and OALGO 3 -1 the
+ * effective parameters summed to 15.85 for a rank of 6. */
+TEST_CASE("Effective parameters with a rank threshold of 0 sum to the rank",
+          "[row_weights]") {
+  tadah::core::phi_type Phi;
+  tadah::core::t_type labels;
+  std::vector<std::size_t> ds;
+  graded_design(Phi, labels, ds);
+  const std::size_t m = Phi.rows(), n = Phi.cols();
+  for (std::size_t i = 0; i < m; ++i) {
+    for (std::size_t j = 1; j + 1 < n; ++j) Phi(i, j) *= std::pow(10.0, 1.6 * j);
+    Phi(i, n - 1) = Phi(i, 0);
+  }
+  struct Case {
+    int oalgo;
+    double rcond;
+    double lambda;
+  };
+  for (const Case &k : {Case{1, 0.0, 0.0}, Case{3, 0.0, 0.0},
+                        Case{3, -1.0, 0.0}, Case{1, 0.0, 1e-3},
+                        Case{3, 0.0, 1e-3}, Case{1, 1e-8, 0.0},
+                        Case{3, 1e-8, 0.0}}) {
+    DYNAMIC_SECTION("OALGO " << k.oalgo << " " << k.rcond << ", LAMBDA "
+                             << k.lambda) {
+      const auto g = tadah::mlip::effective_parameters(
+          Phi, labels, ds, 2, k.lambda, {}, k.oalgo, k.rcond);
+      if (k.rcond > 0.0 || k.lambda > 0.0) {
+        CHECK((g.retained == 5 || k.lambda > 0.0));
+      } else {
+        CHECK((g.retained == 5 || g.retained == 6));
+      }
+      for (std::size_t q = 0; q < 3; ++q) {
+        INFO("type " << q);
+        CHECK(g.by_type[q] >= 0.0);
+        CHECK(g.by_type[q] <= 1000.0);
+      }
+      CHECK(g.prior >= 0.0);
+      CHECK(g.total + g.prior ==
+            Approx(static_cast<double>(g.retained)).epsilon(1e-9));
+      if (k.rcond > 0.0) CHECK(g.total == Approx(5.0).epsilon(1e-9));
     }
   }
 }
