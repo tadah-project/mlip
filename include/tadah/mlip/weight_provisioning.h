@@ -125,8 +125,7 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
 /** The WARNING of a training whose FIXINDEX and FIXWEIGHT pin every weight
  *  (classify_weight_source() is WeightSource::AllFixedData): the fit
  *  changes none of them (MODELS M_BLR_Train and M_KRR_Train skip the
- *  regressor; under OALGO 3 it still gives the noise of the data about
- *  them), so the potential written has the FIXWEIGHT values as its
+ *  regressor), so the potential written has the FIXWEIGHT values as its
  *  WEIGHTS. "tadah train: FIXINDEX and FIXWEIGHT pin every weight (all K
  *  of them), so the fit changes none: the WEIGHTS of the potential written
  *  are the FIXWEIGHT values. tadah refit and refit --edit write FIXINDEX
