@@ -14,14 +14,18 @@ toolchain. Implements the engines that back every `tadah` subcommand:
   individual structures; per-frame analytics.
 - **Data engines** — dataset conversion from external sources
   (CASTEP / VASP / AFLOW / COD / CIF), de-duplication, merging,
-  splitting, sampling, weight rebalancing.
+  splitting, sampling, energy shifts per element.
 - **Analysis engines** — cutoff-function plots, descriptor
   calculation.
 - **Properties engine** — pairwise energy curves.
 - **Load-time data transforms** — `LSCALE`, `ESHIFT` /
-  `ESHIFT_ATOM` / `ESHIFT_DBATOM`, `EFILTER`, `FFILTER`, `WDBFILE`,
-  `WDBFILE_AUTO`, `EWEIGHT_TEMP`, `ZERO_COM_FORCE`,
-  equilibrium-volume diagnostic.
+  `ESHIFT_ATOM` / `ESHIFT_DBATOM`, `EFILTER`, `FFILTER`,
+  `ZERO_COM_FORCE`, equilibrium-volume diagnostic.
+- **Error scales of a fit** — the weight of every row of a design
+  matrix from `ESIGMA`, `FSIGMA`, `SSIGMA`, `ENORM` and `ENERGY` and
+  the priorities of the data (`WDBFILE` and each structure's
+  weights), its observations and its effective parameters
+  (`row_weights.h`).
 
 ## You don't need to use this directly
 
