@@ -86,8 +86,9 @@ std::string fixindex_intercept_warning(const tadah::core::Context &ctx,
  *  with the intercept vectors e_0 .. e_{N-1}, so a dot-product kernel's
  *  intercepts are its weights 1 to N, before the fit as after it. M_KRR
  *  implementation 2 (is_krr_implementation_2: any kernel, Kern_Linear
- *  too), whose solve (K + LAMBDA I) w = T fits the basis vectors' targets,
- *  not the structures' energies, and pins no weight, is not checked.
+ *  too), whose solve (K + LAMBDA sigma^2 I) w = T fits the basis vectors'
+ *  targets, not the structures' energies, and pins no weight, is not
+ *  checked.
  *
  *  A priority of the data that is negative or not finite, and a WDBFILE
  *  without one value per dataset, are refused first

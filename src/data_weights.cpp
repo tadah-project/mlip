@@ -57,7 +57,7 @@ std::string krr_implementation2_ignores(const std::string &kernel,
                                         const std::string &fits,
                                         const std::string &instead) {
   return "MODEL M_KRR " + kernel + " 2 fits the energies per atom of whole "
-         "structures, without forces, stresses, error scales or priorities: " +
+         "structures over ESIGMA, without forces, stresses or priorities: " +
          what +
          " would be ignored. Implementation 1 (MODEL M_KRR " + kernel +
          " 1) " + fits + "; implementation 2 fits " + instead + ".";
@@ -96,7 +96,7 @@ void refuse_what_krr_implementation2_ignores(
            "with ENERGY true");
   if (tadah::core::to_upper(context.get<std::string>("ENORM")) != "ATOM")
     refuse(given("ENORM"), "applies it", "with ENORM ATOM");
-  for (const char *key : {"ESIGMA", "FSIGMA", "SSIGMA"})
+  for (const char *key : {"FSIGMA", "SSIGMA"})
     if (!at_default(key)) {
       const auto &d =
           tadah::core::BlueprintParser::getKeysMapRef().at(key).default_value;

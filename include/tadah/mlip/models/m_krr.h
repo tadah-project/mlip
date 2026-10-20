@@ -51,11 +51,13 @@ namespace mlip {
  * records SBASIS and BASIS with the weights.
  *
  * **Implementation 2** fits energies only, by solving
- * \f$ (K + \lambda I) w = T \f$ on SBASIS basis vectors (the n0
+ * \f$ (K + \lambda \sigma^2 I) w = T \f$ on SBASIS basis vectors (the n0
  * intercept vectors, with target 0, and the mean descriptors of drawn
- * structures, with their energies per atom). No weight of the data enters
- * this solve: a fit that asks for forces, stresses or weights is refused
- * (refuse_what_train2_ignores()). A non-linear kernel's weights
+ * structures, with their energies per atom), \f$ \sigma \f$ = ESIGMA in
+ * eV: the residuals of the energies per atom over ESIGMA, as every fit
+ * weighs them (row_weights.h). No priority of the data enters this solve:
+ * a fit that asks for forces, stresses, priorities or ENORM SQRT is
+ * refused (refuse_what_train2_ignores()). A non-linear kernel's weights
  * are w, and its potential records SBASIS and BASIS. Kern_Linear's are the
  * descriptor weights of its basis vectors, \f$ \sum_j w_j \mathbf{b}_j \f$
  * (converted to the raw descriptors with NORM, as implementation 1's): its
@@ -274,7 +276,10 @@ public:
     // so it keeps no basis.
     if (kernel.get_label()!="Kern_Linear")
       kernel.set_basis(basis.b);
-    tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T);
+    // The energies per atom over ESIGMA, as every fit weighs them
+    // (ENORM ATOM: implementation 2 refuses SQRT).
+    tadah::models::M_KRR_Train<K>::train2(basis.b, basis.T,
+                                          ErrorScales::of(context).esigma);
     // With NORM the basis vectors are normalised descriptors: Kern_Linear's
     // weights go to the raw descriptors, as implementation 1's do
     // (train(desmat)), since its prediction does not normalise.

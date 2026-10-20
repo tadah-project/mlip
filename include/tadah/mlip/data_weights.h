@@ -43,9 +43,8 @@ void require_valid_weights(const StructureDB &stdb,
 
 /** The refusal of M_KRR implementation 2 (`MODEL M_KRR <kernel> 2`) for a
  *  setting it would ignore: `MODEL M_KRR <kernel> 2 fits the energies per
- *  atom of whole structures, without forces, stresses, error scales or
- *  priorities: <what>
- *  would be ignored. Implementation 1 (MODEL M_KRR <kernel> 1) <fits>;
+ *  atom of whole structures over ESIGMA, without forces, stresses or
+ *  priorities: <what> would be ignored. Implementation 1 (MODEL M_KRR <kernel> 1) <fits>;
  *  implementation 2 fits <instead>.` */
 std::string krr_implementation2_ignores(const std::string &kernel,
                                         const std::string &what,
@@ -53,12 +52,13 @@ std::string krr_implementation2_ignores(const std::string &kernel,
                                         const std::string &instead);
 
 /** Refuses what M_KRR implementation 2 of @p context (`MODEL M_KRR
- *  <kernel> 2`) would ignore, before it fits: it solves (K + LAMBDA I)
- *  w = t on the mean descriptors of whole structures and their energies
- *  per atom, so no force, stress, error scale or priority of the data
- *  enters it. FORCE true, STRESS true, ENERGY false, ENORM SQRT, an ESIGMA,
- *  FSIGMA or SSIGMA other than its blueprint default (compared by value), a
- *  WDBFILE value other than 1, and a structure of @p stdb whose eweight is
+ *  <kernel> 2`) would ignore, before it fits: it solves (K + LAMBDA
+ *  sigma^2 I) w = t on the mean descriptors of whole structures and their
+ *  energies per atom, sigma = ESIGMA in eV, so no force, stress, priority
+ *  or ENORM of the data enters it. FORCE true, STRESS true, ENERGY false,
+ *  ENORM SQRT, an FSIGMA or SSIGMA other than its blueprint default
+ *  (compared by value), a WDBFILE value other than 1, and a structure of
+ *  @p stdb whose eweight is
  *  not 1 (its energy given a priority, or left out with 0) are refused,
  *  each naming implementation 1, which fits them
  *  (krr_implementation2_ignores()). A structure's fweight and sweight
