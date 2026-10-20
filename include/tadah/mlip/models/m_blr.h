@@ -106,6 +106,8 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+    // The weights first: the checks below read them.
+    require_valid_weights(stdb, context);
     check_bias_constraints(context);
     require_intercepts_determined(stdb, context, bf);
 
@@ -119,6 +121,8 @@ public:
   }
 
   void train(const StructureDB &stdb, DC_Base &dc) {
+    // The weights first: the checks below read them.
+    require_valid_weights(stdb, context);
     check_bias_constraints(context);
     require_intercepts_determined(stdb, context, bf);
 

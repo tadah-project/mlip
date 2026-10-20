@@ -135,7 +135,21 @@ public:
   }
 
   void train(StDescriptorsDB &st_desc_db, const StructureDB &stdb) {
+    // The weights first: the checks below read them.
+    require_valid_weights(stdb, context);
     check_bias_constraints(context);
+
+    // Precomputed descriptors run implementation 1, whatever MODEL's third
+    // value: implementation 2 fits the mean descriptors of whole structures,
+    // which train(StructureDB, DescriptorsCalc) computes.
+    if (context.size("MODEL")==3 && context.template get<int>("MODEL",2)!=1)
+      throw std::runtime_error(
+          "MODEL M_KRR " + kernel.get_label() + " " +
+          context.template get<std::string>("MODEL",2) + ": the fit of "
+          "precomputed descriptors (train(StDescriptorsDB, StructureDB)) runs "
+          "implementation 1 only (MODEL M_KRR " + kernel.get_label() + " 1); "
+          "implementation 2 fits the mean descriptors of whole structures, "
+          "which train(StructureDB, DescriptorsCalc) computes.");
 
     // Precomputed descriptors: no basis is drawn on this path, so a
     // non-linear kernel would fit no column (or the columns of a basis
@@ -177,6 +191,8 @@ public:
       + std::to_string(modelN)+"\n");
   }
   void train1(const StructureDB &stdb, DC_Base &dc) {
+    // The weights first: the intercept check below reads them.
+    require_valid_weights(stdb, context);
     // KRR on the design matrix: for a non-linear kernel the columns are
     // its basis vectors, drawn here from the (normalised) training AEDs
     if(context.template get<bool>("NORM") || kernel.get_label()!="Kern_Linear") {
@@ -226,8 +242,10 @@ public:
    *  EWEIGHT_TEMP (any value: it reweights the energies), and a structure
    *  whose eweight is not 1 (its energy weighted, or left out with 0) are
    *  refused, each naming implementation 1, which fits them. A structure's
-   *  fweight and sweight are not read: implementation 1 with FORCE and
-   *  STRESS false does not read them either.
+   *  fweight and sweight weight nothing here, as in implementation 1 with
+   *  FORCE and STRESS false: a valid one (finite, >= 0) is accepted, and
+   *  train2() refuses another before this (require_valid_weights), as
+   *  every fit does.
    *  @throws std::runtime_error naming the key and its values (or the
    *  structure and its eweight) and MODEL M_KRR <kernel> 1. */
   void refuse_what_train2_ignores(const StructureDB &stdb) const {
@@ -276,6 +294,7 @@ public:
   }
 
   void train2(const StructureDB &stdb, DC_Base &dc) {
+    require_valid_weights(stdb, context);
     refuse_what_train2_ignores(stdb);
     fit_rows_ = false;  // implementation 2 fits no design matrix
 

@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <tadah/mlip/data_weights.h>
 #include <tadah/mlip/st_descriptors_db.h>
 #include <tadah/mlip/structure_db.h>
@@ -359,12 +361,16 @@ public:
    *  rows are those of the copy a build with wcopy true keeps (or of the
    *  matrix of a build with apply_weights false); the ridge rows after the
    *  data rows are not read.
-   *  @param stdb The StructureDB of the last build (its atom counts).
+   *  @param stdb The structures of the last build: the same number, and
+   *  each with the same atoms (their species and positions, in order) and
+   *  cell, bit for bit (structure_identity()); their labels (energies,
+   *  forces, stresses, weights) are not read.
    *  @param w The weights, one per column.
    *  @throws std::logic_error when the last build kept no rows without the
    *  factors, or @p w has another size than the columns.
    *  @throws std::runtime_error when @p stdb has other structures or rows
-   *  than the last build. */
+   *  than the last build, or a structure whose atoms or cell are not those
+   *  of the last build's structure at its place. */
   StructureDB predict_built(const StructureDB &stdb,
                             const tadah::core::t_type &w) const {
     if (!ws || (!w_copy_ && apply_weights))
@@ -386,6 +392,15 @@ public:
           "fit " + std::to_string(built_structures_) + " structures (" +
           std::to_string(data_rows_) + " rows): it predicts the structures "
           "it was fitted to");
+    for (size_t s = 0; s < stdb.size(); ++s)
+      if (structure_identity(stdb(s)) != built_identity_[s])
+        throw std::runtime_error(
+            structure_in_data(stdb, s) + " is not structure " +
+            std::to_string(s + 1) + " of the last fit: its species, cell or "
+            "atom positions differ, and the rows give the values of the "
+            "fit's structure; it predicts the structures it was fitted to "
+            "(predict(Context, StructureDB, DescriptorsCalc) predicts any "
+            "structures)");
     StructureDB out;
     out.dbidx = stdb.dbidx;
     out.structures.resize(stdb.size());
@@ -477,6 +492,39 @@ private:
   std::array<bool, 3> fitted_types_{{false, false, false}};
   size_t built_structures_ = 0;  // the structures of the last build
   size_t data_rows_ = 0;         // its rows without the ridge rows
+  // structure_identity() of each structure of the last build that kept its
+  // rows without the row factors (predict_built()); empty otherwise.
+  std::vector<std::uint64_t> built_identity_;
+
+  /* What identifies a structure's rows besides the model: its number of
+   * atoms, its cell, and the species and position of each atom in order,
+   * bit for bit (an FNV-1a hash of their bytes). The labels (energy,
+   * forces, stress, weights) are not part of it. */
+  static std::uint64_t structure_identity(const Structure &st) {
+    std::uint64_t h = 14695981039346656037ULL;
+    auto mix = [&h](const void *p, std::size_t n) {
+      const unsigned char *b = static_cast<const unsigned char *>(p);
+      for (std::size_t i = 0; i < n; ++i) {
+        h ^= b[i];
+        h *= 1099511628211ULL;
+      }
+    };
+    auto mix_double = [&mix](double v) {
+      std::uint64_t u;
+      std::memcpy(&u, &v, sizeof u);
+      mix(&u, sizeof u);
+    };
+    const std::uint64_t n = st.natoms();
+    mix(&n, sizeof n);
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j) mix_double(st.cell(i, j));
+    for (const Atom &a : st.atoms) {
+      const std::int64_t Z = a.Z;
+      mix(&Z, sizeof Z);
+      for (int k = 0; k < 3; ++k) mix_double(a.position[k]);
+    }
+    return h;
+  }
 
   // resize Phi and T and set all elements to zero
   void calc_mn(const StructureDB &stdb) {
@@ -490,6 +538,12 @@ private:
     }
     built_structures_ = stdb.size();
     data_rows_ = rows;
+    built_identity_.clear();
+    if (w_copy_ || !apply_weights) {  // rows predict_built() can read
+      built_identity_.reserve(stdb.size());
+      for (size_t s = 0; s < stdb.size(); ++s)
+        built_identity_.push_back(structure_identity(stdb(s)));
+    }
 
 
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));

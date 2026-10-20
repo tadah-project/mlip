@@ -147,14 +147,45 @@ derive_eshift_from_isolated_atoms(const StructureDB &stdb,
 
 std::map<int, double>
 derive_eshift_by_lsq_fit(const StructureDB &stdb) {
-  // Collect all unique species and assign each an index k = 0..K-1.
   std::set<core::Element> elements = stdb.get_unique_elements();
   if (elements.empty() || stdb.size() == 0) return {};
-  const int K = static_cast<int>(elements.size());
+
+  // A structure with eweight 0 has no energy of its own: not fitted. A
+  // species that only such structures contain has no energy to fit (its
+  // column of the normal matrix would be zero, which made the matrix
+  // singular): its shift is 0, a WARNING names it, and the fit runs over
+  // the species the energies determine.
+  std::set<int> with_energy;
+  std::map<int, std::size_t> in_weight0;  // Z -> its structures of eweight 0
+  for (const auto &st : stdb)
+    for (const auto &p : st.get_natoms_map()) {
+      if (st.eweight != 0.0) with_energy.insert(p.first);
+      else ++in_weight0[p.first];
+    }
+  std::map<int, double> undetermined;
+  for (const auto &e : elements) {
+    if (with_energy.count(e.Z)) continue;
+    const std::size_t n = in_weight0[e.Z];
+    core::Logger::instance().log(
+        core::LogLevel::WARNING,
+        "ESHIFT_DBATOM: no structure with an energy (eweight not 0) contains ",
+        e.symbol, " (Z=", std::to_string(e.Z), "; ", std::to_string(n),
+        n == 1 ? " structure has it, with eweight 0" :
+                 " structures have it, each with eweight 0",
+        "): its energy shift cannot be fitted; using ESHIFT[", e.symbol,
+        "]=0.0. The shifts of the other species are fitted to the structures "
+        "with an energy.");
+    undetermined[e.Z] = 0.0;
+  }
+
+  // Assign each species with an energy an index k = 0..K-1.
+  const int K = static_cast<int>(with_energy.size());
+  if (K == 0) return undetermined;
   std::vector<int> Z_by_k;
   std::map<int, int> k_by_Z;
   Z_by_k.reserve(K);
   for (const auto &e : elements) {
+    if (!with_energy.count(e.Z)) continue;
     k_by_Z[e.Z] = static_cast<int>(Z_by_k.size());
     Z_by_k.push_back(e.Z);
   }
@@ -197,7 +228,7 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb) {
         core::LogLevel::WARNING,
         "ESHIFT_DBATOM: normal-equations matrix is singular; "
         "dataset compositions may be linearly dependent. Setting all ESHIFT to 0.");
-    std::map<int, double> zero;
+    std::map<int, double> zero = undetermined;
     for (int z : Z_by_k) zero[z] = 0.0;
     return zero;
   }
@@ -234,7 +265,7 @@ derive_eshift_by_lsq_fit(const StructureDB &stdb) {
         two_decimal(std::sqrt(sse_after / n)), " eV.");
   }
 
-  std::map<int, double> out;
+  std::map<int, double> out = undetermined;
   for (int k = 0; k < K; ++k) out[Z_by_k[k]] = beta[k];
   return out;
 }
@@ -557,18 +588,24 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     context.get("WDBFILE", w_user);
   }
   {
-    // A dataset's weight is a number >= 0 (0 leaves the dataset out of the
-    // fit); the Context refuses one that is not finite.
+    // One value per dataset, each a number >= 0 (0 leaves the dataset out
+    // of the fit); the Context refuses one that is not finite. The count
+    // first: a value past the datasets weights no dataset.
     std::vector<size_t> dbidx = stdb.dbidx;
     if (dbidx.empty()) dbidx = {0, stdb.size()};
     const std::size_t n_db = dbidx.size() - 1;
+    if (!w_user.empty() && w_user.size() != n_db) {
+      throw std::runtime_error(
+          "WDBFILE size (" + std::to_string(w_user.size()) +
+          ") does not match number of datasets (" + std::to_string(n_db) +
+          ").");
+    }
     for (std::size_t d = 0; d < w_user.size(); ++d) {
       if (w_user[d] >= 0.0) continue;
       std::string text = "WDBFILE";
       for (const std::string &v : context("WDBFILE")) text += " " + v;
       std::string file;
-      if (context.has_stored("DBFILE") && context.size("DBFILE") == n_db &&
-          d < n_db)
+      if (context.has_stored("DBFILE") && context.size("DBFILE") == n_db)
         file = " (" + context("DBFILE")[d] + ")";
       throw std::runtime_error(
           text + ": the weight of dataset " + std::to_string(d + 1) + " of " +
@@ -589,12 +626,6 @@ apply_load_transforms(StructureDB &stdb, const tadah::core::Context &context) {
     std::vector<double> w_auto = (alpha > 0.0)
                                      ? auto_balance_db_weights(stdb, alpha)
                                      : std::vector<double>(n_db, 1.0);
-    if (!w_user.empty() && w_user.size() != n_db) {
-      throw std::runtime_error(
-          "WDBFILE size (" + std::to_string(w_user.size()) +
-          ") does not match number of datasets (" + std::to_string(n_db) +
-          ").");
-    }
     std::vector<double> w_final(n_db, 1.0);
     std::vector<std::size_t> counts(n_db, 0);
     for (std::size_t d = 0; d < n_db; ++d) {

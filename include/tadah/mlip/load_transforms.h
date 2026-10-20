@@ -141,7 +141,11 @@ derive_eshift_from_isolated_atoms(const StructureDB &stdb,
  *
  * Solves min ||y - M beta||^2 where y[i] = total energy of config i and
  * M[i, k] = count of species k in config i, over the configs with an energy
- * (eweight != 0). Returns eshift[Z(k)] = beta_k.
+ * (eweight != 0). Returns eshift[Z(k)] = beta_k. A species that only
+ * configs of eweight 0 contain has no energy to fit: its shift is 0, with
+ * a WARNING naming it, and beta runs over the other species. When the
+ * compositions of the configs with an energy do not determine beta (a
+ * singular normal matrix), every shift is 0, with a WARNING.
  *
  * Used to implement the ESHIFT_DBATOM key.
  */
