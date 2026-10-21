@@ -340,7 +340,7 @@ ObservationCount count_observations(const core::phi_type &Phi,
                                     const core::t_type &factors,
                                     const core::t_type &labels) {
   ObservationCount n;
-  const std::vector<char> zero = models::zero_rows(Phi, data_rows);
+  const std::vector<char> zero = models::zero_rows(Phi, data_rows, factors);
   for (std::size_t i = 0; i < zero.size(); ++i) {
     if (zero[i] || !(factors(i) > 0.0)) continue;
     const std::size_t t = static_cast<std::size_t>(labels(i));

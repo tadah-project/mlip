@@ -27,8 +27,9 @@
 //
 // A row is multiplied by its factor sqrt(W_i) (DesignMatrix). A row whose
 // design-matrix row is zero in every column (a force that is zero by
-// symmetry; zero to rounding, models::zero_rows()) carries no information
-// and is not an observation, nor is a row of priority 0. Every caller --
+// symmetry; zero to rounding against the largest values of the rows of
+// priority > 0, models::zero_rows()) carries no information and is not an
+// observation, nor is a row of priority 0. Every caller --
 // DesignMatrix (both builds), the intercept check and the analytic
 // gradients of tadah hpo -- takes the rule from here.
 
@@ -161,9 +162,11 @@ std::string fit_scales_info(const core::Context &c);
 
 /** The observations of a design matrix (DesignMatrix): a data row of
  *  factor > 0 that is not zero in every column (models::zero_rows(): no
- *  value above 1e-10 of the largest magnitude of its column, so the
- *  rounding of sums that cancel, as in the force rows of an atom at a
- *  centre of symmetry, does not make a row an observation). */
+ *  value above 1e-10 of the largest magnitude of its column over the rows
+ *  of factor > 0, so the rounding of sums that cancel, as in the force
+ *  rows of an atom at a centre of symmetry, does not make a row an
+ *  observation, and a row of priority 0 does not decide whether another
+ *  row is one). */
 struct ObservationCount {
   std::size_t total = 0;
   std::array<std::size_t, 3> by_type{{0, 0, 0}};  ///< E, F, S
@@ -171,8 +174,8 @@ struct ObservationCount {
 
 /** The observations among the first @p data_rows rows of @p Phi, whose
  *  factors are @p factors and types @p labels (0, 1, 2); @p Phi holds the
- *  rows without the factors (the zero rows are those of the design
- *  matrix, whatever the priorities). */
+ *  rows without the factors (the zero rows are those of the rows of
+ *  factor > 0, whatever the size of the priorities). */
 ObservationCount count_observations(const core::phi_type &Phi,
                                     std::size_t data_rows,
                                     const core::t_type &factors,
