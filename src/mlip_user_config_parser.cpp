@@ -169,6 +169,29 @@ MLIPUserConfigParser::parseNamed(
     return Refusal{};
   };
 
+  // A key that sets a fit (row_weights.h: the error scales, ENORM, ENERGY
+  // and the dataset priorities WDBFILE) changes nothing in a task that
+  // fits nothing, TASK predict: its line is refused there, and in the
+  // GLOBAL section when the file has a TASK predict section and no TASK
+  // section that fits (train, hpo), for which the GLOBAL line would be
+  // meant. The task it reaches, or "".
+  const bool file_fits = std::any_of(
+      namedSections.begin(), namedSections.end(), [](const Section &t) {
+        return t.task && (t.name == "TRAIN" || t.name == "HPO");
+      });
+  auto fit_key_refused = [&namedSections, file_fits](
+                             const Section &s,
+                             const std::string &key) -> std::string {
+    static const std::set<std::string> fit_keys = {
+        "ESIGMA", "FSIGMA", "SSIGMA", "ENORM", "ENERGY", "WDBFILE"};
+    if (!fit_keys.count(key)) return "";
+    if (s.task) return s.name == "PREDICT" ? s.name : "";
+    if (file_fits) return "";
+    for (const Section &t : namedSections)
+      if (t.task && t.name == "PREDICT") return t.name;
+    return "";
+  };
+
   // Parse each section. If it's not "GLOBAL", validate it using blueprint tasks.
   for (std::size_t i = 0; i < namedSections.size(); ++i) {
     const std::string &sectionName = namedSections[i].name;
@@ -221,6 +244,7 @@ MLIPUserConfigParser::parseNamed(
     const core::KeyLineRule rule =
         [&](const std::set<std::string> &file_keys, const std::string &key) {
           return refused(section, key).option != nullptr ||
+                 !fit_key_refused(section, key).empty() ||
                  (skip && (*skip)(file_keys, key));
         };
     std::vector<core::SkippedKeyLine> lines;
@@ -231,6 +255,22 @@ MLIPUserConfigParser::parseNamed(
     // data balance with RESCALE, or a GLOBAL RESCALE with a TASK data
     // balance section) is refused, with why.
     for (const core::SkippedKeyLine &line : lines) {
+      // A key that sets a fit, in a task that fits nothing.
+      if (const std::string task = fit_key_refused(section, line.key);
+          !task.empty()) {
+        const std::string why =
+            line.key + " sets the fit of tadah train and tadah hpo, and "
+            "tadah predict fits nothing: it predicts with the potential as "
+            "it was fitted.";
+        throw std::runtime_error(
+            line.key + " (" + line_of(line.line, line.source) + ") in " +
+            (section.task
+                 ? task_line(task) + ": " + why
+                 : "the GLOBAL section reaches " + task_line(task) +
+                       " (the GLOBAL section sets the keys of every task of "
+                       "the file), and no TASK section of the file fits: " +
+                       why));
+      }
       const Refusal r = refused(section, line.key);
       if (!r.option) continue;
       std::string msg = line.key + " (" + line_of(line.line, line.source) +
