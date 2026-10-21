@@ -235,11 +235,18 @@ void require_fit_settings(const core::Context &c, const std::string &who) {
   auto finite = [](double v) { return detail::is_finite_bits(v); };
 
   const double e = c.get<double>("ESIGMA");
-  if (!(finite(e) && e > 0.0))
+  if (!(finite(e) && e > 0.0)) {
+    // The unit of ESIGMA follows ENORM (meV per sqrt(atom) under SQRT).
+    const bool sqrt_norm =
+        core::to_upper(c.get<std::string>("ENORM")) == "SQRT";
     throw std::runtime_error(
         who + ": " + key_text(c, "ESIGMA") + ": the energy error scale is a "
-        "number > 0 (meV/atom, the error of the energy per atom that costs "
-        "as much as a force off by FSIGMA)" + tail);
+        "number > 0 (" +
+        (sqrt_norm ? "meV per sqrt(atom) under ENORM SQRT, the error of the "
+                     "energy over the square root of its number of atoms"
+                   : "meV/atom, the error of the energy per atom") +
+        " that costs as much as a force off by FSIGMA)" + tail);
+  }
   struct Scale {
     const char *key, *what, *unit, *zero;
   };
