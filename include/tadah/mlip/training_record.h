@@ -66,11 +66,10 @@ const std::vector<std::string> &dataset_preparation_keys();
  *  (potential_line_not_read): every key of training_record_keys() but
  *  DBFILE, in that order -- those of dataset_preparation_keys() (they
  *  prepared the data of its own fit), VALIDATION, HPOTARGET, CHECK,
- *  UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and
- *  HEALTH_LOG (settings of the run that wrote it: its validation and target
- *  files, the check instruction of tadah hpo, its switch for weights.tadah,
- *  its verbosity, output and diagnostics; the run that reads the potential
- *  has its own). DBFILE is read: a retrain adds its
+ *  VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG (settings
+ *  of the run that wrote it: its validation and target files, the check
+ *  instruction of tadah hpo, its verbosity, output and diagnostics; the run
+ *  that reads the potential has its own). DBFILE is read: a retrain adds its
  *  DBFILE line to a copy of the potential. The run settings among them are
  *  core::run_setting_keys(), which no parse stores from a potential. */
 const std::vector<std::string> &keys_not_read_from_a_potential();
@@ -81,9 +80,7 @@ const std::vector<std::string> &keys_not_read_from_a_potential();
  *  and HPOTARGET (the validation and target files of a tadah hpo run),
  *  CHECK (tadah hpo --check, which writes no potential: a potential of
  *  tadah train records the CHECK its configuration has, which tadah train
- *  does not read), UNCERTAINTY (the train task's switch for weights.tadah),
- *  VERBOSE,
- *  NUMERIC and OUTFILE (the run's verbosity and the writer's settings),
+ *  does not read), VERBOSE, NUMERIC and OUTFILE (the run's verbosity and the writer's settings),
  *  AUDIT, AUDIT_SAMPLE and HEALTH_LOG (the run's diagnostics). The one
  *  list both rules read: no key line of these is written
  *  (remove_training_record_keys), and the record lists the run's values
@@ -113,16 +110,14 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
  *  the keys of keys_not_read_from_a_potential() are settings of the run
  *  that wrote it, not of this run, and are not read -- the keys that
  *  prepared the data of its fit (ESHIFT_ATOM and ESHIFT_DBATOM whether or
- *  not the file has ESHIFT), VALIDATION, HPOTARGET, CHECK, UNCERTAINTY,
- *  VERBOSE, NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other
- *  key
+ *  not the file has ESHIFT), VALIDATION, HPOTARGET, CHECK, VERBOSE,
+ *  NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other key
  *  (DBFILE is read: a retrain adds its DBFILE line to a copy of the
  *  potential), and no line of a file without WEIGHTS: the lines of the task
  *  file, of a configuration file that includes the potential with CONFIG
  *  (before or after the CONFIG line) and the command line are the run's
  *  own, so a retrain works with any number of datasets and with the run's
- *  own filters, weights, ESHIFT toggle, UNCERTAINTY, verbosity, output and
- *  validation, whatever version wrote the potential. */
+ *  own filters, weights, ESHIFT toggle, verbosity, output and validation, whatever version wrote the potential. */
 bool potential_line_not_read(const std::set<std::string> &file_keys,
                              const std::string &key);
 
@@ -140,7 +135,7 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *  keys and those of its input groups (tadah hpo's VALIDATION and
  *  HPOTARGET), and, for tadah train and tadah hpo, NUMERIC, AUDIT,
  *  AUDIT_SAMPLE and, for tadah hpo, HEALTH_LOG, which both read from any
- *  configuration (tadah hpo takes no UNCERTAINTY or OUTFILE, tadah train no
+ *  configuration (tadah hpo takes no OUTFILE, tadah train no
  *  VALIDATION, HPOTARGET or HEALTH_LOG, check_bounds only HPOTARGET and
  *  VERBOSE: such a line is not named); with the values; "tadah <task>"
  *  begins it.
@@ -166,17 +161,13 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *     an included potential and "old.tadah, which the task file run.task
  *     includes with CONFIG, is a potential ... Write EFILTER or WDBFILE in
  *     the task file run.task to apply one to this run" for a task file (a
- *     run of a task file takes no command-line option). UNCERTAINTY true is
- *     named in a sentence of its own, "Its UNCERTAINTY true asked the run
- *     that wrote it for weights.tadah, not this run, and is ignored too."
- *     (or, alone, "its UNCERTAINTY true asked the run that wrote it for
- *     weights.tadah, not this run, and is ignored (tadah keeps ...)."), and
- *     so are the run settings, "Its VERBOSE 2 and NUMERIC 12 were settings
+ *     run of a task file takes no command-line option). The run settings
+ *     are named in a sentence of their own, "Its VERBOSE 2 and NUMERIC 12 were settings
  *     of the run that wrote it, not of this run, and are ignored too." (or
  *     first: "its OUTFILE old.tadah was a setting of the run that wrote
  *     it, not of this run, and is ignored (tadah keeps ...).");
- *     the advice names every key named, ESHIFT_ATOM, ESHIFT_DBATOM,
- *     UNCERTAINTY and the run settings among them, and the options of
+ *     the advice names every key named, ESHIFT_ATOM, ESHIFT_DBATOM and the
+ *     run settings among them, and the options of
  *     those the task has (tadah train has no --numeric: "Give --verbose on
  *     the command line, or a VERBOSE or NUMERIC line in ..."); and, when a
  *     toggle is named and @p config has ESHIFT, its last sentence says
@@ -192,7 +183,7 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *   - Without @p provenance (a context a program built): @p config is taken
  *     as one file; when it has WEIGHTS, the keys potential_line_not_read
  *     selects by its keys that a parse stores -- those of
- *     dataset_preparation_keys() and UNCERTAINTY -- are removed from it and
+ *     dataset_preparation_keys() -- are removed from it and
  *     named: "tadah train: the configuration is a potential (it has
  *     WEIGHTS): its ... Give --efilter or --wdbfile on the command line to
  *     apply one to this run (...)". Its run settings (VERBOSE, NUMERIC,

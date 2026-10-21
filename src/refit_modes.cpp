@@ -11,7 +11,6 @@
 #include <string>
 
 #include <tadah/core/core_user_config_parser.h>
-#include <tadah/mlip/weight_covariance.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/number_format.h>
 #include <tadah/mlip/engines/hpotarget_retarget.h>
@@ -154,8 +153,8 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   const std::string in_pot = c.get<std::string>("EDIT");
 
   // The input's lines of the keys of its training record but DBFILE --
-  // a potential an earlier version wrote has some: UNCERTAINTY, the keys
-  // that prepared its training data, its run's VERBOSE, NUMERIC, ... -- are
+  // a potential an earlier version wrote has some: the keys that prepared
+  // its training data, its run's VERBOSE, NUMERIC, ... -- are
   // not read (potential_line_not_read; no parse stores a run setting of a
   // potential): the edit runs with its own verbosity and NUMERIC, and the
   // lines go into the edit's record below.
@@ -165,7 +164,7 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   // The edit fits nothing: its weights are the input's, edited, so the
   // record of the fit that produced them -- the input's training record
   // and, for a potential an earlier version wrote, the keys of the record
-  // among its key lines (its DBFILE, UNCERTAINTY, VERBOSE, ...: they are
+  // among its key lines (its DBFILE, VERBOSE, ...: they are
   // not written as key lines, so they move into the record rather than
   // being dropped) -- is the edit's, after a line naming the input. The
   // edit's own inputs (-o, -v, NUMERIC) are not added, and neither is the
@@ -215,7 +214,6 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
     auto out=models::edit_embed_potential(pot,channel=="RHO",c.get<double>(has(c,"ADD")?"ADD":"REMOVE"),
       has(c,"REMOVE"),has(c,"ETA")?std::optional<double>(c.get<double>("ETA")):std::nullopt,
       has(c,"DEG")?std::optional<int>(c.get<int>("DEG")):std::nullopt);
-    remove_weight_covariance(out);
     const auto out_pot=pick_output(c,provenance,"OUTFILE","pot_edited.tadah");
     const auto out_hpo=pick_output(c,provenance,"HPOFILEOUT","refit_edited.hpotarget");
     guard_not_input(out_pot,in_pot,"pass -o <name> to choose a different output name");
@@ -337,9 +335,6 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   }
 
   Context out = potedit::rebuild_pot_context(view);
-  // The edited weights were not fitted: no weight covariance (an input's
-  // WCOV and WNOISE are of its own weights).
-  remove_weight_covariance(out);
 
   const std::string out_pot =
       pick_output(c, provenance, "OUTFILE", "pot_edited.tadah");

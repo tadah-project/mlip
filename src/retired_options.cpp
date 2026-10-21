@@ -36,11 +36,6 @@ std::string local_name(const std::string &key_name) {
 
 const core::BlueprintKey *retired_task_option(const std::string &task,
                                               const std::string &name) {
-  // A key that is retired itself (EWEIGHT, --wdbfile-auto) is refused as
-  // such, whatever the command (retired_keys.h).
-  const auto &keys = core::BlueprintParser::getKeysMapRef();
-  const auto own = keys.find(core::to_upper(name));
-  if (own != keys.end() && own->second.isRetired()) return nullptr;
   const auto &tasks = core::BlueprintParser::getTasksMapRef();
   const auto it = tasks.find(task);
   if (it == tasks.end()) return nullptr;
@@ -48,12 +43,26 @@ const core::BlueprintKey *retired_task_option(const std::string &task,
   auto match = [&](const core::BlueprintKey &k) {
     return k.isRetired() && core::to_lower(local_name(k.keyName)) == wanted;
   };
+  const core::BlueprintKey *option = nullptr;
   for (const core::BlueprintKey &k : it->second.blueprintKeys)
-    if (match(k)) return &k;
+    if (!option && match(k)) option = &k;
   for (const auto &group : it->second.groups)
     for (const core::BlueprintKey &k : group.blueprintKeys)
-      if (match(k)) return &k;
-  return nullptr;
+      if (!option && match(k)) option = &k;
+  if (!option) return nullptr;
+  // A key that is retired itself (EWEIGHT, --wdbfile-auto, --uncertainty:
+  // the task's option inherits the key's `retired`) is refused as such,
+  // whatever the command (retired_keys.h); an option the task retires with
+  // a reason of its own (--error of tadah predict, whose key ERROR is
+  // retired too) is refused with the task's text, which says what the
+  // option gave there.
+  const auto &keys = core::BlueprintParser::getKeysMapRef();
+  const auto own = keys.find(core::to_upper(name));
+  if (own != keys.end() && own->second.isRetired() &&
+      own->second.retired.reason == option->retired.reason &&
+      own->second.retired.conversion == option->retired.conversion)
+    return nullptr;
+  return option;
 }
 
 std::string retired_task_option_text(const std::string &task,

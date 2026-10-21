@@ -13,8 +13,12 @@ namespace mlip {
  *  `retired` of the task's key, as tadah data balance retires --rescale);
  *  nullptr when the task does not exist, has no such option or does not
  *  retire it, and for a key that is retired itself (EWEIGHT,
- *  WDBFILE_AUTO: core::retired_key_text() says why, for every command). A key of the configuration of that name stays what it is
- *  for the other commands (RESCALE of tadah analysis bfunc). */
+ *  WDBFILE_AUTO, UNCERTAINTY: core::retired_key_text() says why, for every
+ *  command) unless the task retires the option with a `retired` of its
+ *  own, another reason or conversion than the key's (--error of tadah
+ *  predict, whose key ERROR is retired too). A key of the configuration of
+ *  that name stays what it is for the other commands (RESCALE of tadah
+ *  analysis bfunc). */
 const core::BlueprintKey *retired_task_option(const std::string &task,
                                               const std::string &name);
 

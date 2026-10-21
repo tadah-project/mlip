@@ -2,8 +2,7 @@
 #define TADAH_MLIP_ROW_WEIGHTS_H
 
 // What a fit minimises, in one place: the weight of every row of its
-// design matrix, its observations, its effective parameters and the
-// absolute error scales its noise estimates are given in.
+// design matrix, its observations and its effective parameters.
 //
 // A fit minimises
 //
@@ -29,9 +28,9 @@
 // A row is multiplied by its factor sqrt(W_i) (DesignMatrix). A row whose
 // design-matrix row is zero in every column (a force that is zero by
 // symmetry; zero to rounding, models::zero_rows()) carries no information
-// and is not an observation, nor is a row of priority 0. Every caller -- DesignMatrix (both builds), the intercept
-// check, the weight covariance and its noise, predict --error and the
-// analytic gradients of tadah hpo -- takes the rule from here.
+// and is not an observation, nor is a row of priority 0. Every caller --
+// DesignMatrix (both builds), the intercept check and the analytic
+// gradients of tadah hpo -- takes the rule from here.
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
@@ -69,12 +68,6 @@ struct ErrorScales {
   /** N^q for a structure of @p natoms atoms: N under ENORM ATOM, sqrt(N)
    *  under ENORM SQRT. */
   double energy_norm(std::size_t natoms) const;
-
-  /** The absolute error scale of row type @p type (0 energy, 1 force, 2
-   *  stress), in the units of the data: ESIGMA/1000 eV (per atom or
-   *  sqrt(atom)), FSIGMA a eV/A, SSIGMA a eV/A^3 (the noise of WNOISE,
-   *  noise_of_fitted_types()). */
-  double absolute(std::size_t type) const;
 };
 
 /** The row factors of a fit of the structures @p stdb with the settings of
@@ -174,8 +167,6 @@ std::string fit_scales_info(const core::Context &c);
 struct ObservationCount {
   std::size_t total = 0;
   std::array<std::size_t, 3> by_type{{0, 0, 0}};  ///< E, F, S
-  /** Whether each type has an observation (the types a fit fitted). */
-  std::array<bool, 3> fitted{{false, false, false}};
 };
 
 /** The observations among the first @p data_rows rows of @p Phi, whose

@@ -8,7 +8,7 @@
 //    scales ESIGMA, FSIGMA, SSIGMA) as train(StructureDB, DescriptorsCalc)
 //    does: the same
 //    WEIGHTS, and the same observations (the rows of a non-zero weight),
-//    which the weight covariance of OALGO 3 (WCOV, WNOISE) is computed with.
+//    which the evidence approximation of LAMBDA -1 is computed with.
 //  - predict(StructureDB&) returns the values the last fit predicts for the
 //    structures it was fitted to, without the row factors, as
 //    predict(Context, StructureDB, DescriptorsCalc) does; it reads the data
@@ -222,38 +222,45 @@ std::string refusal(F f) {
 
 }  // namespace
 
-/* Pins: for M_BLR BF_Linear and M_KRR Kern_Linear 1 (OALGO 3, LAMBDA 0),
- * with non-unit priorities and ESIGMA 300, FSIGMA 1.4, SSIGMA 50, and with
- * priorities 0 (structure 0 without any, structure 1 without forces) and
- * the default error scales, train(StDescriptorsDB, StructureDB) gives the WEIGHTS
- * of train(StructureDB, DescriptorsCalc) bit for bit, and the same weight
- * covariance (WCOV and WNOISE, whose noise variance RSS / (n_obs - gamma)
- * counts the observations): the same rows, weighted alike.
+/* Pins: for M_BLR BF_Linear and M_KRR Kern_Linear 1 (OALGO 3, LAMBDA 0
+ * and LAMBDA -1), with non-unit priorities and ESIGMA 300, FSIGMA 1.4,
+ * SSIGMA 50, and with priorities 0 (structure 0 without any, structure 1
+ * without forces) and the default error scales, train(StDescriptorsDB,
+ * StructureDB) gives the WEIGHTS of train(StructureDB, DescriptorsCalc)
+ * bit for bit, and with LAMBDA -1 the same ALPHA and BETA (the evidence
+ * approximation, whose noise precision counts the observations): the same
+ * rows, weighted alike.
  * Before the fix: the precomputed path fitted the rows without their
  * factors (its WEIGHTS did not depend on any weight), and counted the
- * observations of the weighted rows. */
+ * observations of the weighted rows (the noise variance of the weight
+ * covariance the potentials held then differed). */
 TEST_CASE("train of precomputed descriptors applies the weights of the data",
           "[fit_weights][api]") {
   PeriodicTable::initialize();
   for (const auto &model : kLinearModels) {
     for (std::size_t k = 0; k < kWeightCases.size(); ++k) {
-      DYNAMIC_SECTION(model[0] << " " << model[1] << ", weights case " << k) {
-        const Weights &w = kWeightCases[k];
-        const Context c = weighted_context(model, w);
-        const Context ref = fitted_potential(c, weighted_db(w), false);
-        const Context pre = fitted_potential(c, weighted_db(w), true);
-        const std::vector<double> wr = values(ref, "WEIGHTS");
-        const std::vector<double> wp = values(pre, "WEIGHTS");
-        REQUIRE(wr.size() == wp.size());
-        for (std::size_t i = 0; i < wr.size(); ++i) {
-          INFO("weight " << i << ": " << wr[i] << " vs " << wp[i]);
-          CHECK(bits(wr[i]) == bits(wp[i]));
+      for (const char *lambda : {"0", "-1"}) {
+        DYNAMIC_SECTION(model[0] << " " << model[1] << ", weights case " << k
+                                 << ", LAMBDA " << lambda) {
+          const Weights &w = kWeightCases[k];
+          Context c = weighted_context(model, w);
+          set_key(c, "LAMBDA", lambda);
+          const Context ref = fitted_potential(c, weighted_db(w), false);
+          const Context pre = fitted_potential(c, weighted_db(w), true);
+          const std::vector<double> wr = values(ref, "WEIGHTS");
+          const std::vector<double> wp = values(pre, "WEIGHTS");
+          REQUIRE(wr.size() == wp.size());
+          for (std::size_t i = 0; i < wr.size(); ++i) {
+            INFO("weight " << i << ": " << wr[i] << " vs " << wp[i]);
+            CHECK(bits(wr[i]) == bits(wp[i]));
+          }
+          if (std::string(lambda) == "-1")
+            for (const char *key : {"ALPHA", "BETA"}) {
+              INFO(key);
+              CHECK(bits(values(ref, key).at(0)) ==
+                    bits(values(pre, key).at(0)));
+            }
         }
-        REQUIRE(ref.has_stored("WNOISE"));
-        REQUIRE(pre.has_stored("WNOISE"));
-        // The lines as written (WNOISE holds row-type labels and values).
-        CHECK(ref("WNOISE") == pre("WNOISE"));
-        CHECK(ref("WCOV") == pre("WCOV"));
       }
     }
   }

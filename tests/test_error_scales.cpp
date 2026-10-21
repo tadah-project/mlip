@@ -37,6 +37,7 @@
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/normaliser.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/trainer.h>
@@ -527,7 +528,8 @@ TEST_CASE("A fit refuses an error scale for a quantity that is off",
 /* Pins: ENERGY false fits as every structure's eweight 0 (its energies are
  * no observations: the fits agree to 1e-12 relative), the design matrix
  * counts no energy observation (DesignMatrix::n_observations(): the force
- * rows only), and the potential records ENERGY false.
+ * rows only; count_observations of its rows without the factors: no
+ * energy, every force component), and the potential records ENERGY false.
  * Before the fix: ENERGY was not a key. */
 TEST_CASE("ENERGY false: no energy is an observation", "[error_scales]") {
   PeriodicTable::initialize();
@@ -547,10 +549,14 @@ TEST_CASE("ENERGY false: no energy is an observation", "[error_scales]") {
   tadah::mlip::DM_BF_Linear bf(c);
   tadah::mlip::DesignMatrix<tadah::mlip::DM_BF_Linear> dm(bf, c);
   tadah::mlip::Normaliser norm(c);
-  dm.build(db, norm, dc, false);
+  dm.build(db, norm, dc, true);
   CHECK(dm.n_observations() == 3 * (2 + 3 + 4));
-  CHECK_FALSE(dm.fitted_types()[0]);
-  CHECK(dm.fitted_types()[1]);
+  const tadah::mlip::ObservationCount n = tadah::mlip::count_observations(
+      dm.ws->Phi_cpy, 3 + 3 * (2 + 3 + 4), dm.ws->wfactors, dm.getTlabels());
+  CHECK(n.total == dm.n_observations());
+  CHECK(n.by_type[0] == 0);
+  CHECK(n.by_type[1] == 3 * (2 + 3 + 4));
+  CHECK(n.by_type[2] == 0);
 
   Context cc = c;
   MLIPWorkspaceManager ws;
@@ -703,18 +709,17 @@ TEST_CASE("A force row that is zero by symmetry is not an observation, "
 /* Pins: the forces of the bcc cells above, zero by symmetry, carry no
  * information, so a fit with FORCE true is the fit with FORCE false, and a
  * rigid translation of the atoms changes nothing (1e-9 relative):
- *  - OALGO 3, LAMBDA 0: WEIGHTS and WNOISE E (the noise variance RSS /
- *    (n_obs - gamma) with the 46 energies as n_obs); WNOISE has no F (the
- *    fit observed no force);
+ *  - OALGO 3, LAMBDA 0: WEIGHTS;
  *  - OALGO 3, LAMBDA -1 (the evidence approximation, whose noise precision
- *    counts the observations): ALPHA, BETA, WEIGHTS and WNOISE E;
+ *    counts the observations, the 46 energies): ALPHA, BETA and WEIGHTS;
  * through tadah train (Trainer::train) and the C++ API's train of
  * precomputed descriptors.
  * Before the fix: the count of observations took most of the force rows,
- * by their rounding (WNOISE E several times too small, with a WNOISE F),
- * and the translation changed WNOISE E, BETA and the WEIGHTS of LAMBDA -1. */
-TEST_CASE("Forces zero by symmetry change neither the fit nor its noise, "
-          "nor does a rigid translation",
+ * by their rounding, and the translation changed BETA and the WEIGHTS of
+ * LAMBDA -1 (and the noise variance of the fit's energies, which the
+ * potential held then). */
+TEST_CASE("Forces zero by symmetry change neither the fit nor the "
+          "evidence, nor does a rigid translation",
           "[error_scales][observations]") {
   PeriodicTable::initialize();
   for (const char *lambda : {"0", "-1"}) {
@@ -726,20 +731,12 @@ TEST_CASE("Forces zero by symmetry change neither the fit nor its noise, "
         Context forces = energies;
         set_key(forces, "FORCE", "true");
         const Context ref = potential_of(energies, bcc_set(kAtOrigin), api);
-        REQUIRE(ref.has_stored("WNOISE"));
-        REQUIRE(ref.size("WNOISE") == 2);
-        const double noise = value_of(ref, "WNOISE", 1);
         std::vector<double> w_ref;
         for (std::size_t i = 0; i < ref.size("WEIGHTS"); ++i)
           w_ref.push_back(value_of(ref, "WEIGHTS", i));
         for (const std::array<double, 3> &t : {kAtOrigin, kMoved}) {
           INFO("translation " << t[0] << " " << t[1] << " " << t[2]);
           const Context pot = potential_of(forces, bcc_set(t), api);
-          REQUIRE(pot.has_stored("WNOISE"));
-          CHECK(pot("WNOISE").size() == 2);
-          CHECK(pot.get<std::string>("WNOISE", 0) == "E");
-          CHECK(std::fabs(value_of(pot, "WNOISE", 1) - noise) <=
-                1e-9 * noise);
           std::vector<double> w;
           for (std::size_t i = 0; i < pot.size("WEIGHTS"); ++i)
             w.push_back(value_of(pot, "WEIGHTS", i));

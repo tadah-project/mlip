@@ -636,13 +636,22 @@ TEST_CASE("Effective parameters of a fit sum to sum s^2/(s^2 + lambda)",
   tadah::mlip::DescriptorsCalc<> dc(c, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb);
   tadah::mlip::DM_BF_Linear bf(c);
   tadah::mlip::DesignMatrix<tadah::mlip::DM_BF_Linear> dm(bf, c);
-  dm.augment = false;
   tadah::mlip::Normaliser norm(c);
   dm.build(db, norm, dc, false);
-  const tadah::core::phi_type Phi = dm.getPhi();
-  const tadah::core::t_type labels = dm.getTlabels();
+  // The rows of the structures: the build appends one augmentation row per
+  // column after them (zero under OALGO 3), which are no observations.
   const std::vector<std::size_t> ds = dm.row_datasets();
-  REQUIRE(ds.size() == Phi.rows());
+  const tadah::core::phi_type &built = dm.getPhi();
+  REQUIRE(built.rows() == ds.size() + built.cols());
+  tadah::core::phi_type Phi(ds.size(), built.cols());
+  tadah::core::t_type labels(ds.size());
+  for (std::size_t i = 0; i < ds.size(); ++i) {
+    for (std::size_t j = 0; j < built.cols(); ++j) Phi(i, j) = built(i, j);
+    labels(i) = dm.getTlabels()(i);
+  }
+  for (std::size_t i = ds.size(); i < built.rows(); ++i)
+    for (std::size_t j = 0; j < built.cols(); ++j)
+      REQUIRE(built(i, j) == 0.0);
   std::vector<double> a(Phi.rows() * Phi.cols());
   for (std::size_t j = 0; j < Phi.cols(); ++j)
     for (std::size_t i = 0; i < Phi.rows(); ++i) a[i + Phi.rows() * j] = Phi(i, j);

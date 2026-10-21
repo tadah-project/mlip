@@ -521,10 +521,11 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
 
 /* Pins: the rule of the parse of a run's configuration,
  * potential_line_not_read(file_keys, key): a key that prepared the
- * training data, and UNCERTAINTY, in a file whose key lines give WEIGHTS
- * (a potential), is not read -- ESHIFT_ATOM and ESHIFT_DBATOM whether or
- * not the file gives ESHIFT; no other key (ESHIFT, LSCALE, DBFILE,
- * WEIGHTS), and no key of a file without WEIGHTS. TaskFactory parses every
+ * training data, in a file whose key lines give WEIGHTS (a potential), is
+ * not read -- ESHIFT_ATOM and ESHIFT_DBATOM whether or not the file gives
+ * ESHIFT; no other key (ESHIFT, LSCALE, DBFILE, WEIGHTS), no retired key
+ * (UNCERTAINTY among them: a parse records its line and a fit refuses it),
+ * and no key of a file without WEIGHTS. TaskFactory parses every
  * -c and --task file under it,
  * and the task's KeyProvenance lists the lines it did not read:
  *   - `tadah --task run.task`, its lines above the first TASK line
@@ -544,7 +545,8 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
  * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
  * line of a potential: a toggle was read from a potential without ESHIFT
  * (CHECK_FALSE pinned it) and UNCERTAINTY from any file: the toggle checks
- * on pot_keys and the UNCERTAINTY check fail. */
+ * on pot_keys fail. Before UNCERTAINTY was retired: the rule selected it in
+ * a potential. */
 TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
           "the keys that prepared the training data, and lists them",
           "[key_provenance][task_factory][dataset_keys]") {
@@ -558,11 +560,11 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
   }
   // The retired keys are no stored key of any parse (it records their
   // lines, and a fit refuses them): the rule does not select them.
-  for (const char *k : {"EWEIGHT_TEMP", "WDBFILE_AUTO"}) {
+  for (const char *k : {"EWEIGHT_TEMP", "WDBFILE_AUTO", "UNCERTAINTY"}) {
     INFO("key " << k);
     CHECK_FALSE(potential_line_not_read(pot_keys, k));
   }
-  for (const char *k : {"ESHIFT_ATOM", "ESHIFT_DBATOM", "UNCERTAINTY"}) {
+  for (const char *k : {"ESHIFT_ATOM", "ESHIFT_DBATOM"}) {
     INFO("key " << k);
     CHECK(potential_line_not_read(pot_keys, k));
     CHECK(potential_line_not_read(pot_eshift, k));
@@ -624,8 +626,9 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
  * potential, keys_not_read_from_a_potential(), is the training record's,
  * training_record_keys(), without DBFILE (which a retrain adds to a copy of
  * the potential), in its order: the keys that prepared the training data,
- * VALIDATION, HPOTARGET, CHECK, UNCERTAINTY, VERBOSE, NUMERIC, OUTFILE,
- * AUDIT, AUDIT_SAMPLE and HEALTH_LOG; potential_line_not_read selects each
+ * VALIDATION, HPOTARGET, CHECK, VERBOSE, NUMERIC, OUTFILE, AUDIT,
+ * AUDIT_SAMPLE and HEALTH_LOG (UNCERTAINTY is a retired key, no key of a
+ * training record); potential_line_not_read selects each
  * of the nine run settings in a file whose key lines give WEIGHTS and none
  * in a file without WEIGHTS, DBFILE in neither; and TaskFactory's parse of
  * `tadah train -c pot` (pot: ATOM, WEIGHTS and the eight lines of the run
@@ -643,7 +646,8 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
  * file's VERBOSE 0 before it): the list, rule, has_stored, skipped and
  * level checks fail.
  * Before CHECK was a run setting: the lists had no CHECK and the rule did
- * not select it: the list and rule checks fail. */
+ * not select it: the list and rule checks fail. Before UNCERTAINTY was
+ * retired: the lists had it after CHECK. */
 TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
           "settings, and lists them",
           "[key_provenance][task_factory][training_record][run_settings]") {
@@ -653,7 +657,7 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's run "
   const std::vector<std::string> expected = {
       "EFILTER",     "FFILTER",      "ESHIFT_ATOM", "ESHIFT_DBATOM",
       "ZERO_COM_FORCE", "WDBFILE",
-      "VALIDATION",  "HPOTARGET",    "CHECK",       "UNCERTAINTY",
+      "VALIDATION",  "HPOTARGET",    "CHECK",
       "VERBOSE",     "NUMERIC",      "OUTFILE",     "AUDIT",
       "AUDIT_SAMPLE", "HEALTH_LOG"};
   CHECK(keys_not_read_from_a_potential() == expected);

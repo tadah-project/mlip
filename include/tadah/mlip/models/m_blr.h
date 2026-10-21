@@ -14,9 +14,8 @@
 #include <tadah/mlip/intercepts.h>
 #include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/memory/imlip_workspace_manager.h>
-#include <tadah/mlip/models/predict_with_error.h>
+#include <tadah/mlip/raw_descriptor_weights.h>
 #include <tadah/mlip/training_datasets.h>
-#include <tadah/mlip/weight_covariance.h>
 
 #include <limits>
 #include <new>
@@ -193,10 +192,6 @@ public:
     c.remove("MODEL");
     c.add("MODEL", label);
     c.add("MODEL", bf.get_label());
-    // UNCERTAINTY is a switch of the train task that writes weights.tadah,
-    // not part of the model: a potential that recorded it (every one did)
-    // asked for --uncertainty when it was the configuration of a retrain.
-    if (c.has_stored("UNCERTAINTY")) c.remove("UNCERTAINTY");
 
     // The error scales and switches of the fit, the defaults included: a
     // retrain from the potential reads them.
@@ -220,26 +215,7 @@ public:
         c.add("NSTDEV", norm.std_dev[i]);
       }
     }
-    // The weight covariance of this fit only (WCOV and WNOISE, OALGO 3),
-    // none of another fit or of a potential used as the configuration.
-    remove_weight_covariance(c);
-    if (this->has_covariance())
-      write_weight_covariance(c, Sigma, noise_by_type);
     return c;
-  }
-  /** The values predicted for @p stdb with their predictive standard
-   *  deviations (predict_with_error: WCOV and WNOISE of @p context_pred). */
-  StructureDB predict(tadah::core::Context context_pred, StructureDB &stdb, DC_Base &dc,
-                      tadah::core::aed_type &predicted_error) {
-    require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
-    return predict_with_error<BF>(context_pred, bf, weights, norm, stdb, dc,
-                              predicted_error);
-  }
-  StructureDB predict_value_error(tadah::core::Context context_pred, StructureDB &stdb,
-                                  DC_Base &dc, tadah::core::aed_type &value_error) {
-    require_weights_fit(context_pred, context_pred.get<size_t>("DSIZE"));
-    return predict_with_error<BF>(context_pred, bf, weights, norm, stdb, dc,
-                              value_error, false);
   }
   /** The values the last fit of this model predicts for the structures
    *  it was fitted to, @p stdb (their energies, and their forces and
@@ -294,9 +270,6 @@ private:
   /** Whether this object fitted a design matrix (predict(StructureDB&)). */
   bool fit_rows_ = false;
 
-  /** The noise variance of each row type of the last fit (WNOISE). */
-  PerRowType noise_by_type;
-
   template <typename D>
   void train(D &desmat) {
     // The solve overwrites the weighted rows it is given: the design
@@ -304,7 +277,6 @@ private:
     // wcopy true), which predict(StructureDB&) reads.
     tadah::core::phi_type &Phi = desmat.getPhi();
     tadah::core::t_type T = desmat.getT();
-    noise_by_type = PerRowType();
     fit_rows_ = false;
     tadah::models::M_BLR_Train<BF>::train(Phi, T, desmat.n_observations());
     fit_weights_ = weights;
@@ -313,9 +285,6 @@ private:
     if (weights_on_raw_descriptors(context, bf))
       to_raw_descriptors(*this, norm,
                          tadah::core::n_intercept_columns(context));
-    if (this->has_covariance())
-      noise_by_type = noise_of_fitted_types(context, desmat.fitted_types(),
-                                            this->noise_variance);
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO,
                                         fit_scales_info(context));
   }
@@ -326,7 +295,6 @@ private:
   using tadah::models::M_BLR_Train<BF>::train;
   using tadah::models::M_BLR_Train<BF>::trained;
   using tadah::models::M_BLR_Train<BF>::weights;
-  using tadah::models::M_BLR_Train<BF>::Sigma;
 };
 } // namespace mlip
 } // namespace tadah

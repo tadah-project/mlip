@@ -1350,20 +1350,18 @@ void set_basis(Context &c, const std::vector<std::vector<double>> &vectors) {
 // DSIZE 5) retrained with SBASIS 10 and with SBASIS 7 gives 10 and 7
 // WEIGHTS, 10 x 5 and 7 x 5 BASIS values and 5 NMEAN; an M_BLR BF_Linear
 // potential (5 WEIGHTS) with MODEL M_KRR Kern_RBF, MPARAMS 1.0 and SBASIS 6
-// trains into 6 WEIGHTS; an M_BLR potential fitted with OALGO 3 (WCOV of
-// 1 + 5 x 5 values, and WNOISE) retrained with OALGO 1 has no WCOV or
-// WNOISE, and retrained with OALGO 3 the WCOV and WNOISE of its own fit
-// (26 values, and E with its value: FORCE false; equal to the potential's:
-// the same fit of the same data); the Trainer's context has no WCOV or
-// WNOISE either.
+// trains into 6 WEIGHTS; an M_BLR potential fitted with OALGO 3 retrained
+// with OALGO 1 and with OALGO 3 (the latter the potential's own fit of the
+// same data: its WEIGHTS, 1e-12 relative) writes no SIGMA, WCOV or WNOISE,
+// and the Trainer's context has none of the fit keys.
 // Before the fix: the Trainer built the model from the potential's fit:
 // for the kernels it threw, "the potential has 6 WEIGHTS but SBASIS 10
 // basis vectors (BASIS)", "BASIS has 30 values, which is not a multiple of
 // SBASIS 7" and "the potential has WEIGHTS but no basis vectors (SBASIS and
 // BASIS)"; the OALGO 1 fit kept the potential's SIGMA (26 values), and the
 // OALGO 3 fit appended its own to it (52 values, the potential's first).
-// Before WCOV and WNOISE (the covariance was SIGMA, which this case
-// checked the same way): no potential had WCOV or WNOISE.
+// Before uncertainty output was removed: an OALGO 3 potential had the
+// WCOV and WNOISE of its fit, which this case checked.
 TEST_CASE("A Trainer built from a potential reads none of the potential's "
           "fit",
           "[descriptors_calc][bias][retrain]") {
@@ -1371,8 +1369,7 @@ TEST_CASE("A Trainer built from a potential reads none of the potential's "
   MLIPWorkspaceManager ws;
   StructureDB db = make_db(kVaried, false, 400);
   const std::vector<std::string> fit_keys = {"WEIGHTS", "BASIS", "NMEAN",
-                                             "NSTDEV", "SIGMA", "WCOV",
-                                             "WNOISE"};
+                                             "NSTDEV", "SIGMA"};
   auto build = [&](Context cfg, std::unique_ptr<Trainer> &tr) {
     return refusal_of([&] { tr.reset(new Trainer(cfg, ws)); });
   };
@@ -1419,15 +1416,12 @@ TEST_CASE("A Trainer built from a potential reads none of the potential's "
     REQUIRE_NOTHROW(tr->train(db));
     CHECK(stored_doubles(tr->get_param_file(), "WEIGHTS").size() == 6);
   }
-  SECTION("the covariance of an OALGO 3 potential") {
+  SECTION("an OALGO 3 potential retrained") {
     Context c = make_context({"Nb", "Ta"}, true);
     set(c, "OALGO", "3");
     const Context pot = trained_potential(c, db);
-    const std::vector<double> wcov = stored_doubles(pot, "WCOV");
-    REQUIRE(wcov.size() == 26);
-    REQUIRE(wcov[0] == 5.0);
-    REQUIRE(pot.size("WNOISE") == 2);
-    REQUIRE(pot.get<std::string>("WNOISE", 0) == "E");
+    const std::vector<double> w = stored_doubles(pot, "WEIGHTS");
+    REQUIRE(w.size() == 5);
     for (int oalgo : {1, 3}) {
       CAPTURE(oalgo);
       Context cfg = pot;
@@ -1439,19 +1433,15 @@ TEST_CASE("A Trainer built from a potential reads none of the potential's "
       }
       tr.train(db);
       const Context out_pot = tr.get_param_file();
-      const std::vector<double> out = stored_doubles(out_pot, "WCOV");
-      if (oalgo == 1) {
-        CHECK(out.empty());
-        CHECK_FALSE(out_pot.has_stored("WNOISE"));
-      } else {
-        REQUIRE(out.size() == wcov.size());
-        for (std::size_t i = 0; i < out.size(); ++i)
-          CHECK(out[i] == Approx(wcov[i]).epsilon(1e-12).margin(1e-300));
-        REQUIRE(out_pot.size("WNOISE") == 2);
-        CHECK(out_pot.get<double>("WNOISE", 1) ==
-              Approx(pot.get<double>("WNOISE", 1)).epsilon(1e-12));
+      for (const char *k : {"SIGMA", "WCOV", "WNOISE"}) {
+        CAPTURE(k);
+        CHECK_FALSE(out_pot.has_stored(k));
       }
-      CHECK_FALSE(out_pot.has_stored("SIGMA"));
+      const std::vector<double> out = stored_doubles(out_pot, "WEIGHTS");
+      REQUIRE(out.size() == w.size());
+      if (oalgo == 3)
+        for (std::size_t i = 0; i < out.size(); ++i)
+          CHECK(out[i] == Approx(w[i]).epsilon(1e-12));
     }
   }
 }

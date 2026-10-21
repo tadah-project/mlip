@@ -26,12 +26,10 @@ static void printPotentialData(
   const std::string& title,
   const std::string& energyUnit,
   bool hasForce,
-  bool hasError,
   size_t colWidth,
   size_t numeric,
   const core::v_type& distances,
-  const StructureDB& predictions,
-  const tadah::core::aed_type& errors
+  const StructureDB& predictions
 );
 
 int PropertiesPairwiseEngine::run(mlip::Task &task) {
@@ -91,8 +89,8 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   // evaluated on the descriptor of one part, the other part's block 0 (the
   // DescriptorsCalc of a context with INITMB or INIT2B false fills its own
   // block at the potential's offsets, of the potential's DSIZE). The
-  // potential's model and context predict them (its WEIGHTS, normalisation
-  // and WCOV); each part's DescriptorsCalc gives its descriptors.
+  // potential's model and context predict them (its WEIGHTS and
+  // normalisation); each part's DescriptorsCalc gives its descriptors.
   core::Context potContext_2b = potContext;
   core::Context potContext_mb = potContext;
   potContext_2b.remove("INITMB");
@@ -110,27 +108,6 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   if (is_2b && is_mb) {
     stpred_2b = modelp->predict(potContext,stdb,dc_2b);
     stpred_mb = modelp->predict(potContext,stdb,dc_mb);
-  }
-
-  // --error: the standard deviation of each energy (the column is the
-  // energy's; no forces or stresses are needed for it): of the total,
-  // sqrt(phi^T WCOV phi + WNOISE_E), its predictive standard deviation; of
-  // a part, sqrt(phi_p^T WCOV phi_p), the standard deviation of the part's
-  // value alone (a part is not observed, so it has no noise of its own).
-  tadah::core::aed_type predicted_error;
-  tadah::core::aed_type predicted_error_2b;
-  tadah::core::aed_type predicted_error_mb;
-  if (taskContext.get<bool>("ERROR")) {
-    core::Context energyContext = potContext;
-    energyContext.remove("FORCE");
-    energyContext.add("FORCE", false);
-    energyContext.remove("STRESS");
-    energyContext.add("STRESS", false);
-    modelp->predict(energyContext,stdb,dc,predicted_error);
-    if (is_2b && is_mb) {
-      modelp->predict_value_error(energyContext,stdb,dc_2b,predicted_error_2b);
-      modelp->predict_value_error(energyContext,stdb,dc_mb,predicted_error_mb);
-    }
   }
 
   if (taskContext.contains("ESHIFT")) {
@@ -156,7 +133,7 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   // energy is predicted per structure. Given that we have
   // two atoms, we need to divide by 2 unless user
   // specifically asked for bond energy: every block (the total and the
-  // parts) and every energy error alike (the parts were not divided).
+  // parts) alike.
   std::string energyUnit;
   const bool per_atom = !taskContext.get<bool>("BONDENERGY");
   if (per_atom) {
@@ -168,10 +145,6 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
     for (StructureDB *block : {&stpred, &stpred_2b, &stpred_mb})
       for (size_t i = 0; i < block->size(); ++i)
         (*block)(i).energy /= static_cast<double>(stdb(i).natoms());
-    for (tadah::core::aed_type *err :
-         {&predicted_error, &predicted_error_2b, &predicted_error_mb})
-      for (size_t i = 0; i < err->size(); ++i)
-        (*err)(i) /= static_cast<double>(stdb(i).natoms());
     energyUnit = "eV/atom";
   } else {
     energyUnit = "eV/bond";
@@ -179,7 +152,6 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 
 
   bool force = taskContext.get<bool>("FORCE");
-  bool error = taskContext.get<bool>("ERROR");
   size_t numeric = taskContext.get<size_t>("NUMERIC");
   core::Logger::instance().log(core::LogLevel::INFO, "Dumping output...");
   std::ofstream outfile(taskContext.get<std::string>("OUTFILE"));
@@ -190,14 +162,14 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   size_t colWidth = std::max(labelWidth, numeric + 10);
 
   printPotentialData(outfile, "Total potential", energyUnit, force,
-      error, colWidth, numeric, range, stpred, predicted_error);
+      colWidth, numeric, range, stpred);
 
   if (is_2b && is_mb) {
     printPotentialData(outfile, "Two-body potential", energyUnit, force,
-        error, colWidth, numeric, range, stpred_2b, predicted_error_2b);
+        colWidth, numeric, range, stpred_2b);
 
     printPotentialData(outfile, "Many-body potential", energyUnit, force,
-        error, colWidth, numeric, range, stpred_mb, predicted_error_mb);
+        colWidth, numeric, range, stpred_mb);
   }
 
   delete modelp;
@@ -232,12 +204,10 @@ static void printPotentialData(
   const std::string& title,
   const std::string& energyUnit,
   bool hasForce,
-  bool hasError,
   size_t colWidth,
   size_t numeric,
   const core::v_type& distances,
-  const StructureDB& predictions,
-  const tadah::core::aed_type& errors
+  const StructureDB& predictions
 )
 {
   // Print a header row for this data block
@@ -248,9 +218,6 @@ static void printPotentialData(
   if (hasForce) {
     outfile << std::setw(colWidth) << "Force (eV/Å)";
   }
-  if (hasError) {
-    outfile << std::setw(colWidth) << ("Error " + energyUnit);
-  }
   outfile << std::endl;
 
   // Print the data rows
@@ -260,9 +227,6 @@ static void printPotentialData(
             << std::setw(colWidth) << predictions(j).energy;
     if (hasForce) {
       outfile << std::setw(colWidth) << predictions(j)(1).force[0];
-    }
-    if (hasError) {
-      outfile << std::setw(colWidth) << errors[j];
     }
     outfile << std::endl;
   }

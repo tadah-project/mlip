@@ -1,7 +1,6 @@
 #ifndef DESIGN_MATRIX_H
 #define DESIGN_MATRIX_H
 
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -67,9 +66,9 @@ public:
  *     | stress yz
  *     | stress zz
  *
- * It reads \ref FORCE and \ref STRESS (which rows there are) and, for a
- * fit (apply_weights), the error scales and priorities of RowWeights
- * (row_weights.h), when it builds.
+ * It reads \ref FORCE and \ref STRESS (which rows there are) and the
+ * error scales and priorities of RowWeights (row_weights.h), when it
+ * builds.
  *
  * Row factors (compute_wfactors): a fit multiplies each row and its target
  * by sqrt(p m)/sigma (RowWeights): the energy row (the total energy of the
@@ -89,33 +88,16 @@ public:
 
   F f;
   tadah::mlip::memory::DesignMatrixWorkspace *ws = nullptr;
-  /** Whether the rows are weighted by their factors sqrt(p m)/sigma
-   *  (RowWeights: a fit); false builds the rows as they are, for a
-   *  prediction (M_BLR/M_KRR predict with error estimates). */
-  bool apply_weights = true;
-  /** Whether build() appends the ridge-augmentation rows, one per column
-   *  after the rows of the structures (zero; LinearRegressor writes the
-   *  LAMBDA ridge of OALGO 1 and 2 into them): a fit. false builds the
-   *  rows of the structures only, for a prediction (M_BLR/M_KRR predict
-   *  with errors). */
-  bool augment = true;
-  /** Whether build(stdb, norm, dc, wcopy) normalises the descriptors with
-   *  @p norm when NORM is true: a fit, and the prediction of a model whose
-   *  weights act on normalised descriptors. false for the prediction of a
-   *  linear NORM model, whose weights act on the raw descriptors
-   *  (weights_on_raw_descriptors). */
-  bool normalise_descriptors = true;
   bool w_copy_=false;  // keep a copy of Phi and T without the row factors
 
   /** The observations of the last build: the rows of the structures with a
    *  factor > 0 that are not zero in every column (count_observations()),
-   *  without the augmentation rows; every row of the structures when
-   *  apply_weights is false. The number of observations an OALGO 3 fit
-   *  estimates its noise variance with (LinearRegressor::train). */
+   *  without the ridge-augmentation rows that build() appends, one per
+   *  column after the rows of the structures (zero; LinearRegressor writes
+   *  the LAMBDA ridge of OALGO 1 and 2 into them). The number of
+   *  observations the evidence approximation of LAMBDA -1 uses
+   *  (LinearRegressor::train). */
   size_t n_observations() const { return n_obs_; }
-  /** Whether the last build had observations of each type (E, F, S:
-   *  Tlabels 0, 1, 2): the types the fit was fitted to. */
-  const std::array<bool, 3> &fitted_types() const { return fitted_types_; }
   /** The dataset (the ranges of the StructureDB's dbidx; 0 without them)
    *  of each row of the structures of the last build, in order. */
   const std::vector<std::size_t> &row_datasets() const { return row_dataset_; }
@@ -187,7 +169,7 @@ public:
      * D2, D3 and DM calculators are not used.
      */
   void build(StDescriptorsDB &st_desc_db, const StructureDB &stdb, bool wcopy) {
-    if (apply_weights) require_valid_weights(stdb, context);
+    require_valid_weights(stdb, context);
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
@@ -234,7 +216,7 @@ public:
   void build(const StructureDB &stdb, Normaliser &norm,
              DC &dc, bool wcopy) {
     //DescriptorsCalc<D2,D3,DM,C2,C3,CM> dc(context);
-    if (apply_weights) require_valid_weights(stdb, context);
+    require_valid_weights(stdb, context);
     w_copy_ = wcopy;
     calc_mn(stdb);
     ws = workspaceManager_->getDesignMatrixWorkspace(rows,cols, wcopy);
@@ -301,7 +283,7 @@ public:
     }
     // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
     // Each s writes a disjoint Phi row-block (rows[s]) => order-independent.
-    const bool normalise_rows = normalise_descriptors && context.get<bool>("NORM");
+    const bool normalise_rows = context.get<bool>("NORM");
     parallel_for(stdb.size(), [&](size_t s) {
       StDescriptors st_d = dc.calc(stdb(s));
 
@@ -365,9 +347,8 @@ public:
   /** The values the weights @p w predict for the structures of the last
    *  build, from its rows without the row factors: the energy of each
    *  structure, and with FORCE (STRESS) its forces (its stress tensor). The
-   *  rows are those of the copy a build with wcopy true keeps (or of the
-   *  matrix of a build with apply_weights false); the ridge rows after the
-   *  data rows are not read.
+   *  rows are those of the copy a build with wcopy true keeps; the ridge
+   *  rows after the data rows are not read.
    *  @param stdb The structures of the last build: the same number, and
    *  each with the same atoms (their species and positions, in order) and
    *  cell, bit for bit (structure_identity()); their labels (energies,
@@ -380,7 +361,7 @@ public:
    *  of the last build's structure at its place. */
   StructureDB predict_built(const StructureDB &stdb,
                             const tadah::core::t_type &w) const {
-    if (!ws || (!w_copy_ && apply_weights))
+    if (!ws || !w_copy_)
       throw std::logic_error(
           "DesignMatrix::predict_built: the last build kept no rows without "
           "the row factors (wcopy false)");
@@ -447,14 +428,14 @@ public:
    *  O(n p^2) pass over the n rows and p columns, which reads the rows
    *  where they are, in blocks: no copy of them.
    *  @throws std::logic_error when the last build kept no rows without the
-   *  factors (a fit builds with wcopy true) or was not a fit's
-   *  (apply_weights false), when another design matrix has been built in
-   *  the workspace since, and for @p w of another size than the columns.
+   *  factors (a fit builds with wcopy true), when another design matrix has
+   *  been built in the workspace since, and for @p w of another size than
+   *  the columns.
    *  @throws std::runtime_error when the QR factorisation or the SVD
    *  fails, std::bad_alloc without the memory of its blocks. */
   FitBalance balance(const tadah::core::t_type &w,
                      const std::vector<size_t> &intercepts) const {
-    if (!ws || !w_copy_ || !apply_weights)
+    if (!ws || !w_copy_)
       throw std::logic_error(
           "DesignMatrix::balance: the last build kept no rows without the "
           "row factors (a fit's build with wcopy true)");
@@ -478,12 +459,10 @@ public:
     ws->Tlabels.set_zero();
   }
   /** The factor of every row of @p stdb (RowWeights: sqrt(p m)/sigma) and
-   *  the dataset of each; with apply_weights false every factor is 1. The
-   *  observations are counted once the rows are built
-   *  (count_observations_of_build()). */
+   *  the dataset of each. The observations are counted once the rows are
+   *  built (count_observations_of_build()). */
   void compute_wfactors(const StructureDB &stdb) {
     n_obs_ = 0;
-    fitted_types_ = {false, false, false};
     row_dataset_.clear();
     row_scale_.clear();
     std::vector<std::size_t> dbidx = stdb.dbidx;
@@ -493,15 +472,6 @@ public:
     for (std::size_t d = 0; d + 1 < dbidx.size(); ++d)
       for (std::size_t s = dbidx[d]; s < dbidx[d + 1] && s < stdb.size(); ++s)
         dataset[s] = d;
-    if (!apply_weights) {  // a prediction: the rows as they are
-      for (std::size_t i = 0; i < ws->wfactors.size(); ++i) ws->wfactors(i) = 1.0;
-      for (size_t s=0; s<stdb.size(); ++s)
-        row_dataset_.insert(row_dataset_.end(),
-                            1 + (force ? 3 * stdb(s).natoms() : 0) +
-                                (stress ? 6 : 0),
-                            dataset[s]);
-      return;
-    }
     const RowWeights rw(context, stdb);
     size_t j=0;
     // Each row's factor and dataset, and its error scale, multiplicity and
@@ -547,29 +517,21 @@ private:
   bool force;
   bool stress;
   size_t n_obs_ = 0;
-  std::array<bool, 3> fitted_types_{{false, false, false}};
   std::vector<std::size_t> row_dataset_;  // row_datasets()
   std::size_t n_datasets_ = 1;            // the datasets of the last build
   // The error scale, multiplicity and metric factor of each row of the
-  // structures of the last build of a fit (balance()); empty otherwise.
+  // structures of the last build (balance()).
   std::vector<FitRowScale> row_scale_;
   // The workspace's build_stamp of the last build (balance()).
   std::uint64_t build_stamp_ = 0;
 
   /* The observations of the rows just built (before the factors are
    * applied): a row of factor > 0 that is not zero in every column
-   * (count_observations()); every row of the structures with apply_weights
-   * false. */
+   * (count_observations()). */
   void count_observations_of_build() {
-    if (!apply_weights) {
-      n_obs_ = data_rows_;
-      fitted_types_ = {n_obs_ > 0, force && n_obs_ > 0, stress && n_obs_ > 0};
-      return;
-    }
-    const ObservationCount n =
-        count_observations(ws->Phi, data_rows_, ws->wfactors, ws->Tlabels);
-    n_obs_ = n.total;
-    fitted_types_ = n.fitted;
+    n_obs_ = count_observations(ws->Phi, data_rows_, ws->wfactors,
+                                ws->Tlabels)
+                 .total;
   }
   size_t built_structures_ = 0;  // the structures of the last build
   size_t data_rows_ = 0;         // its rows without the ridge rows
@@ -620,7 +582,7 @@ private:
     built_structures_ = stdb.size();
     data_rows_ = rows;
     built_identity_.clear();
-    if (w_copy_ || !apply_weights) {  // rows predict_built() can read
+    if (w_copy_) {  // rows predict_built() can read
       built_identity_.reserve(stdb.size());
       for (size_t s = 0; s < stdb.size(); ++s)
         built_identity_.push_back(structure_identity(stdb(s)));
@@ -630,10 +592,8 @@ private:
     tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix: rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
 
     // Add space for augmented matrix (a fit)
-    if (augment) {
-      rows += cols;
-      tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix (including augmented matrix): rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
-    }
+    rows += cols;
+    tadah::core::Logger::instance().log(tadah::core::LogLevel::INFO, "DesignMatrix (including augmented matrix): rows: " + std::to_string(rows) + " cols: " + std::to_string(cols));
   }
 
   // The standard deviations of the reference energies per atom, forces and

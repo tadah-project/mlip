@@ -122,14 +122,6 @@ double ErrorScales::energy_norm(std::size_t natoms) const {
   return sqrt_norm ? std::sqrt(n) : n;
 }
 
-double ErrorScales::absolute(std::size_t type) const {
-  if (type == 0) return esigma;
-  if (type == 1) return fsigma_a;
-  if (type == 2) return ssigma_a;
-  throw std::logic_error("ErrorScales::absolute: row type " +
-                         std::to_string(type));
-}
-
 // ---------------------------------------------------------------------------
 // RowWeights
 // ---------------------------------------------------------------------------
@@ -357,7 +349,6 @@ ObservationCount count_observations(const core::phi_type &Phi,
                              std::to_string(t));
     ++n.total;
     ++n.by_type[t];
-    n.fitted[t] = true;
   }
   return n;
 }

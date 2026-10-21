@@ -352,19 +352,18 @@ TEST_CASE("provision_fixed_weights without FIXINDEX and FIXWEIGHT names the "
   CHECK_FALSE(tr.model->is_trained());
 }
 
-/* Pins: a Trainer whose configuration carries the covariance of another
- * fit (SIGMA, WCOV and WNOISE, those of a potential used as the
- * configuration: N = K and K*K values) holds none of it once built
- * (Trainer::training_context: neither its context nor the potential it
- * writes, get_param_file, has the keys), and after it pins every weight
- * with FIXINDEX/FIXWEIGHT (provision_fixed_weights, no fit) still writes
- * none of them, with the FIXWEIGHT values for weights.
- * provision_fixed_weights after a fit of its Trainer is pinned in
- * test_trainer_sigma.cpp ("provision_fixed_weights leaves no covariance
- * of an earlier fit of its Trainer").
- * Before the fix (WCOV and WNOISE): WCOV and WNOISE were not keys
- * (Context::add threw "Key not allowed: WCOV"), and training_context
- * removed SIGMA only. Before fix/hpo-trainer-reuse (neither
+/* Pins: a Trainer whose configuration carries the SIGMA of another fit
+ * (N = K and K*K values, added in code: a parse never stores the
+ * deprecated key) holds none of it once built (Trainer::training_context:
+ * neither its context nor the potential it writes, get_param_file, has
+ * SIGMA), and after it pins every weight with FIXINDEX/FIXWEIGHT
+ * (provision_fixed_weights, no fit) still writes none, with the FIXWEIGHT
+ * values for weights. provision_fixed_weights after a fit of its Trainer
+ * is pinned in test_trainer_sigma.cpp ("provision_fixed_weights after a
+ * fit of its Trainer").
+ * Before uncertainty output was removed: the configuration carried
+ * WCOV and WNOISE too, which training_context removed (they are retired
+ * keys, which no Context stores). Before fix/hpo-trainer-reuse (neither
  * Trainer::training_context nor provision_fixed_weights removed a SIGMA):
  * both kept the configuration's SIGMA, so the potential (an HPO
  * best_pot.tadah with every weight pinned) paired a covariance of other
@@ -384,24 +383,15 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
   ctx.add("FIXINDEX", "1-" + std::to_string(K));
   for (std::size_t k = 0; k < K; ++k)
     ctx.add("FIXWEIGHT", 0.5 + static_cast<double>(k));
-  for (const char *key : {"SIGMA", "WCOV"}) {
-    ctx.add(key, K);
-    for (std::size_t k = 0; k < K * K; ++k) ctx.add(key, 0.125);
-  }
-  ctx.add("WNOISE", "E 0.5");
+  ctx.add("SIGMA", K);
+  for (std::size_t k = 0; k < K * K; ++k) ctx.add("SIGMA", 0.125);
 
   Trainer tr(ctx, ws);
-  for (const char *key : {"SIGMA", "WCOV", "WNOISE"}) {
-    INFO(key);
-    CHECK_FALSE(tr.context.has_stored(key));
-    CHECK_FALSE(tr.get_param_file().has_stored(key));
-  }
+  CHECK_FALSE(tr.context.has_stored("SIGMA"));
+  CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));
   REQUIRE_NOTHROW(tr.provision_fixed_weights());
-  for (const char *key : {"SIGMA", "WCOV", "WNOISE"}) {
-    INFO(key);
-    CHECK_FALSE(tr.context.has_stored(key));
-    CHECK_FALSE(tr.get_param_file().has_stored(key));
-  }
+  CHECK_FALSE(tr.context.has_stored("SIGMA"));
+  CHECK_FALSE(tr.get_param_file().has_stored("SIGMA"));
   const auto &w = tr.model->get_weights();
   REQUIRE(w.size() == K);
   for (std::size_t k = 0; k < K; ++k)

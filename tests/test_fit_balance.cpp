@@ -338,8 +338,9 @@ Structure bcc_cell(double a, double energy_shift) {
 }
 
 /* The singular values of the weighted design matrix of a fit of @p db with
- * @p c (an independent build: DesignMatrix with the row factors, no ridge
- * rows), by LAPACK dgesvd. */
+ * @p c (an independent build: DesignMatrix with the row factors; the rows
+ * of the structures, without the ridge rows the build appends after them,
+ * which are zero before a solve), by LAPACK dgesvd. */
 std::vector<double> weighted_singular_values(const Context &c,
                                              const StructureDB &db) {
   Context ctx = c;
@@ -351,14 +352,17 @@ std::vector<double> weighted_singular_values(const Context &c,
                                     *dcs.cmb);
   tadah::mlip::DM_BF_Linear bf(ctx);
   tadah::mlip::DesignMatrix<tadah::mlip::DM_BF_Linear> dm(bf, ctx);
-  dm.augment = false;
   tadah::mlip::Normaliser norm(ctx);
   dm.build(d, norm, dc, false);
   const tadah::core::phi_type &Phi = dm.getPhi();
-  int m = static_cast<int>(Phi.rows()), n = static_cast<int>(Phi.cols());
-  std::vector<double> a(Phi.rows() * Phi.cols());
+  const std::size_t rows = dm.row_datasets().size();
+  REQUIRE(Phi.rows() == rows + Phi.cols());
+  for (std::size_t i = rows; i < Phi.rows(); ++i)
+    for (std::size_t j = 0; j < Phi.cols(); ++j) REQUIRE(Phi(i, j) == 0.0);
+  int m = static_cast<int>(rows), n = static_cast<int>(Phi.cols());
+  std::vector<double> a(rows * Phi.cols());
   for (std::size_t j = 0; j < Phi.cols(); ++j)
-    for (std::size_t i = 0; i < Phi.rows(); ++i) a[i + Phi.rows() * j] = Phi(i, j);
+    for (std::size_t i = 0; i < rows; ++i) a[i + rows * j] = Phi(i, j);
   char jobu = 'N', jobvt = 'N';
   int lda = m, ldu = 1, ldvt = 1, info = 0, lwork = -1;
   std::vector<double> s(static_cast<std::size_t>(std::min(m, n)));

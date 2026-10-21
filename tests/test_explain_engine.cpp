@@ -809,8 +809,8 @@ TEST_CASE("tadah explain: an inline role of a help text is shown as the text "
    * ':ref:`LAMBDA`' as 'LAMBDA', ':code:`M`' as 'M', ':math:`x^2`' as 'x^2',
    * two roles of one line each so, and a text with a back-quote but no
    * role as it is; a line of a literal block is kept as written (RST does
-   * not read roles there). `tadah explain OALGO` (whose text cites LAMBDA,
-   * WCOV and WNOISE with :ref:) prints no ':ref:`' and the line "- The
+   * not read roles there). `tadah explain OALGO` (whose text cites LAMBDA
+   * with :ref:) prints no ':ref:`' and the line "- The
    * regularisation parameter is controlled by the LAMBDA key, which should
    * be set separately to apply regularisation to the model.".
    * Before the fix: the roles were printed as written (":ref:`LAMBDA`"). */

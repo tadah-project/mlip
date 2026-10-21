@@ -19,16 +19,14 @@ namespace mlip {
 class Trainer {
   public:
     /** \brief The configuration @p c without what a fit writes: WEIGHTS,
-     *  BASIS (the basis vectors of a non-linear kernel), NMEAN, NSTDEV and
-     *  the weight covariance (WCOV, WNOISE, and the SIGMA of a potential
-     *  of an earlier version of Tadah!). A training configuration
-     *  may be a potential (`tadah train -c pot.tadah`, a `tadah hpo -c`
-     *  seed); the fit replaces all of these, so a model built for training
-     *  reads none of them. */
+     *  BASIS (the basis vectors of a non-linear kernel), NMEAN and NSTDEV
+     *  (and SIGMA, a key a program may still add, which a parse never
+     *  stores). A training configuration may be a potential (`tadah train
+     *  -c pot.tadah`, a `tadah hpo -c` seed); the fit replaces all of
+     *  these, so a model built for training reads none of them. */
     static tadah::core::Context training_context(const tadah::core::Context &c) {
       tadah::core::Context t = c;
-      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA",
-                              "WCOV", "WNOISE"})
+      for (const char *key : {"WEIGHTS", "BASIS", "NMEAN", "NSTDEV", "SIGMA"})
         if (t.has_stored(key)) t.remove(key);
       return t;
     }
@@ -74,9 +72,7 @@ class Trainer {
 
     /** Set the model weights directly from FIXINDEX/FIXWEIGHT without any
      *  training data. Requires FIXINDEX to cover every model weight; see
-     *  weight_provisioning.h for the contract. No fit computes a covariance
-     *  of these weights: the model has none (an earlier fit's is removed),
-     *  so the potential has no WCOV or WNOISE. */
+     *  weight_provisioning.h for the contract. */
     void provision_fixed_weights() {
       tadah::mlip::provision_fixed_weights(*model, context,
                                            fb->get_phi_cols(context));
