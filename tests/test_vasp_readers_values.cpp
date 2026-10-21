@@ -533,12 +533,12 @@ TEST_CASE("VASP OUTCAR reader: a last MD step the file ends inside is skipped "
 }
 
 /* Pins: an ionic step without an 'in kB' line is stored with zero stress
- * and stress weight 0, so a STRESS fit ignores it; a step with one keeps
+ * and stress priority 0, so a STRESS fit ignores it; a step with one keeps
  * weight 1: the first three steps of OUTCAR_1 give sweight 1, the same
  * file without its 'in kB' lines sweight 0 (and the same energies).
  * Before the fix: zero stress with sweight 1. */
 TEST_CASE("VASP OUTCAR reader: a step without a stress tensor has stress "
-          "weight 0",
+          "priority 0",
           "[vasp][outcar][stress]") {
   ScratchDir tmp("outcar_no_stress");
   const std::vector<std::string> l = outcar1_three_steps();
@@ -566,7 +566,7 @@ TEST_CASE("VASP OUTCAR reader: a step without a stress tensor has stress "
  * '  in kB  ****** ...' (VASP's overflow) give step 1 zero stress with stress
  * weight 0; steps 2 and 3 keep theirs.
  * Before the fix: step 1 was stored with zero stress and weight 1. */
-TEST_CASE("VASP OUTCAR reader: an unreadable stress line gives stress weight 0",
+TEST_CASE("VASP OUTCAR reader: an unreadable stress line gives stress priority 0",
           "[vasp][outcar][stress]") {
   ScratchDir tmp("outcar_bad_kb");
   std::vector<std::string> l = outcar1_three_steps();
@@ -709,7 +709,7 @@ TEST_CASE("VASP vasprun.xml reader: stress is minus the stress varray in "
     INFO("vasprun_3 against ASE");
     check_stress(db(0), ase, 2e-8, 1e-9);
   }
-  SECTION("vasprun_1.xml has no stress varray: zero stress, weight 0") {
+  SECTION("vasprun_1.xml has no stress varray: zero stress, priority 0") {
     const StructureDB db = read_vasprun(kVasprunDir + "vasprun_1.xml");
     REQUIRE(db.size() == 25);
     for (size_t k = 0; k < db.size(); ++k) {
@@ -1376,7 +1376,7 @@ TEST_CASE("VASP vasprun.xml reader: a value it cannot read is refused, naming "
 
 /* Pins: an unreadable stress or force row of a vasprun.xml calculation (a
  * value VASP could not print, '*****') is no stress tensor, or no forces: the
- * calculation is stored with stress weight 0 (and zero stress), or force
+ * calculation is stored with stress priority 0 (and zero stress), or force
  * weight 0 (and zero forces), with one WARNING naming the file, the
  * calculation and the row; a calculation without a forces varray has force
  * weight 0 and zero forces as well. The other calculations keep weight 1.
@@ -1385,7 +1385,7 @@ TEST_CASE("VASP vasprun.xml reader: a value it cannot read is refused, naming "
  * stored with weight 1 and that row 0; without a forces varray, zero forces
  * with force weight 1. */
 TEST_CASE("VASP vasprun.xml reader: an unreadable stress or force row gives "
-          "that weight 0",
+          "that priority 0",
           "[vasp][vasprun][source]") {
   ScratchDir tmp("vasprun_weights");
   const std::vector<std::string> base =

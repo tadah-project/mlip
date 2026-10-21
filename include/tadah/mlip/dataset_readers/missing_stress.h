@@ -13,7 +13,7 @@ namespace mlip {
  * @brief The INFO line of a DFT reader whose file holds structures without a
  * stress tensor.
  *
- * The readers store such a structure with zero stress and stress weight 0
+ * The readers store such a structure with zero stress and stress priority 0
  * (`sweight`), so that a `STRESS true` fit ignores its stress instead of
  * fitting it to zero. Logs nothing when `missing` is 0.
  *
@@ -34,7 +34,7 @@ inline void log_missing_stress(const std::string &source, std::size_t missing,
 
 /**
  * @brief The INFO line of a DFT reader whose file holds structures without
- * forces: they are stored with zero forces and force weight 0 (`fweight`),
+ * forces: they are stored with zero forces and force priority 0 (`fweight`),
  * so that a `FORCE true` fit ignores them. Logs nothing when `missing` is 0.
  */
 inline void log_missing_forces(const std::string &source, std::size_t missing,

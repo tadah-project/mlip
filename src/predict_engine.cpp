@@ -128,7 +128,7 @@ int PredictEngine::run(mlip::Task &task) {
   apply_load_transforms(stdb, potContext);
 
   // The energy, force and stress metrics leave out structures with energy,
-  // force or stress weight 0; a dataset made only of such structures is not
+  // force or stress priority 0; a dataset made only of such structures is not
   // measured (nan, left out of the mean). A run in which no dataset is
   // measured by the force (stress) metrics it asks for (-F, -S) is refused
   // before the prediction; the energy metrics, which every run prints, are

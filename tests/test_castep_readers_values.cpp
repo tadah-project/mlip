@@ -717,12 +717,12 @@ TEST_CASE("CASTEP .md/.geom readers: a truncated last frame is skipped with one 
 }
 
 // Pins: an .md frame without a stress tensor ('<-- S' lines) is stored
-// with zero stress and stress weight 0, so a STRESS fit ignores it; a frame
+// with zero stress and stress priority 0, so a STRESS fit ignores it; a frame
 // with one keeps weight 1: test1.md gives 2 structures with sweight 1, and
 // the same file without its '<-- S' lines 2 structures with sweight 0 (and
 // the same energies).
 // Before the fix: zero stress with sweight 1.
-TEST_CASE("CASTEP .md reader: a frame without a stress tensor has stress weight 0",
+TEST_CASE("CASTEP .md reader: a frame without a stress tensor has stress priority 0",
           "[castep_readers][md][stress]") {
   PeriodicTable::initialize();
   StructureDB with, without;
@@ -1014,7 +1014,7 @@ TEST_CASE("CASTEP .castep reader: an MD run with the finite basis correction kee
 }
 
 // Pins: a structure whose SCF prints no stress block is stored with zero
-// stress and stress weight 0, so a STRESS fit ignores it; a structure with
+// stress and stress priority 0, so a STRESS fit ignores it; a structure with
 // its own stress keeps weight 1. Each structure gets only its own SCF's
 // results, and its label names only its own blocks ('S: (-1 : -1)' without
 // one):
@@ -1028,7 +1028,7 @@ TEST_CASE("CASTEP .castep reader: an MD run with the finite basis correction kee
 //    'S: (-1 : -1)', not the GO run's final stress block (2047-2049).
 // Before the fix: zero stress with sweight 1; structure 2 kept the trial
 // SCF's stress; the NVT labels named lines 2047-2049.
-TEST_CASE("CASTEP .castep reader: a structure without a stress block has stress weight 0",
+TEST_CASE("CASTEP .castep reader: a structure without a stress block has stress priority 0",
           "[castep_readers][castep][stress]") {
   PeriodicTable::initialize();
   {
@@ -1342,7 +1342,7 @@ TEST_CASE("CASTEP .castep reader: runs in one file do not share state",
 }
 
 // Pins: a structure without a forces block of its own is stored with zero
-// forces and force weight 0 (fweight), so that a FORCE fit ignores it; the
+// forces and force priority 0 (fweight), so that a FORCE fit ignores it; the
 // forces printed for a geometry optimisation's final configuration go to the
 // last iteration when that has the same geometry and none of its own; a
 // variable-cell optimisation with 'stress calculation : off' still prints
@@ -1356,7 +1356,7 @@ TEST_CASE("CASTEP .castep reader: runs in one file do not share state",
 //    (S: (475 : 477)) and sweight 1.
 // Before the fix: zero forces with fweight 1; structure 16 kept zero forces;
 // iteration 0 was completed at its forces block, before its stress.
-TEST_CASE("CASTEP .castep reader: a structure without forces has force weight 0",
+TEST_CASE("CASTEP .castep reader: a structure without forces has force priority 0",
           "[castep_readers][castep][forces]") {
   PeriodicTable::initialize();
   {
@@ -1569,7 +1569,7 @@ TEST_CASE("CASTEP .castep reader: ' Finished MD' ends the last MD step",
 // Forces' and a 'Constrained Forces' block (every component 0.5) after it
 // gives structure 2 force weight 1 and H1 force z 0.00189 eV/A.
 // A pin of the list of physical blocks: without 'Unconstrained Forces' in it,
-// neither block is read and the structure gets force weight 0.
+// neither block is read and the structure gets force priority 0.
 TEST_CASE("CASTEP .castep reader: 'Unconstrained Forces' are the physical forces",
           "[castep_readers][castep][constraints]") {
   PeriodicTable::initialize();
@@ -2039,7 +2039,7 @@ TEST_CASE("CASTEP .castep reader: a value it cannot read is refused, naming "
 
 /* Pins: a forces or stress line of a .castep file that cannot be read (a
  * value CASTEP could not print, '*****') is no forces, or no stress, for that
- * structure: it is stored with force weight 0 (zero forces), or stress
+ * structure: it is stored with force priority 0 (zero forces), or stress
  * weight 0 (zero stress), with one WARNING naming the file and the line
  * ("CASTEP .castep <path>: line 456: the forces line of atom 1, '...', cannot
  * be read; the structure is stored without forces"; "... line 475: the
@@ -2052,7 +2052,7 @@ TEST_CASE("CASTEP .castep reader: a value it cannot read is refused, naming "
  * and 'Warning: Truncated file reading forces at row 5 (line: 460).', which
  * name no file. */
 TEST_CASE("CASTEP .castep reader: an unreadable forces or stress line gives "
-          "that weight 0, with a warning naming the file",
+          "that priority 0, with a warning naming the file",
           "[castep_readers][source]") {
   PeriodicTable::initialize();
   StructureDB good;
