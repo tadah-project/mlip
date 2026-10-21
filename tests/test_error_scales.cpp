@@ -479,6 +479,31 @@ TEST_CASE("FSIGMA a b: the relative part reads the structure's own forces; "
   CHECK_THAT(fit_refusal(c, db), Contains("ESIGMA 0") && Contains("> 0"));
 }
 
+/* Pins: the refusal of an ESIGMA that is not > 0 states its unit by ENORM:
+ * meV/atom, the error of the energy per atom, under ENORM ATOM, and meV
+ * per sqrt(atom), the error of the energy over the square root of its
+ * atoms, under ENORM SQRT.
+ * Before the fix: it said meV/atom and the energy per atom under ENORM
+ * SQRT too. */
+TEST_CASE("The refusal of ESIGMA states its unit by ENORM",
+          "[error_scales][units]") {
+  PeriodicTable::initialize();
+  const StructureDB db = db_of({cell_2(), cell_3(), cell_4()});
+  Context c = make_context(false, false);
+  set_key(c, "ESIGMA", "-1");
+  CHECK_THAT(fit_refusal(c, db),
+             Contains("ESIGMA -1: the energy error scale is a number > 0 "
+                      "(meV/atom, the error of the energy per atom that "
+                      "costs as much as a force off by FSIGMA)"));
+  set_key(c, "ENORM", "SQRT");
+  CHECK_THAT(fit_refusal(c, db),
+             Contains("ESIGMA -1: the energy error scale is a number > 0 "
+                      "(meV per sqrt(atom) under ENORM SQRT, the error of "
+                      "the energy over the square root of its number of "
+                      "atoms that costs as much as a force off by "
+                      "FSIGMA)"));
+}
+
 /* Pins: a fit refuses an error scale other than its default, compared by
  * value, for a quantity that is off: FSIGMA 0.2 with FORCE false, SSIGMA 1
  * with STRESS false, ESIGMA 2 and ENORM SQRT with ENERGY false, each naming
