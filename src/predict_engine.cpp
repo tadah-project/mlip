@@ -128,7 +128,7 @@ int PredictEngine::run(mlip::Task &task) {
   apply_load_transforms(stdb, potContext);
 
   // The energy, force and stress metrics leave out structures with energy,
-  // force or stress weight 0; a dataset made only of such structures is not
+  // force or stress priority 0; a dataset made only of such structures is not
   // measured (nan, left out of the mean). A run in which no dataset is
   // measured by the force (stress) metrics it asks for (-F, -S) is refused
   // before the prediction; the energy metrics, which every run prints, are
@@ -171,7 +171,7 @@ int PredictEngine::run(mlip::Task &task) {
     core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");
     Analytics a(stdb, stpred);
 
-    const int col_width = 16;
+    const int col_width = 24;  // the longest row name and a blank
     const int val_width = 16;
 
     std::vector<std::string> files;
@@ -201,13 +201,22 @@ int PredictEngine::run(mlip::Task &task) {
     }
     std::cout << std::setfill(' ') << std::endl;
 
-    // The mean column of a metric runs over the datasets it measures.
+    // The mean column of a metric runs over the datasets it measures. A
+    // row names its unit ("Stress RMSE (GPa)"), padded to the column by
+    // the characters a terminal shows (the Å of eV/Å is two bytes).
     auto print_metric = [col_width, val_width](const std::string& name, const auto& values,
                                                double scale = 1.0,
                                                const std::vector<bool>* measured = nullptr) {
       double mean = measured ? measured_mean(values, *measured)
                              : std::accumulate(values.begin(), values.end(), 0.0) / values.size();
-      std::cout << std::setw(col_width) << std::left << name
+      std::size_t shown = 0;
+      for (unsigned char ch : name)
+        if ((ch & 0xC0) != 0x80) ++shown;
+      std::cout << name
+        << std::string(shown < static_cast<std::size_t>(col_width)
+                           ? static_cast<std::size_t>(col_width) - shown
+                           : 1,
+                       ' ')
         << std::setw(val_width) << std::right << std::scientific << std::setprecision(6) << scale * mean;
       for (const auto& v : values) {
         std::cout << std::setw(val_width) << std::right << std::scientific << std::setprecision(6) << scale * v;
@@ -216,22 +225,22 @@ int PredictEngine::run(mlip::Task &task) {
     };
 
     // Energy
-    print_metric("Energy MAE", a.calc_e_mae(), 1000, &measured_e);
-    print_metric("Energy RMSE", a.calc_e_rmse(), 1000, &measured_e);
+    print_metric("Energy MAE (meV/atom)", a.calc_e_mae(), 1000, &measured_e);
+    print_metric("Energy RMSE (meV/atom)", a.calc_e_rmse(), 1000, &measured_e);
     print_metric("Energy R^2", a.calc_e_r_sq(), 1.0, &measured_e);
 
     if (taskContext.get<bool>("FORCE")) {
       std::cout << std::endl;
-      print_metric("Force MAE", a.calc_f_mae(), 1.0, &measured_f);
-      print_metric("Force RMSE", a.calc_f_rmse(), 1.0, &measured_f);
+      print_metric("Force MAE (eV/Å)", a.calc_f_mae(), 1.0, &measured_f);
+      print_metric("Force RMSE (eV/Å)", a.calc_f_rmse(), 1.0, &measured_f);
       print_metric("Force R^2", a.calc_f_r_sq(), 1.0, &measured_f);
     }
 
     if (taskContext.get<bool>("STRESS")) {
       std::cout << std::endl;
       // the nine entries of each tensor, in GPa
-      print_metric("Stress MAE", a.calc_s_mae_gpa(), 1.0, &measured_s);
-      print_metric("Stress RMSE", a.calc_s_rmse_gpa(), 1.0, &measured_s);
+      print_metric("Stress MAE (GPa)", a.calc_s_mae_gpa(), 1.0, &measured_s);
+      print_metric("Stress RMSE (GPa)", a.calc_s_rmse_gpa(), 1.0, &measured_s);
       print_metric("Stress R^2", a.calc_s_r_sq(), 1.0, &measured_s);
     }
 

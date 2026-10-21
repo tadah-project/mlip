@@ -313,7 +313,7 @@ void VaspOutcarReader::parse_data() {
     }
 
     if (complete_structure) {
-      // A step without a stress tensor: zero stress and stress weight 0,
+      // A step without a stress tensor: zero stress and stress priority 0,
       // so that a STRESS fit ignores it.
       if (!have_stress) {
         s.stress.set_zero();

@@ -1134,6 +1134,119 @@ TEST_CASE("Fit balance legend", "[fit_balance]") {
  * (...)" that names why, wrapped at blanks to lines of at most 78
  * characters, which the record keeps and reads back. Before the fix: no
  * balance table. */
+namespace {
+
+/* A 2-atom bcc cell of edge @p a sheared by @p eps (first cell vector (a,
+ * eps a, 0), the second atom moved with it): its off-diagonal xy stress row
+ * is of the order of eps of the largest value of its column, a genuine row
+ * however small. */
+Structure sheared_cell(double a, double energy_shift, double eps) {
+  Structure st;
+  st.cell.load(a, eps * a, 0.0, 0.0, a, 0.0, 0.0, 0.0, a);
+  const double h = 0.5 * a;
+  st.add_atom(Atom(Element("Ta"), 0.0, 0.0, 0.0, 0.02, -0.015, 0.01));
+  st.add_atom(Atom(Element("Ta"), h + eps * h, h, h, -0.01, 0.025, -0.02));
+  st.energy = -16.0 + energy_shift;
+  const double s[3][3] = {{0.012, 0.004, 0.005},
+                          {0.004, 0.010, 0.006},
+                          {0.005, 0.006, 0.008}};
+  for (int x = 0; x < 3; ++x)
+    for (int y = 0; y < 3; ++y) st.stress(x, y) = s[x][y];
+  return st;
+}
+
+/* A compressed 54-atom bcc supercell (3 x 3 x 3 cells of edge 2.9 Å) with
+ * every atom moved off its site, of priority @p p for its energy, forces
+ * and stress: its rows are far larger than those of a 2-atom cell. */
+Structure compressed_supercell(double p) {
+  Structure st;
+  const double a = 2.9, L = 3 * a;
+  st.cell.load(L, 0.0, 0.0, 0.0, L, 0.0, 0.0, 0.0, L);
+  int k = 0;
+  for (int i = 0; i < 3; ++i)
+    for (int j = 0; j < 3; ++j)
+      for (int l = 0; l < 3; ++l)
+        for (double b : {0.0, 0.5}) {
+          st.add_atom(Atom(Element("Ta"),
+                           (i + b) * a + 0.05 * std::sin(k),
+                           (j + b) * a + 0.04 * std::cos(2.0 * k),
+                           (l + b) * a + 0.03 * std::sin(3.0 * k + 1.0),
+                           0.1 * std::sin(k), 0.1 * std::cos(k), 0.05));
+          ++k;
+        }
+  st.energy = -8.0 * 54 + 40.0;
+  const double s[3][3] = {{0.5, 0.01, 0.02}, {0.01, 0.4, 0.03},
+                          {0.02, 0.03, 0.45}};
+  for (int x = 0; x < 3; ++x)
+    for (int y = 0; y < 3; ++y) st.stress(x, y) = s[x][y];
+  st.eweight = st.fweight = st.sweight = p;
+  return st;
+}
+
+}  // namespace
+
+/* Pins: a dataset that the fit leaves out (WDBFILE 0) and one whose every
+ * structure has priority 0 change nothing of a LAMBDA -1 fit: the
+ * observations of the balance table (n of every row), the lambda of the
+ * evidence approximation, which counts them, and the coefficients (to
+ * 1e-10 relative: the solve has more rows, all zero) are those of the fit
+ * without that dataset. The fit: three 2-atom cells sheared by 1e-9 with
+ * FORCE and STRESS true; their xy stress rows are observations (premise:
+ * four stress observations per cell). The dataset left out: a compressed
+ * 54-atom supercell, whose rows are far larger.
+ * Before the fix: the rows of the dataset left out set the largest values
+ * of the columns, so the xy stress rows of the sheared cells fell below
+ * 1e-10 of them and were not counted (stress n 9, not 12), and the
+ * evidence approximation found another lambda. */
+TEST_CASE("Fit balance: a dataset left out of the fit changes neither the "
+          "observations nor a LAMBDA -1 fit",
+          "[fit_balance][observations]") {
+  PeriodicTable::initialize();
+  const double eps = 1e-9;
+  StructureDB a;
+  a.add(sheared_cell(3.2, 0.0, eps));
+  a.add(sheared_cell(3.3, 0.01, eps));
+  a.add(sheared_cell(3.4, 0.02, eps));
+  a.dbidx = {0, 3};
+  const Context c = ta_context(3, "-1");
+  const Fitted alone = fit(c, a);
+  REQUIRE(alone.balance.computed());
+  REQUIRE(row_of(alone.balance, 2, 0).n == 4 * a.size());
+
+  struct Variant {
+    const char *name;
+    double priority;
+    const char *wdbfile;
+  };
+  for (const Variant &v : {Variant{"WDBFILE 0", 1.0, "1 0"},
+                           Variant{"priority 0", 0.0, "1 1"}}) {
+    DYNAMIC_SECTION("the supercell in a dataset of " << v.name) {
+      StructureDB ab = a;
+      ab.add(compressed_supercell(v.priority));
+      ab.dbidx = {0, 3, 4};
+      Context cc = c;
+      set_key(cc, "WDBFILE", v.wdbfile);
+      const Fitted both = fit(cc, ab);
+      REQUIRE(both.balance.computed());
+      for (std::size_t q = 0; q < 3; ++q) {
+        INFO("quantity " << q);
+        CHECK(row_of(both.balance, q, 0).n == row_of(alone.balance, q, 0).n);
+        CHECK(row_of(both.balance, q, 1).n == row_of(alone.balance, q, 0).n);
+        CHECK(row_of(both.balance, q, 2).n == 0);
+      }
+      CHECK(both.balance.lambda_used ==
+            Approx(alone.balance.lambda_used).epsilon(1e-10));
+      const std::vector<std::string> &w0 = alone.pot("WEIGHTS");
+      const std::vector<std::string> &w1 = both.pot("WEIGHTS");
+      REQUIRE(w1.size() == w0.size());
+      for (std::size_t k = 0; k < w0.size(); ++k) {
+        INFO("WEIGHTS " << k);
+        CHECK(std::stod(w1[k]) == Approx(std::stod(w0[k])).epsilon(1e-10));
+      }
+    }
+  }
+}
+
 TEST_CASE("Fit balance: none without a fit of observations", "[fit_balance]") {
   PeriodicTable::initialize();
   {

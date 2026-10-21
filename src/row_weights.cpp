@@ -235,11 +235,18 @@ void require_fit_settings(const core::Context &c, const std::string &who) {
   auto finite = [](double v) { return detail::is_finite_bits(v); };
 
   const double e = c.get<double>("ESIGMA");
-  if (!(finite(e) && e > 0.0))
+  if (!(finite(e) && e > 0.0)) {
+    // The unit of ESIGMA follows ENORM (meV per sqrt(atom) under SQRT).
+    const bool sqrt_norm =
+        core::to_upper(c.get<std::string>("ENORM")) == "SQRT";
     throw std::runtime_error(
         who + ": " + key_text(c, "ESIGMA") + ": the energy error scale is a "
-        "number > 0 (meV/atom, the error of the energy per atom that costs "
-        "as much as a force off by FSIGMA)" + tail);
+        "number > 0 (" +
+        (sqrt_norm ? "meV per sqrt(atom) under ENORM SQRT, the error of the "
+                     "energy over the square root of its number of atoms"
+                   : "meV/atom, the error of the energy per atom") +
+        " that costs as much as a force off by FSIGMA)" + tail);
+  }
   struct Scale {
     const char *key, *what, *unit, *zero;
   };
@@ -340,7 +347,7 @@ ObservationCount count_observations(const core::phi_type &Phi,
                                     const core::t_type &factors,
                                     const core::t_type &labels) {
   ObservationCount n;
-  const std::vector<char> zero = models::zero_rows(Phi, data_rows);
+  const std::vector<char> zero = models::zero_rows(Phi, data_rows, factors);
   for (std::size_t i = 0; i < zero.size(); ++i) {
     if (zero[i] || !(factors(i) > 0.0)) continue;
     const std::size_t t = static_cast<std::size_t>(labels(i));
@@ -463,13 +470,18 @@ EffectiveParameters effective_parameters(
   svd_right(buf.data(), N, N, LDA, S, VT);
   // A has min(total, n) singular values; R's others are those of its zero
   // rows. The directions the solve keeps: OALGO 1 (DGELSD) those above
-  // rcond times the largest (machine precision for rcond < 0), OALGO 3
-  // those above rcond times the largest (every one for rcond <= 0), OALGO 2
-  // (QR) and 4 (Cholesky) every one: they solve with every direction.
+  // rcond times the largest for 0 < rcond < 1 and, for any other rcond,
+  // above the machine precision of LAPACK (dlamch('Epsilon'), 2^-53) times
+  // the largest, which DGELSD puts in its place; OALGO 3 those above rcond
+  // times the largest (every one for rcond <= 0:
+  // OLS::pseudoinverse_threshold); OALGO 2 (QR) and 4 (Cholesky) every one:
+  // they solve with every direction.
   const std::size_t k = std::min(total, n);
   double thresh = 0.0;
   if (oalgo == 1)
-    thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
+    thresh = (rcond > 0.0 && rcond < 1.0
+                  ? rcond
+                  : 0.5 * std::numeric_limits<double>::epsilon()) *
              S[0];
   else if (oalgo == 3 && rcond > 0.0)
     thresh = rcond * S[0];

@@ -258,7 +258,7 @@ FitBalance fit_balance(const core::phi_type &Phi, std::size_t data_rows,
   // predictions column by column: no copy of the rows): RMSE and r/sigma
   // over every such entry, as the metrics; n, the share and gamma over the
   // observations, the rows that are not zero.
-  const std::vector<char> zero = models::zero_rows(Phi, data_rows);
+  const std::vector<char> zero = models::zero_rows(Phi, data_rows, factors);
   struct Sum {
     std::size_t n = 0;
     double m = 0, e2 = 0, z2 = 0, loss = 0;

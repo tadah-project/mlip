@@ -29,7 +29,7 @@ namespace mlip {
  * '<-- E' value). A frame with a '<-- S' tensor whose kinetic energy is
  * more than 1e-3 off those masses (a custom SPECIES_MASS) is refused; a
  * frame without one needs no masses and is read, with zero stress and
- * stress weight 0 (sweight), so that a STRESS fit ignores it. Every frame is read, the first
+ * stress priority 0 (sweight), so that a STRESS fit ignores it. Every frame is read, the first
  * one included. A malformed frame is an error naming the file, the frame
  * (1-based) and the line; a last frame that the file ends inside (a run
  * stopped while writing it) is skipped with one WARNING.

@@ -292,7 +292,7 @@ Structure CastepMDReader::parse_frame(const std::vector<FrameLine> &frame,
     s.stress = stress;
     s.stress *= s_conv;
   } else {
-    // No stress tensor: zero stress and stress weight 0, so that a STRESS
+    // No stress tensor: zero stress and stress priority 0, so that a STRESS
     // fit ignores it.
     s.sweight = 0.0;
   }

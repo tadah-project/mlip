@@ -535,12 +535,14 @@ TEST_CASE("Effective parameters under OALGO 2 and 4 keep every direction",
   }
 }
 
-/* Pins: with a rank threshold of 0 (OALGO 1 0 and OALGO 3 0, and OALGO 3
- * with a negative one) every direction of a positive computed singular
- * value is kept, those of the rounding of a design whose last column
- * repeats its first included; each kept direction's parts, the rows' and
- * the prior's, sum to 1, so the effective parameters sum to the rank and
- * each type's lies between 0 and its rows (1000), at LAMBDA 0 and 1e-3.
+/* Pins: with a rank threshold of 0 (OALGO 3 0, and OALGO 3 with a
+ * negative one) every direction of a positive computed singular value is
+ * kept, those of the rounding of a design whose last column repeats its
+ * first included, and with OALGO 1 0 every one above DGELSD's machine
+ * precision (2^-53 times the largest); each kept direction's parts, the
+ * rows' and the prior's, sum to 1, so the effective parameters sum to the
+ * rank and each type's lies between 0 and its rows (1000), at LAMBDA 0
+ * and 1e-3.
  * The rank is 5 or 6, as the rounding of the repeated column leaves a
  * singular value of 0 or above. With the default threshold (1e-8) the rank
  * is 5 and the data's gamma 5 at LAMBDA 0.
@@ -586,6 +588,61 @@ TEST_CASE("Effective parameters with a rank threshold of 0 sum to the rank",
       CHECK(g.total + g.prior ==
             Approx(static_cast<double>(g.retained)).epsilon(1e-9));
       if (k.rcond > 0.0) CHECK(g.total == Approx(5.0).epsilon(1e-9));
+    }
+  }
+}
+
+/* Pins: under OALGO 1 the effective parameters keep the directions the
+ * solve, DGELSD, keeps: their number is the rank DGELSD reports for the
+ * same rows and rcond, and at LAMBDA 0 they sum to it. DGELSD leaves out a
+ * singular value at most rcond times the largest for 0 < rcond < 1, and at
+ * most the machine precision 2^-53 times the largest for any other rcond.
+ * Rows (1, 0), (0, t) and (0, 0), of types 0, 1 and 1 (singular values 1
+ * and t), t 1e-16 (below 2^-53), 1.5e-16, 1e-12 and 1e-6; rcond -1, 0,
+ * 1e-13, 1e-8, 0.5, 1 and 1.5.
+ * Before the fix: effective_parameters took rcond 0 as a threshold of 0
+ * (keeping t 1e-16), rcond 1 or more as rcond times the largest (keeping no
+ * direction) and the machine precision as 2^-52 (leaving out t 1.5e-16). */
+TEST_CASE("Effective parameters under OALGO 1 keep the directions DGELSD "
+          "keeps",
+          "[row_weights]") {
+  for (const double t : {1e-16, 1.5e-16, 1e-12, 1e-6}) {
+    for (const double rcond : {-1.0, 0.0, 1e-13, 1e-8, 0.5, 1.0, 1.5}) {
+      DYNAMIC_SECTION("t " << t << ", rcond " << rcond) {
+        int m = 3, n = 2, nrhs = 1, lda = 3, ldb = 3, rank = -1, info = 0;
+        std::vector<double> a = {1.0, 0.0, 0.0, 0.0, t, 0.0};
+        std::vector<double> b = {1.0, 1.0, 0.0}, s(2);
+        std::vector<int> iwork(64);
+        double rc = rcond, query = 0.0;
+        int lwork = -1;
+        tadah::core::dgelsd_(&m, &n, &nrhs, a.data(), &lda, b.data(), &ldb,
+                             s.data(), &rc, &rank, &query, &lwork,
+                             iwork.data(), &info);
+        REQUIRE(info == 0);
+        REQUIRE(iwork[0] <= static_cast<int>(iwork.size()));
+        lwork = static_cast<int>(query);
+        std::vector<double> work(static_cast<std::size_t>(lwork));
+        tadah::core::dgelsd_(&m, &n, &nrhs, a.data(), &lda, b.data(), &ldb,
+                             s.data(), &rc, &rank, work.data(), &lwork,
+                             iwork.data(), &info);
+        REQUIRE(info == 0);
+
+        tadah::core::phi_type Phi(3, 2);
+        Phi.set_zero();
+        Phi(0, 0) = 1.0;
+        Phi(1, 1) = t;
+        tadah::core::t_type labels(3);
+        labels(0) = 0;
+        labels(1) = 1;
+        labels(2) = 1;
+        const std::vector<std::size_t> ds = {0, 0, 0};
+        const auto g = tadah::mlip::effective_parameters(Phi, labels, ds, 1,
+                                                         0.0, {}, 1, rcond);
+        INFO("DGELSD rank " << rank);
+        CHECK(g.retained == static_cast<std::size_t>(rank));
+        CHECK(g.total == Approx(static_cast<double>(rank)).margin(1e-12));
+        CHECK(std::fabs(g.prior) < 1e-12);
+      }
     }
   }
 }

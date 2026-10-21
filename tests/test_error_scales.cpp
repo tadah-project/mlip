@@ -479,6 +479,31 @@ TEST_CASE("FSIGMA a b: the relative part reads the structure's own forces; "
   CHECK_THAT(fit_refusal(c, db), Contains("ESIGMA 0") && Contains("> 0"));
 }
 
+/* Pins: the refusal of an ESIGMA that is not > 0 states its unit by ENORM:
+ * meV/atom, the error of the energy per atom, under ENORM ATOM, and meV
+ * per sqrt(atom), the error of the energy over the square root of its
+ * atoms, under ENORM SQRT.
+ * Before the fix: it said meV/atom and the energy per atom under ENORM
+ * SQRT too. */
+TEST_CASE("The refusal of ESIGMA states its unit by ENORM",
+          "[error_scales][units]") {
+  PeriodicTable::initialize();
+  const StructureDB db = db_of({cell_2(), cell_3(), cell_4()});
+  Context c = make_context(false, false);
+  set_key(c, "ESIGMA", "-1");
+  CHECK_THAT(fit_refusal(c, db),
+             Contains("ESIGMA -1: the energy error scale is a number > 0 "
+                      "(meV/atom, the error of the energy per atom that "
+                      "costs as much as a force off by FSIGMA)"));
+  set_key(c, "ENORM", "SQRT");
+  CHECK_THAT(fit_refusal(c, db),
+             Contains("ESIGMA -1: the energy error scale is a number > 0 "
+                      "(meV per sqrt(atom) under ENORM SQRT, the error of "
+                      "the energy over the square root of its number of "
+                      "atoms that costs as much as a force off by "
+                      "FSIGMA)"));
+}
+
 /* Pins: a fit refuses an error scale other than its default, compared by
  * value, for a quantity that is off: FSIGMA 0.2 with FORCE false, SSIGMA 1
  * with STRESS false, ESIGMA 2 and ENORM SQRT with ENERGY false, each naming
@@ -593,6 +618,41 @@ TEST_CASE("A design-matrix row that is zero in every column is not an "
   tadah::mlip::Normaliser norm(c);
   dm.build(db, norm, dc, false);
   CHECK(dm.n_observations() == 3);
+}
+
+/* Pins: whether a row is zero is decided against the largest values of its
+ * columns over the rows of priority above 0, the rows of the fit. Rows of
+ * the design matrix without the factors: (1, 0.5) and (1e-9, 0) of
+ * priority 1, (1e-17, 0) of priority 1 (rounding: zero), and (1e3, 0) of
+ * priority 0, a structure or dataset the fit leaves out. The observations
+ * are the first two rows: (1e-9, 0) is 1e-9 of its column's largest value
+ * over the fit's rows, above 1e-10.
+ * Before the fix: the column maximum included the row of priority 0, so
+ * (1e-9, 0) was 1e-12 of it and not an observation (1 instead of 2). */
+TEST_CASE("A row of priority 0 does not decide which rows are observations",
+          "[error_scales][observations]") {
+  tadah::core::phi_type Phi(4, 2);
+  Phi.set_zero();
+  Phi(0, 0) = 1.0;
+  Phi(0, 1) = 0.5;
+  Phi(1, 0) = 1e-9;
+  Phi(2, 0) = 1e-17;
+  Phi(3, 0) = 1e3;
+  tadah::core::t_type factors(4), labels(4);
+  factors(0) = 1.0;
+  factors(1) = 1.0;
+  factors(2) = 1.0;
+  factors(3) = 0.0;
+  labels(0) = 0.0;
+  labels(1) = 2.0;
+  labels(2) = 2.0;
+  labels(3) = 0.0;
+  const tadah::mlip::ObservationCount n =
+      tadah::mlip::count_observations(Phi, 4, factors, labels);
+  CHECK(n.total == 2);
+  CHECK(n.by_type[0] == 1);
+  CHECK(n.by_type[1] == 0);
+  CHECK(n.by_type[2] == 1);
 }
 
 namespace {

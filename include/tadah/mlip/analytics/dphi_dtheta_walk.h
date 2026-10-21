@@ -46,9 +46,10 @@
  *    descriptor accepted the (theta_name, arg_pos) pair). `false`
  *    means caller should route this index to needs_fd.
  *
- *  - This helper does NOT apply DesignMatrix weighting (sqrt(eweight *
- *    eweightglob)). The caller multiplies each row by its weight after
- *    the walk to match the row layout in `dm.getPhi()` post-scale.
+ *  - This helper does NOT apply the row factors of the fit (RowWeights,
+ *    row_weights.h: sqrt(p m) / sigma). The caller multiplies each row by
+ *    its factor after the walk to match the row layout in `dm.getPhi()`
+ *    post-scale.
  */
 
 #include <tadah/core/core_types.h>

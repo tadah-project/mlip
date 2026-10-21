@@ -410,3 +410,55 @@ TEST_CASE("Task file: a task file without a TASK section is an error",
     CHECK(tasks[0].getContext().get<std::string>("POTENTIAL") == "pot.tadah");
   }
 }
+
+/* Pins: a key that sets a fit (ESIGMA, FSIGMA, SSIGMA, ENORM, ENERGY,
+ * WDBFILE) is refused in a TASK predict section, naming the line and why
+ * (tadah predict fits nothing), and in the GLOBAL section of a file whose
+ * only tasks are TASK predict; a GLOBAL line of it in a file with a TASK
+ * train section is that task's and is read.
+ * Before the fix: each was accepted and had no effect (a WDBFILE 0 or an
+ * ESIGMA 3 of a TASK predict changed no prediction). */
+TEST_CASE("Task file: a key that sets a fit is refused in TASK predict",
+          "[config][task_file][fit_keys]") {
+  const std::string why = " sets the fit of tadah train and tadah hpo, and "
+                          "tadah predict fits nothing: it predicts with the "
+                          "potential as it was fitted.";
+  for (const std::string line :
+       {"ESIGMA 3", "FSIGMA 0.2 0.1", "SSIGMA 1", "ENORM SQRT",
+        "ENERGY false", "WDBFILE 0"}) {
+    const std::string key = line.substr(0, line.find(' '));
+    DYNAMIC_SECTION(line) {
+      const TempFile f("fit_key_predict",
+                       "TASK predict\n"          // 1
+                       "POTENTIAL pot.tadah\n"   // 2
+                       "DBFILE db.tadah\n"       // 3
+                       + line + "\n");           // 4
+      REQUIRE_THROWS_WITH(MLIPUserConfigParser().parse(f.path),
+                          key + " (line 4 of " + f.path +
+                              ") in TASK predict: " + key + why);
+    }
+  }
+  SECTION("in the GLOBAL section of a file of TASK predict") {
+    const TempFile f("fit_key_global",
+                     "WDBFILE 0\n"               // 1
+                     "TASK predict\n"            // 2
+                     "POTENTIAL pot.tadah\n");   // 3
+    REQUIRE_THROWS_WITH(
+        MLIPUserConfigParser().parse(f.path),
+        "WDBFILE (line 1 of " + f.path +
+            ") in the GLOBAL section reaches TASK predict (the GLOBAL "
+            "section sets the keys of every task of the file), and no TASK "
+            "section of the file fits: WDBFILE" + why);
+  }
+  SECTION("in the GLOBAL section of a file with TASK train") {
+    const TempFile f("fit_key_global_train",
+                     "ESIGMA 3\n"                // 1
+                     "TASK train\n"              // 2
+                     "CONFIG config.train\n"     // 3
+                     "TASK predict\n"            // 4
+                     "POTENTIAL pot.tadah\n");   // 5
+    std::ofstream("config.train") << "DBFILE db.tadah\n";
+    REQUIRE_NOTHROW(MLIPUserConfigParser().parse(f.path));
+    std::remove("config.train");
+  }
+}

@@ -1,8 +1,8 @@
 // The force and stress metrics leave out structures stored with weight 0.
 //
-// A structure with force weight 0 (fweight) has no force data of its own
+// A structure with force priority 0 (fweight) has no force data of its own
 // (tadah data convert stores it with zero forces, e.g. a .castep step that
-// prints no forces), and one with stress weight 0 (sweight) no stress
+// prints no forces), and one with stress priority 0 (sweight) no stress
 // tensor. Training ignores them through the weights; the metrics must
 // too: Analytics::calc_f_mae/calc_f_rmse/calc_f_r_sq skip a
 // structure with fweight 0, calc_s_mae_gpa/calc_s_rmse_gpa/calc_s_r_sq one
@@ -11,9 +11,9 @@
 // dataset in which every structure has that weight 0 is refused, naming the
 // dataset: its metric would have nothing to measure.
 //
-// Synthetic data: dataset 1 holds A (weights 1), Bf (force weight 0, with
+// Synthetic data: dataset 1 holds A (weights 1), Bf (force priority 0, with
 // reference forces far from the prediction and an exact stress) and Bs
-// (stress weight 0, with a reference stress far from the prediction and
+// (stress priority 0, with a reference stress far from the prediction and
 // exact forces); dataset 2 holds C (weights 1). So a metric that read the
 // other weight would count Bf in the force metrics or Bs in the stress
 // metrics. Every structure has 2 atoms, so 6 force components, and a
@@ -88,11 +88,11 @@ StructureDB reference() {
   db(0).stress(0, 0) = 0.1;
   db(0).stress(1, 1) = 0.2;
   db(0).stress(2, 2) = 0.3;
-  // Bf: no forces of its own (force weight 0), far from any prediction.
+  // Bf: no forces of its own (force priority 0), far from any prediction.
   db(1).fweight = 0.0;
   for (std::size_t a = 0; a < 2; ++a) db(1).atoms[a].force = Vec3d(50.0, 50.0, 50.0);
   db(1).stress(0, 0) = db(1).stress(1, 1) = db(1).stress(2, 2) = 0.2;
-  // Bs: no stress tensor of its own (stress weight 0), far from any
+  // Bs: no stress tensor of its own (stress priority 0), far from any
   // prediction.
   db(2).sweight = 0.0;
   db(2).atoms[0].force = Vec3d(0.05, 0.0, 0.0);
@@ -151,7 +151,7 @@ double r_sq(const double (&obs)[12], double ss_res) {
  * MAE 0.3/12, RMSE sqrt(0.09/12), R^2 over their twelve components; dataset
  * 2: MAE 0.4/6, RMSE sqrt(0.16/6).
  * Before the fix: Bf's six components of 50 were included. */
-TEST_CASE("Analytics: the force metrics leave out structures with force weight 0",
+TEST_CASE("Analytics: the force metrics leave out structures with force priority 0",
           "[analytics][weight0]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
@@ -174,7 +174,7 @@ TEST_CASE("Analytics: the force metrics leave out structures with force weight 0
  * sqrt(0.0002/18), in GPa, R^2 over their eighteen entries; dataset 2 (C's
  * zz off by 0.02): MAE 0.02/9, RMSE sqrt(0.0004/9), in GPa.
  * Before the fix: Bs's entries of 0.5 were included. */
-TEST_CASE("Analytics: the stress metrics leave out structures with stress weight 0",
+TEST_CASE("Analytics: the stress metrics leave out structures with stress priority 0",
           "[analytics][weight0]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
@@ -201,7 +201,7 @@ TEST_CASE("Analytics: the stress metrics leave out structures with stress weight
  * sqrt(0.0625/3) (Bf's energy is off by 0.5 eV, 0.25 eV/atom; A and Bs are
  * exact).
  * A pin: a weight-0 skip in the energy metrics fails it. */
-TEST_CASE("Analytics: the energy metrics count structures with force or stress weight 0",
+TEST_CASE("Analytics: the energy metrics count structures with force or stress priority 0",
           "[analytics][weight0]") {
   const StructureDB truth = reference();  // Analytics keeps references
   const StructureDB pred = prediction();
@@ -220,7 +220,7 @@ TEST_CASE("Analytics: the energy metrics count structures with force or stress w
  * Before the fix: Bf's force cells and Bs's stress cells were emitted, and
  * the metrics in the denominators included them. */
 TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE_GPA partials leave out structures "
-          "with weight 0",
+          "with priority 0",
           "[analytics][weight0][pc_dataset]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
@@ -254,7 +254,7 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE_GPA partials leave out stru
 }
 
 /* Pins: a dataset in which every structure has force
- * weight 0 (stress weight 0) is not measured by the force (stress) metrics:
+ * weight 0 (stress priority 0) is not measured by the force (stress) metrics:
  * each returns nan for it and the other datasets' values unchanged, the
  * partials emit none of its cells and do not throw; the PC_SRMSE partials
  * and the averaging frmse() wrapper differentiate the mean over the
@@ -265,12 +265,12 @@ TEST_CASE("analytics_grad: the PC_FRMSE and PC_SRMSE_GPA partials leave out stru
  * tadah predict -A and tadah hpo). With C's fweight 0 the stress metrics of dataset 2 are measured,
  * and the reverse.
  * Before the fix: every metric and partial threw for such a dataset. */
-TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measured",
+TEST_CASE("Analytics: a dataset whose structures all have priority 0 is not measured",
           "[analytics][weight0]") {
   using tadah::mlip::MetricQuantity;
   using tadah::mlip::require_metric_structures;
   const StructureDB pred = prediction();
-  SECTION("force weight 0") {
+  SECTION("force priority 0") {
     StructureDB truth = reference();
     truth(3).fweight = 0.0;  // C
     const Analytics a(truth, pred);
@@ -305,7 +305,7 @@ TEST_CASE("Analytics: a dataset whose structures all have weight 0 is not measur
                           Contains("a.tadah") && Contains("b.tadah") &&
                           Contains("force priority 0"));
   }
-  SECTION("stress weight 0") {
+  SECTION("stress priority 0") {
     StructureDB truth = reference();
     truth(3).sweight = 0.0;  // C
     const Analytics a(truth, pred);

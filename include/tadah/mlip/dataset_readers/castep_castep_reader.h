@@ -60,8 +60,8 @@ namespace mlip {
  * A structure without an energy of its own is refused (std::runtime_error
  * naming the file); a band-structure step without an SCF (a continuation)
  * is skipped with a WARNING. A structure without a stress tensor of its own
- * is stored with zero stress and stress weight 0 (sweight), and one without
- * forces with zero forces and force weight 0 (fweight), so that a fit
+ * is stored with zero stress and stress priority 0 (sweight), and one without
+ * forces with zero forces and force priority 0 (fweight), so that a fit
  * ignores them (one INFO line each per file). The stress and forces printed
  * for a geometry optimisation's final configuration, or after ' Finished
  * MD', go to the last stored step when that has the same geometry and none

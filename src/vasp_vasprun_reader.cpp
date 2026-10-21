@@ -252,7 +252,7 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
 
     extract_stress_tensor(calculation_node);
     if (!stress_tensor_bool) {
-      // No stress tensor: zero stress and stress weight 0, so that a
+      // No stress tensor: zero stress and stress priority 0, so that a
       // STRESS fit ignores it.
       _s.stress.set_zero();
       _s.sweight = 0.0;
@@ -273,7 +273,7 @@ void VaspVasprunReader::extract_calculations(rx::xml_node<> *root_node) {
 
     extract_forces(calculation_node);
     if (!forces_found_) {
-      // No forces: zero forces and force weight 0, so that a FORCE fit
+      // No forces: zero forces and force priority 0, so that a FORCE fit
       // ignores them.
       for (auto &a : _s.atoms) a.force = tadah::core::Vec3d(0.0, 0.0, 0.0);
       _s.fweight = 0.0;

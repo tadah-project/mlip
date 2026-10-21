@@ -25,7 +25,7 @@ namespace rx = rapidxml;
  * are; e_wo_entrp at that level holds energy(sigma->0) in VASP 5.4.4) and
  * the Cauchy stress in eV/A^3, minus the 'stress' varray (pressure sign).
  * A calculation without a 'stress' varray is stored with zero stress and
- * stress weight 0 (sweight), so that a STRESS fit ignores it.
+ * stress priority 0 (sweight), so that a STRESS fit ignores it.
  *
  * Example usage:
  * @code

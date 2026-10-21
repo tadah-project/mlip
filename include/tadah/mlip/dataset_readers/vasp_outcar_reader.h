@@ -19,7 +19,7 @@ namespace mlip {
  * and the stress are), the forces, and the Cauchy stress in eV/A^3: minus
  * the 'in kB' tensor, which VASP prints with the pressure sign. A step
  * without an 'in kB' line, or with one that cannot be read (VASP's '*****'
- * overflow, with a warning), is stored with zero stress and stress weight 0
+ * overflow, with a warning), is stored with zero stress and stress priority 0
  * (sweight), so that a STRESS fit ignores it. The label ends with
  * 'Structure <n>', n the ionic step. An MD file that ends inside its last
  * step (after the step's energy, before its EKIN_LAT line) gives the

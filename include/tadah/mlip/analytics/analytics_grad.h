@@ -71,7 +71,7 @@ inline std::size_t force_cells_per_struct (const Structure& s) { return 3 * s.na
  * off-diagonal cell's partial carries both of its entries). */
 inline std::size_t stress_cells_per_struct(const Structure&) { return 6; }
 
-/* The energy cells: a structure stored with energy weight 0 (eweight) has
+/* The energy cells: a structure stored with energy priority 0 (eweight) has
  * no energy of its own and is left out, as in Analytics' energy metrics
  * (counts_in_metric(s, MetricQuantity::Energy)); a segment without such a
  * structure is not measured and emits nothing, and the scalar is the mean
@@ -325,7 +325,7 @@ void ersq(const StructureDB& truth, const StructureDB& pred,
  *   scalar   = (1/S) * sum_s metric_s
  *
  * N_s^F = sum_{i in s with fweight != 0} 3 * natoms_i is the per-segment
- * force-cell count. A structure with force weight 0 (counts_in_metric())
+ * force-cell count. A structure with force priority 0 (counts_in_metric())
  * is left out, as in Analytics::calc_f_rmse: none of its cells is emitted;
  * a segment without such structures (N_s^F = 0) is not measured and emits
  * nothing.

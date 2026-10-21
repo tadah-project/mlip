@@ -324,7 +324,7 @@ void CastepCastepReader::parse_data() {
     }
     s.energy = energy;
     // A structure without forces of its own is stored with zero forces and
-    // force weight 0, so that a FORCE fit ignores them.
+    // force priority 0, so that a FORCE fit ignores them.
     if (!forces_found) {
       for (auto &a : result_atoms) a.force = tadah::core::Vec3d(0.0, 0.0, 0.0);
       s.fweight = 0.0;
@@ -333,7 +333,7 @@ void CastepCastepReader::parse_data() {
       s.fweight = 1.0;
     }
     // A structure without a stress tensor of its own is stored with zero
-    // stress and stress weight 0, so that a STRESS fit ignores it.
+    // stress and stress priority 0, so that a STRESS fit ignores it.
     if (!stress_tensor_found) {
       s.stress.set_zero();
       s.sweight = 0.0;

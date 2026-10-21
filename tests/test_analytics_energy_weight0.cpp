@@ -1,6 +1,6 @@
 // test_analytics_energy_weight0.cpp
 //
-// The energy metrics leave out the structures stored with energy weight 0.
+// The energy metrics leave out the structures stored with energy priority 0.
 //
 // A structure with eweight 0 has no energy of its own (its energy line,
 // which the dataset format needs, holds a placeholder). Training leaves its
@@ -140,7 +140,7 @@ std::vector<EnergyMetric> energy_metrics() {
  * Before the fix: Z, Y, X and W were counted (MAE of dataset 1 (0.05 + 25
  * + 0.15) / 3), dataset 3 had values. */
 TEST_CASE("Analytics: the energy metrics leave out structures with energy "
-          "weight 0",
+          "priority 0",
           "[analytics][weight0][energy]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
@@ -200,7 +200,7 @@ TEST_CASE("The energy metrics measure the datasets with an energy",
  * Before the fix: Z, Y, X and W had partials, the averages divided by 3
  * and the structures counted were 3 per dataset. */
 TEST_CASE("analytics_grad: the energy partials leave out structures with "
-          "energy weight 0",
+          "energy priority 0",
           "[analytics][weight0][energy]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
@@ -243,7 +243,7 @@ TEST_CASE("analytics_grad: the energy partials leave out structures with "
  * eweight 0 out (shown by removing the skip from ermse_per_dataset: the
  * partials of Z and Y were then not 0). */
 TEST_CASE("analytics_grad: the energy partials equal finite differences with "
-          "structures of energy weight 0",
+          "structures of energy priority 0",
           "[analytics][weight0][energy][guard]") {
   const StructureDB truth = reference();
   const StructureDB pred = prediction();
