@@ -206,8 +206,9 @@ struct EffectiveParameters {
  *     Phi whose singular value is above @p rcond times the largest (all of
  *     them when rcond <= 0);
  *   - OALGO 1 (DGELSD of Phi and the ridge rows): the eigenvectors of H
- *     whose sqrt(eigenvalue) is above @p rcond times the largest (machine
- *     precision for rcond < 0);
+ *     whose sqrt(eigenvalue) is above @p rcond times the largest, for
+ *     0 < rcond < 1, and above the machine precision of LAPACK, 2^-53,
+ *     times the largest for any other rcond (DGELSD's rule);
  *   - OALGO 2 (QR) and 4 (Cholesky): every eigenvector of H with a
  *     positive eigenvalue. These solves refuse a design matrix without
  *     full column rank and solve with every direction, however small its

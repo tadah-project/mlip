@@ -463,13 +463,18 @@ EffectiveParameters effective_parameters(
   svd_right(buf.data(), N, N, LDA, S, VT);
   // A has min(total, n) singular values; R's others are those of its zero
   // rows. The directions the solve keeps: OALGO 1 (DGELSD) those above
-  // rcond times the largest (machine precision for rcond < 0), OALGO 3
-  // those above rcond times the largest (every one for rcond <= 0), OALGO 2
-  // (QR) and 4 (Cholesky) every one: they solve with every direction.
+  // rcond times the largest for 0 < rcond < 1 and, for any other rcond,
+  // above the machine precision of LAPACK (dlamch('Epsilon'), 2^-53) times
+  // the largest, which DGELSD puts in its place; OALGO 3 those above rcond
+  // times the largest (every one for rcond <= 0:
+  // OLS::pseudoinverse_threshold); OALGO 2 (QR) and 4 (Cholesky) every one:
+  // they solve with every direction.
   const std::size_t k = std::min(total, n);
   double thresh = 0.0;
   if (oalgo == 1)
-    thresh = (rcond < 0.0 ? std::numeric_limits<double>::epsilon() : rcond) *
+    thresh = (rcond > 0.0 && rcond < 1.0
+                  ? rcond
+                  : 0.5 * std::numeric_limits<double>::epsilon()) *
              S[0];
   else if (oalgo == 3 && rcond > 0.0)
     thresh = rcond * S[0];
