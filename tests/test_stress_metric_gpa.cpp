@@ -386,8 +386,10 @@ TEST_CASE("analytics_grad: the GPa stress RMSE partials match finite "
  * Stress RMSE and MAE of the one dataset are those of the reference
  * tensors themselves, sqrt(sum_ab S_ab^2 / (9 n)) / kGPaInEvPerA3 and
  * sum_ab |S_ab| / (9 n) / kGPaInEvPerA3, and its R^2 is 1 - sum S^2 /
- * sum (S - mean)^2 over the nine entries.
- * Before the fix: the lines read six entries in eV/A^3. */
+ * sum (S - mean)^2 over the nine entries. Each row names its unit:
+ * "Stress RMSE (GPa)", "Energy RMSE (meV/atom)".
+ * Before the fix: the lines read six entries in eV/A^3; then they were in
+ * GPa under the labels of 1.5.0, "Stress RMSE", with no unit. */
 TEST_CASE("tadah predict -A: the stress metrics are in GPa over the nine "
           "entries",
           "[analytics][stress_gpa][predict]") {
@@ -460,9 +462,12 @@ TEST_CASE("tadah predict -A: the stress metrics are in GPa over the nine "
   for (std::size_t s = 0; s < 2; ++s)
     for (double v : nine(db(s))) obs.push_back(v);
   const std::vector<double> zero(obs.size(), 0.0);
-  const std::vector<double> rmse = metric_values(out, "Stress RMSE");
-  const std::vector<double> mae = metric_values(out, "Stress MAE");
+  // The rows name their unit (GPa: the nine entries of each tensor).
+  const std::vector<double> rmse = metric_values(out, "Stress RMSE (GPa)");
+  const std::vector<double> mae = metric_values(out, "Stress MAE (GPa)");
   const std::vector<double> rsq = metric_values(out, "Stress R^2");
+  CHECK(metric_values(out, "Energy RMSE (meV/atom)").size() == 2);
+  CHECK(metric_values(out, "Energy MAE (meV/atom)").size() == 2);
   REQUIRE(rmse.size() == 2);  // the mean and the one dataset
   REQUIRE(mae.size() == 2);
   REQUIRE(rsq.size() == 2);
