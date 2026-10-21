@@ -595,6 +595,41 @@ TEST_CASE("A design-matrix row that is zero in every column is not an "
   CHECK(dm.n_observations() == 3);
 }
 
+/* Pins: whether a row is zero is decided against the largest values of its
+ * columns over the rows of priority above 0, the rows of the fit. Rows of
+ * the design matrix without the factors: (1, 0.5) and (1e-9, 0) of
+ * priority 1, (1e-17, 0) of priority 1 (rounding: zero), and (1e3, 0) of
+ * priority 0, a structure or dataset the fit leaves out. The observations
+ * are the first two rows: (1e-9, 0) is 1e-9 of its column's largest value
+ * over the fit's rows, above 1e-10.
+ * Before the fix: the column maximum included the row of priority 0, so
+ * (1e-9, 0) was 1e-12 of it and not an observation (1 instead of 2). */
+TEST_CASE("A row of priority 0 does not decide which rows are observations",
+          "[error_scales][observations]") {
+  tadah::core::phi_type Phi(4, 2);
+  Phi.set_zero();
+  Phi(0, 0) = 1.0;
+  Phi(0, 1) = 0.5;
+  Phi(1, 0) = 1e-9;
+  Phi(2, 0) = 1e-17;
+  Phi(3, 0) = 1e3;
+  tadah::core::t_type factors(4), labels(4);
+  factors(0) = 1.0;
+  factors(1) = 1.0;
+  factors(2) = 1.0;
+  factors(3) = 0.0;
+  labels(0) = 0.0;
+  labels(1) = 2.0;
+  labels(2) = 2.0;
+  labels(3) = 0.0;
+  const tadah::mlip::ObservationCount n =
+      tadah::mlip::count_observations(Phi, 4, factors, labels);
+  CHECK(n.total == 2);
+  CHECK(n.by_type[0] == 1);
+  CHECK(n.by_type[1] == 0);
+  CHECK(n.by_type[2] == 1);
+}
+
 namespace {
 
 /* A perfect 2-atom bcc cell of lattice constant @p a, both atoms moved by
