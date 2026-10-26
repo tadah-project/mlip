@@ -639,3 +639,52 @@ TEST_CASE("write_optim_block gives one line per run of entries with the same "
   CHECK(block.str().find("OPTIM SGRIDMB (3-4) ") != std::string::npos);
   CHECK(block.str().find("(1-4)") == std::string::npos);
 }
+
+/* Pins: a parameter at a fixed position of a key's values (ParamMeta
+ * arg_pos > 0: the runtime position, the value at index arg_pos - 1, as
+ * the screening parameters of D2_ZBL are values 2 to 5 of "TYPE2B D2_ZBL
+ * a0 s0 p0 p1 Ta Ta") gets one suggestion, with the seed's value there,
+ * and its OPTIM line counts the numeric values of the key as tadah hpo
+ * does: for TYPE2B D2_ZBL 0.5292 0.88534 0.23 0.23 Ta Ta the four TYPE2B
+ * rows have the seed values 0.5292, 0.88534, 0.23 and 0.23 and the block
+ * has "OPTIM TYPE2B (1)" (0.265 to 0.795, a fixed range), "OPTIM TYPE2B
+ * (2)" and "OPTIM TYPE2B (3-4)" (p0 and p1 share their range).
+ * Before the fix: each such parameter was taken for a vector of the key's
+ * every value: 7 rows each, the seed value read from "D2_ZBL" and the
+ * element names (ERROR lines, values left out; with the seed read as
+ * numbers, a throw), and one line "OPTIM TYPE2B (1-7)" spanning their
+ * ranges. */
+TEST_CASE("bound_suggester: a parameter at a fixed position of a key gets "
+          "one row at its OPTIM index",
+          "[bound_suggester][suggest_bounds][seed]") {
+  std::unique_ptr<tadah::models::D_Base> d(
+      tadah::core::factory<tadah::models::D_Base>("D2_ZBL"));
+  const auto meta = d->meta();
+  REQUIRE(meta.has_value());
+  Context seed;
+  seed.add("TYPE2B", "D2_ZBL 0.5292 0.88534 0.23 0.23 Ta Ta");
+  seed.add("RCUT2B", 5.0);
+  std::vector<OptimSuggestion> rows;
+  std::string what;
+  try {
+    rows = suggest_bounds_for(ta_shell_stats(), *meta, seed);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  INFO(what);
+  std::vector<double> seeds;
+  for (const auto &r : rows)
+    if (r.key == "TYPE2B") {
+      REQUIRE(r.seed_value.has_value());
+      seeds.push_back(*r.seed_value);
+    }
+  CHECK(seeds == std::vector<double>{0.5292, 0.88534, 0.23, 0.23});
+  std::ostringstream block;
+  write_optim_block(rows, block);
+  INFO(block.str());
+  CHECK(block.str().find("OPTIM TYPE2B (1) 2.650000e-01 7.950000e-01") !=
+        std::string::npos);
+  for (const char *line : {"OPTIM TYPE2B (2) ", "OPTIM TYPE2B (3-4) "})
+    CHECK(block.str().find(line) != std::string::npos);
+  CHECK(block.str().find("OPTIM TYPE2B (1-") == std::string::npos);
+}
