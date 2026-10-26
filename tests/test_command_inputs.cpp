@@ -249,6 +249,63 @@ TEST_CASE("TaskFactory: an input with the key task is refused as an unknown "
         }) == "Failed to open config file: missing.train");
 }
 
+/* Pins: an error in a configuration file given with -c names the line of
+ * the file, counting its blank and comment lines, and the file: TaskFactory
+ * refuses "# c\n\nDBFILE db.tadah\n\nEMBF0 frei" with exactly "Invalid
+ * value for key EMBF0 on line 5 of lines.cfg: 'frei' (allowed: ZERO,
+ * FREE)", and "# c\n\nATOM Ta\n# d\nFOOBAR 1" with "Invalid key FOOBAR on
+ * line 5 of keys.cfg" (the closest key after it).
+ * Before the fix: the invalid value passes as well (a pin: TaskFactory read
+ * the file of -c with MLIPUserConfigParser, which handed CORE's parser the
+ * lines and the first line number of its one section); the unknown key was
+ * refused as "Invalid key: FOOBAR", naming neither the line nor the file
+ * (the second check fails). */
+TEST_CASE("TaskFactory: an error in a configuration file names its line, "
+          "counting blank and comment lines, and the file",
+          "[task_factory][config]") {
+  ScratchCwd cwd;
+  std::ofstream("lines.cfg") << "# c\n\nDBFILE db.tadah\n\nEMBF0 frei\n";
+  CHECK(error_of([] {
+          (void)tasks_of(CommandInput("TRAIN", {{"config", {"lines.cfg"}}}));
+        }) == "Invalid value for key EMBF0 on line 5 of lines.cfg: 'frei' "
+              "(allowed: ZERO, FREE)");
+  std::ofstream("keys.cfg") << "# c\n\nATOM Ta\n# d\nFOOBAR 1\n";
+  CHECK_THAT(error_of([] {
+               (void)tasks_of(
+                   CommandInput("TRAIN", {{"config", {"keys.cfg"}}}));
+             }),
+             StartsWith("Invalid key FOOBAR on line 5 of keys.cfg (closest "
+                        "key: "));
+}
+
+/* Pins: a configuration file given with -c that holds no key line, one of
+ * a comment and a blank line or an empty one, makes the one task of the
+ * input's own keys: TaskFactory with -c of it and VERBOSE 2 gives one
+ * TRAIN task (no exception) whose context has VERBOSE 2 stored and no key
+ * of a file (ATOM not stored).
+ * Before the fix: passes as well (a pin, of the code since a -c file of no
+ * key line stopped being read past an empty list; Tadah! 1.5.0's
+ * TaskFactory took the first element of the empty list of the file's
+ * sections). */
+TEST_CASE("TaskFactory: a configuration file without a key line makes the "
+          "task of the input's keys",
+          "[task_factory][config]") {
+  ScratchCwd cwd;
+  std::ofstream("comments.cfg") << "# c\n\n";
+  std::ofstream("empty.cfg");
+  for (const char *file : {"comments.cfg", "empty.cfg"}) {
+    INFO("-c " << file);
+    std::vector<Task> tasks;
+    REQUIRE_NOTHROW(tasks = tasks_of(CommandInput(
+                        "TRAIN", {{"config", {file}}, {"verbose", {"2"}}})));
+    REQUIRE(tasks.size() == 1u);
+    CHECK(tasks[0].getTaskName() == "TRAIN");
+    REQUIRE(tasks[0].getContext().has_stored("VERBOSE"));
+    CHECK(tasks[0].getContext().get<int>("VERBOSE") == 2);
+    CHECK_FALSE(tasks[0].getContext().has_stored("ATOM"));
+  }
+}
+
 /* Pins: tadah predict, tadah properties pairwise and tadah analysis
  * descriptor run the potential's model as it was fitted: validate() and
  * run(), before run() reads or writes a file, refuse a run whose context
