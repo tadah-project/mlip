@@ -20,6 +20,8 @@
 #include <tadah/models/dc_selector.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -213,16 +215,45 @@ int PredictEngine::run(mlip::Task &task) {
       std::cout << std::endl;
     };
 
+    // An R^2 has no value (NaN, Statistics::r_sq) for a dataset whose
+    // reference values are all equal; its mean runs over the measured
+    // datasets that have one, and a note names the others. NaN is told by
+    // its bits (the build uses -ffast-math).
+    struct Undefined { std::size_t dataset; const char *what; const char *metric; };
+    std::vector<Undefined> undefined;
+    auto r_sq_defined = [&](const tadah::core::t_type &values, const std::vector<bool> &measured,
+                            const char *what, const char *metric) {
+      std::vector<bool> defined(measured);
+      for (std::size_t d = 0; d < defined.size() && d < values.size(); ++d) {
+        const double v = values[d];
+        std::uint64_t bits = 0;
+        std::memcpy(&bits, &v, sizeof bits);
+        const bool nan = (bits & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
+                         (bits & 0x000fffffffffffffull) != 0;
+        if (defined[d] && nan) {
+          defined[d] = false;
+          undefined.push_back({d, what, metric});
+        }
+      }
+      return defined;
+    };
+
     // Energy
     print_metric("Energy MAE (meV/atom)", a.calc_e_mae(), 1000, &measured_e);
     print_metric("Energy RMSE (meV/atom)", a.calc_e_rmse(), 1000, &measured_e);
-    print_metric("Energy R^2", a.calc_e_r_sq(), 1.0, &measured_e);
+    {
+      const auto r = a.calc_e_r_sq();
+      const auto defined = r_sq_defined(r, measured_e, "energy per atom", "Energy");
+      print_metric("Energy R^2", r, 1.0, &defined);
+    }
 
     if (taskContext.get<bool>("FORCE")) {
       std::cout << std::endl;
       print_metric("Force MAE (eV/Å)", a.calc_f_mae(), 1.0, &measured_f);
       print_metric("Force RMSE (eV/Å)", a.calc_f_rmse(), 1.0, &measured_f);
-      print_metric("Force R^2", a.calc_f_r_sq(), 1.0, &measured_f);
+      const auto r = a.calc_f_r_sq();
+      const auto defined = r_sq_defined(r, measured_f, "force component", "Force");
+      print_metric("Force R^2", r, 1.0, &defined);
     }
 
     if (taskContext.get<bool>("STRESS")) {
@@ -230,7 +261,9 @@ int PredictEngine::run(mlip::Task &task) {
       // the nine entries of each tensor, in GPa
       print_metric("Stress MAE (GPa)", a.calc_s_mae_gpa(), 1.0, &measured_s);
       print_metric("Stress RMSE (GPa)", a.calc_s_rmse_gpa(), 1.0, &measured_s);
-      print_metric("Stress R^2", a.calc_s_r_sq(), 1.0, &measured_s);
+      const auto r = a.calc_s_r_sq();
+      const auto defined = r_sq_defined(r, measured_s, "stress component", "Stress");
+      print_metric("Stress R^2", r, 1.0, &defined);
     }
 
     // The datasets a requested metric does not measure, named.
@@ -248,6 +281,12 @@ int PredictEngine::run(mlip::Task &task) {
     if (taskContext.get<bool>("FORCE")) note(measured_f, "forces", "force priority", "force");
     if (taskContext.get<bool>("STRESS"))
       note(measured_s, "a stress tensor", "stress priority", "stress");
+    for (const auto &u : undefined)
+      std::cout << "\nNote: dataset " << u.dataset + 1
+                << (u.dataset < files.size() ? " (" + files[u.dataset] + ")" : std::string())
+                << ": every reference " << u.what << " has the same value, so its "
+                << u.metric << " R^2 has no value (nan) and is left out of the mean."
+                << std::endl;
   }
 
   delete modelp;
