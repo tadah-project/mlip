@@ -1200,3 +1200,35 @@ TEST_CASE("analysis suggest_bounds numbers the values of the TYPE2B lines "
   CHECK(lines_starting(r.block, "# D2_ZBL :: TYPE2B (1)").empty());
   CHECK(lines_starting(r.block, "# D2_ZBL :: TYPE2B (2)").empty());
 }
+
+/* Pins: the rows of tadah analysis suggest_bounds name a descriptor as the
+ * configuration does: for TYPEMB DM_PS_SQ 2 2 2 Ta Ta the table has the
+ * rows DM_PS_SQ.RCUTMB(1) and DM_PS_SQ.CGRIDMB(1), the block the comments
+ * "# DM_PS_SQ ::", and neither names DM_Poly.
+ * Before the fix: the rows took the label of the descriptor's metadata,
+ * the class's ("DM_Poly.RCUTMB(1)", "# DM_Poly ::") for every DM_PS_*,
+ * DM_GPS_*, DM_OW_* and DM_GOW_* descriptor (and "DM_mEAD" for DM_mRLR,
+ * DM_mSQRT, ...). */
+TEST_CASE("analysis suggest_bounds names a descriptor as the configuration "
+          "does",
+          "[bound_suggester][suggest_bounds]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_PS_SQ 2 2 2 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.6);
+  c.add("CGRIDMB", "2.9 4.7");
+  c.add("SGRIDMB", "1 1");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(r.out.find("DM_PS_SQ.RCUTMB(1)") != std::string::npos);
+  CHECK(r.out.find("DM_PS_SQ.CGRIDMB(1)") != std::string::npos);
+  CHECK(r.block.find("# DM_PS_SQ ::") != std::string::npos);
+  CHECK(r.out.find("DM_Poly") == std::string::npos);
+  CHECK(r.block.find("DM_Poly") == std::string::npos);
+}
