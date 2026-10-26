@@ -1046,9 +1046,8 @@ TEST_CASE_METHOD(PTFixture,
           from_file.add(key, value);
       }
       Task task("refit", c);
-      task.setKeyProvenance(KeyProvenance(Context(), from_file, "edit.refit",
-                                          KeyOrigin::Kind::ConfigFile,
-                                          defaulted));
+      task.setKeyProvenance(
+          KeyProvenance(Context(), from_file, "edit.refit", defaulted));
       return task;
     };
     for (const auto &f : outputs) fs::remove(f);
@@ -1248,10 +1247,9 @@ TEST_CASE_METHOD(PTFixture,
     Task task("refit", c);
     task.setKeyProvenance(
         kind == KeyOrigin::Kind::CommandLine
-            ? KeyProvenance(set, base, "edit.refit",
-                            KeyOrigin::Kind::ConfigFile, defaulted)
+            ? KeyProvenance(set, base, "edit.refit", defaulted)
             : KeyProvenance(Context(), defaulted.empty() ? c : base,
-                            "edit.refit", kind, defaulted));
+                            "edit.refit", defaulted));
     return task;
   };
   Context edit;

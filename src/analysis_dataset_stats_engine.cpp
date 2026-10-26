@@ -44,7 +44,7 @@ std::optional<double> close_contact(const tadah::core::Context& ctx) {
 
 void AnalysisDatasetStatsEngine::validate(const tadah::mlip::Task& task) {
   // Blueprint validation already enforces input-group requirements
-  // (DBFILE | STRUCTURE | task). CLOSE_CONTACT is checked here, before
+  // (DBFILE | STRUCTURE). CLOSE_CONTACT is checked here, before
   // anything is read, computed or written.
   close_contact(task.getContext());
 }

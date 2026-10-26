@@ -341,8 +341,7 @@ TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
  * (UNIFORM 2 and RANDOM 2, which the command line refuses as excluding each
  * other) is refused by validate(), naming both: "tadah data sample: give
  * one of UNIFORM, RANDOM and INDEX, not UNIFORM and RANDOM".
- * Before the fix: passes as well (a pin; a task file reached the check from
- * the command line). */
+ * Before the fix: passes as well (a pin). */
 TEST_CASE("tadah data sample refuses two selections given by a program",
           "[data][sample][command_options]") {
   PeriodicTable::initialize();

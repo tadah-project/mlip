@@ -72,7 +72,7 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
   if (!areDataLoaded) loadInput(taskContext);
 
   // Exactly one selection: the command line excludes the others, and a
-  // task file must too (run() would apply only the first).
+  // program's context must too (run() would apply only the first).
   std::vector<std::string> given;
   for (const char *key : {"UNIFORM", "RANDOM", "INDEX"})
     if (taskContext.has_stored(key)) given.push_back(key);
@@ -80,7 +80,7 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
     throw std::runtime_error(
         "tadah data sample: say what to sample: --uniform N (every N-th "
         "structure), --random N (N structures at random) or --index "
-        "<indices> (UNIFORM, RANDOM or INDEX in a task file)");
+        "<indices>");
   if (given.size() > 1)
     throw std::runtime_error("tadah data sample: give one of UNIFORM, RANDOM "
                              "and INDEX, not " +

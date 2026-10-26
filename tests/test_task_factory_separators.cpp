@@ -1,5 +1,5 @@
-// TaskFactory's check of the values it is given (a command line's options,
-// the keys of a task file): a comma or a '+' between two values, which
+// TaskFactory's check of the values it is given (a command line's options):
+// a comma or a '+' between two values, which
 // neither CLI11 nor the configuration parser splits at, is refused naming
 // the separator and the values as separate words.
 

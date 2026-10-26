@@ -1,6 +1,6 @@
 // test_train_engine_datasets.cpp
 //
-// TrainEngine::run (tadah train, a TASK train of a task file) and its
+// TrainEngine::run (tadah train) and its
 // training datasets: a potential has no DBFILE line (its training record, a
 // comment block no loader of a potential reads, lists the datasets of its
 // fit when there were any), so `tadah train -c pot.tadah` without a DBFILE
@@ -561,8 +561,7 @@ using KV = std::unordered_map<std::string, std::vector<std::string>>;
 
 /* What TaskFactory gets from the command line: the task @p task (the
  * blueprint name, "TRAIN") and its options keyed by the blueprint's
- * lower-case key names ({"config", {"retrain.train"}}); with no task name
- * and {"task", {file}}, `tadah --task file`. */
+ * lower-case key names ({"config", {"retrain.train"}}). */
 struct CommandInput : tadah::mlip::ITaskInput {
   std::string task;
   KV kv;
@@ -710,7 +709,8 @@ TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
  * potential applied: the second section built
  * the KeyProvenance by hand, and the WARNING's advice was "Give --efilter
  * or --eweight-temp on the command line to apply one to this run.", which
- * a run of a task file cannot follow: the check of the WARNING fails.
+ * named no line of the configuration file: the check of the WARNING
+ * fails.
  * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
  * line of a potential (the toggles were skipped only beside the potential's
  * ESHIFT): the advice named neither toggle among the

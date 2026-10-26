@@ -191,8 +191,7 @@ struct TaskKeys {
 
 /* The blueprint name of the task @p task as a user writes it: its command
  * upper case, then its subcommand ("train" -> "TRAIN", "analysis
- * check_bounds" -> "ANALYSIS.check_bounds", the name TaskFactory gives a
- * TASK line). */
+ * check_bounds" -> "ANALYSIS.check_bounds"). */
 std::string blueprint_task_name(const std::string &task) {
   std::istringstream words(task);
   std::string name, word;
@@ -345,14 +344,13 @@ std::string article(const std::string &key) {
 }
 
 /* Whether the run gives @p key itself: on the command line, or on a line
- * of the task file or of a configuration file without WEIGHTS (the parse
- * reads no line of a potential's keys of keys_not_read_from_a_potential(),
- * so such an origin is the run's own). */
+ * of a configuration file without WEIGHTS (the parse reads no line of a
+ * potential's keys of keys_not_read_from_a_potential(), so such an origin
+ * is the run's own). */
 bool run_gives(const KeyProvenance &provenance, const std::string &key) {
   const KeyOrigin::Kind kind = provenance.origin(key).kind;
   return kind == KeyOrigin::Kind::CommandLine ||
-         kind == KeyOrigin::Kind::ConfigFile ||
-         kind == KeyOrigin::Kind::TaskFile;
+         kind == KeyOrigin::Kind::ConfigFile;
 }
 
 /* The ESHIFT toggle that is not @p key, "" when @p key is not a toggle. */
@@ -407,7 +405,6 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
   }
   const std::vector<std::string> &order = keys_not_read_from_a_potential();
   const std::string &top = provenance.file_path();
-  const bool task_file = provenance.file_kind() == KeyOrigin::Kind::TaskFile;
   std::string out;
   for (std::size_t f = 0; f < sources.size(); ++f) {
     std::vector<IgnoredKey> ignored;
@@ -419,22 +416,13 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
     if (ignored.empty()) continue;
     const std::string &file = sources[f];
     const bool included = file != top;
-    const std::string kind = task_file ? "task file " : "configuration file ";
-    std::string subject;
-    if (!included)
-      subject = task_file ? "a section of the task file " + top
-                          : "the configuration file " + top;
-    else
-      subject = file + ", which the " + kind + top + " includes with CONFIG,";
+    const std::string subject =
+        included ? file + ", which the configuration file " + top +
+                       " includes with CONFIG,"
+                 : "the configuration file " + top;
     const auto advice = [&](const std::vector<std::string> &keys,
                             const std::vector<std::string> &options) {
       const std::string lines = listed(keys, "or");
-      if (task_file)
-        return "Write " + lines + " in " +
-               (included ? "the task file " + top
-                         : "a section of the task file " + top +
-                               " without WEIGHTS") +
-               " to apply " + one_of(keys.size()) + " to this run";
       std::string a = "Give ";
       if (!options.empty()) a += listed(options, "or") + " on the command line, or ";
       a += article(keys[0]) + " ";
@@ -507,9 +495,6 @@ std::string missing_run_setting(const std::string &task,
                                 const std::string &key,
                                 const std::string &what,
                                 const KeyProvenance *provenance) {
-  const bool task_file =
-      provenance && provenance->file_kind() == KeyOrigin::Kind::TaskFile;
-  const std::string top = provenance ? provenance->file_path() : "";
   // The potential files whose lines of the key the parse did not read, in
   // the order read, with those lines ("HPOTARGET config.hpo").
   std::vector<std::string> sources;
@@ -525,30 +510,14 @@ std::string missing_run_setting(const std::string &task,
       }
       lines[at - sources.begin()].push_back(key_values(line.key, line.values));
     }
-  // A section that is a potential: its own line of the key is not read.
-  const bool section_is_potential =
-      task_file &&
-      std::find(sources.begin(), sources.end(), top) != sources.end();
   const std::string a_line = article(key) + " " + key + " line";
   std::string s = "tadah " + task + ": no " + key + ": name " + what + " with ";
-  if (task_file) {
-    s += section_is_potential
-             ? a_line + " above the first TASK line of the task file " + top +
-                   "."
-             : a_line + " in the TASK " + task + " section of the task file " +
-                   top + ", or above its first TASK line.";
-  } else {
-    const TaskKeys t = task_keys(task);
-    const std::string option = option_of(key);
-    if (t.options.count(key) && !option.empty()) s += option + ", or with ";
-    s += a_line + " in a configuration file without WEIGHTS.";
-  }
+  const TaskKeys t = task_keys(task);
+  const std::string option = option_of(key);
+  if (t.options.count(key) && !option.empty()) s += option + ", or with ";
+  s += a_line + " in a configuration file without WEIGHTS.";
   for (std::size_t f = 0; f < sources.size(); ++f) {
-    const std::string potential =
-        task_file && sources[f] == top
-            ? "The TASK " + task + " section of the task file " + top
-            : sources[f];
-    s += " " + potential + " is a potential (it has WEIGHTS): its " +
+    s += " " + sources[f] + " is a potential (it has WEIGHTS): its " +
          listed(lines[f], "and") +
          (lines[f].size() == 1
               ? " line was a setting of the run that wrote it and is not read."

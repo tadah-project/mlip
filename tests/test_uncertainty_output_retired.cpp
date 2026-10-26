@@ -5,9 +5,7 @@
 // predictions and the fit are unaffected.
 //
 //  - tadah predict --error and tadah properties pairwise --error are
-//    retired options of those tasks, refused on the command line and in a
-//    task file (a TASK section, or the GLOBAL section, which reaches every
-//    task of the file), with the reason;
+//    retired options of those commands, refused with the reason;
 //  - tadah train --uncertainty is the option of the retired key
 //    UNCERTAINTY, refused with the reason;
 //  - a fit writes no WCOV or WNOISE, and refuses a configuration with
@@ -211,46 +209,6 @@ TEST_CASE("tadah predict, properties pairwise and train refuse --error and "
                         "SIGMA.") &&
                  Contains(kRemoved) &&
                  Contains("Replaced by: nothing."));
-}
-
-/* Pins: a task file that gives ERROR in a TASK predict or TASK properties
- * pairwise section, or in its GLOBAL section with such a TASK section
- * (the GLOBAL section sets the keys of every task of the file), is refused
- * before any task runs, naming the line and the reason of the task's
- * option ("ERROR (line 3 of p.task) in TASK predict: --error of tadah
- * predict is retired: ..."), the key ERROR being retired too.
- * Before the fix: the tasks were made, and predict wrote errors. */
-TEST_CASE("A task file is refused for ERROR in a predict or properties "
-          "pairwise task",
-          "[uncertainty][retired][cli]") {
-  PeriodicTable::initialize();
-  ScratchCwd cwd;
-  std::ofstream("pot.tadah") << "ATOM Ta\n";
-  std::ofstream("db.tadah") << "\n";
-  auto run = [](const std::string &file, const std::string &text) {
-    std::ofstream(file) << text;
-    return factory_error(Input("", {{"task", {file}}}));
-  };
-  CHECK_THAT(run("p.task", "TASK predict\n  POTENTIAL pot.tadah\n"
-                           "  ERROR true\n  DBFILE db.tadah\n"),
-             StartsWith("ERROR (line 3 of p.task) in TASK predict: --error of "
-                        "tadah predict is retired: ") &&
-                 Contains(kRemoved));
-  CHECK_THAT(run("q.task", "TASK properties pairwise\n  POTENTIAL pot.tadah\n"
-                           "  OUTFILE pair.txt\n  RANGE 2 5 4\n"
-                           "  ATOMPAIR Ta Ta\n  ERROR false\n"),
-             StartsWith("ERROR (line 6 of q.task) in TASK properties "
-                        "pairwise: --error of tadah properties pairwise is "
-                        "retired: ") &&
-                 Contains(kRemoved));
-  CHECK_THAT(run("g.task", "ERROR true\nTASK predict\n  POTENTIAL pot.tadah\n"
-                           "  DBFILE db.tadah\n"),
-             StartsWith("ERROR (line 1 of g.task) in the GLOBAL section "
-                        "reaches TASK predict") &&
-                 Contains(kRemoved));
-  CHECK(run("ok.task", "TASK predict\n  POTENTIAL pot.tadah\n"
-                       "  DBFILE db.tadah\n")
-            .empty());
 }
 
 /* Pins: the potential of an OALGO 3 fit (Trainer, M_BLR BF_Linear and

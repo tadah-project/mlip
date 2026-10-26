@@ -3,7 +3,7 @@
 // KeyProvenance / KeyOrigin (key_provenance.h) and what TaskFactory records
 // on the Task (Task::getKeyProvenance()): where each key of a task's context
 // came from -- a command-line option, the -c/--config file (or a file it
-// includes with CONFIG), the --task file, or the blueprint default -- so that
+// includes with CONFIG), or the blueprint default -- so that
 // a run journal can say, e.g., "FORCE true (command line -F/--force;
 // overrides FORCE false in c.tadah)".
 //
@@ -106,10 +106,6 @@ TEST_CASE("KeyProvenance: KeyOrigin::describe says where a key came from",
   o.file = "c.tadah";
   CHECK(o.describe("FORCE") == "configuration file c.tadah");
 
-  o.kind = Kind::TaskFile;
-  o.file = "run.task";
-  CHECK(o.describe("FORCE") == "task file run.task");
-
   o = KeyOrigin();
   o.kind = Kind::CommandLine;
   CHECK(o.describe("FORCE") == "command line");
@@ -166,7 +162,7 @@ TEST_CASE("KeyProvenance: origin() tells the command line, the file, the "
   file.add("DBFILE", "b.db");
   file.add("ALPHA", "0.25");
 
-  const KeyProvenance p(command_line, file, "c.tadah", Kind::ConfigFile,
+  const KeyProvenance p(command_line, file, "c.tadah",
                         {"verbose", "stress", "VERBOSE"});
 
   SECTION("a command-line option that replaced the file's value") {
@@ -199,7 +195,7 @@ TEST_CASE("KeyProvenance: origin() tells the command line, the file, the "
     // contains("STRESS") with its default false).
     Context cl_stress;
     cl_stress.add("STRESS", "true");
-    const KeyProvenance ps(cl_stress, file, "c.tadah", Kind::ConfigFile, {});
+    const KeyProvenance ps(cl_stress, file, "c.tadah", {});
     const KeyOrigin s = ps.origin("STRESS");
     CHECK(s.kind == Kind::CommandLine);
     CHECK(s.flag == "-S/--stress");
@@ -237,14 +233,6 @@ TEST_CASE("KeyProvenance: origin() tells the command line, the file, the "
       CHECK(o.file.empty());
       CHECK(o.describe(k) == "source not recorded");
     }
-  }
-  SECTION("a task file is named as one") {
-    const KeyProvenance t(Context(), file, "run.task", Kind::TaskFile,
-                          {"STRESS"});
-    CHECK(t.origin("FORCE").kind == Kind::TaskFile);
-    CHECK(t.origin("FORCE").file == "run.task");
-    CHECK(t.origin("FORCE").describe("FORCE") == "task file run.task");
-    CHECK(t.origin("STRESS").kind == Kind::Default);
   }
   SECTION("copies answer the same; an empty provenance records nothing") {
     const KeyProvenance copy(p);
@@ -339,9 +327,8 @@ TEST_CASE("KeyProvenance: TaskFactory attributes command-line options to "
  *    branch): STRESS and VERBOSE come back "configuration file <c>" (their
  *    ALLOWED_KEYS default is inserted);
  *  - `command_line_.has_stored` -> `contains`: STRESS comes back CommandLine;
- *  - TaskFactory recording the included file's path, or ConfigFile replaced
- *    by TaskFile, or the merged context given as the command line (then
- *    FORCE comes back CommandLine);
+ *  - TaskFactory recording the included file's path, or the merged context
+ *    given as the command line (then FORCE comes back CommandLine);
  *  - TaskFactory `has_stored` -> `contains` when collecting `defaulted`:
  *    STRESS/VERBOSE/OUTFILE come back NotRecorded. */
 TEST_CASE("KeyProvenance: TaskFactory attributes a -c file's keys, and the "
@@ -437,77 +424,6 @@ TEST_CASE("KeyProvenance: TaskFactory records a command-line option that "
   CHECK(p.origin("VERBOSE").kind == Kind::Default);
 }
 
-/* tadah --task run.task with a GLOBAL section and two TASK sections: every
- * key of each task, GLOBAL ones and included ones too, is the task file's;
- * each task has its own provenance. Pins existing behaviour. Fails under:
- *  - TaskFactory `KeyOrigin::Kind::TaskFile` -> `ConfigFile` in the --task
- *    branch ("configuration file run.task"), or the wrong path recorded;
- *  - one provenance shared by both tasks (POTENTIAL of the train task comes
- *    back TaskFile);
- *  - KeyProvenance::origin `file_.has_stored` -> `contains`: STRESS of the
- *    train task comes back "task file run.task";
- *  - TaskFactory `has_stored` -> `contains` when collecting `defaulted`:
- *    STRESS and VERBOSE come back NotRecorded. */
-TEST_CASE("KeyProvenance: TaskFactory attributes a --task file's keys to the "
-          "task file, per task",
-          "[key_provenance][task_factory][task_file]") {
-  const LogLevelGuard level;
-  const ProvFile inc("task_inc", "ALPHA 0.5\n");
-  const ProvFile run("run", "# GLOBAL section\n"
-                            "FORCE true\n"
-                            "\n"
-                            "TASK train\n"
-                            "DBFILE kprov_train.db\n"
-                            "CONFIG " + inc.path + "\n"
-                            "\n"
-                            "TASK predict\n"
-                            "POTENTIAL kprov_pot.tadah\n"
-                            "DBFILE kprov_test.db\n"
-                            "STRESS true\n");
-
-  struct TaskFileInput : tadah::mlip::ITaskInput {
-    std::string file;
-    explicit TaskFileInput(std::string f) : file(std::move(f)) {}
-    std::string getTaskName() const override { return ""; }
-    KV getKeyValueData() const override { return {{"task", {file}}}; }
-  };
-  const auto tasks =
-      TaskFactory().createTasksFromInput(TaskFileInput(run.path));
-  REQUIRE(tasks.size() == 2);
-  REQUIRE(tasks[0].getTaskName() == "TRAIN");
-  REQUIRE(tasks[1].getTaskName() == "PREDICT");
-
-  SECTION("the train task") {
-    const KeyProvenance &p = provenance_of(tasks[0]);
-    for (const char *k : {"FORCE", "DBFILE", "ALPHA"}) {
-      INFO("key " << k);
-      const KeyOrigin o = p.origin(k);
-      CHECK(o.kind == Kind::TaskFile);
-      CHECK(o.file == run.path);
-      CHECK(o.describe(k) == "task file " + run.path);
-    }
-    for (const char *k : {"STRESS", "VERBOSE", "OUTFILE"}) {
-      INFO("key " << k);
-      CHECK(p.origin(k).kind == Kind::Default);
-    }
-    CHECK(p.origin("POTENTIAL").kind == Kind::NotRecorded);
-  }
-  SECTION("the predict task") {
-    const KeyProvenance &p = provenance_of(tasks[1]);
-    for (const char *k : {"FORCE", "POTENTIAL", "DBFILE", "STRESS"}) {
-      INFO("key " << k);
-      const KeyOrigin o = p.origin(k);
-      CHECK(o.kind == Kind::TaskFile);
-      CHECK(o.file == run.path);
-      CHECK(o.describe(k) == "task file " + run.path);
-    }
-    CHECK(p.origin("VERBOSE").kind == Kind::Default);
-    CHECK(p.origin("ALPHA").kind == Kind::NotRecorded);
-    CHECK(tasks[1].getContext().get<std::string>("DBFILE") ==
-          "kprov_test.db");
-  }
-}
-
 /* "source:line KEY v1 v2" for each line TaskFactory did not read. */
 std::vector<std::string> skipped_of(const KeyProvenance &p) {
   std::vector<std::string> out;
@@ -536,9 +452,9 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
  *     the potential's, ESHIFT_DBATOM and ZERO_COM_FORCE false the blueprint
  *     defaults (Default); skipped_key_lines() is pot:4 EFILTER 5 6, pot:5
  *     ESHIFT_DBATOM true, pot:6 WDBFILE 1 1, pot:7 ZERO_COM_FORCE false;
- *     file_path() outer, file_kind() ConfigFile;
+ *     file_path() outer;
  *   - `tadah train -c pot`: no EFILTER and no WDBFILE in the context, the
- *     same four lines skipped, file_path() pot, file_kind() ConfigFile.
+ *     same four lines skipped, file_path() pot.
  * Before the fix: does not compile (no potential_line_not_read, no
  * KeyProvenance::skipped_key_lines, file_path or file_kind).
  * Before the fix that reads no ESHIFT_ATOM, ESHIFT_DBATOM or UNCERTAINTY
@@ -605,7 +521,6 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
     CHECK_FALSE(c.get<bool>("ESHIFT_DBATOM"));
     CHECK(skipped_of(p) == pot_lines);
     CHECK(p.file_path() == run.path);
-    CHECK(p.file_kind() == Kind::ConfigFile);
   }
   SECTION("the potential as the configuration file") {
     const auto tasks = make_tasks("TRAIN", {{"config", {pot.path}}});
@@ -616,7 +531,6 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
     const KeyProvenance &p = provenance_of(tasks[0]);
     CHECK(skipped_of(p) == pot_lines);
     CHECK(p.file_path() == pot.path);
-    CHECK(p.file_kind() == Kind::ConfigFile);
   }
 }
 

@@ -50,7 +50,7 @@ void log_warn(const std::string &m) {
 }
 
 /** Output name policy: honour an explicitly-set key -- set on the command
- *  line or in a configuration or task file, whatever its value
+ *  line or in a configuration file, whatever its value
  *  (refit_key_configured: stored, and not the blueprint default the task
  *  factory added); otherwise use the safe `edited` default so the input is
  *  never silently clobbered. A value equal to the blueprint default string
