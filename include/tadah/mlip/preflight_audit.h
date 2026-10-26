@@ -80,7 +80,10 @@ struct AuditReport {
 
 /** \brief Soft audit. Walks `meta()` for every descriptor configured
  *  in `seed` (TYPE2B and TYPEMB), runs its HealthChecks against
- *  `data` and `seed`, accumulates verdicts.
+ *  `data` and `seed`, accumulates verdicts. Each descriptor of a joined
+ *  line (D2_mJoin, DM_mJoin) is checked on its own context
+ *  (joined_descriptors(): its channels, its cutoff), and its messages
+ *  name an entry by its place in the whole key.
  *
  *  Honours `mode`:
  *    Off   -> returns an empty report immediately
