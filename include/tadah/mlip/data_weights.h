@@ -57,8 +57,10 @@ std::string krr_implementation2_ignores(const std::string &kernel,
  *  energies per atom, sigma = ESIGMA in eV, so no force, stress, priority
  *  or ENORM of the data enters it. FORCE true, STRESS true, ENERGY false,
  *  ENORM SQRT, an FSIGMA or SSIGMA other than its blueprint default
- *  (compared by value), a WDBFILE value other than 1, and a structure of
- *  @p stdb whose eweight is
+ *  (compared by value), an OALGO other than the default (OALGO 1, with
+ *  no second value or 1e-8: the solve is the Cholesky factorisation of the
+ *  matrix above and reads no OALGO), a WDBFILE value other than 1, and a
+ *  structure of @p stdb whose eweight is
  *  not 1 (its energy given a priority, or left out with 0) are refused,
  *  each naming implementation 1, which fits them
  *  (krr_implementation2_ignores()). A structure's fweight and sweight

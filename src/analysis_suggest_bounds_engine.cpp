@@ -14,6 +14,7 @@
 #include <tadah/mlip/data_stats_compute.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d_base.h>
+#include <tadah/models/descriptors/d_mjoin.h>
 #include <tadah/models/descriptors/d2/d2_base.h>
 #include <tadah/models/descriptors/dm/dm_base.h>
 
@@ -54,7 +55,15 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
     throw std::runtime_error("analysis suggest_bounds: no structures loaded");
   }
 
-  // Compute dataset stats (DBFILE -> DataStats).
+  // The radial grids as the descriptors read them: a grid generator
+  // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and
+  // tadah hpo expand it, so that the suggestions have one row per value
+  // and read the seed's values as numbers.
+  models::D_mJoin::expand_grids(workCtx);
+
+  // Compute dataset stats (DBFILE -> DataStats). No descriptor
+  // statistics: the ranges that need them (ρ) are fixed ones, which their
+  // rationale says.
   auto data = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false);
 
   // Output stream — stdout if no OUTFILE, else file.

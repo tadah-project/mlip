@@ -190,36 +190,36 @@ CheckBoundsResult check_bounds_at_corners(
   res.n_corners_failing = 0;
 
   // Pre-compute DataStats ONCE up front. The dataset's per-pair r_ij
-  // distribution does not depend on the corner's parameter choices —
-  // only on the cutoff used to walk neighbours. We pick the maximum
-  // upper bound of any cutoff key (RCUT2B / RCUTMB / RCUTENV) in
-  // `bounds` so the NN walk is a superset of every corner's neighbour
-  // set. Per-param `RCUT < r_min` checks still fire correctly because
-  // `r_min` is the smallest pair distance seen regardless of cutoff.
-  // The previous implementation re-ran `compute_data_stats` per
-  // corner — O(corners × n_atoms) — which on a 38-dim blip search box
-  // (200 LHS samples × 326k atoms) takes ~80 minutes. With the
-  // pre-compute it drops to one full-dataset pass plus one O(K) audit
-  // per corner.
+  // distribution does not depend on the corner's parameter choices, only
+  // on the cutoff used to walk neighbours, so the statistics are computed
+  // at the largest cutoff any corner has: in a copy of the seed, each
+  // cutoff key of the box (RCUT2B, RCUTMB) takes its largest upper bound
+  // where that is above the seed's value, and RCUTMAX, which the Context
+  // derives from RCUT2B and RCUTMB, covers every corner's neighbours. A
+  // corner's own cutoff then bounds the distances its checks look at
+  // (neighbour_range). The previous implementation re-ran
+  // `compute_data_stats` per corner -- O(corners x n_atoms) -- which on a
+  // 38-dim blip search box (200 LHS samples x 326k atoms) takes ~80
+  // minutes. With the pre-compute it drops to one full-dataset pass plus
+  // one O(K) audit per corner.
   tadah::core::Context stats_ctx = seed;
-  double rcutmax_for_stats = 0.0;
-  if (stats_ctx.contains("RCUTMAX")) {
-    rcutmax_for_stats = stats_ctx.get<double>("RCUTMAX");
-  }
-  for (const auto& b : bounds) {
-    if (b.key == "RCUT2B" || b.key == "RCUTMB" || b.key == "RCUTENV") {
-      if (b.hi > rcutmax_for_stats) rcutmax_for_stats = b.hi;
-    }
-  }
-  if (rcutmax_for_stats > 0.0) {
-    stats_ctx.remove("RCUTMAX");
-    try {
-      stats_ctx.addInternal<double>("RCUTMAX", rcutmax_for_stats);
-    } catch (...) {
-      // Some Context implementations may not allow re-adding a removed
-      // internal key; fall back to letting compute_data_stats use
-      // whatever was already there.
-    }
+  for (const char* key : {"RCUT2B", "RCUTMB"}) {
+    bool boxed = false;
+    double hi = 0.0;
+    for (const auto& b : bounds)
+      if (b.key == key) {
+        hi = boxed ? std::max(hi, b.hi) : b.hi;
+        boxed = true;
+      }
+    if (!boxed) continue;
+    const std::size_t n = stats_ctx.has_stored(key) ? stats_ctx.size(key) : 0;
+    std::vector<double> values(n);
+    for (std::size_t i = 0; i < n; ++i)
+      values[i] = stats_ctx.get<double>(key, i);
+    if (values.empty()) values.push_back(hi);
+    stats_ctx.remove(key);
+    for (double v : values)
+      stats_ctx.add(key, tadah::core::format_roundtrip(std::max(v, hi)));
   }
   // Statistics that cannot be computed (two atoms at one position, a cell
   // too small for the cutoff, ...) stop the audit: audited against empty

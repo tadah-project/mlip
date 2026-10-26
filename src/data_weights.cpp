@@ -104,6 +104,22 @@ void refuse_what_krr_implementation2_ignores(
       for (const std::string &v : d) dflt += " " + v;
       refuse(given(key), "applies it", "with " + dflt + ", the default");
     }
+  // The solve of implementation 2 is the Cholesky factorisation of
+  // K + LAMBDA sigma^2 I; it reads no OALGO. The default, OALGO 1 with its
+  // rank threshold 1e-8 (written out or not), is accepted, as any default.
+  {
+    const int oalgo = context.get<int>("OALGO", 0);
+    const bool at_oalgo_default =
+        oalgo == 1 && (context.size("OALGO") < 2 ||
+                       context.get<double>("OALGO", 1) == 1e-8);
+    if (!at_oalgo_default)
+      throw std::runtime_error(
+          "MODEL M_KRR " + k + " 2 solves (K + LAMBDA sigma^2 I) w = t by "
+          "Cholesky and reads no OALGO: " + given("OALGO") +
+          " would be ignored. Implementation 1 (MODEL M_KRR " + k +
+          " 1) solves with OALGO; implementation 2 fits with OALGO 1, the "
+          "default, or without an OALGO line.");
+  }
   if (context.has_stored("WDBFILE")) {
     std::vector<double> w(context.size("WDBFILE"));
     context.get("WDBFILE", w);

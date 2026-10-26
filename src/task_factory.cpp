@@ -156,14 +156,19 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // (VALIDATION, HPOTARGET, CHECK, VERBOSE, NUMERIC, OUTFILE, AUDIT,
   // AUDIT_SAMPLE, HEALTH_LOG) -- are not read, wherever the file and its
   // CONFIG includes put it: every other line, and the command line, is the
-  // run's.
+  // run's. A key that only other commands read (an option of theirs such
+  // as ANALYTICS of tadah predict, or a key of their configuration file
+  // such as REFIT_MODE of tadah refit) is refused at its line, as a file of
+  // this command (CoreUserConfigParser::set_command), and not read from a
+  // potential, with a notice.
   core::Context fileContext;
   std::string configFile;
   std::vector<core::SkippedKeyLine> skipped;
   if (baseContext.has_stored("CONFIG")) {
     configFile = baseContext.get<std::string>("CONFIG");
-    fileContext = core::CoreUserConfigParser().parse(
-        configFile, potential_line_not_read, skipped);
+    core::CoreUserConfigParser parser;
+    parser.set_command(taskInput.getTaskName());
+    fileContext = parser.parse(configFile, potential_line_not_read, skipped);
     baseContext.remove("CONFIG");
   }
 

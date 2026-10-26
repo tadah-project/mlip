@@ -101,23 +101,6 @@ public:
   std::string getTimestamp() const;
 
   /**
-   * @brief Serializes the task data to a plain-text string.
-   *
-   * Useful for logging or storing tasks externally.
-   * @return A string containing task ID, command, timestamp, priority, and context data.
-   */
-  std::string serialize() const;
-
-  /**
-   * @brief Deserializes a Task from a plain-text string.
-   *
-   * @param data A string containing the serialized task data (e.g. from serialize()).
-   * @return A newly constructed Task.
-   * @throws std::runtime_error if the format is invalid.
-   */
-  void deserialize(const std::string &data);
-
-  /**
    * @brief Prints debug information about the task to standard output.
    */
   void print() const;

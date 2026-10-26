@@ -1,4 +1,6 @@
 #include <tadah/mlip/preflight_audit.h>
+
+#include <algorithm>
 #include <tadah/core/number_format.h>
 
 #include <ostream>
@@ -253,6 +255,15 @@ AuditReport run_critical_optim_audit_with_metas(
                                             optim_keys.end());
 
   for (const auto& [label, meta] : metas) {
+    // A descriptor with no key in the search space is not searched: its
+    // fixed keys are the seed's choice, and no warning is given about them
+    // (a search of FIXWEIGHT alone, or of another descriptor's keys).
+    const bool searched =
+        std::any_of(meta.params.begin(), meta.params.end(),
+                    [&](const tadah::models::ParamMeta& pm) {
+                      return optim_set.count(pm.key) > 0;
+                    });
+    if (!searched) continue;
     for (const auto& pm : meta.params) {
       if (pm.crit != tadah::models::Criticality::Critical) continue;
       if (!sv.contains(pm.key)) continue;        // not configured
