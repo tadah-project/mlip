@@ -156,9 +156,11 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
 void print_suggestions(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os) {
   const StreamFormatGuard keep(os);
-  os << "# Suggested OPTIM bounds (review before use)\n";
+  os << "# Suggested OPTIM bounds (each range is a suggestion, to be "
+        "checked before use)\n";
   os << "#\n";
-  os << "#   col 1: descriptor.key[arg_pos]\n";
+  os << "#   col 1: descriptor.key(i), i the entry as an OPTIM line numbers "
+        "it\n";
   os << "#   col 2: lo .. hi   (units in column 3)\n";
   os << "#   col 3: scale\n";
   os << "#   col 4: criticality\n";
@@ -168,9 +170,11 @@ void print_suggestions(const std::vector<OptimSuggestion>& sug,
   os << "#          widened to hold the seed's value says so\n";
   os << "#\n";
   for (const auto& s : sug) {
+    // The entry as an OPTIM line numbers it, from 1 ("(1)" for a key of
+    // one value), as write_optim_block writes it.
     std::ostringstream tag;
-    tag << s.descriptor_label << "." << s.key;
-    if (s.arg_pos >= 0) tag << "[" << s.arg_pos << "]";
+    tag << s.descriptor_label << "." << s.key << "("
+        << (s.arg_pos >= 0 ? s.arg_pos + 1 : 1) << ")";
     const char* crit =
         (s.crit == models::Criticality::Critical)    ? "CRITICAL"
       : (s.crit == models::Criticality::Recommended) ? "recommended"
@@ -191,9 +195,9 @@ void print_suggestions(const std::vector<OptimSuggestion>& sug,
 void write_optim_block(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os) {
   const StreamFormatGuard keep(os);
-  os << "# Written by `tadah analysis suggest_bounds`. Each line\n";
-  os << "# carries a one-line rationale comment. Review and edit\n";
-  os << "# before running tadah hpo.\n\n";
+  os << "# Written by `tadah analysis suggest_bounds`, one rationale\n";
+  os << "# comment per line. The ranges are suggestions, to be checked\n";
+  os << "# before tadah hpo runs.\n\n";
 
   // One OPTIM line per run of consecutive entries of a (descriptor, key)
   // with the same range, in the order of `sug`: "(1)" for a scalar,

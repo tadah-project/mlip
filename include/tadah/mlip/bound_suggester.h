@@ -73,10 +73,11 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
                    const tadah::core::Context&          seed);
 
 /** \brief Pretty-print suggestions as a human table: one row per
- *  suggestion with its rationale (the form and the data, "fixed range"
- *  and why, or the scale and the role of the parameter), and one row "no
- *  OPTIM line" per suggestion without a range. Leaves the format of @p os
- *  as it found it. */
+ *  suggestion, named "descriptor.key(i)" with i the entry as an OPTIM line
+ *  numbers it (from 1), with its rationale (the form and the data, "fixed
+ *  range" and why, or the scale and the role of the parameter), and one
+ *  row "no OPTIM line" per suggestion without a range. Leaves the format
+ *  of @p os as it found it. */
 void print_suggestions(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os);
 

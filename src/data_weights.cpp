@@ -124,7 +124,8 @@ void refuse_what_krr_implementation2_ignores(
     if (!at_oalgo_default)
       throw std::runtime_error(krr_implementation2_reads_no_oalgo(
           k, given("OALGO"),
-          "with OALGO 1, the default, or without an OALGO line"));
+          "without an OALGO line or with the default written out, OALGO 1 "
+          "or OALGO 1 1e-8"));
   }
   if (context.has_stored("WDBFILE")) {
     std::vector<double> w(context.size("WDBFILE"));
