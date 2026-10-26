@@ -310,17 +310,20 @@ TEST_CASE("TaskFactory: a configuration file without a key line makes the "
  * descriptor run the potential's model as it was fitted: validate() and
  * run(), before run() reads or writes a file, refuse a run whose context
  * has a key that is not an option of the command (its blueprint keys and
- * those of its groups), naming each in upper case, sorted ("tadah predict:
- * RCUT2B, RHOFORM and WDBFILE are not options of tadah predict: the model
- * is the potential's, as it was fitted (its keys are those of the potential
- * file)"; "tadah properties pairwise: LAMBDA is not an option of ...";
- * "tadah analysis descriptor: EMBF0 is not ..."), and nothing is written;
- * the options alone run (energy.pred, pair.txt, desc.txt written). Only a
+ * those of its groups), naming each in upper case, sorted ("tadah predict
+ * takes no keys RCUT2B, RHOFORM and WDBFILE: the model is the potential's,
+ * as it was fitted (its keys are those of the potential file)"; "tadah
+ * properties pairwise takes no key LAMBDA: ..."; "tadah analysis
+ * descriptor takes no key EMBF0: ..."), and nothing is written; the
+ * options alone run (energy.pred, pair.txt, desc.txt written). Only a
  * program reaches this: the command line gives the options alone.
  * Before the fix: the run merged its keys over the potential's (a TASK
  * predict section of a task file gave them: RCUT2B 4.0 changed the
  * prediction), validate() accepted them and run() wrote energy.pred,
- * pair.txt and desc.txt: every refusal check fails. */
+ * pair.txt and desc.txt: every refusal check fails. The refusal then said
+ * "tadah predict: RCUT2B, RHOFORM and WDBFILE are not options of tadah
+ * predict: ..." (an option is a --name of the command line; these are
+ * keys). */
 TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
           "refuse a key that is not one of their options",
           "[predict][pairwise][descriptor][command_options]") {
@@ -344,8 +347,7 @@ TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
       {"predict", "PREDICT",
        {{"potential", {"pot.tadah"}}, {"dbfile", {"db.tadah"}}},
        {{"rcut2b", {"4.0"}}, {"wdbfile", {"2"}}, {"rhoform", {"SIGNED"}}},
-       "tadah predict: RCUT2B, RHOFORM and WDBFILE are not options of tadah "
-       "predict" + tail,
+       "tadah predict takes no keys RCUT2B, RHOFORM and WDBFILE" + tail,
        "energy.pred",
        [](Task &t, bool run) {
          tadah::mlip::engines::PredictEngine e;
@@ -357,8 +359,7 @@ TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
         {"atompair", {"Ta", "Ta"}},
         {"outfile", {"pair.txt"}}},
        {{"lambda", {"5"}}},
-       "tadah properties pairwise: LAMBDA is not an option of tadah "
-       "properties pairwise" + tail,
+       "tadah properties pairwise takes no key LAMBDA" + tail,
        "pair.txt",
        [](Task &t, bool run) {
          tadah::mlip::engines::PropertiesPairwiseEngine e;
@@ -369,8 +370,7 @@ TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
         {"dbfile", {"db.tadah"}},
         {"outfile", {"desc.txt"}}},
        {{"embf0", {"FREE"}}},
-       "tadah analysis descriptor: EMBF0 is not an option of tadah analysis "
-       "descriptor" + tail,
+       "tadah analysis descriptor takes no key EMBF0" + tail,
        "desc.txt",
        [](Task &t, bool run) {
          tadah::mlip::engines::AnalysisDescriptorEngine e;
@@ -396,9 +396,12 @@ TEST_CASE("tadah predict, properties pairwise and analysis descriptor "
 
 /* Pins: tadah data sample takes one selection: a program that gives two
  * (UNIFORM 2 and RANDOM 2, which the command line refuses as excluding each
- * other) is refused by validate(), naming both: "tadah data sample: give
- * one of UNIFORM, RANDOM and INDEX, not UNIFORM and RANDOM".
- * Before the fix: passes as well (a pin). */
+ * other) is refused by validate(), naming both and the selections: "tadah
+ * data sample needs one selection, not UNIFORM and RANDOM: --uniform N
+ * (every N-th structure), --random N (N structures at random) or --index
+ * <indices>".
+ * Before the fix: refused as "tadah data sample: give one of UNIFORM,
+ * RANDOM and INDEX, not UNIFORM and RANDOM". */
 TEST_CASE("tadah data sample refuses two selections given by a program",
           "[data][sample][command_options]") {
   PeriodicTable::initialize();
@@ -412,7 +415,8 @@ TEST_CASE("tadah data sample refuses two selections given by a program",
   REQUIRE(tasks.size() == 1u);
   tadah::mlip::engines::DataSampleEngine e;
   CHECK(error_of([&] { e.validate(tasks[0]); }) ==
-        "tadah data sample: give one of UNIFORM, RANDOM and INDEX, not "
-        "UNIFORM and RANDOM");
+        "tadah data sample needs one selection, not UNIFORM and RANDOM: "
+        "--uniform N (every N-th structure), --random N (N structures at "
+        "random) or --index <indices>");
   CHECK_FALSE(fs::exists("out.tadah"));
 }
