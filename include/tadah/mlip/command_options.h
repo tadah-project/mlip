@@ -23,11 +23,11 @@ namespace mlip {
  * predicts, or nothing: the command line gives the options alone, so only
  * a program reaches the refusal.
  *
- * @throws std::runtime_error naming each such key, upper case and sorted
- *         (a block as "the DESCRIPTOR block"): "tadah predict: RCUT2B and
- *         WDBFILE are not options of tadah predict: the model is the
- *         potential's, as it was fitted (its keys are those of the potential
- *         file)".
+ * @throws std::runtime_error naming each such key, upper case and sorted,
+ *         and each block: "tadah predict takes no keys RCUT2B and WDBFILE
+ *         and no DESCRIPTOR block: the model is the potential's, as it was
+ *         fitted (its keys are those of the potential file)" ("no key
+ *         RCUT2B" for one).
  */
 void require_command_options(const core::Context &run,
                              const std::string &task);

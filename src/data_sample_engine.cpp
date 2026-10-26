@@ -76,15 +76,20 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
   std::vector<std::string> given;
   for (const char *key : {"UNIFORM", "RANDOM", "INDEX"})
     if (taskContext.has_stored(key)) given.push_back(key);
+  const std::string selections =
+      "--uniform N (every N-th structure), --random N (N structures at "
+      "random) or --index <indices>";
   if (given.empty())
-    throw std::runtime_error(
-        "tadah data sample: say what to sample: --uniform N (every N-th "
-        "structure), --random N (N structures at random) or --index "
-        "<indices>");
-  if (given.size() > 1)
-    throw std::runtime_error("tadah data sample: give one of UNIFORM, RANDOM "
-                             "and INDEX, not " +
-                             given[0] + " and " + given[1]);
+    throw std::runtime_error("tadah data sample needs one selection: " +
+                             selections);
+  if (given.size() > 1) {
+    std::string keys;
+    for (std::size_t i = 0; i < given.size(); ++i)
+      keys += (i == 0 ? "" : i + 1 == given.size() ? " and " : ", ") +
+              given[i];
+    throw std::runtime_error("tadah data sample needs one selection, not " +
+                             keys + ": " + selections);
+  }
 
   const size_t total = inStdb.size();
   const std::string structures = std::to_string(total) + " structures";

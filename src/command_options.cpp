@@ -55,15 +55,19 @@ void require_command_options(const core::Context &run,
   for (const core::ConfigBlock &b : run.blocks()) blocks.insert(b.kind);
   if (keys.empty() && blocks.empty()) return;
 
-  std::vector<std::string> names(keys.begin(), keys.end());
+  // "no key RCUT2B" or "no keys RCUT2B and WDBFILE", then "no DESCRIPTOR
+  // block" for each block.
+  std::vector<std::string> refused;
+  if (!keys.empty())
+    refused.push_back(
+        (keys.size() == 1 ? "no key " : "no keys ") +
+        listed(std::vector<std::string>(keys.begin(), keys.end())));
   for (const std::string &kind : blocks)
-    names.push_back("the " + kind + " block");
+    refused.push_back("no " + kind + " block");
   std::string command = "tadah " + core::to_lower(task);
   std::replace(command.begin(), command.end(), '.', ' ');
   throw std::runtime_error(
-      command + ": " + listed(names) +
-      (names.size() == 1 ? " is not an option of " : " are not options of ") +
-      command +
+      command + " takes " + listed(refused) +
       ": the model is the potential's, as it was fitted (its keys are those "
       "of the potential file)");
 }
