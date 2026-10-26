@@ -9,8 +9,11 @@
 // compute_data_stats) plus the seed `Context` of the training
 // configuration, walks the configured descriptor's metadata, and returns
 // one `OptimSuggestion` per (key, arg_pos) pair. Each suggestion carries
-// its rationale: the form it assumes and the statistics it comes from, or
-// that its range is a fixed one, or why no OPTIM line is suggested.
+// its rationale: the form it assumes and the statistics it comes from,
+// that its range is a fixed one, or, from a suggester that gives none, the
+// scale and the role of the parameter; or why no OPTIM line is suggested.
+// A range holds the seed's value, where tadah hpo starts: one widened to
+// hold it says so.
 
 #include <iosfwd>
 #include <optional>
@@ -50,11 +53,19 @@ struct OptimSuggestion {
  *                     configuration, its radial grids expanded:
  *                     D_mJoin::expand_grids).
  *  \return vector of OptimSuggestion, in the order params appear in
- *          `meta.params`. For vector-valued params (arg_pos >= 0)
- *          the suggester is called once per existing seed entry. A
- *          suggestion with `none` set has no range (no OPTIM line); one
- *          with `fixed` set has a range not derived from the data. Each
- *          seed value is read as a number (a value that is none throws).
+ *          `meta.params`. For vector-valued params (arg_pos 0) the
+ *          suggester is called once per existing seed entry. A value of
+ *          the descriptor's TYPE2B or TYPEMB line (arg_pos > 0) gets a
+ *          suggestion with `none` set, as tadah hpo searches no value of
+ *          those lines, its seed value read from the descriptor's line.
+ *          A suggestion with `none` set has no range (no OPTIM line); one
+ *          with `fixed` set has a range not derived from the data. A
+ *          range that does not hold the seed's value is widened to it
+ *          (its rationale says so): tadah hpo refuses a starting point
+ *          outside its box. Each seed value is read as a number (a value
+ *          that is none throws). For a descriptor of a joined line,
+ *          @p seed is its own context (joined_descriptors()), and the
+ *          caller numbers its entries as the whole key does.
  */
 std::vector<OptimSuggestion>
 suggest_bounds_for(const tadah::core::stats::DataStats& data,
@@ -62,9 +73,10 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
                    const tadah::core::Context&          seed);
 
 /** \brief Pretty-print suggestions as a human table: one row per
- *  suggestion, its rationale saying whether its range is a fixed one, and
- *  one row "no OPTIM line" per suggestion without a range. Leaves the
- *  format of @p os as it found it. */
+ *  suggestion with its rationale (the form and the data, "fixed range"
+ *  and why, or the scale and the role of the parameter), and one row "no
+ *  OPTIM line" per suggestion without a range. Leaves the format of @p os
+ *  as it found it. */
 void print_suggestions(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os);
 

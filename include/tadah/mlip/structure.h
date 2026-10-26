@@ -3,6 +3,7 @@
 
 #include <tadah/mlip/atom.h>
 #include <tadah/mlip/nn_table.h>
+#include <tadah/mlip/stream_format_guard.h>
 #include <tadah/core/core_types.h>
 #include <tadah/core/periodic_table.h>
 
@@ -241,9 +242,11 @@ struct Structure {
    */
   size_t get_nn_iindex(const size_t i, const size_t j, const size_t jj) const;
 
-  /** Print structure summary using streams. */
+  /** Print structure summary using streams. Leaves the format of @p os
+   *  (flags, precision, width, fill) as it found it. */
   friend std::ostream& operator<<(std::ostream& os, const Structure& st)
   {
+    const StreamFormatGuard keep(os);
     os << "Structure  :    " << std::left << st.label << std::endl;
     os << "Weights    :    " << std::left
       << "E: "    << st.eweight

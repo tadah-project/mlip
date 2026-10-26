@@ -51,6 +51,17 @@ std::string krr_implementation2_ignores(const std::string &kernel,
                                         const std::string &fits,
                                         const std::string &instead);
 
+/** The refusal of an OALGO setting under M_KRR implementation 2, whose
+ *  solve, the Cholesky factorisation of K + LAMBDA sigma^2 I, reads no
+ *  OALGO: `MODEL M_KRR <kernel> 2 solves (K + LAMBDA sigma^2 I) w = t by
+ *  Cholesky and reads no OALGO: <what> would be ignored. Implementation 1
+ *  (MODEL M_KRR <kernel> 1) solves with OALGO; implementation 2 fits
+ *  <instead>.` (@p what: the OALGO line of a configuration, or `OPTIM
+ *  OALGO`, which tadah hpo refuses at startup). */
+std::string krr_implementation2_reads_no_oalgo(const std::string &kernel,
+                                               const std::string &what,
+                                               const std::string &instead);
+
 /** Refuses what M_KRR implementation 2 of @p context (`MODEL M_KRR
  *  <kernel> 2`) would ignore, before it fits: it solves (K + LAMBDA
  *  sigma^2 I) w = t on the mean descriptors of whole structures and their
@@ -59,7 +70,8 @@ std::string krr_implementation2_ignores(const std::string &kernel,
  *  ENORM SQRT, an FSIGMA or SSIGMA other than its blueprint default
  *  (compared by value), an OALGO other than the default (OALGO 1, with
  *  no second value or 1e-8: the solve is the Cholesky factorisation of the
- *  matrix above and reads no OALGO), a WDBFILE value other than 1, and a
+ *  matrix above and reads no OALGO; krr_implementation2_reads_no_oalgo()),
+ *  a WDBFILE value other than 1, and a
  *  structure of @p stdb whose eweight is
  *  not 1 (its energy given a priority, or left out with 0) are refused,
  *  each naming implementation 1, which fits them

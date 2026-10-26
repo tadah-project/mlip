@@ -1,5 +1,6 @@
 #include <tadah/mlip/engines/analysis_suggest_bounds_engine.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -12,6 +13,7 @@
 #include <tadah/core/stats/data_stats.h>
 #include <tadah/mlip/bound_suggester.h>
 #include <tadah/mlip/data_stats_compute.h>
+#include <tadah/mlip/joined_descriptors.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d_base.h>
 #include <tadah/models/descriptors/d_mjoin.h>
@@ -82,11 +84,10 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
   // Configured descriptors (string names from the user's TYPE2B/TYPEMB).
   std::vector<OptimSuggestion> all_suggestions;
 
-  // Scan every entry of TYPE2B / TYPEMB and process anything that
-  // starts with `D2_` or `DM_`. This handles the common case where
-  // the user nests real descriptors under a `D2_mJoin` / `DM_mJoin`
-  // meta-descriptor (per-pair configs in CH4-style multi-element
-  // datasets).
+  // A line of one descriptor: the entry of TYPE2B / TYPEMB that starts
+  // with `D2_` or `DM_` (its other entries are its parameters and
+  // elements), read from the configuration. A joined line (`D2_mJoin`,
+  // `DM_mJoin`) gives each of its descriptors its own values.
   auto looks_like_descriptor = [](const std::string& s) {
     return s.size() >= 3 && (s.compare(0, 3, "D2_") == 0 ||
                              s.compare(0, 3, "DM_") == 0);
@@ -94,6 +95,40 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
 
   auto run_for = [&](const std::string& type_key) {
     if (!workCtx.contains(type_key)) return;
+    // A joined line (D2_mJoin, DM_mJoin): each descriptor's rows from its
+    // own values (its RCUT value and its share of each list key), each
+    // numbered by the place of its value in the whole key, as an OPTIM line
+    // numbers it (the RCUT row of the k-th descriptor is entry k). A key
+    // the line splits but the descriptor takes no value of has no row.
+    if (is_joined_line(workCtx, type_key)) {
+      for (const auto& jd : joined_descriptors(workCtx, type_key)) {
+        std::unique_ptr<models::D_Base> obj(
+            tadah::core::factory<models::D_Base>(jd.label));
+        auto m = obj->meta();
+        if (!m.has_value()) {
+          tadah::core::Logger::instance().log(
+              tadah::core::LogLevel::INFO,
+              "analysis suggest_bounds: '" + jd.label +
+                  "' has no meta() yet; skipping.");
+          continue;
+        }
+        auto sug = suggest_bounds_for(data, *m, jd.context);
+        sug.erase(std::remove_if(sug.begin(), sug.end(),
+                                 [&](const OptimSuggestion& s) {
+                                   return jd.first_entries.count(s.key) &&
+                                          !jd.context.contains(s.key);
+                                 }),
+                  sug.end());
+        for (auto& s : sug) {
+          const auto it = jd.first_entries.find(s.key);
+          if (it == jd.first_entries.end()) continue;
+          const int before = static_cast<int>(it->second);
+          s.arg_pos = s.arg_pos < 0 ? before : s.arg_pos + before;
+        }
+        all_suggestions.insert(all_suggestions.end(), sug.begin(), sug.end());
+      }
+      return;
+    }
     const std::size_t n = workCtx.size(type_key);
     std::vector<std::string> labels_seen;
     for (std::size_t i = 0; i < n; ++i) {
@@ -101,10 +136,7 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
       try { label = workCtx.get<std::string>(type_key, i); }
       catch (...) { continue; }
       if (!looks_like_descriptor(label)) continue;
-      // Avoid duplicating the same descriptor label twice — the user
-      // typically configures the same descriptor multiple times for
-      // different pairs (e.g. `D2_BP 7 7 C C` then `D2_BP 7 7 C H`),
-      // but the suggestion math doesn't yet differentiate per-pair.
+      // A label once.
       bool seen = false;
       for (const auto& l : labels_seen)
         if (l == label) { seen = true; break; }

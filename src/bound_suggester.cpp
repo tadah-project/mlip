@@ -1,6 +1,5 @@
 #include <tadah/mlip/bound_suggester.h>
 #include <tadah/mlip/stream_format_guard.h>
-#include <tadah/core/number_format.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -27,6 +26,31 @@ const char* scale_str(models::Scale s) {
     default:                    return "-";
   }
 }
+
+/* @p text without a final full stop, so that a clause can follow it. */
+std::string open_ended(std::string text) {
+  if (!text.empty() && text.back() == '.') text.pop_back();
+  return text;
+}
+
+/* A range holds the seed's value: tadah hpo starts a search from the seed
+ * and refuses a starting point outside its box. A range a suggester gives
+ * without the seed's value (a cutoff's range ends at the 99th percentile of
+ * the distances within the seed's own cutoff) is widened to it, and its
+ * rationale says so. */
+void hold_seed(OptimSuggestion &s) {
+  if (s.none || !s.seed_value) return;
+  const double v = *s.seed_value;
+  const double lo = std::min(s.lo, s.hi);
+  const double hi = std::max(s.lo, s.hi);
+  if (v >= lo && v <= hi) return;
+  s.lo = std::min(lo, v);
+  s.hi = std::max(hi, v);
+  std::ostringstream value;
+  value << v;
+  s.rationale = open_ended(s.rationale) + "; widened to hold the seed's "
+                "value " + value.str() + ", where tadah hpo starts";
+}
 }  // namespace
 
 std::vector<OptimSuggestion>
@@ -37,49 +61,39 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
   models::SeedView sv(seed);
 
   for (const auto& pm : meta.params) {
-    if (!pm.suggest) continue;
-
-    // A parameter at a fixed position of the key's values (arg_pos > 0:
-    // the runtime position, the value at index arg_pos - 1, as the
-    // TYPE2B-positional parameters of D2_ZBL and D2_MIE): one suggestion,
-    // the seed's value there, and the OPTIM index tadah hpo gives it, its
-    // place among the numeric values of the key (the leading descriptor
-    // name is none).
+    // A value of the descriptor's TYPE line (arg_pos > 0: the value at
+    // index arg_pos - 1 of its line, as the screening parameters of D2_ZBL
+    // are values 2 to 5 of "TYPE2B D2_ZBL a0 s0 p0 p1 Ta Ta"): a row
+    // without an OPTIM line, as tadah hpo searches no value of a TYPE2B or
+    // TYPEMB line (it refuses OPTIM TYPE2B at its line). Its arg_pos is its
+    // place after the descriptor's name; the seed's value is read from the
+    // descriptor's line, the first one of the key its name opens.
     if (pm.arg_pos > 0) {
-      const std::size_t index = static_cast<std::size_t>(pm.arg_pos - 1);
-      const bool seeded = sv.contains(pm.key) && index < sv.size(pm.key);
-      std::size_t numeric_before = index > 0 ? index - 1 : 0;
-      if (seeded) {
-        numeric_before = 0;
-        for (std::size_t i = 0; i < index; ++i) {
-          double v = 0.0;
-          if (tadah::core::parse_number(sv.get<std::string>(pm.key, i), v))
-            ++numeric_before;
-        }
-      }
-      const models::BoundSuggestion bracket = pm.suggest(data, sv, pm.arg_pos);
       OptimSuggestion s;
       s.descriptor_label = meta.label;
       s.key      = pm.key;
-      s.arg_pos  = static_cast<int>(numeric_before);  // OPTIM (arg_pos + 1)
-      s.lo       = bracket.first;
-      s.hi       = bracket.second;
-      s.fixed    = bracket.fixed;
-      s.none     = bracket.none;
+      s.arg_pos  = std::max(0, pm.arg_pos - 2);
+      s.none     = true;
       s.crit     = pm.crit;
       s.scale    = pm.scale;
       s.units    = pm.units;
-      if (seeded) s.seed_value = sv.get<double>(pm.key, index);
-      if (!bracket.rationale.empty()) {
-        s.rationale = bracket.rationale;
-      } else {
-        std::ostringstream rs;
-        rs << "scale=" << scale_str(pm.scale) << "; role=" << pm.role;
-        s.rationale = rs.str();
+      if (sv.contains(pm.key)) {
+        const std::size_t n = sv.size(pm.key);
+        for (std::size_t i = 0; i < n; ++i) {
+          if (sv.get<std::string>(pm.key, i) != meta.label) continue;
+          const std::size_t at = i + static_cast<std::size_t>(pm.arg_pos) - 1;
+          if (at < n) s.seed_value = sv.get<double>(pm.key, at);
+          break;
+        }
       }
+      s.rationale = open_ended(pm.role) + ": a value of the " + meta.label +
+                    " line of " + pm.key + ", which tadah hpo does not "
+                    "search (it refuses OPTIM " + pm.key + "); the seed's " +
+                    pm.key + " line sets it";
       out.push_back(std::move(s));
       continue;
     }
+    if (!pm.suggest) continue;
 
     // Determine how many entries this ParamMeta covers given the
     // current seed. arg_pos == -1 -> scalar (one suggestion). arg_pos
@@ -131,6 +145,7 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
         rs << "scale=" << scale_str(pm.scale) << "; role=" << pm.role;
         s.rationale = rs.str();
       }
+      hold_seed(s);
 
       out.push_back(std::move(s));
     }
@@ -148,7 +163,9 @@ void print_suggestions(const std::vector<OptimSuggestion>& sug,
   os << "#   col 3: scale\n";
   os << "#   col 4: criticality\n";
   os << "#   col 5: rationale: the form a range assumes and the data it\n";
-  os << "#          comes from, or \"fixed range\" and why\n";
+  os << "#          comes from, \"fixed range\" and why, or\n";
+  os << "#          the scale and the role of the parameter; a range\n";
+  os << "#          widened to hold the seed's value says so\n";
   os << "#\n";
   for (const auto& s : sug) {
     std::ostringstream tag;

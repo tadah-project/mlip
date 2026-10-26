@@ -63,6 +63,15 @@ std::string krr_implementation2_ignores(const std::string &kernel,
          " 1) " + fits + "; implementation 2 fits " + instead + ".";
 }
 
+std::string krr_implementation2_reads_no_oalgo(const std::string &kernel,
+                                               const std::string &what,
+                                               const std::string &instead) {
+  return "MODEL M_KRR " + kernel + " 2 solves (K + LAMBDA sigma^2 I) w = t "
+         "by Cholesky and reads no OALGO: " + what + " would be ignored. "
+         "Implementation 1 (MODEL M_KRR " + kernel + " 1) solves with OALGO; "
+         "implementation 2 fits " + instead + ".";
+}
+
 void refuse_what_krr_implementation2_ignores(
     const tadah::core::Context &context, const StructureDB &stdb) {
   const std::string k = context.get<std::string>("MODEL", 1);
@@ -113,12 +122,9 @@ void refuse_what_krr_implementation2_ignores(
         oalgo == 1 && (context.size("OALGO") < 2 ||
                        context.get<double>("OALGO", 1) == 1e-8);
     if (!at_oalgo_default)
-      throw std::runtime_error(
-          "MODEL M_KRR " + k + " 2 solves (K + LAMBDA sigma^2 I) w = t by "
-          "Cholesky and reads no OALGO: " + given("OALGO") +
-          " would be ignored. Implementation 1 (MODEL M_KRR " + k +
-          " 1) solves with OALGO; implementation 2 fits with OALGO 1, the "
-          "default, or without an OALGO line.");
+      throw std::runtime_error(krr_implementation2_reads_no_oalgo(
+          k, given("OALGO"),
+          "with OALGO 1, the default, or without an OALGO line"));
   }
   if (context.has_stored("WDBFILE")) {
     std::vector<double> w(context.size("WDBFILE"));
