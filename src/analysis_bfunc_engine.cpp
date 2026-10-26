@@ -26,9 +26,10 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
 
     const std::string inFile = taskContext.get<std::string>(inputKey);
     core::Context tempContext = core::CoreUserConfigParser().parse(inFile);
-    // EMBF0 and RHOFORM belong to the potential, as in tadah predict and
-    // analysis descriptor: a task value that differs, or a task RHOFORM for
-    // a DM_REAM potential without one, is refused before the merge.
+    // EMBF0 and RHOFORM belong to the potential: a value of the run that
+    // differs, or a RHOFORM of the run for a DM_REAM potential without one,
+    // is refused before the merge (tadah predict and analysis descriptor
+    // take no value of the run: their model is the potential's alone).
     tadah::models::check_embf0_precedence(tempContext, taskContext, inFile);
     tadah::models::check_rhoform_precedence(tempContext, taskContext, inFile);
     taskContext = tadah::core::Context::merge(taskContext, tempContext);
