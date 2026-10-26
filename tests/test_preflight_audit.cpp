@@ -642,3 +642,118 @@ TEST_CASE("preflight_audit: critical_optim_audit flags nothing for a "
   CAPTURE(flagged);
   CHECK(flagged == std::set<std::string>{"D2_BP.CGRID2B", "D2_BP.RCUT2B"});
 }
+
+// ---------------------------------------------------------------------------
+//  A joined line: each descriptor is judged by its own channels and cutoff
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Neighbour distances of bcc Ta: r_min 2.25 A, shells at 2.86 and 3.30 A,
+ * r_max 5.6 A. */
+DataStats bcc_ta_distances() {
+  DataStats d;
+  d.n_atoms = 100;
+  d.n_structures = 10;
+  d.elements = {"Ta"};
+  PerPairStats pp;
+  pp.elements = {"Ta", "Ta"};
+  pp.n_pairs = 4000;
+  pp.r_min = 2.25;
+  pp.r_max = 5.6;
+  pp.r_percentiles = {2.6, 2.8, 2.85, 2.9, 3.4, 4.7, 5.2, 5.4, 5.55,
+                      4.0, 1.0};
+  tadah::core::stats::KdePeak first, second;
+  first.position = 2.86;
+  first.density = 1.0;
+  first.fwhm = 0.7;
+  second.position = 3.30;
+  second.density = 0.7;
+  second.fwhm = 0.3;
+  pp.r_peaks = {first, second};
+  d.per_pair.push_back(pp);
+  return d;
+}
+
+/* TYPEMB DM_mJoin of a DM_EAD Gaussian channel (CGRIDMB(1)) and two
+ * DM_Blip blips (CGRIDMB(2), CGRIDMB(3)), every SGRIDMB 1. */
+Context joined_density_seed(const std::string& cgridmb,
+                            const std::string& rcutmb) {
+  Context c;
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_mJoin");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("TYPEMB", "DM_Blip 0 2 2 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  c.add("RCUTMB", rcutmb);
+  c.add("CGRIDMB", cgridmb);
+  c.add("SGRIDMB", "1.0 1.0 1.0");
+  return c;
+}
+
+std::string fails_of(const AuditReport& rep) {
+  std::string s;
+  for (const auto& m : rep.messages)
+    if (m.level == AuditMessage::Level::Fail)
+      s += m.descriptor_label + "." + m.param_key + ": " + m.text + "\n";
+  return s;
+}
+
+}  // namespace
+
+/* Pins: the pre-flight audit judges each descriptor of a DM_mJoin line by
+ * its own channels and its own RCUTMB, and names a channel by its entry of
+ * the whole key, as an OPTIM line does: for DM_EAD 0 1 1 (a Gaussian,
+ * CGRIDMB(1) = 0) joined with DM_Blip 0 2 2 (blips CGRIDMB(2) and (3)) on
+ * bcc Ta distances (r_min 2.25 A), every SGRIDMB 1:
+ *  - CGRIDMB 0 3 3.5, RCUTMB 5.6 5.6: no FAIL (the Gaussian is 6e-3 at
+ *    r_min, each blip's support |r - c| < 2 holds it);
+ *  - CGRIDMB 0 3 30: one FAIL, DM_Blip.CGRIDMB, naming "CGRIDMB(3) = 30"
+ *    and the blip;
+ *  - CGRIDMB 0 3 3.5, RCUTMB 5.6 2.0: one FAIL, DM_Blip's, naming "RCUTMB
+ *    = 2", its own cutoff, below every neighbour distance.
+ * Before the fix: each descriptor judged every channel of the line with
+ * its own form and the first RCUTMB: DM_Blip failed the Gaussian at the
+ * origin as a blip ("CGRIDMB(1) = 0 with SGRIDMB(1) = 1: the support of
+ * the blip ... holds no neighbour distance"), DM_EAD failed the blip at 30
+ * as a Gaussian, and DM_Blip was judged at RCUTMB 5.6. */
+TEST_CASE("preflight_audit: each descriptor of a DM_mJoin line is judged by "
+          "its own channels and cutoff",
+          "[preflight_audit][join]") {
+  const DataStats data = bcc_ta_distances();
+  SECTION("a Gaussian at the origin and two blips pass") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 3.5", "5.6 5.6"), AuditMode::Error);
+    INFO(fails_of(rep));
+    CHECK_FALSE(rep.any_fail());
+  }
+  SECTION("a blip far out fails, named by its entry of the whole key") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 30", "5.6 5.6"), AuditMode::Error);
+    const std::string fails = fails_of(rep);
+    INFO(fails);
+    std::size_t n = 0;
+    for (const auto& m : rep.messages) {
+      if (m.level != AuditMessage::Level::Fail) continue;
+      ++n;
+      CHECK(m.descriptor_label == "DM_Blip");
+      CHECK(m.text.find("CGRIDMB(3) = 30") != std::string::npos);
+      CHECK(m.text.find("blip") != std::string::npos);
+    }
+    CHECK(n == 1u);
+  }
+  SECTION("a blip's own cutoff below every distance fails") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 3.5", "5.6 2.0"), AuditMode::Error);
+    const std::string fails = fails_of(rep);
+    INFO(fails);
+    std::size_t n = 0;
+    for (const auto& m : rep.messages) {
+      if (m.level != AuditMessage::Level::Fail) continue;
+      ++n;
+      CHECK(m.descriptor_label == "DM_Blip");
+      CHECK(m.text.find("RCUTMB = 2 ") != std::string::npos);
+    }
+    CHECK(n == 1u);
+  }
+}
