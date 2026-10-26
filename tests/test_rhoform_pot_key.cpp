@@ -283,9 +283,10 @@ TEST_CASE("RHOFORM: tadah predict refuses a DM_REAM potential without "
  * own values run.
  * Before the fix: the messages said "but the task configuration sets" and
  * "the task configuration's RHOFORM does not apply": the three message
- * checks fail. (Before the precedence check: analysis bfunc merged the run
- * over the potential, a RHOFORM of the run replacing the potential's
- * form.) */
+ * checks fail. (Before the precedence check: analysis bfunc merged the
+ * potential over the run, so the potential's RHOFORM replaced a differing
+ * one of the run without a word, and a RHOFORM of the run applied to a
+ * potential without one.) */
 TEST_CASE("RHOFORM and EMBF0: tadah analysis bfunc applies the "
           "potential-versus-configuration precedence",
           "[rhoform][embf0][precedence][bfunc]") {
