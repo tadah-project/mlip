@@ -1,5 +1,6 @@
 #include <tadah/mlip/bound_suggester.h>
 #include <tadah/mlip/stream_format_guard.h>
+#include <tadah/core/number_format.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -38,12 +39,54 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
   for (const auto& pm : meta.params) {
     if (!pm.suggest) continue;
 
+    // A parameter at a fixed position of the key's values (arg_pos > 0:
+    // the runtime position, the value at index arg_pos - 1, as the
+    // TYPE2B-positional parameters of D2_ZBL and D2_MIE): one suggestion,
+    // the seed's value there, and the OPTIM index tadah hpo gives it, its
+    // place among the numeric values of the key (the leading descriptor
+    // name is none).
+    if (pm.arg_pos > 0) {
+      const std::size_t index = static_cast<std::size_t>(pm.arg_pos - 1);
+      const bool seeded = sv.contains(pm.key) && index < sv.size(pm.key);
+      std::size_t numeric_before = index > 0 ? index - 1 : 0;
+      if (seeded) {
+        numeric_before = 0;
+        for (std::size_t i = 0; i < index; ++i) {
+          double v = 0.0;
+          if (tadah::core::parse_number(sv.get<std::string>(pm.key, i), v))
+            ++numeric_before;
+        }
+      }
+      const models::BoundSuggestion bracket = pm.suggest(data, sv, pm.arg_pos);
+      OptimSuggestion s;
+      s.descriptor_label = meta.label;
+      s.key      = pm.key;
+      s.arg_pos  = static_cast<int>(numeric_before);  // OPTIM (arg_pos + 1)
+      s.lo       = bracket.first;
+      s.hi       = bracket.second;
+      s.fixed    = bracket.fixed;
+      s.none     = bracket.none;
+      s.crit     = pm.crit;
+      s.scale    = pm.scale;
+      s.units    = pm.units;
+      if (seeded) s.seed_value = sv.get<double>(pm.key, index);
+      if (!bracket.rationale.empty()) {
+        s.rationale = bracket.rationale;
+      } else {
+        std::ostringstream rs;
+        rs << "scale=" << scale_str(pm.scale) << "; role=" << pm.role;
+        s.rationale = rs.str();
+      }
+      out.push_back(std::move(s));
+      continue;
+    }
+
     // Determine how many entries this ParamMeta covers given the
     // current seed. arg_pos == -1 -> scalar (one suggestion). arg_pos
-    // >= 0 -> vector entry; iterate over `sv.size(pm.key)`.
+    // == 0 -> vector entry; iterate over `sv.size(pm.key)`.
     std::size_t n_entries = 1;
     int base_arg_pos = -1;
-    if (pm.arg_pos >= 0) {
+    if (pm.arg_pos == 0) {
       n_entries = sv.contains(pm.key) ? sv.size(pm.key) : 0;
       if (n_entries == 0) {
         // No seed entry yet — emit a single suggestion at arg_pos 0
