@@ -207,7 +207,7 @@ TEST_CASE_METHOD(PTFixture,"DM_Embed refit resolves component AUTO and preserves
     "REFERENCE ZERO\nENVELOPE\nTYPE Smoothstep2\nCUTOFF 2\nENDENVELOPE\n"
     "ENDEMBEDDING\nENDDESCRIPTOR\n");
   auto c=tadah::core::CoreUserConfigParser().parse(input);
-  tadah::mlip::KeyProvenance provenance(Context{},c,"refit.config",tadah::mlip::KeyOrigin::Kind::ConfigFile,{"REFIT_CONSTRAIN_F0"});
+  tadah::mlip::KeyProvenance provenance(Context{},c,"refit.config",{"REFIT_CONSTRAIN_F0"});
   c.add("REFIT_CONSTRAIN_F0",false);Task task("refit",c);task.setKeyProvenance(provenance);
   RefitEngine engine; REQUIRE_NOTHROW(engine.validate(task));
   REQUIRE(engine.run(task)==EXIT_SUCCESS);
@@ -1245,9 +1245,8 @@ TEST_CASE_METHOD(PTFixture,
           from_file.add(key, value);
       }
       Task task("refit", c);
-      task.setKeyProvenance(KeyProvenance(Context(), from_file, "config.refit",
-                                          KeyOrigin::Kind::ConfigFile,
-                                          defaulted));
+      task.setKeyProvenance(
+          KeyProvenance(Context(), from_file, "config.refit", defaulted));
       return task;
     };
     // dense: the compact defaults pass
@@ -1359,7 +1358,7 @@ TEST_CASE_METHOD(PTFixture,
     c.add("REFIT_OBJECTIVE", std::string("energy"));
     Task task("refit", c);
     task.setKeyProvenance(KeyProvenance(
-        Context(), file, "config.refit", KeyOrigin::Kind::ConfigFile,
+        Context(), file, "config.refit",
         {"REFIT_CURVE_WEIGHTING", "REFIT_CURVE_RELAX",
          "REFIT_CURVE_DERIV_WEIGHT", "REFIT_OBJECTIVE"}));
     CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
@@ -1434,7 +1433,6 @@ TEST_CASE_METHOD(PTFixture,
   c.add("REFIT_COMPACT_MERGE", std::string("auto"));
   Task task("refit", c);
   task.setKeyProvenance(KeyProvenance(Context(), file, "config.refit",
-                                      KeyOrigin::Kind::ConfigFile,
                                       {"REFIT_COMPACT_MERGE"}));
   CHECK_THROWS_WITH(RefitEngine().validate(task), no_compact_fitter());
   CHECK_THROWS_WITH(RefitEngine().run(task), no_compact_fitter());
@@ -1869,7 +1867,6 @@ TEST_CASE_METHOD(PTFixture,
     Context c = with(dense, "REFIT_CONSTRAIN_F0", "true");
     Task task("refit", c);
     task.setKeyProvenance(KeyProvenance(Context(), dense, "dense.refit",
-                                        KeyOrigin::Kind::ConfigFile,
                                         {"REFIT_CONSTRAIN_F0"}));
     CHECK_NOTHROW(RefitEngine().validate(task));
   }
@@ -1901,8 +1898,7 @@ Context component_refit_config(const std::string &extra = "",
 Task config_file_task(const Context &c) {
   Task task("refit", c);
   task.setKeyProvenance(tadah::mlip::KeyProvenance(
-      Context{}, c, "refit.config", tadah::mlip::KeyOrigin::Kind::ConfigFile,
-      {}));
+      Context{}, c, "refit.config", {}));
   return task;
 }
 }  // namespace

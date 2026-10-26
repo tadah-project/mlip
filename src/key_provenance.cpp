@@ -41,8 +41,6 @@ std::string KeyOrigin::describe(const std::string &key) const {
   }
   case Kind::ConfigFile:
     return "configuration file " + file;
-  case Kind::TaskFile:
-    return "task file " + file;
   case Kind::Default:
     return "default";
   case Kind::NotRecorded:
@@ -60,12 +58,11 @@ KeyProvenance::~KeyProvenance() = default;
 
 KeyProvenance::KeyProvenance(core::Context command_line, core::Context file,
                              std::string file_path,
-                             KeyOrigin::Kind file_kind,
                              std::vector<std::string> defaults,
                              std::vector<core::SkippedKeyLine> skipped)
     : command_line_(std::move(command_line)), file_(std::move(file)),
-      file_path_(std::move(file_path)), file_kind_(file_kind),
-      skipped_(std::move(skipped)), defaults_(std::move(defaults)) {
+      file_path_(std::move(file_path)), skipped_(std::move(skipped)),
+      defaults_(std::move(defaults)) {
   for (auto &k : defaults_) k = core::to_upper(k);
   std::sort(defaults_.begin(), defaults_.end());
   defaults_.erase(std::unique(defaults_.begin(), defaults_.end()),
@@ -86,7 +83,7 @@ KeyOrigin KeyProvenance::origin(const std::string &key) const {
     return o;
   }
   if (file_.has_stored(uKey)) {
-    o.kind = file_kind_;
+    o.kind = KeyOrigin::Kind::ConfigFile;
     o.file = file_path_;
     return o;
   }

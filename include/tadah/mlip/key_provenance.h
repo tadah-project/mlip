@@ -18,14 +18,13 @@ struct KeyOrigin {
     NotRecorded,  ///< the key is in the context, but no source is known
     CommandLine,  ///< a command-line option (flag names it)
     ConfigFile,   ///< the file given with -c/--config (or one it includes)
-    TaskFile,     ///< the file given with --task (or one it includes)
     Default       ///< the blueprint default, added because nothing set it
   };
 
   Kind kind = Kind::NotRecorded;
   /** CommandLine: the option as the user can write it, e.g. "-F/--force". */
   std::string flag;
-  /** ConfigFile/TaskFile: that file. CommandLine: the configuration file
+  /** ConfigFile: that file. CommandLine: the configuration file
    *  whose value of the key the option replaced (empty: none). */
   std::string file;
   /** CommandLine: the configuration file's values the option replaced
@@ -35,15 +34,15 @@ struct KeyOrigin {
   /**
    * @brief The source in words, for a run journal:
    *   "command line -F/--force; overrides FORCE false in c.tadah",
-   *   "command line -F/--force", "configuration file c.tadah",
-   *   "task file run.task", "default" or "source not recorded".
+   *   "command line -F/--force", "configuration file c.tadah", "default"
+   *   or "source not recorded".
    */
   std::string describe(const std::string &key) const;
 };
 
 /**
  * @brief Where the keys of a task's context came from: the command line,
- *        the configuration or task file, or the blueprint defaults.
+ *        the configuration file, or the blueprint defaults.
  *
  * TaskFactory fills it while it merges the command-line options, the file
  * and the defaults into the task's context, so that a run can say, for
@@ -57,9 +56,8 @@ public:
 
   /**
    * @param command_line The keys given as command-line options (upper case).
-   * @param file         The keys read from the configuration or task file.
+   * @param file         The keys read from the configuration file.
    * @param file_path    That file, as given ("" when there is none).
-   * @param file_kind    ConfigFile or TaskFile.
    * @param defaults     The keys added as blueprint defaults (upper case).
    * @param skipped      The key lines of the file, or of a file it
    *                     includes, that its parse did not read (TaskFactory:
@@ -67,8 +65,7 @@ public:
    *                     record but DBFILE, potential_line_not_read).
    */
   KeyProvenance(core::Context command_line, core::Context file,
-                std::string file_path, KeyOrigin::Kind file_kind,
-                std::vector<std::string> defaults,
+                std::string file_path, std::vector<std::string> defaults,
                 std::vector<core::SkippedKeyLine> skipped = {});
 
   KeyProvenance(const KeyProvenance &);
@@ -80,10 +77,8 @@ public:
   /** The origin of @p key (any letter case) in the task's context. */
   KeyOrigin origin(const std::string &key) const;
 
-  /** The configuration or task file, as given ("" when there is none). */
+  /** The configuration file, as given ("" when there is none). */
   const std::string &file_path() const { return file_path_; }
-  /** ConfigFile (-c/--config) or TaskFile (--task). */
-  KeyOrigin::Kind file_kind() const { return file_kind_; }
   /** The key lines of the file, or of a file it includes with CONFIG, that
    *  its parse did not read, in the order read: for a task of TaskFactory,
    *  a potential's lines of the keys of keys_not_read_from_a_potential()
@@ -101,7 +96,6 @@ private:
   core::Context command_line_;
   core::Context file_;
   std::string file_path_;
-  KeyOrigin::Kind file_kind_ = KeyOrigin::Kind::ConfigFile;
   std::vector<core::SkippedKeyLine> skipped_;
   /* Sorted and unique. (A std::set member here made GCC 13.3's LTO stop
    * with an internal compiler error while linking test_mlip.) */

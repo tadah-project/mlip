@@ -1,6 +1,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/engines/predict_engine.h>
+#include <tadah/mlip/command_options.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/load_transforms.h>
@@ -29,15 +30,20 @@ namespace engines {
 
 int PredictEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
+  // The model is the potential's, as it was fitted: a run key that is no
+  // option of tadah predict is refused before anything is read.
+  require_command_options(taskContext, "PREDICT");
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   // No parse stores a run setting of a potential (core::run_setting_keys():
   // VERBOSE, NUMERIC, OUTFILE, ...): a VERBOSE line of a potential of an
   // earlier version sets no log level, predict's own -v applies throughout.
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
-  tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
-  // RHOFORM belongs to the potential: a DM_REAM potential without it throws
-  // whatever the task says (the task never supplies it through the merge).
-  tadah::models::check_rhoform_precedence(potContext, taskContext, pot_file);
+  // EMBF0 and RHOFORM belong to the potential, and the run gives neither:
+  // a DM_REAM potential without RHOFORM throws, and either key of a
+  // potential without a DM_REAM block gives its notice.
+  tadah::models::check_embf0_precedence(potContext, core::Context(), pot_file);
+  tadah::models::check_rhoform_precedence(potContext, core::Context(),
+                                          pot_file);
   // The keys that prepared the training data (EFILTER, FFILTER, the ESHIFT
   // toggles, the weights, ZERO_COM_FORCE) are not the potential's: a
   // potential of an earlier version has them as key lines, and they are
@@ -49,27 +55,10 @@ int PredictEngine::run(mlip::Task &task) {
     if (!ignored.empty())
       core::Logger::instance().log(core::LogLevel::INFO, ignored);
   }
+  // The options of the run over the potential: the data predicted is
+  // prepared with the filters predict is given (EFILTER, FFILTER,
+  // ZERO_COM_FORCE) and its LSCALE and ESHIFT override the potential's.
   potContext  = tadah::core::Context::merge(potContext, taskContext);
-  // Of those keys, the data predicted is prepared only with the ones
-  // tadah predict has an option for (EFILTER, FFILTER, ZERO_COM_FORCE): a
-  // TASK predict of a task file may hold the others (WDBFILE, ESHIFT_ATOM,
-  // ESHIFT_DBATOM), which weight the training
-  // set or derive a shift from the data, and are not predict's.
-  {
-    std::vector<std::string> predict_keys;
-    for (const auto &bpKey :
-         core::BlueprintParser::getTasksMapRef().at("PREDICT").blueprintKeys) {
-      const std::size_t dot = bpKey.keyName.rfind('.');
-      predict_keys.push_back(core::to_upper(
-          dot == std::string::npos ? bpKey.keyName
-                                   : bpKey.keyName.substr(dot + 1)));
-    }
-    for (const std::string &key : dataset_preparation_keys())
-      if (std::find(predict_keys.begin(), predict_keys.end(), key) ==
-              predict_keys.end() &&
-          potContext.has_stored(key))
-        potContext.remove(key);
-  }
 
   // Honour --no-lscale / --no-eshift cancellation flags by removing the
   // corresponding keys from the merged context BEFORE apply_load_transforms
@@ -270,6 +259,7 @@ void PredictEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       "Validating PredictEngine...");
+  require_command_options(context, "PREDICT");
   if (!context.contains("POTENTIAL")) {
     throw std::runtime_error("PredictEngine requires a potential file to be set.");
   }

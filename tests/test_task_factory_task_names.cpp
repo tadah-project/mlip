@@ -1,5 +1,5 @@
-// TaskFactory and the task name of an ITaskInput without a task file: the
-// name of a blueprint task (`DATA.split`, `TRAIN`), as the command line
+// TaskFactory and the task name of an ITaskInput: the name of a blueprint
+// task (`DATA.split`, `TRAIN`), as the command line
 // passes it. A program that builds its own ITaskInput can pass any string.
 
 #include "catch2/catch.hpp"

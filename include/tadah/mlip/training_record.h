@@ -104,7 +104,7 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
                                           const std::string &file);
 
 /** The rule of the parse of a run's configuration (TaskFactory parses
- *  every -c and --task file under it, a core::KeyLineRule): whether the
+ *  every -c file under it, a core::KeyLineRule): whether the
  *  line of @p key of a file whose key lines give @p file_keys is not read.
  *  A file that has WEIGHTS is a potential (or a copy of one): its lines of
  *  the keys of keys_not_read_from_a_potential() are settings of the run
@@ -113,9 +113,9 @@ std::string ignore_potential_dataset_keys(core::Context &pot,
  *  not the file has ESHIFT), VALIDATION, HPOTARGET, CHECK, VERBOSE,
  *  NUMERIC, OUTFILE, AUDIT, AUDIT_SAMPLE and HEALTH_LOG. No other key
  *  (DBFILE is read: a retrain adds its DBFILE line to a copy of the
- *  potential), and no line of a file without WEIGHTS: the lines of the task
- *  file, of a configuration file that includes the potential with CONFIG
- *  (before or after the CONFIG line) and the command line are the run's
+ *  potential), and no line of a file without WEIGHTS: the lines of a
+ *  configuration file that includes the potential with CONFIG (before or
+ *  after the CONFIG line) and the command line are the run's
  *  own, so a retrain works with any number of datasets and with the run's
  *  own filters, weights, ESHIFT toggle, verbosity, output and validation, whatever version wrote the potential. */
 bool potential_line_not_read(const std::set<std::string> &file_keys,
@@ -142,8 +142,8 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *   - With @p provenance (a task of TaskFactory, whose parse did not read
  *     those lines: potential_line_not_read): @p config is left as it is;
  *     the lines are those of KeyProvenance::skipped_key_lines() whose key
- *     the run does not give itself (no line of its configuration or task
- *     file, no command-line option: a key it gives applies instead, and is
+ *     the run does not give itself (no line of its configuration file, no
+ *     command-line option: a key it gives applies instead, and is
  *     not named) -- nor, for a line of ESHIFT_ATOM or ESHIFT_DBATOM, the
  *     other toggle set true (the two choose one thing, the source of the
  *     shift, and exclude each other: the run's own toggle is its choice) --
@@ -158,10 +158,7 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *     the documentation, Retraining from a potential).", with "old.tadah,
  *     which the configuration file outer.train includes with CONFIG, is a
  *     potential ... or an EFILTER or WDBFILE line in outer.train, ..." for
- *     an included potential and "old.tadah, which the task file run.task
- *     includes with CONFIG, is a potential ... Write EFILTER or WDBFILE in
- *     the task file run.task to apply one to this run" for a task file (a
- *     run of a task file takes no command-line option). The run settings
+ *     an included potential. The run settings
  *     are named in a sentence of their own, "Its VERBOSE 2 and NUMERIC 12 were settings
  *     of the run that wrote it, not of this run, and are ignored too." (or
  *     first: "its OUTFILE old.tadah was a setting of the run that wrote
@@ -199,24 +196,15 @@ std::string ignore_configuration_potential_lines(
  *  takes it: "hpo", "analysis check_bounds") whose configuration has no
  *  @p key, a setting the run needs that names @p what ("the hpotarget
  *  file"); "tadah <task>: no <key>: " begins it. It says where the run's own
- *  goes, by where its keys came from (@p provenance; nullptr: a context a
- *  program built):
- *   - a task file (KeyOrigin::Kind::TaskFile; a run of a task file takes no
- *     command-line option): "name the hpotarget file with an HPOTARGET line
- *     in the TASK hpo section of the task file run.task, or above its first
- *     TASK line." -- "with an HPOTARGET line above the first TASK line of
- *     the task file run.task." when a line the parse did not read is the
- *     task file's own (the section is a potential, whose lines of the key
- *     are not read);
- *   - otherwise (tadah hpo -c, which the CLI gives --hpotarget, a program's
- *     context): "name the hpotarget file with --hpotarget, or with an
- *     HPOTARGET line in a configuration file without WEIGHTS." (the option
- *     only when the task has one).
- *  Each potential file whose line of @p key its parse did not read
- *  (KeyProvenance::skipped_key_lines) adds a sentence: "old.tadah is a
- *  potential (it has WEIGHTS): its HPOTARGET config.hpo line was a setting
- *  of the run that wrote it and is not read." ("The TASK hpo section of the
- *  task file run.task is a potential ..." for the section). */
+ *  goes (tadah analysis check_bounds -c, a program's context for hpo_run;
+ *  the command line gives tadah hpo -c an --hpotarget): "name the
+ *  hpotarget file with --hpotarget, or with an HPOTARGET line in a
+ *  configuration file without WEIGHTS." (the option only when the task has
+ *  one). Each potential file whose line of @p key its parse did not read
+ *  (KeyProvenance::skipped_key_lines of @p provenance; nullptr: a context a
+ *  program built) adds a sentence: "old.tadah is a potential (it has
+ *  WEIGHTS): its HPOTARGET config.hpo line was a setting of the run that
+ *  wrote it and is not read." */
 std::string missing_run_setting(const std::string &task,
                                 const std::string &key,
                                 const std::string &what,

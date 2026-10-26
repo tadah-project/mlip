@@ -173,12 +173,11 @@ enum class RefitOutputMode {
  *     blocks among them, and a top-level OPTIMIZER block, which no mode
  *     reads;
  *   - under --retarget also HPOFILEOUT, which a refit and --edit read (the
- *     hpotarget they write).
- *  NUMERIC, the precision of the files a command writes, is no key of the
- *  refit and is not refused: --edit reads it for the potential it writes,
- *  and --retarget writes only an hpotarget, whose bounds are printed %.8e
- *  whatever NUMERIC is (a task file's NUMERIC above its first TASK line
- *  applies to every task). (EAM, and RHOFORM and EMBF0 under --retarget,
+ *     hpotarget they write), and NUMERIC, the precision of the potential a
+ *     refit and --edit write: --retarget writes only an hpotarget, whose
+ *     bounds are printed %.8e whatever NUMERIC is ("... remove NUMERIC (the
+ *     hpotarget --retarget writes prints its bounds %.8e whatever NUMERIC
+ *     is)"). (EAM, and RHOFORM and EMBF0 under --retarget,
  *  have their own refusals: validate_refit_mode_keys, refit_modes.h.) A
  *  key counts as in check_refit_mode_keys (stored and not a blueprint
  *  default). The first key refused throws std::runtime_error naming it

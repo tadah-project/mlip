@@ -1,6 +1,5 @@
 #include <tadah/mlip/task_factory.h>
 #include <tadah/mlip/retired_options.h>
-#include <tadah/mlip/mlip_user_config_parser.h>
 #include <tadah/mlip/training_record.h>  // potential_line_not_read
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/context.h>
@@ -23,7 +22,7 @@ namespace {
 
 /* The blueprint entry of the task @p name. A name that is not a blueprint
  * task (an ITaskInput a program builds can pass any string; the command
- * line and a task file's parser pass only blueprint names) is a
+ * line passes only blueprint names) is a
  * std::invalid_argument that names it, the task it matches but for the
  * case of its letters, if one, and the task names: those without tasks of
  * their own, sorted. */
@@ -59,23 +58,12 @@ const core::BlueprintTask &blueprint_task(const std::string &name) {
 
 }  // namespace
 
-TaskFactory::TaskFactory(std::shared_ptr<MLIPUserConfigParser> parser)
-  : parser_(std::move(parser))
-{}
 std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
 {
-  // Definitions:
-  // base context: the context built from the key-value data in the taskInput
-  // global context: the non task section found in the task file
-  // task context: the context built from a task file
-  //
-  // The CONFIG key is always expanded and its content is injected into the context.
-  // Currently it will override the base context keys 
-  //
-  // taskInput is either fully specified task from CLI, for example:
-  // tadah train -c config.train  <- results in a single Task
-  // or a task file, for example:
-  // tadah --task tasks.tadah <- results in one or more Tasks
+  // The base context: the key-value data of the input (the command-line
+  // options). A configuration file it names (CONFIG, -c) is parsed, the
+  // files it includes with it, and the base context merged over it: the
+  // command line overrides the file. The result is the task of one command.
 
   // prepare the result vector
   std::vector<Task> tasksResult;
@@ -150,109 +138,41 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     }
   }
 
-  // Step 2: Parse files given in CLI. The parser deals gracefully with nested CONFIG keys.
-  // There is no option for nested TASK keys.
-  // The global section of task files is merged with tasks section.
-  // The task section has priority over the global section.
-  bool hasConfig = baseContext.contains("CONFIG");  // --config given in CLI
-  bool hasTask = baseContext.contains("TASK");  // --task given in CLI
-  // Without a --task file the input names the task: a blueprint task, or
-  // refused here, before any configuration file is read.
-  if (!hasTask) (void)blueprint_task(taskInput.getTaskName());
-  std::vector<std::pair<std::string, core::Context>> configVec;
-  // The lines of each section of configVec that its parse did not read.
-  std::vector<std::vector<core::SkippedKeyLine>> skippedVec;
-  std::string taskFile;   // the --task file, for its error
-  std::string baseContextConfigFile;  // the --config file, for KeyProvenance
-  if (hasConfig || hasTask) {
-    std::string userFile = hasConfig ? baseContext.get<std::string>("CONFIG") : baseContext.get<std::string>("TASK");
-    if (hasTask) taskFile = userFile;
-    else baseContextConfigFile = userFile;
-    // parser returns a vec of <taskName, Context> so we can keep multiple
-    // tasks of the same type. A potential's lines of the keys of its
-    // training record but DBFILE -- those that prepared the training data
-    // of its own fit and the settings of the run that wrote it
-    // (VALIDATION, HPOTARGET, CHECK, VERBOSE, NUMERIC, OUTFILE, AUDIT,
-    // AUDIT_SAMPLE, HEALTH_LOG) -- are not read, wherever the file and its
-    // CONFIG includes put it: every other line, and the command line, is the
-    // run's.
-    configVec = parser_->parse(userFile, /*mergeFlag=*/true,
-                               potential_line_not_read, skippedVec);
-    hasConfig ? baseContext.remove("CONFIG") : baseContext.remove("TASK");
-  }
-
-  // Step 3:  For non --task input we should only allow fully specified command to proceed
-  const auto &blueprintTasks = tadah::core::BlueprintParser::getTasksMapRef();
-  if (!hasTask) {
-    for (const auto &kv : blueprintTasks) {
-      const std::string &taskName = kv.second.taskName;
-      // if map contains taskInput.getTaskName()+"." then it is not a valid task
-      // i.e. there exist another task of higher level
-      if (taskName.find(taskInput.getTaskName() + ".") == 0) {
-        throw std::runtime_error("TaskFactory::createTasksFromInput - "
-            "taskInput.getTaskName() is not a valid task: " + taskInput.getTaskName());
-      }
+  // Step 2: the input names a blueprint task, or is refused here, before
+  // any configuration file is read; a group of tasks (DATA) is no task:
+  // only its tasks run (the command line refuses a group alone itself).
+  (void)blueprint_task(taskInput.getTaskName());
+  for (const auto &kv : tadah::core::BlueprintParser::getTasksMapRef()) {
+    if (kv.first.find(taskInput.getTaskName() + ".") == 0) {
+      throw std::runtime_error("TaskFactory::createTasksFromInput - "
+          "taskInput.getTaskName() is not a valid task: " + taskInput.getTaskName());
     }
   }
 
-  // Where each task's keys come from (KeyProvenance): the command-line
-  // options, the configuration or task file, and (below) the defaults.
-  struct Sources {
-    core::Context command_line;
-    core::Context file;
-    std::string file_path;
-    KeyOrigin::Kind file_kind;
-    std::vector<core::SkippedKeyLine> skipped;  // the file's lines not read
-  };
-  std::vector<Sources> sources;
-
-  // the taskInput.getTaskName() as a single task. A --task file's tasks are
-  // its TASK sections (below).
-  if (configVec.empty() && !hasTask) {
-    tasksResult.emplace_back(Task(taskInput.getTaskName(), baseContext));
-    sources.push_back({baseContext, core::Context(), std::string(),
-                       KeyOrigin::Kind::ConfigFile, {}});
+  // Step 3: the configuration file given with CONFIG (-c), read by CORE's
+  // parser, the files it includes with CONFIG too. A potential's lines of
+  // the keys of its training record but DBFILE -- those that prepared the
+  // training data of its own fit and the settings of the run that wrote it
+  // (VALIDATION, HPOTARGET, CHECK, VERBOSE, NUMERIC, OUTFILE, AUDIT,
+  // AUDIT_SAMPLE, HEALTH_LOG) -- are not read, wherever the file and its
+  // CONFIG includes put it: every other line, and the command line, is the
+  // run's.
+  core::Context fileContext;
+  std::string configFile;
+  std::vector<core::SkippedKeyLine> skipped;
+  if (baseContext.has_stored("CONFIG")) {
+    configFile = baseContext.get<std::string>("CONFIG");
+    fileContext = core::CoreUserConfigParser().parse(
+        configFile, potential_line_not_read, skipped);
+    baseContext.remove("CONFIG");
   }
 
-  if (hasTask) {
-    // remove the GLOBAL section from the configVec for --task input
-    if (!configVec.empty() && configVec.front().first == "GLOBAL") {
-      configVec.erase(configVec.begin());
-      skippedVec.erase(skippedVec.begin());
-    }
-    // A task file without a TASK section has nothing to run: say so rather
-    // than run nothing (or read the first element of an empty list).
-    if (configVec.empty()) {
-      throw std::runtime_error(
-          "TaskFactory::createTasksFromInput - the task file '" + taskFile +
-          "' has no TASK section (a line 'TASK <name>', with or without key "
-          "lines after it)");
-    }
-    // baseContext should be empty by now, we can ignore it.
-    // iterate configVec and copy the contexts to the tasksResult
-    for (std::size_t i = 0; i < configVec.size(); ++i) {
-      const std::string &taskName = configVec[i].first;
-      const core::Context &taskCtx = configVec[i].second;
-      // TODO only add the tasks allowed by the subcommand
-      tasksResult.emplace_back(Task(taskName, taskCtx));
-      sources.push_back({core::Context(), taskCtx, taskFile,
-                         KeyOrigin::Kind::TaskFile, skippedVec.at(i)});
-    }
-  } else if (hasConfig && !configVec.empty()) {
-    const core::Context &globalCtx = configVec.front().second;
-    const core::Context mergedCtx = core::Context::merge(globalCtx, baseContext);
-    tasksResult.emplace_back(Task(taskInput.getTaskName(), mergedCtx));
-    sources.push_back({baseContext, globalCtx,
-                       baseContextConfigFile,
-                       KeyOrigin::Kind::ConfigFile, skippedVec.front()});
-
-  } 
-
-  if (tasksResult.empty()) {
-    // No final-level tasks found, log a message and return an empty list.
-    core::Logger::instance().log(core::LogLevel::DEBUG,
-        "createTasksFromInput: No final-level tasks found. Returning empty list.");
-  }
+  // Where the task's keys come from (KeyProvenance): the command-line
+  // options, the configuration file and (below) the defaults.
+  tasksResult.emplace_back(Task(
+      taskInput.getTaskName(),
+      configFile.empty() ? baseContext
+                         : core::Context::merge(fileContext, baseContext)));
 
   // Add default keys to the context if not provided by the user
   for (std::size_t t = 0; t < tasksResult.size(); ++t) {
@@ -300,10 +220,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       }
     }
 
-    const Sources &src = sources.at(t);
-    task.setKeyProvenance(KeyProvenance(src.command_line, src.file,
-                                        src.file_path, src.file_kind,
-                                        std::move(defaulted), src.skipped));
+    task.setKeyProvenance(KeyProvenance(baseContext, fileContext, configFile,
+                                        std::move(defaulted), skipped));
   }
 
   return tasksResult;

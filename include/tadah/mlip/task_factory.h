@@ -2,70 +2,59 @@
  * @file task_factory.h
  * @brief Declares TaskFactory, responsible for converting ITaskInput into Task objects.
  *
- * TaskFactory uses MLIPUserConfigParser to handle config files specified
- * in the incoming task input. It merges user config data with the base
- * context to build fully populated Tasks.
+ * TaskFactory reads the configuration file an input gives (CONFIG, the -c
+ * file of the command line) with CORE's configuration parser and merges
+ * the input's own key-value data over it to build the Task of one command.
  */
 
 #ifndef MLIP_TASK_FACTORY_H
 #define MLIP_TASK_FACTORY_H
 
 #include <tadah/mlip/task.h>
-#include <tadah/mlip/mlip_user_config_parser.h>
 #include <tadah/mlip/itask_input.h>
 #include <vector>
-#include <memory>
 
 namespace tadah {
 namespace mlip {
 
 /**
  * @class TaskFactory
- * @brief Creates one or more Task objects from ITaskInput sources.
+ * @brief Creates the Task of one command from an ITaskInput.
  *
  * By depending on ITaskInput, TaskFactory remains unaware of any
- * front-end specifics. The optional MLIPUserConfigParser merges
- * config files (if specified) with the base key-value data from the input.
+ * front-end specifics. A configuration file the input names (CONFIG) is
+ * read with core::CoreUserConfigParser and its keys merged under the
+ * input's own key-value data.
  */
 class TaskFactory {
 public:
-  /**
-   * @brief Constructs a TaskFactory.
-   * @param parser Shared pointer to an MLIPUserConfigParser instance.
-   *               Defaults to a fresh parser if none provided.
-   */
-  explicit TaskFactory(std::shared_ptr<MLIPUserConfigParser> parser
-                       = std::make_shared<MLIPUserConfigParser>());
-  /**
-   * @brief Default destructor.
-   */
+  TaskFactory() = default;
   ~TaskFactory() = default;
 
   /**
-   * @brief Creates tasks from an ITaskInput.
+   * @brief Creates the task of an ITaskInput.
    *
    * Steps:
-   *  0. Validate the key-value data against the blueprint schema.
+   *  0. Validate the key-value data against the blueprint: a key that is
+   *     no configuration key ("task" among them) is refused.
    *  1. Build a base Context from the input's key-value data.
-   *  2. Check if a `<taskName>.config` key exists; if so, parse and merge
-   *     each config section with the base context.
-   *  3. Construct one or more Task objects, returning them in a vector.
+   *  2. If the input gives CONFIG, parse that file (and the files it
+   *     includes) with core::CoreUserConfigParser -- every line a key line,
+   *     an unknown key an error at its line and file -- and merge the base
+   *     context over it.
+   *  3. Add the blueprint defaults of the command's options.
    *
    * @param taskInput The source of key-value data and the associated task name.
-   * @return A vector of one or more Task objects.
-   * @throws std::invalid_argument when, without a task file (`TASK`), the
-   *         task name of @p taskInput is not a blueprint task, before any
-   *         configuration file is read: the message names it, the task it
-   *         matches but for the case of its letters (if one) and the task
-   *         names.
+   * @return A vector of the one Task of the command.
+   * @throws std::invalid_argument when the task name of @p taskInput is not
+   *         a blueprint task, before any configuration file is read: the
+   *         message names it, the task it matches but for the case of its
+   *         letters (if one) and the task names.
    * @throws std::runtime_error for an invalid key or value, the name of a
-   *         group of tasks (such as `DATA`), and a configuration or task
-   *         file that cannot be read.
+   *         group of tasks (such as `DATA`), and a configuration file that
+   *         cannot be read or holds a line that is not a key line.
    */
   std::vector<Task> createTasksFromInput(const ITaskInput &taskInput);
-
-private:
-  std::shared_ptr<MLIPUserConfigParser> parser_; ///< Shared parser for config files.
 };
 
 } // namespace mlip

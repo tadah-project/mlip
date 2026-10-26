@@ -1,6 +1,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/engines/analysis_descriptor_engine.h>
+#include <tadah/mlip/command_options.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/mlip/structure_db.h>
@@ -19,12 +20,16 @@ namespace engines {
 
 int AnalysisDescriptorEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
+  // The model is the potential's, as it was fitted: a run key that is no
+  // option of the command is refused before anything is read.
+  require_command_options(taskContext, "ANALYSIS.descriptor");
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
-  tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
-  // RHOFORM belongs to the potential: a DM_REAM potential without it throws
-  // whatever the task says (the task never supplies it through the merge).
-  tadah::models::check_rhoform_precedence(potContext, taskContext, pot_file);
+  // EMBF0 and RHOFORM belong to the potential, and the run gives neither:
+  // a DM_REAM potential without RHOFORM throws.
+  tadah::models::check_embf0_precedence(potContext, core::Context(), pot_file);
+  tadah::models::check_rhoform_precedence(potContext, core::Context(),
+                                          pot_file);
   potContext  = tadah::core::Context::merge(potContext, taskContext);
 
   std::vector<StructureDB> stdbs;
@@ -174,6 +179,7 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
 }
 void AnalysisDescriptorEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
+  require_command_options(context, "ANALYSIS.descriptor");
   if (!context.contains("POTENTIAL")) {
     throw std::runtime_error("AnalysisDescriptorEngine requires a potential file to be set.");
   }

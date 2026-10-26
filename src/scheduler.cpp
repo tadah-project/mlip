@@ -1,6 +1,9 @@
 #include <tadah/mlip/scheduler.h>
 #include <tadah/mlip/engines/engine_factory.h>
+#include <tadah/core/logger.h>
+#include <tadah/core/utils.h>
 #include <algorithm>
+#include <string>
 #include <iostream>
 #include <sstream>
 
@@ -37,8 +40,10 @@ int Scheduler::execute() {
 
     core::Context context = task.getContext();
 
-    core::Logger::instance().log(
-        core::LogLevel::INFO, "Executing task: ", task.getTaskName());
+    // The command as it is typed: "tadah data sample" for DATA.sample.
+    std::string command = "tadah " + core::to_lower(task.getTaskName());
+    std::replace(command.begin(), command.end(), '.', ' ');
+    core::Logger::instance().log(core::LogLevel::INFO, "Running ", command);
 
     auto engine = mlip::engines::EngineFactory::create(task.getTaskName());
     engine->validate(task);

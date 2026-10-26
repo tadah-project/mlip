@@ -189,7 +189,18 @@ TEST_CASE("RHOFORM: DM_REAM potentials carry the declared form",
   }
 }
 
-TEST_CASE("RHOFORM: potential vs task precedence", "[rhoform][precedence]") {
+/* Pins: check_rhoform_precedence of a potential and a run's configuration
+ * (tadah refit --edit -c): the potential's form, or the same form in the
+ * configuration (any case), is accepted; another form in the configuration
+ * is refused ("RHOFORM conflict: pot.tadah declares RHOFORM SIGNED"); a
+ * key-less DM_REAM potential is refused, with or without a configuration
+ * key ("old.tadah: the RHOFORM of the configuration file does not apply",
+ * "DM_REAM: RHOFORM is required"); without a DM_REAM block a key on either
+ * side is ignored.
+ * Before the fix: the message of the key-less potential said "old.tadah:
+ * the task configuration's RHOFORM does not apply": that check fails. */
+TEST_CASE("RHOFORM: potential vs configuration precedence",
+          "[rhoform][precedence]") {
   using tadah::models::check_rhoform_precedence;
   Context task;
   SECTION("the potential's form, no task key: accepted") {
@@ -218,8 +229,8 @@ TEST_CASE("RHOFORM: potential vs task precedence", "[rhoform][precedence]") {
         DensityFormError);
     REQUIRE_THROWS_WITH(
         check_rhoform_precedence(make_ream_context(""), task, "old.tadah"),
-        Catch::Contains("old.tadah: the task configuration's RHOFORM does "
-                        "not apply") &&
+        Catch::Contains("old.tadah: the RHOFORM of the configuration file "
+                        "does not apply") &&
             Catch::Contains("DM_REAM: RHOFORM is required"));
     REQUIRE_THROWS_AS(check_rhoform_precedence(make_ream_context(""),
                                                Context(), "old.tadah"),
@@ -233,8 +244,15 @@ TEST_CASE("RHOFORM: potential vs task precedence", "[rhoform][precedence]") {
   }
 }
 
-TEST_CASE("RHOFORM: tadah predict refuses a key-less DM_REAM potential "
-          "before the task is merged",
+/* Pins: tadah predict refuses a DM_REAM potential without RHOFORM
+ * (DensityFormError, "DM_REAM: RHOFORM is required"): the form belongs to
+ * the potential, and nothing else gives it.
+ * Before the fix: passes as well (a pin; the run also gave RHOFORM SIGNED,
+ * which a TASK predict section could give and the message said was not
+ * used; a run takes no key that is not an option of tadah predict now, as
+ * test_command_inputs.cpp pins). */
+TEST_CASE("RHOFORM: tadah predict refuses a DM_REAM potential without "
+          "RHOFORM",
           "[rhoform][precedence][predict]") {
   PeriodicTable::initialize();
   ScopedTempDir tmp;
@@ -247,22 +265,31 @@ TEST_CASE("RHOFORM: tadah predict refuses a key-less DM_REAM potential "
   }
   Context c;
   c.add("POTENTIAL", std::string("old.tadah"));
-  c.add("RHOFORM", std::string("SIGNED"));  // the task cannot supply it
   tadah::mlip::Task task("predict", c);
   tadah::mlip::engines::PredictEngine engine;
   REQUIRE_THROWS_AS(engine.run(task), DensityFormError);
   REQUIRE_THROWS_WITH(engine.run(task),
-                      Catch::Contains("old.tadah: the task configuration's "
-                                      "RHOFORM does not apply") &&
-                          Catch::Contains("DM_REAM: RHOFORM is required"));
+                      Catch::Contains("old.tadah: DM_REAM: RHOFORM is "
+                                      "required"));
 }
 
+/* Pins: tadah analysis bfunc, given a potential and a configuration of a
+ * program's run, refuses a RHOFORM or EMBF0 of the configuration that
+ * differs from the potential's ("RHOFORM conflict: pot.tadah declares
+ * RHOFORM SIGNED and the configuration file sets RHOFORM NONNEG", "EMBF0
+ * conflict: ... and the configuration file sets EMBF0 FREE"), and a
+ * RHOFORM for a key-less DM_REAM potential ("old.tadah: the RHOFORM of the
+ * configuration file does not apply"), writing nothing; the potential's
+ * own values run.
+ * Before the fix: the messages said "but the task configuration sets" and
+ * "the task configuration's RHOFORM does not apply": the three message
+ * checks fail. (Before the precedence check: analysis bfunc merged the
+ * potential over the run, so the potential's RHOFORM replaced a differing
+ * one of the run without a word, and a RHOFORM of the run applied to a
+ * potential without one.) */
 TEST_CASE("RHOFORM and EMBF0: tadah analysis bfunc applies the "
-          "potential-versus-task precedence of predict",
+          "potential-versus-configuration precedence",
           "[rhoform][embf0][precedence][bfunc]") {
-  // analysis bfunc merged the task over the potential without the checks
-  // of predict and analysis descriptor: a task RHOFORM replaced the
-  // potential's form, and supplied one to a key-less DM_REAM potential.
   PeriodicTable::initialize();
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("pot.tadah", make_ream_context("SIGNED"));
@@ -287,21 +314,23 @@ TEST_CASE("RHOFORM and EMBF0: tadah analysis bfunc applies the "
     REQUIRE_THROWS_AS(engine.run(t), DensityFormError);
     REQUIRE_THROWS_WITH(engine.run(t),
                         Catch::Contains("RHOFORM conflict: pot.tadah declares "
-                                        "RHOFORM SIGNED but the task "
-                                        "configuration sets RHOFORM NONNEG"));
+                                        "RHOFORM SIGNED and the "
+                                        "configuration file sets RHOFORM "
+                                        "NONNEG"));
   }
   {
     auto t = bfunc("old.tadah", "RHOFORM", "SIGNED");
     REQUIRE_THROWS_WITH(engine.run(t),
-                        Catch::Contains("old.tadah: the task configuration's "
-                                        "RHOFORM does not apply"));
+                        Catch::Contains("old.tadah: the RHOFORM of the "
+                                        "configuration file does not "
+                                        "apply"));
   }
   {
     auto t = bfunc("pot.tadah", "EMBF0", "FREE");
     REQUIRE_THROWS_WITH(engine.run(t),
                         Catch::Contains("EMBF0 conflict: pot.tadah declares "
-                                        "EMBF0 ZERO but the task "
-                                        "configuration sets EMBF0 FREE"));
+                                        "EMBF0 ZERO and the configuration "
+                                        "file sets EMBF0 FREE"));
   }
   REQUIRE_FALSE(fs::exists("bfunc.txt"));
   // the potential's own values in the task: the analysis runs

@@ -60,9 +60,9 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   // run that wrote it (VERBOSE, NUMERIC, OUTFILE, AUDIT, ...) -- are not
   // read for this run (a potential of an earlier version has them as key
   // lines): TaskFactory's
-  // parse skipped them wherever the configuration or task file has the
-  // potential (tadah train -c pot.tadah plus a DBFILE line, CONFIG
-  // pot.tadah in a file or a TASK train section), and the WARNING names
+  // parse skipped them wherever the configuration file has the potential
+  // (tadah train -c pot.tadah plus a DBFILE line, CONFIG pot.tadah in a
+  // file), and the WARNING names
   // those tadah train reads; a context without a KeyProvenance is taken as
   // one file, and the dataset keys are removed here (no parse stores a
   // potential's run settings, so a program's own are kept). The run's own

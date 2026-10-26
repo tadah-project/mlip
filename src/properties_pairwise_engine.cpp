@@ -1,6 +1,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/engines/properties_pairwise_engine.h>
+#include <tadah/mlip/command_options.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
 #include <tadah/core/core_user_config_parser.h>
@@ -34,12 +35,16 @@ static void printPotentialData(
 
 int PropertiesPairwiseEngine::run(mlip::Task &task) {
   const auto &taskContext = task.getContext();
+  // The model is the potential's, as it was fitted: a run key that is no
+  // option of the command is refused before anything is read.
+  require_command_options(taskContext, "PROPERTIES.pairwise");
   std::string pot_file= taskContext.get<std::string>("POTENTIAL");
   core::Context potContext = core::CoreUserConfigParser().parse(pot_file);
-  tadah::models::check_embf0_precedence(potContext, taskContext, pot_file);
-  // RHOFORM belongs to the potential: a DM_REAM potential without it throws
-  // whatever the task says (the task never supplies it through the merge).
-  tadah::models::check_rhoform_precedence(potContext, taskContext, pot_file);
+  // EMBF0 and RHOFORM belong to the potential, and the run gives neither:
+  // a DM_REAM potential without RHOFORM throws.
+  tadah::models::check_embf0_precedence(potContext, core::Context(), pot_file);
+  tadah::models::check_rhoform_precedence(potContext, core::Context(),
+                                          pot_file);
   potContext  = tadah::core::Context::merge(potContext, taskContext);
 
   // generate range
@@ -179,6 +184,7 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
 }
 void PropertiesPairwiseEngine::validate(const tadah::mlip::Task &task) {
   const auto &taskContext = task.getContext();
+  require_command_options(taskContext, "PROPERTIES.pairwise");
   if (!taskContext.contains("POTENTIAL")) {
     throw std::runtime_error("PropertiesPairwiseEngine requires a potential file to be set.");
   }

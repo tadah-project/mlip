@@ -179,12 +179,17 @@ constexpr const char *kFitKeys[] = {
 
 // Read by a refit of an EAM file and by --edit (the hpotarget they write),
 // not by --retarget: its output is OUTFILE (-o), or its input with
-// --in-place. (NUMERIC, the precision of the files a command writes, is no
-// key of the refit and is not refused: --retarget writes only an
-// hpotarget, whose bounds every hpotarget writer prints %.8e whatever
-// NUMERIC is, so it has nothing to apply it to; a task file's NUMERIC
-// above its first TASK line applies to every task.)
-constexpr const char *kFitAndEditKeys[] = {"HPOFILEOUT"};
+// --in-place. NUMERIC, the precision of the potential a refit and --edit
+// write, likewise: --retarget writes only an hpotarget, whose bounds every
+// hpotarget writer prints %.8e whatever NUMERIC is. Each with what the
+// refusal adds.
+constexpr struct {
+  const char *key;
+  const char *tail;
+} kFitAndEditKeys[] = {
+    {"HPOFILEOUT", " (the file --retarget writes is -o, OUTFILE)"},
+    {"NUMERIC", " (the hpotarget --retarget writes prints its bounds %.8e "
+                "whatever NUMERIC is)"}};
 
 // Read by the knot families only (compact mode): the compact fitter applies
 // the coalescence guard (CompactBlipFitter::merge_close_knots and the
@@ -439,10 +444,10 @@ void check_refit_output_mode_keys(const Context &c, RefitOutputMode mode,
     refuse("the OPTIMIZER block",
            "no mode of tadah refit reads a top-level OPTIMIZER block", "");
   if (mode == RefitOutputMode::Retarget)
-    for (const char *key : kFitAndEditKeys)
-      if (configured(c, provenance, key))
-        refuse(key, "only a refit of an EAM file and --edit read it",
-               " (the file --retarget writes is -o, OUTFILE)");
+    for (const auto &k : kFitAndEditKeys)
+      if (configured(c, provenance, k.key))
+        refuse(k.key, "only a refit of an EAM file and --edit read it",
+               k.tail);
 }
 
 RefitNumbers read_refit_numbers(const Context &c) {

@@ -6,10 +6,8 @@
 // the structures (eweight, fweight, sweight) are written as they are. Its
 // rescaling of the priorities (RESCALE, with THRESHOLD, FORCE and STRESS),
 // which replaced the priorities of the data by inverse magnitudes, is
-// retired: a TASK data balance section or a command line that gives one
-// of its options is refused with the reason, and so is a RESCALE line of
-// the GLOBAL section of a task file with a TASK data balance section
-// (blueprint: test_blueprint_retired.cpp).
+// retired: a command line that gives one of its options is refused with
+// the reason (blueprint: test_blueprint_retired.cpp).
 
 #include "catch2/catch.hpp"
 
@@ -174,34 +172,18 @@ std::string factory_error(const Input &input) {
 
 }  // namespace
 
-/* Pins: a TASK data balance section of a task file that gives RESCALE,
- * THRESHOLD, FORCE or STRESS, the options of the rescaling Tadah! 1.5.0
- * applied, is refused before any task runs, naming the key, its line of
- * the file, the command and why ("tadah data balance shifts energies
- * only"); a GLOBAL section's FORCE true (the setting of another task of
- * the file) is accepted; the command line's --rescale, --threshold,
- * --force and --stress are refused alike, naming the option.
- * Before the fix: the task file ran, the four keys ignored (the output
- * kept the priorities, where 1.5.0 rescaled them), and the command line
- * did not know the options. */
+/* Pins: the command line's --rescale, --threshold, --force and --stress,
+ * the options of the rescaling Tadah! 1.5.0 applied, are refused by
+ * tadah data balance, naming the option and why ("tadah data balance
+ * shifts energies only").
+ * Before the fix: the command line did not know the options. */
 TEST_CASE("tadah data balance refuses the options of the retired rescaling",
           "[data_balance][retired]") {
   tadah::core::PeriodicTable::initialize();
   ScratchCwd cwd;
   write_file("db4.dat", 2, -11.2);
-  for (const std::string line :
-       {"RESCALE true", "THRESHOLD 0.1", "FORCE true", "STRESS true"}) {
-    const std::string key = line.substr(0, line.find(' '));
+  for (const std::string key : {"RESCALE", "THRESHOLD", "FORCE", "STRESS"}) {
     INFO(key);
-    {
-      std::ofstream t("b4.task");
-      t << "TASK data balance\n  DBFILE db4.dat\n  ESHIFT -8.0\n  " << line
-        << "\n  OUTFILE balX.dat\n";
-    }
-    CHECK_THAT(factory_error(Input("", {{"task", {"b4.task"}}})),
-               Contains(key) && Contains("line 4 of b4.task") &&
-                   Contains("tadah data balance") &&
-                   Contains("tadah data balance shifts energies only"));
     std::string option = key;
     for (char &ch : option) ch = static_cast<char>(std::tolower(ch));
     std::vector<std::string> value = {"true"};
@@ -214,81 +196,4 @@ TEST_CASE("tadah data balance refuses the options of the retired rescaling",
                Contains("--" + option) &&
                    Contains("tadah data balance shifts energies only"));
   }
-  {
-    std::ofstream t("b5.task");
-    t << "FORCE true\nTASK data balance\n  DBFILE db4.dat\n  ESHIFT -8.0\n"
-         "  OUTFILE balX.dat\n";
-  }
-  CHECK(factory_error(Input("", {{"task", {"b5.task"}}})).empty());
-}
-
-/* Pins: the GLOBAL section of a task file sets the keys of every task of
- * the file, so a RESCALE line in it reaches a TASK data balance section,
- * as it did in Tadah! 1.5.0, which rescaled the priorities with it: the
- * file is refused before any task runs, whatever the value, naming the
- * line in the GLOBAL section, the task it reaches and why ("tadah data
- * balance shifts energies only", replaced by the priorities of the data).
- * When another TASK section of the file takes RESCALE (TASK analysis
- * bfunc, --rescale), the message names it and its line: the RESCALE line
- * meant for it belongs in that section. A GLOBAL RESCALE line without a
- * TASK data balance section is accepted, and so are GLOBAL lines of
- * THRESHOLD, FORCE and STRESS, which in 1.5.0 acted only with RESCALE
- * (their 1.5.0 output equals that without them). A RESCALE line of a file
- * that a TASK data balance or the GLOBAL section includes with CONFIG is
- * refused alike, naming its line of that file.
- * Before the fix: the GLOBAL line reached the task and was ignored (the
- * output kept the priorities, which 1.5.0 rescaled), and a TASK section
- * was refused only for its own lines, so a RESCALE line of a file it
- * included was ignored too. */
-TEST_CASE("tadah data balance refuses a RESCALE line of the GLOBAL section "
-          "of a task file",
-          "[data_balance][retired]") {
-  tadah::core::PeriodicTable::initialize();
-  ScratchCwd cwd;
-  write_file("db4.dat", 2, -11.2);
-  const std::string balance_task =
-      "TASK data balance\n  DBFILE db4.dat\n  ESHIFT -8.0\n"
-      "  OUTFILE balX.dat\n";
-  auto run = [](const std::string &file, const std::string &text) {
-    std::ofstream(file) << text;
-    return factory_error(Input("", {{"task", {file}}}));
-  };
-  const std::string why = "tadah data balance shifts energies only";
-  for (const std::string value : {"true", "false"}) {
-    INFO("RESCALE " << value);
-    const std::string err =
-        run("g1.task", "RESCALE " + value + "\n" + balance_task);
-    CHECK_THAT(err, Contains("RESCALE (line 1 of g1.task) in the GLOBAL "
-                             "section reaches TASK data balance (the GLOBAL "
-                             "section sets the keys of every task of the "
-                             "file): --rescale of tadah data balance is "
-                             "retired: ") &&
-                        Contains("Replaced by: the priorities of the data") &&
-                        Contains(why));
-    CHECK(err.find("belongs in") == std::string::npos);
-  }
-  CHECK_THAT(run("g2.task", "# analysis and balance\nRESCALE true\n"
-                            "TASK analysis bfunc\n" + balance_task),
-             Contains("RESCALE (line 2 of g2.task) in the GLOBAL section "
-                      "reaches TASK data balance") &&
-                 Contains(why) &&
-                 Contains(". A RESCALE line meant for TASK analysis bfunc "
-                          "(line 3 of g2.task) belongs in that TASK "
-                          "section."));
-  CHECK(run("g3.task", "RESCALE true\nTASK analysis bfunc\n").empty());
-  CHECK(run("g4.task", "FORCE true\nSTRESS true\nTHRESHOLD 0.1 0.1 0.1\n" +
-                           balance_task)
-            .empty());
-  std::ofstream("inc.cfg") << "# shared\nRESCALE true\n";
-  CHECK_THAT(run("g5.task", "CONFIG inc.cfg\n" + balance_task),
-             Contains("RESCALE (line 2 of inc.cfg) in the GLOBAL section "
-                      "reaches TASK data balance") &&
-                 Contains(why));
-  CHECK_THAT(run("g6.task", "TASK data balance\n  CONFIG inc.cfg\n"
-                            "  DBFILE db4.dat\n  ESHIFT -8.0\n"
-                            "  OUTFILE balX.dat\n"),
-             Contains("RESCALE (line 2 of inc.cfg) in TASK data balance: "
-                      "--rescale of tadah data balance is retired: ") &&
-                 Contains(why));
-  CHECK_FALSE(fs::exists("balX.dat"));
 }

@@ -5,12 +5,15 @@
 #include "catch2/catch.hpp"
 
 #include <tadah/core/context.h>
+#include <tadah/core/logger.h>
 #include <tadah/mlip/engines/engine_factory.h>
 #include <tadah/mlip/engines/iengine.h>
 #include <tadah/mlip/scheduler.h>
 #include <tadah/mlip/task.h>
 
+#include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -120,4 +123,36 @@ TEST_CASE("EngineFactory: a task registered as not built is refused with its "
   CHECK(EngineFactory::create("TEST.factory.notbuilt") != nullptr);
   EngineFactory::registerNotBuilt("TEST.factory.notbuilt", msg);
   CHECK(thrown([] { EngineFactory::create("TEST.factory.notbuilt"); }) == msg);
+}
+
+/* Pins: execute() writes, at INFO, one line for each task it runs, naming
+ * the command as it is typed: "Running tadah test counting" for the task
+ * TEST.counting (as "Running tadah train" for TRAIN and "Running tadah data
+ * sample" for DATA.sample).
+ * Before the fix: "Executing task: TEST.counting", the name of the task in
+ * the blueprint's form. */
+TEST_CASE("Scheduler: the INFO line of a task names its command as typed",
+          "[scheduler]") {
+  EngineFactory::registerEngine("TEST.counting",
+                                [] { return std::make_unique<CountingEngine>(); });
+  CountingEngine::runs = 0;
+  auto &logger = tadah::core::Logger::instance();
+  const tadah::core::LogLevel level = logger.getLogLevel();
+  std::ostringstream out;
+  std::streambuf *old = std::cout.rdbuf(out.rdbuf());
+  logger.setLogLevel(tadah::core::LogLevel::INFO);
+  int status = -1;
+  {
+    Scheduler s;
+    s.addTask(task("TEST.counting"));
+    status = s.execute();
+  }
+  logger.setLogLevel(level);
+  std::cout.rdbuf(old);
+  INFO(out.str());
+  CHECK(status == 0);
+  CHECK(CountingEngine::runs == 1);
+  CHECK(out.str().find("INFO: Running tadah test counting\n") !=
+        std::string::npos);
+  CHECK(out.str().find("Executing task") == std::string::npos);
 }
