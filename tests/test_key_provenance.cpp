@@ -526,18 +526,17 @@ std::vector<std::string> skipped_of(const KeyProvenance &p) {
  * ESHIFT; no other key (ESHIFT, LSCALE, DBFILE, WEIGHTS), no retired key
  * (UNCERTAINTY among them: a parse records its line and a fit refuses it),
  * and no key of a file without WEIGHTS. TaskFactory parses every
- * -c and --task file under it,
+ * -c file under it,
  * and the task's KeyProvenance lists the lines it did not read:
- *   - `tadah --task run.task`, its lines above the first TASK line
- *     "WDBFILE 2", its TASK train section "CONFIG pot", "EFILTER -1 1",
- *     "DBFILE kprov_a.db", pot being "ATOM Ta", "WEIGHTS 0.25 -0.5",
- *     "ESHIFT 0.001", "EFILTER 5 6", "ESHIFT_DBATOM true", "WDBFILE 1 1",
- *     "ZERO_COM_FORCE false": the train task's EFILTER is -1 1 and its
- *     WDBFILE 2 (task file), ESHIFT 0.001 and WEIGHTS are the potential's,
- *     ESHIFT_DBATOM and ZERO_COM_FORCE false the blueprint defaults
- *     (Default); skipped_key_lines() is pot:4 EFILTER 5 6, pot:5
+ *   - `tadah train -c outer`, outer being "WDBFILE 2", "CONFIG pot",
+ *     "EFILTER -1 1", "DBFILE kprov_a.db", pot being "ATOM Ta", "WEIGHTS
+ *     0.25 -0.5", "ESHIFT 0.001", "EFILTER 5 6", "ESHIFT_DBATOM true",
+ *     "WDBFILE 1 1", "ZERO_COM_FORCE false": the train task's EFILTER is -1
+ *     1 and its WDBFILE 2 (configuration file), ESHIFT 0.001 and WEIGHTS are
+ *     the potential's, ESHIFT_DBATOM and ZERO_COM_FORCE false the blueprint
+ *     defaults (Default); skipped_key_lines() is pot:4 EFILTER 5 6, pot:5
  *     ESHIFT_DBATOM true, pot:6 WDBFILE 1 1, pot:7 ZERO_COM_FORCE false;
- *     file_path() run.task, file_kind() TaskFile;
+ *     file_path() outer, file_kind() ConfigFile;
  *   - `tadah train -c pot`: no EFILTER and no WDBFILE in the context, the
  *     same four lines skipped, file_path() pot, file_kind() ConfigFile.
  * Before the fix: does not compile (no potential_line_not_read, no
@@ -586,13 +585,12 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
   const std::vector<std::string> pot_lines = {
       pot.path + ":4 EFILTER 5 6", pot.path + ":5 ESHIFT_DBATOM true",
       pot.path + ":6 WDBFILE 1 1", pot.path + ":7 ZERO_COM_FORCE false"};
-  SECTION("a task file that includes the potential") {
+  SECTION("a configuration file that includes the potential") {
     const ProvFile run("dk_run", "WDBFILE 2\n"
-                                 "TASK train\n"
                                  "CONFIG " + pot.path + "\n"
                                  "EFILTER -1 1\n"
                                  "DBFILE kprov_a.db\n");
-    const auto tasks = make_tasks("", {{"task", {run.path}}});
+    const auto tasks = make_tasks("TRAIN", {{"config", {run.path}}});
     REQUIRE(tasks.size() == 1);
     const Context &c = tasks[0].getContext();
     CHECK(c("EFILTER") == std::vector<std::string>{"-1", "1"});
@@ -600,14 +598,14 @@ TEST_CASE("KeyProvenance: TaskFactory does not read a potential's lines of "
     CHECK(c("ESHIFT") == std::vector<std::string>{"0.001"});
     CHECK(c("WEIGHTS") == std::vector<std::string>{"0.25", "-0.5"});
     const KeyProvenance &p = provenance_of(tasks[0]);
-    CHECK(p.origin("EFILTER").kind == Kind::TaskFile);
-    CHECK(p.origin("WDBFILE").kind == Kind::TaskFile);
+    CHECK(p.origin("EFILTER").kind == Kind::ConfigFile);
+    CHECK(p.origin("WDBFILE").kind == Kind::ConfigFile);
     CHECK(p.origin("ESHIFT_DBATOM").kind == Kind::Default);
     CHECK(p.origin("ZERO_COM_FORCE").kind == Kind::Default);
     CHECK_FALSE(c.get<bool>("ESHIFT_DBATOM"));
     CHECK(skipped_of(p) == pot_lines);
     CHECK(p.file_path() == run.path);
-    CHECK(p.file_kind() == Kind::TaskFile);
+    CHECK(p.file_kind() == Kind::ConfigFile);
   }
   SECTION("the potential as the configuration file") {
     const auto tasks = make_tasks("TRAIN", {{"config", {pot.path}}});

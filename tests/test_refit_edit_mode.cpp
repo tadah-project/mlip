@@ -729,6 +729,16 @@ TEST_CASE_METHOD(PTFixture,
 //  RHOFORM / EMBF0 in the configuration of --edit and --retarget (C7)
 // ---------------------------------------------------------------------------
 
+/* Pins: tadah refit --edit refuses a RHOFORM or EMBF0 of its configuration
+ * that differs from the potential's, naming the potential, both values and
+ * the configuration file ("RHOFORM conflict: in.tadah declares RHOFORM
+ * NONNEG and the configuration file sets RHOFORM MONOTONE", "EMBF0
+ * conflict: in.tadah declares EMBF0 ZERO and the configuration file sets
+ * EMBF0 FREE. EMBF0 is a property of the potential (...): the potential
+ * file sets it, not the configuration file."), and writes nothing; the
+ * potential's own values are accepted.
+ * Before the fix: the messages said "but the task configuration sets" (and
+ * "edit the potential file instead"): the two message checks fail. */
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit: a RHOFORM or EMBF0 in the configuration that "
                  "differs from the potential's is a conflict",
@@ -748,8 +758,8 @@ TEST_CASE_METHOD(PTFixture,
     REQUIRE_THROWS_AS(RefitEngine().run(t), tadah::models::DensityFormError);
     REQUIRE_THROWS_WITH(RefitEngine().run(t),
                         Catch::Contains("RHOFORM conflict: in.tadah declares "
-                                        "RHOFORM NONNEG but the task "
-                                        "configuration sets RHOFORM "
+                                        "RHOFORM NONNEG and the "
+                                        "configuration file sets RHOFORM "
                                         "MONOTONE"));
     REQUIRE_FALSE(fs::exists("pot_edited.tadah"));
   }
@@ -757,8 +767,13 @@ TEST_CASE_METHOD(PTFixture,
     Task t = edit("EMBF0", "FREE");
     REQUIRE_THROWS_WITH(RefitEngine().run(t),
                         Catch::Contains("EMBF0 conflict: in.tadah declares "
-                                        "EMBF0 ZERO but the task "
-                                        "configuration sets EMBF0 FREE"));
+                                        "EMBF0 ZERO and the configuration "
+                                        "file sets EMBF0 FREE. EMBF0 is a "
+                                        "property of the potential (its "
+                                        "weights were fitted in that "
+                                        "embedding reference): the potential "
+                                        "file sets it, not the configuration "
+                                        "file."));
     REQUIRE_FALSE(fs::exists("pot_edited.tadah"));
   }
   SECTION("the potential's own values are accepted") {
@@ -904,12 +919,14 @@ TEST_CASE_METHOD(PTFixture,
    * writes is -o, OUTFILE)"). Nothing is written (no pot_edited.tadah,
    * refit_edited.hpotarget or a_retargeted.hpotarget, the --retarget
    * default; it was a_edited.hpotarget before --retarget's default name
-   * became <input>_retargeted). NUMERIC, the precision
-   * of the potential and dataset files a command writes and no key of the
-   * refit, passes under --retarget, which writes neither: validate()
-   * accepts NUMERIC 12 and run() writes a_retargeted.hpotarget byte-identical
-   * to the run without it (its bounds are printed %.8e whatever NUMERIC
-   * is); --edit reads HPOFILEOUT and NUMERIC (new.hpotarget written). The
+   * became <input>_retargeted). Under --retarget also NUMERIC, the
+   * precision of the potential and dataset files a command writes, which
+   * --retarget writes neither of: "tadah refit --retarget: NUMERIC has no
+   * effect under --retarget: only a refit of an EAM file and --edit read
+   * it; remove NUMERIC (the hpotarget --retarget writes prints its bounds
+   * %.8e whatever NUMERIC is)", and the run without it writes
+   * a_retargeted.hpotarget; --edit reads HPOFILEOUT and NUMERIC
+   * (new.hpotarget written). The
    * blueprint defaults the task factory stores for every refit
    * (KeyProvenance Default: HPOFILEOUT refit.hpotarget, OUTFILE pot.tadah,
    * REFIT_OBJECTIVE energy, REFIT_CURVE_*, REFIT_COMPACT_MERGE auto,
@@ -923,12 +940,9 @@ TEST_CASE_METHOD(PTFixture,
    * which it never read);
    * in the defaults section the defaults passed as well (a pin) and the
    * keys written in the file were accepted (no exception, the outputs
-   * written). NUMERIC under --retarget passed as well (a pin); the first
-   * version of the rule refused it ("tadah refit --retarget: NUMERIC has
-   * no effect under --retarget: only a refit of an EAM file and --edit
-   * read it; remove NUMERIC"), which stopped every --retarget TASK of a
-   * task file that sets NUMERIC above its first TASK line, for every
-   * task. */
+   * written). Before the fix that refuses NUMERIC under --retarget:
+   * validate() accepted NUMERIC 12 and run() wrote a_retargeted.hpotarget:
+   * the NUMERIC refusal checks fail. */
   ScopedTempDir tmp;
   TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
   tadah::mlip::engines::write_hpotarget("a.hpotarget", make_knot_pot(), 5.0);
@@ -978,8 +992,8 @@ TEST_CASE_METHOD(PTFixture,
                                         kOptimizerUnread));
     }
   }
-  SECTION("--retarget refuses HPOFILEOUT, which --edit reads, and passes "
-          "NUMERIC") {
+  SECTION("--retarget refuses HPOFILEOUT and NUMERIC, which --edit "
+          "reads") {
     Context c = retarget();
     c.add("HPOFILEOUT", std::string("new.hpotarget"));
     check_refused(Task("refit", c),
@@ -989,25 +1003,18 @@ TEST_CASE_METHOD(PTFixture,
                                       "OUTFILE)"));
     CHECK_FALSE(fs::exists("new.hpotarget"));
     // NUMERIC is the precision of a written potential or dataset, which
-    // --retarget does not write: it passes, and the hpotarget is the one
-    // written without it
-    const auto slurp = [](const std::string &f) {
-      std::ifstream is(f);
-      return std::string((std::istreambuf_iterator<char>(is)),
-                         std::istreambuf_iterator<char>());
-    };
+    // --retarget does not write: it has no effect there
+    Context n = retarget();
+    n.add("NUMERIC", std::string("12"));
+    check_refused(Task("refit", n),
+                  output_mode_refusal("--retarget", "NUMERIC", kFitEditReads,
+                                      " (the hpotarget --retarget writes "
+                                      "prints its bounds %.8e whatever "
+                                      "NUMERIC is)"));
     for (const auto &f : outputs) fs::remove(f);
     Task plain("refit", retarget());
     REQUIRE(RefitEngine().run(plain) == EXIT_SUCCESS);
-    const std::string without = slurp("a_retargeted.hpotarget");
-    REQUIRE_FALSE(without.empty());
-    fs::remove("a_retargeted.hpotarget");
-    Context n = retarget();
-    n.add("NUMERIC", std::string("12"));
-    Task numeric("refit", n);
-    CHECK_NOTHROW(RefitEngine().validate(numeric));
-    CHECK(RefitEngine().run(numeric) == EXIT_SUCCESS);
-    CHECK(slurp("a_retargeted.hpotarget") == without);
+    CHECK(fs::exists("a_retargeted.hpotarget"));
     // --edit reads both
     Context e = edit();
     e.add("HPOFILEOUT", std::string("new.hpotarget"));
@@ -1201,8 +1208,8 @@ TEST_CASE_METHOD(PTFixture,
  * --retarget writes pot.tadah (the hpotarget, under the name asked for) and
  * no a_retargeted.hpotarget; the blueprint defaults the task factory stores
  * (KeyOrigin::Default) still give the edited names. --retarget --in-place
- * with an explicit OUTFILE pot.tadah (a configuration or task file, which
- * the command line's excludes cannot see) is refused as -o is.
+ * with an explicit OUTFILE pot.tadah (a configuration file, which the
+ * command line's excludes cannot see) is refused as -o is.
  * Before the fix: a value equal to the default string counted as unset, so
  * both modes silently wrote pot_edited.tadah / refit_edited.hpotarget /
  * a_retargeted.hpotarget instead, and --in-place ran with OUTFILE
@@ -1283,7 +1290,7 @@ TEST_CASE_METHOD(PTFixture,
   CHECK_FALSE(fs::exists("pot.tadah"));
   Keys in_place = out_only;
   in_place.push_back({"IN_PLACE", "true"});
-  Task ip = task_of(retarget, in_place, KeyOrigin::Kind::TaskFile);
+  Task ip = task_of(retarget, in_place, KeyOrigin::Kind::ConfigFile);
   CHECK_THROWS_WITH(RefitEngine().run(ip),
                     "tadah refit --retarget: --in-place and -o are mutually "
                     "exclusive.");
