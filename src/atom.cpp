@@ -1,4 +1,5 @@
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/stream_format_guard.h>
 #include <tadah/core/periodic_table.h>
 #include <iomanip>
 namespace tadah {
@@ -22,6 +23,7 @@ Atom::Atom(const tadah::core::Element &element,
 
 std::ostream& operator<<(std::ostream& os, const Atom& atom)
 {
+  const StreamFormatGuard keep(os);
   os     << (tadah::core::Element&)atom;
   os     << "Coordinates:  " << std::left << atom.position << std::endl;
   os     << "Force:        " << std::left << atom.force << std::endl;

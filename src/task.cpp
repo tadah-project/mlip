@@ -94,51 +94,6 @@ std::string Task::generateTimestamp() const {
   return oss.str();
 }
 
-std::string Task::serialize() const {
-  std::ostringstream oss;
-  oss << taskID_ << std::endl
-      << command_ << std::endl
-      << timestamp_ << std::endl
-      << priority_ << std::endl;
-
-  // The context is turned into lines of "KEY val1 val2 ..."
-  std::vector<char> buffer = context_.serialize();
-  // Convert those chars back into string lines
-  oss.write(buffer.data(), buffer.size());
-
-  return oss.str();
-}
-
-void Task::deserialize(const std::string &data) {
-
-  std::istringstream iss(data);
-  std::string line;
-
-  if (!std::getline(iss, taskID_)) {
-    throw std::runtime_error("Task::deserialize - missing or malformed ID line");
-  }
-  if (!std::getline(iss, command_)) {
-    throw std::runtime_error("Task::deserialize - missing or malformed COMMAND line");
-  }
-  if (!std::getline(iss, timestamp_)) {
-    throw std::runtime_error("Task::deserialize - missing or malformed TIMESTAMP line");
-  }
-  if (!std::getline(iss, line)) {
-    throw std::runtime_error("Task::deserialize - missing or malformed PRIORITY line");
-  }
-  priority_ = std::stoi(line);
-
-  std::string remainder;
-  if (!iss.eof()) {
-  // Copy everything left in iss into remainder
-  remainder.assign(std::istreambuf_iterator<char>(iss),
-      std::istreambuf_iterator<char>());
-  }
-
-  std::vector<char> contextData(remainder.begin(), remainder.end());
-  context_.deserialize(contextData);
-}
-
 //-------------------------------------------------------------------------
 // print(): for quick debug
 //-------------------------------------------------------------------------

@@ -81,7 +81,8 @@ struct Atom: public tadah::core::Element {
     /** Hold force on the atom. */
     tadah::core::Vec3d force;
 
-    /** Print object summary to the stream */
+    /** Print object summary to the stream, leaving its format (flags,
+     *  precision, width, fill) as it found it. */
     friend std::ostream& operator<<(std::ostream& os, const Atom& atom);
 
     /** Return true if both atoms are the same.

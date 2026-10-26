@@ -7,7 +7,9 @@
 //   * AuditReport::any_fail / any_warn / log() are sane.
 //   * enforce_audit_mode throws iff (mode==Error && any_fail()).
 //   * run_critical_optim_audit flags Critical seed params absent from
-//     the OPTIM key set, ignores those that are covered.
+//     the OPTIM key set of a descriptor that has a key in it, ignores
+//     those that are covered, and flags nothing for a descriptor with no
+//     key in the search space.
 //   * run_preflight_soft on a synthetic ρ-collapse data set fires the
 //     DM_mBlipEnv cross_param_check (the silent ρ-collapse regression).
 
@@ -22,6 +24,7 @@
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/param_meta.h>
 
+#include <set>
 #include <sstream>
 
 using namespace tadah::mlip;
@@ -90,6 +93,18 @@ static DescriptorMeta make_dm_mblipenv_like_meta() {
   rcutmb.crit      = Criticality::Critical;
   rcutmb.scope     = PairScope::Global;
   dm.params.push_back(std::move(rcutmb));
+
+  // A key of the descriptor that is not Critical: searching it puts the
+  // descriptor in the search space without covering a Critical key.
+  ParamMeta rcutenv;
+  rcutenv.key      = "RCUTENV";
+  rcutenv.arg_pos  = -1;
+  rcutenv.scale    = Scale::Density;
+  rcutenv.units    = "ρ";
+  rcutenv.role     = "Inverse-cutoff envelope on ρ";
+  rcutenv.crit     = Criticality::Recommended;
+  rcutenv.scope    = PairScope::Global;
+  dm.params.push_back(std::move(rcutenv));
 
   // ρ-collapse cross-param check.
   dm.cross_param_checks.push_back(
@@ -173,8 +188,15 @@ TEST_CASE("preflight_audit: AuditReport::any_fail / any_warn", "[preflight_audit
   REQUIRE(rep.any_fail());
 }
 
+/* Pins: with a key of the descriptor in the search space (RCUTENV, not
+ * Critical), its fixed Critical keys left out of it (CGRIDMB 2.9, RCUTMB)
+ * are flagged at WARN, each message naming its own key; with them in the
+ * search space, none is.
+ * Before the fix: passes as well (a pin; the case searched nothing, and
+ * every Critical key of every descriptor was flagged). */
 TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out of OPTIM", "[preflight_audit]") {
-  // Minimal seed: fixed CGRIDMB, RCUTMB, SGRIDMB and no OPTIM coverage.
+  // Minimal seed: fixed CGRIDMB, RCUTMB, SGRIDMB; the search space holds
+  // RCUTENV, a key of the descriptor that is not Critical.
   // We supply the descriptor meta directly so the test does not depend
   // on dm_all.cpp's static registrations being live in the test binary.
   /* A centre away from the origin: one that can miss the neighbour shells
@@ -187,9 +209,10 @@ TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out 
   std::vector<MetaPair> metas;
   metas.emplace_back("DM_mBlipEnv", make_dm_mblipenv_like_meta());
 
-  // No OPTIM keys at all — every Critical fixed param should be flagged.
-  std::vector<std::string> no_optim;
-  auto rep = run_critical_optim_audit_with_metas(seed, no_optim, metas);
+  // The descriptor is searched (RCUTENV): every Critical fixed param
+  // left out of the search should be flagged.
+  const std::vector<std::string> rcutenv_only = {"RCUTENV"};
+  auto rep = run_critical_optim_audit_with_metas(seed, rcutenv_only, metas);
 
   // We expect at least CGRIDMB to be flagged: a fixed CGRIDMB outside the
   // data's support collapses the density block without any error.
@@ -217,7 +240,8 @@ TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out 
   REQUIRE(saw_rcutmb);
 
   // When CGRIDMB and RCUTMB are in the OPTIM set, they should NOT be flagged.
-  std::vector<std::string> with_optim = {"CGRIDMB", "RCUTMB", "SGRIDMB"};
+  std::vector<std::string> with_optim = {"CGRIDMB", "RCUTMB", "SGRIDMB",
+                                        "RCUTENV"};
   auto rep2 = run_critical_optim_audit_with_metas(seed, with_optim, metas);
   for (const auto& m : rep2.messages) {
     REQUIRE(m.param_key != "CGRIDMB");
@@ -232,14 +256,17 @@ TEST_CASE("preflight_audit: critical_optim_audit flags a fixed CGRIDMB left out 
  * CGRIDMB whose every value is 0 is not flagged; the width (SGRIDMB) and
  * the cutoff (RCUTMB) still are, and a list with one non-zero centre is
  * flagged.
+ * The search space holds RCUTENV, a key of the descriptor that is not
+ * Critical, so that the descriptor is searched.
  * Before the fix: CGRIDMB 0 was flagged as a centre that can miss the
  * neighbour distances (the case above pinned it with CGRIDMB 0; it sets
- * 2.9 now). */
+ * 2.9 now). The case searched nothing then, which flagged every Critical
+ * key of every descriptor. */
 TEST_CASE("preflight_audit: critical_optim_audit does not flag a fixed "
           "CGRIDMB of centres at the origin", "[preflight_audit]") {
   std::vector<MetaPair> metas;
   metas.emplace_back("DM_mBlipEnv", make_dm_mblipenv_like_meta());
-  const std::vector<std::string> no_optim;
+  const std::vector<std::string> no_optim = {"RCUTENV"};
   auto flagged = [](const AuditReport& r, const std::string& key) {
     for (const auto& m : r.messages)
       if (m.param_key == key) return true;
@@ -283,6 +310,17 @@ static DescriptorMeta make_bump_pair_like_meta(const std::string& label) {
   cgrid.crit  = Criticality::Critical;
   cgrid.scope = PairScope::PerElementPair;
   dm.params.push_back(std::move(cgrid));
+  // A key of the descriptor that is not Critical: searching it puts the
+  // descriptor in the search space.
+  ParamMeta sgrid;
+  sgrid.key   = "SGRID2B";
+  sgrid.arg_pos = -1;
+  sgrid.scale = Scale::InverseDistance;
+  sgrid.units = "Å^-1";
+  sgrid.role  = "Bump widths";
+  sgrid.crit  = Criticality::Recommended;
+  sgrid.scope = PairScope::Global;
+  dm.params.push_back(std::move(sgrid));
   return dm;
 }
 
@@ -298,6 +336,17 @@ static DescriptorMeta make_dm_ream_like_meta() {
   rcut.crit  = Criticality::Critical;
   rcut.scope = PairScope::Global;
   dm.params.push_back(std::move(rcut));
+  // A key of the descriptor that is not Critical: searching it puts the
+  // descriptor in the search space.
+  ParamMeta sgrid;
+  sgrid.key   = "SGRIDMB";
+  sgrid.arg_pos = -1;
+  sgrid.scale = Scale::InverseDistance;
+  sgrid.units = "Å^-1";
+  sgrid.role  = "Density bump widths";
+  sgrid.crit  = Criticality::Recommended;
+  sgrid.scope = PairScope::Global;
+  dm.params.push_back(std::move(sgrid));
   return dm;
 }
 
@@ -335,10 +384,13 @@ TEST_CASE("preflight_audit: critical_optim_audit does not flag RCUT of bump chan
   // so "add OPTIM RCUT2B" is the wrong advice: the dimension is flat above
   // the seed value and only trips the bump-support gate below it. Knot
   // channels were already exempt (RCUT derived from the largest knot).
+  // Both descriptors are in the search space through a width key that is
+  // not Critical (SGRID2B, SGRIDMB); before the fix the case searched
+  // nothing, which flagged every Critical key of every descriptor.
   std::vector<MetaPair> metas;
   metas.emplace_back("D2_Blip5", make_bump_pair_like_meta("D2_Blip5"));
   metas.emplace_back("DM_REAM",  make_dm_ream_like_meta());
-  const std::vector<std::string> no_optim;
+  const std::vector<std::string> no_optim = {"SGRID2B", "SGRIDMB"};
   auto flagged = [](const AuditReport& r, const std::string& key) {
     for (const auto& m : r.messages)
       if (m.param_key == key) return true;
@@ -521,6 +573,13 @@ TEST_CASE("preflight_audit: the setfl cutoff of D2_EAM and DM_EAM is not "
     CHECK(m.param_key != "RCUT2B");
     CHECK(m.param_key != "RCUTMB");
   }
+  // The cutoff is the only key of either descriptor, and it is not
+  // Critical: no search space makes the audit flag it.
+  for (const auto &meta : {*d2, *dm})
+    for (const auto &p : meta.params) {
+      INFO(meta.label << "." << p.key);
+      CHECK(p.crit != Criticality::Critical);
+    }
 
   DataStats data;
   data.n_atoms = 16;
@@ -537,5 +596,164 @@ TEST_CASE("preflight_audit: the setfl cutoff of D2_EAM and DM_EAM is not "
   for (const auto &meta : {*d2, *dm}) {
     INFO(meta.label);
     CHECK(suggest_bounds_for(data, meta, seed).empty());
+  }
+}
+
+/* Pins: the audit flags nothing for a descriptor with no key in the search
+ * space: a search of FIXWEIGHT alone, or of nothing, gives an empty report
+ * for a DM_mBlipEnv-like and a D2_BP-like descriptor whose Critical keys
+ * (CGRIDMB 2.9, SGRIDMB, RCUTMB, RCUT2B, CGRID2B) are all fixed; a search of
+ * SGRID2B alone flags the D2_BP keys (RCUT2B, CGRID2B) and none of the
+ * DM_mBlipEnv-like descriptor's.
+ * Before the fix: every Critical key of every configured descriptor was
+ * flagged whatever the search space ("Critical hyperparameter is fixed in
+ * the seed config and is not in any OPTIM block ..."), also for a search
+ * of FIXWEIGHT alone, which tadah hpo printed on every run, AUDIT off
+ * included. */
+TEST_CASE("preflight_audit: critical_optim_audit flags nothing for a "
+          "descriptor with no key in the search space",
+          "[preflight_audit]") {
+  std::vector<MetaPair> metas;
+  metas.emplace_back("DM_mBlipEnv", make_dm_mblipenv_like_meta());
+  metas.emplace_back("D2_BP", make_bump_pair_like_meta("D2_BP"));
+  Context seed;
+  seed.add<double>("CGRIDMB", 2.9);
+  seed.add<double>("SGRIDMB", 0.2);
+  seed.add<double>("RCUTMB", 5.6);
+  seed.add("TYPE2B", "D2_BP 2 2 Ta Ta");
+  seed.add<double>("RCUT2B", 5.6);
+  seed.add<double>("CGRID2B", 2.0);
+  seed.add<double>("CGRID2B", 3.0);
+  for (const std::vector<std::string> &space :
+       {std::vector<std::string>{"FIXWEIGHT"}, std::vector<std::string>{}}) {
+    INFO("search space of " << space.size() << " key(s)");
+    const auto rep = run_critical_optim_audit_with_metas(seed, space, metas);
+    std::string flagged;
+    for (const auto &m : rep.messages)
+      flagged += " " + m.descriptor_label + "." + m.param_key;
+    INFO("flagged:" << flagged);
+    CHECK(rep.messages.empty());
+  }
+  const auto rep =
+      run_critical_optim_audit_with_metas(seed, {"SGRID2B"}, metas);
+  std::set<std::string> flagged;
+  for (const auto &m : rep.messages)
+    flagged.insert(m.descriptor_label + "." + m.param_key);
+  CAPTURE(flagged);
+  CHECK(flagged == std::set<std::string>{"D2_BP.CGRID2B", "D2_BP.RCUT2B"});
+}
+
+// ---------------------------------------------------------------------------
+//  A joined line: each descriptor is judged by its own channels and cutoff
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Neighbour distances of bcc Ta: r_min 2.25 A, shells at 2.86 and 3.30 A,
+ * r_max 5.6 A. */
+DataStats bcc_ta_distances() {
+  DataStats d;
+  d.n_atoms = 100;
+  d.n_structures = 10;
+  d.elements = {"Ta"};
+  PerPairStats pp;
+  pp.elements = {"Ta", "Ta"};
+  pp.n_pairs = 4000;
+  pp.r_min = 2.25;
+  pp.r_max = 5.6;
+  pp.r_percentiles = {2.6, 2.8, 2.85, 2.9, 3.4, 4.7, 5.2, 5.4, 5.55,
+                      4.0, 1.0};
+  tadah::core::stats::KdePeak first, second;
+  first.position = 2.86;
+  first.density = 1.0;
+  first.fwhm = 0.7;
+  second.position = 3.30;
+  second.density = 0.7;
+  second.fwhm = 0.3;
+  pp.r_peaks = {first, second};
+  d.per_pair.push_back(pp);
+  return d;
+}
+
+/* TYPEMB DM_mJoin of a DM_EAD Gaussian channel (CGRIDMB(1)) and two
+ * DM_Blip blips (CGRIDMB(2), CGRIDMB(3)), every SGRIDMB 1. */
+Context joined_density_seed(const std::string& cgridmb,
+                            const std::string& rcutmb) {
+  Context c;
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_mJoin");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("TYPEMB", "DM_Blip 0 2 2 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  c.add("RCUTMB", rcutmb);
+  c.add("CGRIDMB", cgridmb);
+  c.add("SGRIDMB", "1.0 1.0 1.0");
+  return c;
+}
+
+std::string fails_of(const AuditReport& rep) {
+  std::string s;
+  for (const auto& m : rep.messages)
+    if (m.level == AuditMessage::Level::Fail)
+      s += m.descriptor_label + "." + m.param_key + ": " + m.text + "\n";
+  return s;
+}
+
+}  // namespace
+
+/* Pins: the pre-flight audit judges each descriptor of a DM_mJoin line by
+ * its own channels and its own RCUTMB, and names a channel by its entry of
+ * the whole key, as an OPTIM line does: for DM_EAD 0 1 1 (a Gaussian,
+ * CGRIDMB(1) = 0) joined with DM_Blip 0 2 2 (blips CGRIDMB(2) and (3)) on
+ * bcc Ta distances (r_min 2.25 A), every SGRIDMB 1:
+ *  - CGRIDMB 0 3 3.5, RCUTMB 5.6 5.6: no FAIL (the Gaussian is 6e-3 at
+ *    r_min, each blip's support |r - c| < 2 holds it);
+ *  - CGRIDMB 0 3 30: one FAIL, DM_Blip.CGRIDMB, naming "CGRIDMB(3) = 30"
+ *    and the blip;
+ *  - CGRIDMB 0 3 3.5, RCUTMB 5.6 2.0: one FAIL, DM_Blip's, naming "RCUTMB
+ *    = 2", its own cutoff, below every neighbour distance.
+ * Before the fix: each descriptor judged every channel of the line with
+ * its own form and the first RCUTMB: DM_Blip failed the Gaussian at the
+ * origin as a blip ("CGRIDMB(1) = 0 with SGRIDMB(1) = 1: the support of
+ * the blip ... holds no neighbour distance"), DM_EAD failed the blip at 30
+ * as a Gaussian, and DM_Blip was judged at RCUTMB 5.6. */
+TEST_CASE("preflight_audit: each descriptor of a DM_mJoin line is judged by "
+          "its own channels and cutoff",
+          "[preflight_audit][join]") {
+  const DataStats data = bcc_ta_distances();
+  SECTION("a Gaussian at the origin and two blips pass") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 3.5", "5.6 5.6"), AuditMode::Error);
+    INFO(fails_of(rep));
+    CHECK_FALSE(rep.any_fail());
+  }
+  SECTION("a blip far out fails, named by its entry of the whole key") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 30", "5.6 5.6"), AuditMode::Error);
+    const std::string fails = fails_of(rep);
+    INFO(fails);
+    std::size_t n = 0;
+    for (const auto& m : rep.messages) {
+      if (m.level != AuditMessage::Level::Fail) continue;
+      ++n;
+      CHECK(m.descriptor_label == "DM_Blip");
+      CHECK(m.text.find("CGRIDMB(3) = 30") != std::string::npos);
+      CHECK(m.text.find("blip") != std::string::npos);
+    }
+    CHECK(n == 1u);
+  }
+  SECTION("a blip's own cutoff below every distance fails") {
+    const auto rep = run_preflight_soft(
+        data, joined_density_seed("0.0 3.0 3.5", "5.6 2.0"), AuditMode::Error);
+    const std::string fails = fails_of(rep);
+    INFO(fails);
+    std::size_t n = 0;
+    for (const auto& m : rep.messages) {
+      if (m.level != AuditMessage::Level::Fail) continue;
+      ++n;
+      CHECK(m.descriptor_label == "DM_Blip");
+      CHECK(m.text.find("RCUTMB = 2 ") != std::string::npos);
+    }
+    CHECK(n == 1u);
   }
 }

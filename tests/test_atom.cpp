@@ -1,6 +1,7 @@
 #include "catch2/catch.hpp"
 #include "tadah/core/periodic_table.h"
 #include <tadah/mlip/atom.h>
+#include <sstream>
 #include <string>
 
 using namespace tadah::core;
@@ -65,4 +66,22 @@ TEST_CASE( "Testing Atom copy", "[atom_copy]" ) {
             4.0, 5.0, 6.0);
     Atom b=a;
     REQUIRE(a==b);
+}
+
+/* Pins: printing an Atom (operator<<, which a printed Structure's atoms
+ * go through) leaves the format of the stream as it found it: its flags
+ * (std::left included), precision, width and fill are those it had.
+ * Before the fix: the stream was left std::left. */
+TEST_CASE("Printing an Atom leaves the format of the stream as it found it",
+          "[atom][stream_state]") {
+  PeriodicTable::initialize();
+  const Atom a(element1, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+  std::ostringstream os;
+  const auto flags = os.flags();
+  const auto precision = os.precision();
+  os << a;
+  CHECK(os.str().find("Coordinates:") != std::string::npos);
+  CHECK(os.flags() == flags);
+  CHECK(os.precision() == precision);
+  CHECK(os.width() == 0);
 }

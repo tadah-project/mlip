@@ -9,6 +9,7 @@
 #include <tadah/mlip/check_bounds.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/training_record.h>
+#include <tadah/models/descriptors/d_mjoin.h>
 
 namespace tadah {
 namespace mlip {
@@ -39,6 +40,12 @@ int AnalysisCheckBoundsEngine::run(tadah::mlip::Task& task) {
     throw std::runtime_error(
         "analysis check_bounds: at least one DBFILE must be configured.");
   }
+
+  // The radial grids as the descriptors read them: a grid generator
+  // expanded into its values, as tadah hpo expands it, so that an OPTIM
+  // index addresses the value tadah hpo searches and the checks read the
+  // values as numbers.
+  models::D_mJoin::expand_grids(taskCtx);
 
   const std::string hpo_path = taskCtx.get<std::string>("HPOTARGET");
   auto bounds = parse_hpo_target_bounds(hpo_path);

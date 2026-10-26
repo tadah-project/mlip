@@ -8,14 +8,14 @@ namespace mlip {
 namespace engines {
 
 /**
- * @brief Compute and persist dataset statistics for use by the
- * HPO bound-validation pipeline.
+ * @brief Computes dataset statistics and writes them to the file OUTFILE
+ * (--outfile) names, a report: tadah analysis suggest_bounds, check_bounds
+ * and the pre-flight audit compute the statistics they need themselves.
  *
  * Reads DBFILEs (and optionally individual STRUCTUREs) from the task
  * context, computes per-element-pair distance percentiles + KDE peaks,
  * neighbour-count percentiles per element, energy/force scales, and a
- * material-class label. Writes the result to a text file consumable by
- * `tadah hpo --suggest-bounds` and the pre-flight audit.
+ * material-class label.
  * Every pair strictly inside RCUTMAX counts, a pair at distance 0 (two
  * atoms at one position) included, so r_min is 0 for such a dataset
  * (compute_data_stats).

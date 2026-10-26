@@ -19,16 +19,6 @@ void Scheduler::addTasks(std::vector<Task> tasks) {
   tasks_.insert(tasks_.end(), tasks.begin(), tasks.end());
 }
 
-void Scheduler::schedule() {
-  // Sort tasks by task type (grouping) and then by priority (descending order).*/
-  std::stable_sort(tasks_.begin(), tasks_.end(),
-    [](const Task& a, const Task& b) {
-      if (a.getTaskName() != b.getTaskName())
-        return a.getTaskName() < b.getTaskName();
-      return a.getPriority() > b.getPriority();
-    });
-}
-
 int Scheduler::execute() {
   // Every task's engine first: a task this program has no engine for (one
   // it was built without, such as hpo in a tadah without TADAH_ENABLE_NFP)
