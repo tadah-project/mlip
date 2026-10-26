@@ -1232,3 +1232,47 @@ TEST_CASE("analysis suggest_bounds names a descriptor as the configuration "
   CHECK(r.out.find("DM_Poly") == std::string::npos);
   CHECK(r.block.find("DM_Poly") == std::string::npos);
 }
+
+/* Pins: the OPTIM block holds each range it writes: its low bound is
+ * written rounded down and its high bound rounded up at the 7 significant
+ * digits of the block, so that the box holds the range and the seed's
+ * value at an end of it (a range widened to hold the seed ends at it): for
+ * rows 1.0666666666666667 to 53.458357 (SGRID2B, the seed 1.0666666666666667
+ * of LIN 7 1 1.2) and -2.3333333333333335 to 0.66666666666666663, the
+ * written bounds, read back, hold the ranges.
+ * Before the fix: the bounds were rounded to the nearest at 7 digits:
+ * "OPTIM SGRID2B (1) 1.066667e+00 ...", above the seed's 1.06666..., and
+ * tadah hpo refused the block with its seed ("SGRID2B[3] = 1.06667 lies
+ * outside its OPTIM bounds [1.06667, 53.4584]"), and "OPTIM CGRID2B (1)
+ * -2.333333e+00 ...", above the low end -2.3333...; a high bound was
+ * rounded up only when the nearest was above it. */
+TEST_CASE("write_optim_block writes bounds that hold the range",
+          "[bound_suggester][suggest_bounds]") {
+  OptimSuggestion a;
+  a.descriptor_label = "D2_Blip";
+  a.key = "SGRID2B";
+  a.arg_pos = 0;
+  a.lo = 1.0666666666666667;
+  a.hi = 53.458357;
+  a.rationale = "widened to hold the seed's value";
+  OptimSuggestion b = a;
+  b.key = "CGRID2B";
+  b.lo = -2.3333333333333335;
+  b.hi = 0.66666666666666663;
+  std::ostringstream block;
+  write_optim_block({a, b}, block);
+  INFO(block.str());
+  for (const OptimSuggestion &r : {a, b}) {
+    const auto lines = lines_starting(block.str(), "OPTIM " + r.key + " ");
+    REQUIRE(lines.size() == 1u);
+    std::istringstream in(lines[0]);
+    std::string optim, key, index;
+    double lo = 0.0, hi = 0.0;
+    in >> optim >> key >> index >> lo >> hi;
+    CAPTURE(lines[0]);
+    CHECK(lo <= r.lo);
+    CHECK(hi >= r.hi);
+    CHECK(lo > r.lo - 1e-6 * std::fabs(r.lo));
+    CHECK(hi < r.hi + 1e-6 * std::fabs(r.hi));
+  }
+}
