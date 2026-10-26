@@ -178,6 +178,38 @@ TEST_CASE("M_KRR implementation 2 refuses the weights and the forces and "
   }
 }
 
+/* Pins: implementation 2 solves (K + LAMBDA sigma^2 I) w = t by Cholesky
+ * and reads no OALGO: OALGO 3 0.5, OALGO 2, OALGO 4 and OALGO 1 1e-4 are
+ * refused naming the OALGO line, the solve and MODEL M_KRR Kern_RBF 1
+ * (implementation 1, which takes OALGO); no OALGO line, OALGO 1 and OALGO
+ * 1 1e-8 (the default, written out) fit.
+ * Before the fix: every OALGO fitted, and the potentials differed only in
+ * the OALGO line they recorded (OALGO 3 0.5 would leave out most
+ * directions under implementation 1). */
+TEST_CASE("M_KRR implementation 2 refuses an OALGO other than the default",
+          "[krr][train2][refusal][oalgo]") {
+  PeriodicTable::initialize();
+  for (const std::string oalgo : {"3 0.5", "2", "4", "1 1e-4"}) {
+    DYNAMIC_SECTION("OALGO " << oalgo) {
+      Context c = make_context();
+      set_key(c, "OALGO", oalgo);
+      CHECK_THAT(fit(c, training_db()),
+                 Contains("OALGO " + oalgo) && Contains("Cholesky") &&
+                     Contains("MODEL M_KRR Kern_RBF 2") &&
+                     Contains("MODEL M_KRR Kern_RBF 1"));
+    }
+  }
+  SECTION("the default OALGO, written out or not (a pin)") {
+    for (const std::string oalgo : {"", "1", "1 1e-8"}) {
+      INFO("OALGO '" << oalgo << "'");
+      Context c = make_context();
+      c.remove("OALGO");
+      if (!oalgo.empty()) c.add("OALGO", oalgo);
+      CHECK(fit(c, training_db()) == "no exception");
+    }
+  }
+}
+
 namespace {
 
 /* The WEIGHTS of a fit of @p db in @p c (a Kern_Linear model: one per

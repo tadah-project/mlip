@@ -1047,7 +1047,10 @@ TEST_CASE("Fit balance lines are at most 78 characters wide", "[fit_balance]") {
     check_width(lines);
   }
   SECTION("the none line of M_KRR implementation 2") {
-    Context c = ta_context(3, "1e-6");
+    // OALGO 1, the default: implementation 2 reads no OALGO and refuses
+    // another (the case had the OALGO 3 of ta_context, without effect;
+    // before that refusal the case passes with OALGO 1 as well, a pin).
+    Context c = ta_context(1, "1e-6");
     set_key(c, "FORCE", "false");
     set_key(c, "STRESS", "false");
     c.remove("FSIGMA");
@@ -1260,7 +1263,10 @@ TEST_CASE("Fit balance: none without a fit of observations", "[fit_balance]") {
     CHECK(paragraph(lines, 0) == "Fit balance: none (" + b.none + ")");
     check_width(lines);
   }
-  Context c = ta_context(3, "1e-6");
+  // OALGO 1, the default: implementation 2 reads no OALGO and refuses
+  // another (the case had the OALGO 3 of ta_context, without effect;
+  // before that refusal the case passes with OALGO 1 as well, a pin).
+  Context c = ta_context(1, "1e-6");
   set_key(c, "FORCE", "false");
   set_key(c, "STRESS", "false");
   c.remove("FSIGMA");

@@ -322,3 +322,320 @@ TEST_CASE("analysis suggest_bounds refuses a dataset with two atoms at the "
   CHECK(t.second.find("same position") != std::string::npos);
   CHECK_FALSE(sb_fs::exists(out));
 }
+
+// ---------------------------------------------------------------------------
+//  The suggestions read the seed: a Gaussian density centred at the origin
+// ---------------------------------------------------------------------------
+
+#include <tadah/core/registry.h>
+#include <tadah/models/descriptors/d_base.h>
+
+#include <cmath>
+#include <fstream>
+#include <iterator>
+#include <memory>
+
+namespace {
+
+/* Neighbour distances of bcc Ta: r_min 2.25 A, the first two shells at
+ * 2.86 A (FWHM 0.7 A) and 3.30 A, r_max 5.6 A; no ρ statistics (as
+ * `tadah analysis suggest_bounds` computes them). */
+DataStats ta_shell_stats() {
+  DataStats d;
+  d.n_atoms = 100;
+  d.n_structures = 10;
+  d.elements = {"Ta"};
+  PerPairStats pp;
+  pp.elements = {"Ta", "Ta"};
+  pp.n_pairs = 4000;
+  pp.r_min = 2.25;
+  pp.r_max = 5.6;
+  pp.r_percentiles = {2.6, 2.8, 2.85, 2.9, 3.4, 4.7, 5.2, 5.4, 5.55,
+                      4.0, 1.0};
+  tadah::core::stats::KdePeak first, second;
+  first.position = 2.86;
+  first.density = 1.0;
+  first.fwhm = 0.7;
+  second.position = 3.30;
+  second.density = 0.7;
+  second.fwhm = 0.3;
+  pp.r_peaks = {first, second};
+  d.per_pair.push_back(pp);
+  return d;
+}
+
+/* The Ta seed of the HPO tests, its many-body part: DM_mBlipEnv with the
+ * radial GTO at `cgridmb`, SGRIDMB 0.2, RCUTMB 5.6. */
+Context mblipenv_seed(double cgridmb) {
+  Context c;
+  c.add("TYPEMB", "DM_mBlipEnv 0 1 1 7 7 Ta Ta");
+  c.add("RCUTENV", 5.0);
+  c.add("RCUTMB", 5.6);
+  c.add("SGRIDMB", 0.2);
+  c.add("CGRIDMB", cgridmb);
+  c.add("SEMBFUNC", "1 1 1 1 1 1 1");
+  c.add("CEMBFUNC", "1 2 3 4 5 6 7");
+  return c;
+}
+
+DescriptorMeta mblipenv_meta() {
+  std::unique_ptr<tadah::models::D_Base> d(
+      tadah::core::factory<tadah::models::D_Base>("DM_mBlipEnv"));
+  auto meta = d->meta();
+  REQUIRE(meta.has_value());
+  return *meta;
+}
+
+const OptimSuggestion *row_of(const std::vector<OptimSuggestion> &rows,
+                              const std::string &key) {
+  for (const auto &s : rows)
+    if (s.key == key) return &s;
+  return nullptr;
+}
+
+}  // namespace
+
+/* Pins: for a Gaussian density centred at the origin (DM_mBlipEnv, CGRIDMB
+ * 0, SGRIDMB 0.2), suggest_bounds_for gives no CGRIDMB range (its width
+ * sets its reach, not its centre): its CGRIDMB suggestion, when there is
+ * one, has none and a rationale naming the Gaussian centred at the origin,
+ * which the table prints as "no OPTIM line"; and the SGRIDMB range is the
+ * width whose
+ * exp(-SGRIDMB r^2) drops by a factor of 0.9 to 1/20 from the first
+ * neighbour shell (2.86 A) to the second (3.30 A): ln(1/0.9) / (3.30^2 -
+ * 2.86^2) = 0.0389 to ln(20) / (3.30^2 - 2.86^2) = 1.104, which holds the
+ * seed's 0.2 and stays below ln(1e6) / r_min^2 = 2.73, where the Gaussian
+ * is 1e-6 at r_min; its rationale names the Gaussian centred at the
+ * origin. The OPTIM block has no CGRIDMB line.
+ * Before the fix: the seed was not read: a CGRIDMB row 2.16 to 3.56 (the
+ * first peak +- its FWHM), and SGRIDMB 0.51 to 18.4 (0.25/w^2 to 9/w^2 of
+ * the shell-centred form), at whose upper end exp(-18.4 * 2.25^2) is 1e-41
+ * at r_min. */
+TEST_CASE("bound_suggester: a Gaussian density centred at the origin gets "
+          "no CGRIDMB row and a width from the drop between the first two "
+          "shells",
+          "[bound_suggester][suggest_bounds][seed]") {
+  const DataStats data = ta_shell_stats();
+  const auto rows = suggest_bounds_for(data, mblipenv_meta(),
+                                       mblipenv_seed(0.0));
+  if (const OptimSuggestion *centre = row_of(rows, "CGRIDMB")) {
+    CHECK(centre->lo == 0.0);
+    CHECK(centre->hi == 0.0);
+    CHECK(centre->rationale.find("centred at the origin") !=
+          std::string::npos);
+  }
+  {
+    std::ostringstream table;
+    print_suggestions(rows, table);
+    INFO(table.str());
+    const auto at = table.str().find("DM_mBlipEnv.CGRIDMB");
+    REQUIRE(at != std::string::npos);
+    const std::string row =
+        table.str().substr(at, table.str().find('\n', at) - at);
+    CHECK(row.find("no OPTIM line") != std::string::npos);
+  }
+  const OptimSuggestion *width = row_of(rows, "SGRIDMB");
+  REQUIRE(width != nullptr);
+  const double gap = 3.30 * 3.30 - 2.86 * 2.86;
+  CHECK(width->lo == Approx(std::log(1.0 / 0.9) / gap).epsilon(1e-12));
+  CHECK(width->hi == Approx(std::log(20.0) / gap).epsilon(1e-12));
+  CHECK(width->lo < 0.2);
+  CHECK(width->hi > 0.2);
+  CHECK(width->hi < std::log(1e6) / (2.25 * 2.25));
+  CHECK(width->rationale.find("Gaussian") != std::string::npos);
+  CHECK(width->rationale.find("centred at the origin") != std::string::npos);
+  std::ostringstream block;
+  write_optim_block(rows, block);
+  INFO(block.str());
+  CHECK(block.str().find("OPTIM CGRIDMB") == std::string::npos);
+  CHECK(block.str().find("OPTIM SGRIDMB (1) ") != std::string::npos);
+}
+
+/* Pins: for a radial GTO centred on the first neighbour shell (CGRIDMB
+ * 2.9), the CGRIDMB row is the first peak +- its FWHM with its lower end
+ * at r_min: 2.25 (not 2.86 - 0.7 = 2.16) to 3.56, and its rationale and
+ * that of SGRIDMB name the Gaussian centred on the first shell.
+ * Before the fix: the CGRIDMB row began at 2.16, below every neighbour
+ * distance, and the rationales gave only the scale and the role of the
+ * key. */
+TEST_CASE("bound_suggester: a shell-centred Gaussian density gets a CGRIDMB "
+          "row from r_min",
+          "[bound_suggester][suggest_bounds][seed]") {
+  const auto rows = suggest_bounds_for(ta_shell_stats(), mblipenv_meta(),
+                                       mblipenv_seed(2.9));
+  const OptimSuggestion *centre = row_of(rows, "CGRIDMB");
+  REQUIRE(centre != nullptr);
+  CHECK(centre->lo == Approx(2.25).epsilon(1e-12));
+  CHECK(centre->hi == Approx(2.86 + 0.7).epsilon(1e-12));
+  CHECK(centre->rationale.find("Gaussian") != std::string::npos);
+  CHECK(centre->rationale.find("first neighbour shell") != std::string::npos);
+  const OptimSuggestion *width = row_of(rows, "SGRIDMB");
+  REQUIRE(width != nullptr);
+  CHECK(width->rationale.find("first neighbour shell") != std::string::npos);
+}
+
+/* Pins: without ρ statistics (`tadah analysis suggest_bounds` computes
+ * none) the ranges of RCUTENV, CEMBFUNC and SEMBFUNC are fixed ones, not
+ * derived from the data: each rationale says "fixed range", the table's
+ * heading does not call every range data-driven, and the header of the
+ * OPTIM block names the command that writes it, tadah analysis
+ * suggest_bounds.
+ * Before the fix: the rationales gave only the scale and the role, the
+ * table was headed "(data-driven; review before use)", and the block said
+ * "Auto-generated by `tadah hpo --suggest-bounds`", an option no command
+ * has. */
+TEST_CASE("bound_suggester: a fixed range is named as such, and the block "
+          "names tadah analysis suggest_bounds",
+          "[bound_suggester][suggest_bounds]") {
+  const auto rows = suggest_bounds_for(ta_shell_stats(), mblipenv_meta(),
+                                       mblipenv_seed(0.0));
+  for (const char *key : {"RCUTENV", "CEMBFUNC", "SEMBFUNC"}) {
+    INFO(key);
+    const OptimSuggestion *r = row_of(rows, key);
+    REQUIRE(r != nullptr);
+    CHECK(r->rationale.find("fixed range") != std::string::npos);
+  }
+  const OptimSuggestion *rcut = row_of(rows, "RCUTMB");
+  REQUIRE(rcut != nullptr);
+  CHECK(rcut->rationale.find("fixed range") == std::string::npos);
+  std::ostringstream table, block;
+  print_suggestions(rows, table);
+  write_optim_block(rows, block);
+  INFO(table.str() << "\n" << block.str());
+  CHECK(table.str().find("data-driven") == std::string::npos);
+  CHECK(block.str().find("tadah analysis suggest_bounds") !=
+        std::string::npos);
+  CHECK(block.str().find("--suggest-bounds") == std::string::npos);
+}
+
+/* Pins: print_suggestions and write_optim_block leave the format of the
+ * stream they write to as they found it (flags, precision, fill): written
+ * to std::cout, as suggest_bounds does without --outfile, they change
+ * nothing a later writer of std::cout (a kernel's settings line copies
+ * its format) sees.
+ * Before the fix: both left std::cout std::scientific, at precision 4
+ * (print_suggestions) and 6 (write_optim_block). */
+TEST_CASE("bound_suggester: the writers leave the format of std::cout as "
+          "they found it",
+          "[bound_suggester][suggest_bounds][stream_state]") {
+  const auto rows = suggest_bounds_for(ta_shell_stats(), mblipenv_meta(),
+                                       mblipenv_seed(0.0));
+  std::ostringstream sink;
+  std::streambuf *old = std::cout.rdbuf(sink.rdbuf());
+  const auto flags = std::cout.flags();
+  const auto precision = std::cout.precision();
+  const auto fill = std::cout.fill();
+  print_suggestions(rows, std::cout);
+  const auto flags_print = std::cout.flags();
+  const auto precision_print = std::cout.precision();
+  write_optim_block(rows, std::cout);
+  const auto flags_block = std::cout.flags();
+  const auto precision_block = std::cout.precision();
+  const auto fill_block = std::cout.fill();
+  std::cout.flags(flags);
+  std::cout.precision(precision);
+  std::cout.fill(fill);
+  std::cout.rdbuf(old);
+  CHECK(flags_print == flags);
+  CHECK(precision_print == precision);
+  CHECK(flags_block == flags);
+  CHECK(precision_block == precision);
+  CHECK(fill_block == fill);
+}
+
+namespace {
+
+/* Two bcc Ta cells (a = 3.3 A) in a dataset file of @p tmp. */
+std::string bcc_ta_dataset(const SbTempDir &tmp) {
+  StructureDB db;
+  db.add(sb_bcc_ta("bcc-Ta-1", false));
+  db.add(sb_bcc_ta("bcc-Ta-2", false));
+  const std::string dbfile = tmp.path("bcc.tadahdb");
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  return dbfile;
+}
+
+}  // namespace
+
+/* Pins: `tadah analysis suggest_bounds` reads a radial grid given by a
+ * generator as the grid it makes: for TYPE2B D2_Blip 7 7 Ta Ta with
+ * "CGRID2B LIN 7 0.1 3.0" and "SGRID2B LIN 7 1 1.2" (the Ta seed of the
+ * HPO tests) the OPTIM block has "OPTIM CGRID2B (1-7)" and "OPTIM SGRID2B
+ * (1-7)", one row per blip, and the run logs no ERROR.
+ * Before the fix: the seed's tokens were read as numbers ("ERROR:
+ * Context::convertStringTo -> Failed converting "LIN" for key=CGRID2B"),
+ * the run went on and returned 0, and the block had "OPTIM CGRID2B (1-4)"
+ * and "OPTIM SGRID2B (1-4)", one row per token of the line. */
+TEST_CASE("analysis suggest_bounds reads a grid generator as the grid it "
+          "makes",
+          "[bound_suggester][suggest_bounds][seed]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_Blip 7 7 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Poly");
+  c.add("SGRID2B", "LIN 7 1 1.2");
+  c.add("CGRID2B", "LIN 7 0.1 3.0");
+  c.add("RCUT2B", 5.6);
+  const std::string out = tmp.path("suggested.hpo");
+  c.add("OUTFILE", out);
+  Task task("analysis", c);
+
+  auto &log = tadah::core::Logger::instance();
+  const auto old_level = log.getLogLevel();
+  log.setLogLevel(tadah::core::LogLevel::WARNING);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  int rc = -1;
+  std::string what;
+  try {
+    engines::AnalysisSuggestBoundsEngine engine;
+    engine.validate(task);
+    rc = engine.run(task);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  std::cout.rdbuf(old_buf);
+  log.setLogLevel(old_level);
+  std::ifstream in(out);
+  const std::string block((std::istreambuf_iterator<char>(in)),
+                          std::istreambuf_iterator<char>());
+  INFO(what << "\n" << captured.str() << "\n" << block);
+  CHECK(rc == EXIT_SUCCESS);
+  CHECK(captured.str().find("ERROR") == std::string::npos);
+  CHECK(block.find("OPTIM CGRID2B (1-7) ") != std::string::npos);
+  CHECK(block.find("OPTIM SGRID2B (1-7) ") != std::string::npos);
+}
+
+/* Pins: the suggestions of a density read the seed entry by entry, and the
+ * OPTIM block gives one line per run of entries with the same range: for a
+ * DM_EAD seed with two Gaussian channels at the origin and two on the first
+ * shell (CGRIDMB 0 0 2.9 2.9, SGRIDMB 0.2 0.2 1 1), the block has "OPTIM
+ * CGRIDMB (3-4)", "OPTIM SGRIDMB (1-2)" and "OPTIM SGRIDMB (3-4)", and no
+ * line of entries 1 to 4.
+ * Before the fix: every entry got the shell-centred ranges, merged into
+ * "OPTIM CGRIDMB (1-4)" and "OPTIM SGRIDMB (1-4)" (a block line took the
+ * smallest low and the largest high end of all the entries of a key). */
+TEST_CASE("write_optim_block gives one line per run of entries with the same "
+          "range",
+          "[bound_suggester][suggest_bounds][seed]") {
+  std::unique_ptr<tadah::models::D_Base> d(
+      tadah::core::factory<tadah::models::D_Base>("DM_EAD"));
+  const auto meta = d->meta();
+  REQUIRE(meta.has_value());
+  Context seed;
+  seed.add("CGRIDMB", "0 0 2.9 2.9");
+  seed.add("SGRIDMB", "0.2 0.2 1 1");
+  seed.add("RCUTMB", 5.6);
+  const auto rows = suggest_bounds_for(ta_shell_stats(), *meta, seed);
+  std::ostringstream block;
+  write_optim_block(rows, block);
+  INFO(block.str());
+  CHECK(block.str().find("OPTIM CGRIDMB (3-4) ") != std::string::npos);
+  CHECK(block.str().find("OPTIM SGRIDMB (1-2) ") != std::string::npos);
+  CHECK(block.str().find("OPTIM SGRIDMB (3-4) ") != std::string::npos);
+  CHECK(block.str().find("(1-4)") == std::string::npos);
+}
