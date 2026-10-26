@@ -654,8 +654,8 @@ TEST_CASE("write_optim_block gives one line per run of entries with the same "
  * line): for TYPE2B D2_ZBL 0.5292 0.88534 0.23 0.23 Ta Ta the four TYPE2B
  * rows have the seed values 0.5292, 0.88534, 0.23 and 0.23, none has a
  * range, and each rationale names TYPE2B and tadah hpo; the block has no
- * OPTIM TYPE2B line, a comment "no OPTIM line" for each, and its RCUT2B
- * line.
+ * line that starts "OPTIM TYPE2B" (a comment may name OPTIM TYPE2B), a
+ * comment "no OPTIM line" for each, and its RCUT2B line.
  * Before the fix: the block had "OPTIM TYPE2B (1) 2.650000e-01
  * 7.950000e-01", "OPTIM TYPE2B (2)" and "OPTIM TYPE2B (3-4)", lines that
  * tadah hpo refuses at startup (and, before that, each such parameter was
@@ -694,7 +694,7 @@ TEST_CASE("bound_suggester: a value of a TYPE2B line gets a row without an "
   std::ostringstream block;
   write_optim_block(rows, block);
   INFO(block.str());
-  CHECK(block.str().find("OPTIM TYPE2B") == std::string::npos);
+  CHECK(block.str().find("\nOPTIM TYPE2B") == std::string::npos);
   std::size_t comments = 0;
   for (std::size_t at = block.str().find("# D2_ZBL :: TYPE2B");
        at != std::string::npos;
@@ -750,11 +750,10 @@ SbRun run_suggest_bounds_ctx(Context c, const SbTempDir &tmp) {
  * line the values of its own: for TYPE2B D2_mJoin of "D2_ZBL 0.5292
  * 0.88534 0.23 0.23 Ta Ta" and "D2_Blip 4 4 Ta Ta" (RCUT2B 2.0 5.0,
  * CGRID2B 2.5 3.0 3.5 4.0, SGRID2B 1 1 1 1) on two bcc Ta cells it exits 0
- * without an ERROR line, the D2_ZBL rows have the seed values of its own
- * line (0.5292, 0.88534, 0.23, 0.23) and no OPTIM TYPE2B line, the cutoff
- * of D2_ZBL is "OPTIM RCUT2B (1)" and that of D2_Blip "OPTIM RCUT2B (2)",
- * the values tadah hpo numbers them by, and the four blips "OPTIM CGRID2B
- * (1-4)".
+ * without an ERROR line, the block has no line that starts "OPTIM
+ * TYPE2B", the cutoff of D2_ZBL is "OPTIM RCUT2B (1)" and that of D2_Blip
+ * "OPTIM RCUT2B (2)", the values tadah hpo numbers them by, and the four
+ * blips "OPTIM CGRID2B (1-4)".
  * Before the fix: the D2_ZBL parameters read the values of the whole
  * TYPE2B key, so their first seed value was "D2_ZBL": the run stopped
  * ("Conversion failed for key=TYPE2B, value="D2_ZBL" ..."); and every
@@ -780,7 +779,7 @@ TEST_CASE("analysis suggest_bounds gives each descriptor of a D2_mJoin line "
   CHECK(r.rc == EXIT_SUCCESS);
   CHECK(r.what.empty());
   CHECK(r.out.find("ERROR") == std::string::npos);
-  CHECK(r.block.find("OPTIM TYPE2B") == std::string::npos);
+  CHECK(r.block.find("\nOPTIM TYPE2B") == std::string::npos);
   CHECK(r.block.find("OPTIM RCUT2B (1) ") != std::string::npos);
   CHECK(r.block.find("OPTIM RCUT2B (2) ") != std::string::npos);
   CHECK(r.block.find("OPTIM CGRID2B (1-4) ") != std::string::npos);
