@@ -177,3 +177,45 @@ TEST_CASE("TaskFactory reads a potential without its line of a key of "
         std::string::npos);
   CHECK(notices.find("tadah predict") != std::string::npos);
 }
+
+/* Pins: the refusal of a key of another command names the commands that
+ * read it, not one that retires it, and a positional key as the argument
+ * of its command: in a configuration file of tadah train, "RESCALE is the
+ * option --rescale of tadah analysis bfunc", "THRESHOLD is the option
+ * --threshold of tadah data dedup" (tadah data balance refuses both as
+ * retired options) and "OPTION is the argument of tadah explain".
+ * Before the fix: RESCALE was an option of tadah analysis bfunc and tadah
+ * data balance, THRESHOLD of tadah data balance and tadah data dedup, and
+ * OPTION "a key of tadah explain". */
+TEST_CASE("TaskFactory names the commands that read a key of another "
+          "command, not one that retires it, and a positional key as the "
+          "argument of its command",
+          "[task_factory][command_keys]") {
+  Scratch tmp;
+  struct Case {
+    const char *line;
+    const char *key;
+    const char *role;
+  };
+  for (const Case &c :
+       {Case{"RESCALE true", "RESCALE",
+             "RESCALE is the option --rescale of tadah analysis bfunc, not "
+             "a key of a configuration file of tadah train"},
+        Case{"THRESHOLD 1e-4", "THRESHOLD",
+             "THRESHOLD is the option --threshold of tadah data dedup, not "
+             "a key of a configuration file of tadah train"},
+        Case{"OPTION train", "OPTION",
+             "OPTION is the argument of tadah explain, not a key of a "
+             "configuration file of tadah train"}}) {
+    DYNAMIC_SECTION(c.line) {
+      const std::string file = tmp.write(std::string(c.key) + ".cfg",
+                                         std::string(kHead) + c.line + "\n");
+      const std::string what = read_config("TRAIN", file);
+      INFO(what);
+      CHECK(what.find("Key " + std::string(c.key) + " on line 3 of " + file +
+                      " is not accepted here: " + c.role) !=
+            std::string::npos);
+      CHECK(what.find("tadah data balance") == std::string::npos);
+    }
+  }
+}

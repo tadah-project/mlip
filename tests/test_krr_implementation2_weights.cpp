@@ -180,12 +180,16 @@ TEST_CASE("M_KRR implementation 2 refuses the weights and the forces and "
 
 /* Pins: implementation 2 solves (K + LAMBDA sigma^2 I) w = t by Cholesky
  * and reads no OALGO: OALGO 3 0.5, OALGO 2, OALGO 4 and OALGO 1 1e-4 are
- * refused naming the OALGO line, the solve and MODEL M_KRR Kern_RBF 1
- * (implementation 1, which takes OALGO); no OALGO line, OALGO 1 and OALGO
- * 1 1e-8 (the default, written out) fit.
+ * refused naming the OALGO line, the solve, MODEL M_KRR Kern_RBF 1
+ * (implementation 1, which takes OALGO) and the OALGO settings it fits
+ * with ("implementation 2 fits without an OALGO line or with the default
+ * written out, OALGO 1 or OALGO 1 1e-8."); no OALGO line, OALGO 1 and
+ * OALGO 1 1e-8 (the default, written out) fit.
  * Before the fix: every OALGO fitted, and the potentials differed only in
  * the OALGO line they recorded (OALGO 3 0.5 would leave out most
- * directions under implementation 1). */
+ * directions under implementation 1); then the message said that
+ * implementation 2 fits "with OALGO 1, the default", and OALGO 1 1e-4 is
+ * OALGO 1 and is refused. */
 TEST_CASE("M_KRR implementation 2 refuses an OALGO other than the default",
           "[krr][train2][refusal][oalgo]") {
   PeriodicTable::initialize();
@@ -196,7 +200,10 @@ TEST_CASE("M_KRR implementation 2 refuses an OALGO other than the default",
       CHECK_THAT(fit(c, training_db()),
                  Contains("OALGO " + oalgo) && Contains("Cholesky") &&
                      Contains("MODEL M_KRR Kern_RBF 2") &&
-                     Contains("MODEL M_KRR Kern_RBF 1"));
+                     Contains("MODEL M_KRR Kern_RBF 1") &&
+                     Contains("implementation 2 fits without an OALGO line "
+                              "or with the default written out, OALGO 1 or "
+                              "OALGO 1 1e-8."));
     }
   }
   SECTION("the default OALGO, written out or not (a pin)") {
