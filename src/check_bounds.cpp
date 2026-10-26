@@ -83,6 +83,17 @@ std::vector<Bound> parse_hpo_target_bounds(const std::string& path) {
           "check_bounds: malformed OPTIM line " + std::to_string(lineno) +
           " in " + path + " — missing <lo> <hi>");
     }
+    // tadah hpo refuses a box whose high bound is not above its low bound
+    // (a box of zero width included): so is it here, as its corners would
+    // pass the audit at one value.
+    if (!(lo < hi)) {
+      std::ostringstream os;
+      os << "check_bounds: line " << lineno << " of " << path << ", '"
+         << line.substr(p) << "': the high bound " << hi
+         << " is not above the low bound " << lo
+         << "; tadah hpo refuses such a box";
+      throw std::runtime_error(os.str());
+    }
     auto range = parse_index_spec(idx);
     if (range.first < 0 && range.second < 0) {
       Bound b;

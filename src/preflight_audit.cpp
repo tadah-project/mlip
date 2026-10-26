@@ -284,18 +284,21 @@ bool centres_at_origin(const tadah::core::Context& seed,
 }
 }  // namespace
 
-AuditReport run_critical_optim_audit_with_metas(
-    const tadah::core::Context&     seed,
-    const std::vector<std::string>& optim_keys,
-    const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
-  AuditReport report;
-  if (metas.empty()) return report;
-  tadah::models::SeedView sv(seed);
+namespace {
 
+/* The critical-OPTIM audit of @p checks, each descriptor judged by its own
+ * context: its values of a key (every centre at the origin), its cutoff
+ * and its TYPE line (a knot or bump channel). */
+AuditReport critical_optim_audit(const std::vector<DescriptorCheck>& checks,
+                                 const std::vector<std::string>& optim_keys) {
+  AuditReport report;
   std::unordered_set<std::string> optim_set(optim_keys.begin(),
                                             optim_keys.end());
 
-  for (const auto& [label, meta] : metas) {
+  for (const auto& c : checks) {
+    const auto& meta = c.meta;
+    const tadah::core::Context& ctx = c.context;
+    const tadah::models::SeedView sv(ctx, c.first_entries);
     // A descriptor with no key in the search space is not searched: its
     // fixed keys are the seed's choice, and no warning is given about them
     // (a search of FIXWEIGHT alone, or of another descriptor's keys).
@@ -313,9 +316,9 @@ AuditReport run_critical_optim_audit_with_metas(
       // re-derived on every HPO evaluation — recommending an OPTIM block on
       // them would contradict that contract (the search knob is CGRID*).
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::derived_knot_rcut(seed, "2B")) ||
+           tadah::models::potedit::derived_knot_rcut(ctx, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::derived_knot_rcut(seed, "MB")))
+           tadah::models::potedit::derived_knot_rcut(ctx, "MB")))
         continue;
       // Bump channels (D2_Blip/D2_Blip5, DM_REAM bump density) under a HARD
       // cutoff: RCUT is the fitted truncation and every bump support ends at
@@ -327,11 +330,11 @@ AuditReport run_critical_optim_audit_with_metas(
       // gate in tadah hpo is what keeps them consistent with RCUT. Under a
       // SMOOTH cutoff the damping tail depends on RCUT, so the warning stays.
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::bump_channel_halfwidth(seed, "2B") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B")) ||
+           tadah::models::potedit::bump_channel_halfwidth(ctx, "2B") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::bump_channel_halfwidth(seed, "MB") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
+           tadah::models::potedit::bump_channel_halfwidth(ctx, "MB") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "MB")))
         continue;
 
       // Radial centres at the origin (every CGRID* value 0): the basis is
@@ -339,11 +342,11 @@ AuditReport run_critical_optim_audit_with_metas(
       // (SGRID*), not its centre, decides whether it reaches the neighbour
       // shells (a compact blip reaches 2/eta); a fixed width is audited on
       // its own.
-      if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(seed, pm.key))
+      if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(ctx, pm.key))
         continue;
 
       AuditMessage msg;
-      msg.descriptor_label = label;
+      msg.descriptor_label = c.label;
       msg.param_key        = pm.key;
       msg.text =
           "Critical hyperparameter is fixed in the seed config and is "
@@ -360,11 +363,22 @@ AuditReport run_critical_optim_audit_with_metas(
   return report;
 }
 
+}  // namespace
+
+AuditReport run_critical_optim_audit_with_metas(
+    const tadah::core::Context&     seed,
+    const std::vector<std::string>& optim_keys,
+    const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
+  std::vector<DescriptorCheck> checks;
+  for (const auto& [label, meta] : metas)
+    checks.push_back(DescriptorCheck{label, meta, seed, {}});
+  return critical_optim_audit(checks, optim_keys);
+}
+
 AuditReport run_critical_optim_audit(
     const tadah::core::Context&     seed,
     const std::vector<std::string>& optim_keys) {
-  return run_critical_optim_audit_with_metas(
-      seed, optim_keys, collect_descriptor_metas(seed));
+  return critical_optim_audit(collect_descriptor_checks(seed), optim_keys);
 }
 
 void enforce_audit_mode(const AuditReport& report, AuditMode mode) {

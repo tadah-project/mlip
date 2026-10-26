@@ -36,7 +36,9 @@ struct Bound {
 
 /** \brief Parse an HPOTARGET file for `OPTIM <KEY> (range) <lo> <hi>`
  *  rows. Tolerant — unrecognised lines are skipped. Throws on any
- *  malformed `OPTIM` line (e.g. missing range or bounds). */
+ *  malformed `OPTIM` line (e.g. missing range or bounds), and on one whose
+ *  high bound is not above its low bound (a box of zero width included),
+ *  which tadah hpo refuses, naming the line. */
 std::vector<Bound> parse_hpo_target_bounds(const std::string& path);
 
 /** \brief Sample corner combinations of `bounds`. For `bounds.size() <= 12`
