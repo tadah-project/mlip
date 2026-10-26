@@ -451,3 +451,182 @@ TEST_CASE("check_bounds: a dataset whose statistics cannot be computed is "
   CHECK(t.second.find("structure 2 of 2 ('tiny')") != std::string::npos);
   CHECK(t.second.find("too small") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+//  check_bounds_at_corners judges a density channel by its reach
+// ---------------------------------------------------------------------------
+
+#include <tadah/mlip/preflight_audit.h>
+
+namespace {
+
+/* The many-body part of the Ta seed of the HPO tests (tests/data/ta of
+ * HPO): DM_mBlipEnv, a Gaussian exp(-SGRIDMB r^2) centred at the origin
+ * (CGRIDMB 0, SGRIDMB 0.2), RCUTMB 5.6; `cgridmb`, `sgridmb` and `rcutmb`
+ * replace those values. No pair term. */
+Context mblipenv_seed(double cgridmb = 0.0, double sgridmb = 0.2,
+                      double rcutmb = 5.6) {
+  tadah::core::PeriodicTable::initialize();
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("WATOM", 1.0);
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_mBlipEnv 0 1 1 7 7 Ta Ta");
+  c.add("RCUTENV", 5.0);
+  c.add("RCTYPEMB", "Cut_Poly");
+  c.add("RCUTMB", rcutmb);
+  c.add("SGRIDMB", sgridmb);
+  c.add("CGRIDMB", cgridmb);
+  c.add("SEMBFUNC", "1 1 1 1 1 1 1");
+  c.add("CEMBFUNC", "1 2 3 4 5 6 7");
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+/* Two bcc Ta cells (a = 3.3 A): the neighbour distances start at 2.858 A. */
+tadah::mlip::StructureDB bcc_ta_db() {
+  tadah::mlip::StructureDB stdb;
+  stdb.add(bcc_ta_cell("bcc-Ta-1", false));
+  stdb.add(bcc_ta_cell("bcc-Ta-2", false));
+  return stdb;
+}
+
+}  // namespace
+
+/* Pins: the box of the Ta seed of the HPO tests, SGRIDMB 0.05 to 1.0 and
+ * RCUTMB 4 to 5.6 around a Gaussian centred at the origin (CGRIDMB 0),
+ * passes at its 4 corners on bcc Ta (r_min 2.858 A: exp(-1.0 * 2.858^2) is
+ * 2.8e-4 at the narrowest corner); with SGRIDMB up to 8 the 2 corners at 8
+ * (exp(-8 * 2.858^2) = 4e-29) fail, and with CGRIDMB 30 all 4 do.
+ * Before the fix: all 4 corners of every box failed ("CGRIDMB=0.000000 is
+ * outside the dataset's r_ij range [...] -- ρ will be ~0 for every
+ * atom"): the check compared the centre alone with the neighbour
+ * distances. */
+TEST_CASE("check_bounds: a Gaussian density centred at the origin passes "
+          "the corners where its width reaches the neighbours",
+          "[check_bounds][density_reach]") {
+  tadah::mlip::StructureDB stdb = bcc_ta_db();
+  const std::vector<Bound> b = {box("SGRIDMB", -1, 0.05, 1.0),
+                                box("RCUTMB", -1, 4.0, 5.6)};
+  const auto seed_box = run_corners(stdb, mblipenv_seed(), b);
+  CHECK(seed_box.n_corners == 4);
+  CHECK(seed_box.n_corners_failing == 0);
+
+  const std::vector<Bound> wide = {box("SGRIDMB", -1, 0.05, 8.0),
+                                   box("RCUTMB", -1, 4.0, 5.6)};
+  const auto narrow = run_corners(stdb, mblipenv_seed(), wide);
+  CHECK(narrow.n_corners == 4);
+  CHECK(narrow.n_corners_failing == 2);
+  for (std::size_t ci : narrow.failing_corner_indices)
+    CHECK(sample_corners(wide)[ci][0] == 8.0);
+
+  const auto far = run_corners(stdb, mblipenv_seed(30.0), b);
+  CHECK(far.n_corners_failing == 4);
+}
+
+/* Pins: the dataset statistics of check_bounds reach the largest cutoff of
+ * the box: with the seed's RCUTMB 2.0, below the nearest neighbour (2.858
+ * A), and a box RCUTMB 2.0 to 5.6, only the 2 corners at 2.0 fail ("below
+ * the smallest neighbour distance"); the corners at 5.6 find the
+ * neighbours.
+ * Before the fix: the statistics were computed at the seed's cutoff
+ * (RCUTMAX 2.0: Context::addInternal recomputes RCUTMAX from RCUT2B and
+ * RCUTMB, which undid the widening to the box) and found no neighbour
+ * distance, and no corner failed: the checks of DM_mBlipEnv passed
+ * statistics without neighbours, so the corners at 2.0, whose density
+ * sums over no neighbour, passed too. */
+TEST_CASE("check_bounds: the statistics reach the largest cutoff of the box",
+          "[check_bounds][density_reach]") {
+  tadah::mlip::StructureDB stdb = bcc_ta_db();
+  const std::vector<Bound> b = {box("RCUTMB", -1, 2.0, 5.6),
+                                box("SGRIDMB", -1, 0.1, 0.2)};
+  const auto res = run_corners(stdb, mblipenv_seed(0.0, 0.2, 2.0), b);
+  CHECK(res.n_corners == 4);
+  CHECK(res.n_corners_failing == 2);
+  for (std::size_t ci : res.failing_corner_indices)
+    CHECK(sample_corners(b)[ci][0] == 2.0);
+}
+
+/* Pins: the pre-flight audit of the Ta seed of the HPO tests (DM_mBlipEnv,
+ * CGRIDMB 0, SGRIDMB 0.2, RCUTMB 5.6) on bcc Ta has no FAIL finding, so
+ * AUDIT error lets it train: enforce_audit_mode(..., Error) throws nothing.
+ * Before the fix: the CGRIDMB check failed ("CGRIDMB=0.000000 is outside
+ * the dataset's r_ij range"), and tadah train with AUDIT error refused the
+ * seed (exit 1). */
+TEST_CASE("check_bounds: AUDIT error accepts the Ta seed whose Gaussian "
+          "density is centred at the origin",
+          "[check_bounds][density_reach][preflight_audit]") {
+  tadah::mlip::StructureDB stdb = bcc_ta_db();
+  Context seed = mblipenv_seed();
+  const auto rep = tadah::mlip::run_preflight_from_db(
+      stdb, seed, tadah::mlip::AuditMode::Error);
+  std::string findings;
+  for (const auto &m : rep.messages)
+    findings += m.descriptor_label + "." + m.param_key + ": " + m.text + "\n";
+  INFO(findings);
+  CHECK_FALSE(rep.any_fail());
+  CHECK_NOTHROW(tadah::mlip::enforce_audit_mode(
+      rep, tadah::mlip::AuditMode::Error));
+}
+
+// ---------------------------------------------------------------------------
+//  tadah analysis check_bounds reads a grid generator as the grid it makes
+// ---------------------------------------------------------------------------
+
+#include <tadah/mlip/engines/analysis_check_bounds_engine.h>
+#include <tadah/mlip/task.h>
+
+#include <cstdlib>
+#include <filesystem>
+#include <unistd.h>
+
+/* Pins: `tadah analysis check_bounds` expands a radial grid given by a
+ * generator, as tadah hpo does, before it audits the corners: a DM_Blip
+ * seed with "CGRIDMB LIN 4 3.0 4.5" and "SGRIDMB LIN 4 1 1" (four blips
+ * from 3 to 4.5 A) and a box RCUTMB 4 to 5 on bcc Ta passes at its 2
+ * corners (exit status 0).
+ * Before the fix: the checks read the generator's tokens as the grid, and
+ * the CGRIDMB check of DM_Blip threw on "LIN" ("Failed converting "LIN" for
+ * key=CGRIDMB"), which ended the run. */
+TEST_CASE("check_bounds: a grid generator is read as the grid it makes",
+          "[check_bounds][seed]") {
+  namespace fs = std::filesystem;
+  tadah::core::PeriodicTable::initialize();
+  const fs::path dir = fs::temp_directory_path() /
+                       ("tadah_cb_lin_" + std::to_string(::getpid()));
+  fs::create_directories(dir);
+  tadah::mlip::StructureDB db;
+  db.add(bcc_ta_cell("bcc-Ta-1", false));
+  db.add(bcc_ta_cell("bcc-Ta-2", false));
+  const std::string dbfile = (dir / "bcc.tadahdb").string();
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  const std::string target = (dir / "box.hpo").string();
+  std::ofstream(target) << "OPTIM RCUTMB (1) 4.0 5.0\n";
+  Context c;
+  c.add("DBFILE", dbfile);
+  c.add("HPOTARGET", target);
+  c.add("ATOM", "Ta");
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_Blip 0 4 4 Ta Ta");
+  c.add("CGRIDMB", "LIN 4 3.0 4.5");
+  c.add("SGRIDMB", "LIN 4 1 1");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.0);
+  c.add("VERBOSE", 0);
+  tadah::mlip::Task task("analysis", c);
+  int rc = -1;
+  std::string what;
+  try {
+    tadah::mlip::engines::AnalysisCheckBoundsEngine engine;
+    engine.validate(task);
+    rc = engine.run(task);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  INFO(what);
+  CHECK(rc == EXIT_SUCCESS);
+}

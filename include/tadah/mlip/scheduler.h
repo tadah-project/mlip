@@ -10,11 +10,10 @@ namespace tadah {
 namespace mlip {
 
 /**
- * @brief Manages and executes tasks.
+ * @brief Runs tasks in the order they were added.
  *
- * The Scheduler collects Task objects,
- * orders them based on original order, global priority, and task type groupings.
- * A stub for dependency rules is provided.
+ * The Scheduler collects Task objects and runs them one after the other
+ * (execute()); the command line gives one.
  */
 class Scheduler {
 public:
@@ -32,14 +31,6 @@ public:
   void addTasks(std::vector<Task> tasks);
 
   /**
-   * @brief Schedules tasks.
-   *
-   * The default ordering is the order of appearance in the user_config.
-   * Secondary sorting is done by global priority and grouping by task type.
-   */
-  void schedule();
-
-  /**
    * @brief Executes scheduled tasks sequentially.
    *
    * Before it runs any task it checks that each has an engine
@@ -55,16 +46,8 @@ public:
    */
   int execute();
 
-  /**
-   * @brief Sets a dependency rule (stub) for task ordering.
-   *
-   * @param rule A string representing the dependency rule.
-   */
-  // void setDependencyRule(const std::string &rule);
-
 private:
   std::vector<Task> tasks_;
-  // std::string dependencyRule_; ///< Stub for dependency ordering.
 };
 
 } // namespace mlip

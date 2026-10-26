@@ -1,15 +1,19 @@
 #ifndef TADAH_MLIP_BOUND_SUGGESTER_H
 #define TADAH_MLIP_BOUND_SUGGESTER_H
 
-// `tadah hpo --suggest-bounds` — produce data-driven OPTIM bound
-// proposals for every parameter declared in each descriptor's meta().
-// Part of the HPO bound-validation pipeline.
+// `tadah analysis suggest_bounds`: OPTIM bound proposals for every
+// parameter declared in each descriptor's meta(), from the data and the
+// seed. Part of the HPO bound-validation pipeline.
 //
 // The suggester reads dataset statistics (a `DataStats` produced by
-// compute_data_stats) plus the seed `Context` from the user's config,
-// walks the configured descriptor's metadata, and returns one
-// `OptimSuggestion` per (key, arg_pos) pair. Each suggestion carries
-// a human-readable rationale so the user can review and override.
+// compute_data_stats) plus the seed `Context` of the training
+// configuration, walks the configured descriptor's metadata, and returns
+// one `OptimSuggestion` per (key, arg_pos) pair. Each suggestion carries
+// its rationale: the form it assumes and the statistics it comes from,
+// that its range is a fixed one, or, from a suggester that gives none, the
+// scale and the role of the parameter; or why no OPTIM line is suggested.
+// A range holds the seed's value, where tadah hpo starts: one widened to
+// hold it says so.
 
 #include <iosfwd>
 #include <optional>
@@ -33,6 +37,8 @@ struct OptimSuggestion {
   double       hi{0.0};
   std::optional<double> seed_value{};
   std::string  rationale{};          ///< human-readable explanation
+  bool         fixed{false};         ///< a fixed range, not from the data
+  bool         none{false};          ///< no OPTIM line; rationale says why
   models::Criticality crit{models::Criticality::Optional};
   models::Scale       scale{models::Scale::Dimensionless};
   std::string  units{};
@@ -43,24 +49,43 @@ struct OptimSuggestion {
  *  \param data        DataStats produced by compute_data_stats.
  *  \param meta        DescriptorMeta returned by the descriptor's
  *                     `D_Base::meta()`.
- *  \param seed        Context with seed values (the user's
- *                     `train.tadah` after CoreUserConfigParser
- *                     postprocessing).
+ *  \param seed        Context with seed values (the training
+ *                     configuration, its radial grids expanded:
+ *                     D_mJoin::expand_grids).
  *  \return vector of OptimSuggestion, in the order params appear in
- *          `meta.params`. For vector-valued params (arg_pos >= 0)
- *          the suggester is called once per existing seed entry.
+ *          `meta.params`. For vector-valued params (arg_pos 0) the
+ *          suggester is called once per existing seed entry. A value of
+ *          the descriptor's TYPE2B or TYPEMB line (arg_pos > 0) gets a
+ *          suggestion with `none` set, as tadah hpo searches no value of
+ *          those lines, its seed value read from the descriptor's line.
+ *          A suggestion with `none` set has no range (no OPTIM line); one
+ *          with `fixed` set has a range not derived from the data. A
+ *          range that does not hold the seed's value is widened to it
+ *          (its rationale says so): tadah hpo refuses a starting point
+ *          outside its box. Each seed value is read as a number (a value
+ *          that is none throws). For a descriptor of a joined line,
+ *          @p seed is its own context (joined_descriptors()), and the
+ *          caller numbers its entries as the whole key does.
  */
 std::vector<OptimSuggestion>
 suggest_bounds_for(const tadah::core::stats::DataStats& data,
                    const models::DescriptorMeta&        meta,
                    const tadah::core::Context&          seed);
 
-/** \brief Pretty-print suggestions as a human table. */
+/** \brief Pretty-print suggestions as a human table: one row per
+ *  suggestion, named "descriptor.key(i)" with i the entry as an OPTIM line
+ *  numbers it (from 1), with its rationale (the form and the data, "fixed
+ *  range" and why, or the scale and the role of the parameter), and one
+ *  row "no OPTIM line" per suggestion without a range. Leaves the format
+ *  of @p os as it found it. */
 void print_suggestions(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os);
 
 /** \brief Write suggestions as a compilable `OPTIM ...` block. The
- *  output is appendable to an HPO target file. */
+ *  output is appendable to an HPO target file. The entries of a vector
+ *  key that follow one another with the same range share one line
+ *  "(i-j)"; an entry without a range gets a comment line instead. Leaves
+ *  the format of @p os as it found it. */
 void write_optim_block(const std::vector<OptimSuggestion>& sug,
                        std::ostream& os);
 

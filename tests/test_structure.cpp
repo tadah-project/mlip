@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include "catch2/catch.hpp"
@@ -313,6 +314,38 @@ TEST_CASE("Structure::save keeps the caller's stream format and reports "
 
   CHECK_THROWS_AS(st.save("/nonexistent_dir_for_tadah_test/x.dat"),
                   std::runtime_error);
+}
+
+/* Pins: printing a Structure (operator<<, which tadah data print writes to
+ * standard output) leaves the format of the stream as it found it: after
+ * a structure is written to a stream of the default format, its flags,
+ * precision, width and fill are those it had, and 1.0 then prints "1"
+ * (a kernel's settings line copies the format of std::cout, and a program
+ * may run several commands in one process).
+ * Before the fix: the stream was left std::fixed and std::left at the
+ * printer's precision, and 1.0 printed "1.000000". */
+TEST_CASE("Printing a Structure leaves the format of the stream as it "
+          "found it", "[structure][stream_state]") {
+  PeriodicTable::initialize();
+  Structure st;
+  st.label = "fmt";
+  st.cell.load(3.3, 0.0, 0.0, 0.0, 3.3, 0.0, 0.0, 0.0, 3.3);
+  st.add_atom(Atom(Element("Ta"), 0.0, 0.0, 0.0, 0, 0, 0));
+  st.add_atom(Atom(Element("Ta"), 1.65, 1.65, 1.65, 0, 0, 0));
+  std::ostringstream os;
+  const auto flags = os.flags();
+  const auto precision = os.precision();
+  const auto fill = os.fill();
+  os << st;
+  CHECK(os.str().find("Structure  :    fmt") != std::string::npos);
+  CHECK(os.flags() == flags);
+  CHECK(os.precision() == precision);
+  CHECK(os.width() == 0);
+  CHECK(os.fill() == fill);
+  std::ostringstream after;
+  after.copyfmt(os);
+  after << 1.0;
+  CHECK(after.str() == "1");
 }
 
 // get_nn_iindex(i, j, jj) returns the position ii of the reverse entry

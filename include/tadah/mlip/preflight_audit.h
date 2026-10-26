@@ -80,7 +80,10 @@ struct AuditReport {
 
 /** \brief Soft audit. Walks `meta()` for every descriptor configured
  *  in `seed` (TYPE2B and TYPEMB), runs its HealthChecks against
- *  `data` and `seed`, accumulates verdicts.
+ *  `data` and `seed`, accumulates verdicts. Each descriptor of a joined
+ *  line (D2_mJoin, DM_mJoin) is checked on its own context
+ *  (joined_descriptors(): its channels, its cutoff), and its messages
+ *  name an entry by its place in the whole key.
  *
  *  Honours `mode`:
  *    Off   -> returns an empty report immediately
@@ -122,16 +125,18 @@ AuditReport run_preflight_from_db(
     AuditMode                   mode);
 
 /** \brief Critical-fixed-not-optimised diagnosis. Emits one WARN per
- *  parameter that is (a) declared `Criticality::Critical` in some
- *  configured descriptor's meta(), (b) present and constant in the
- *  seed, and (c) absent from every OPTIM block. Always emits at WARN
- *  (never FAIL) — this is a configuration smell, not a hard error.
+ *  parameter that is (a) declared `Criticality::Critical` in the meta()
+ *  of a configured descriptor that has a key in the search space, (b)
+ *  present and constant in the seed, and (c) absent from every OPTIM
+ *  block (cutoffs derived from knots or fixed by bump supports under a
+ *  hard cutoff, and radial centres at the origin, excepted). Always emits
+ *  at WARN (never FAIL): this is a configuration smell, not a hard error.
  *
  *  `optim_keys` is the canonical set of parameter names under HPO
- *  control (e.g. the keys of `HPOTargets::optimap`). Callers without
- *  HPO context (i.e. plain `tadah train`) pass an empty set, which is
- *  treated as "no OPTIM coverage" and flags every Critical fixed
- *  parameter in the seed.
+ *  control (the keys of `HPOTargets::optimap`). A descriptor none of
+ *  whose keys is among them is not searched, and its fixed keys are not
+ *  flagged: an empty set, or a search of FIXWEIGHT alone, gives an empty
+ *  report. `tadah hpo` runs it under AUDIT warn and error only.
  */
 AuditReport run_critical_optim_audit(
     const tadah::core::Context& seed,

@@ -164,14 +164,15 @@ int TrainEngine::run(tadah::mlip::Task &task) {
       try {
         enforce_audit_mode(report, mode);
       } catch (const std::exception& e) {
-        // AUDIT=error and there are FAIL findings. Surface the message
-        // and exit immediately. Scheduler::execute ignores engine
-        // return codes, so a clean refusal-to-launch must short-circuit
-        // the process here. EXIT_FAILURE is documented behaviour for
-        // this mode (`AUDIT error` in the user's seed config).
+        // AUDIT=error and there are FAIL findings: the run is refused
+        // before the fit, with the findings, and the engine's status 1
+        // (EXIT_FAILURE) is the status of the run (Scheduler::execute
+        // returns the first status that is not 0, and stops). The status
+        // is returned, not exited with: the program that runs tadah goes
+        // on.
         tadah::core::Logger::instance().log(
             tadah::core::LogLevel::ERROR, e.what());
-        std::exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
       }
     }
   }

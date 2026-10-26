@@ -1,6 +1,7 @@
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/mlip/engines/predict_engine.h>
+#include <tadah/mlip/stream_format_guard.h>
 #include <tadah/mlip/command_options.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
@@ -161,6 +162,9 @@ int PredictEngine::run(mlip::Task &task) {
   if(taskContext.get<bool>("ANALYTICS")) {
     core::Logger::instance().log(core::LogLevel::INFO, "Calculating analytics...");
     Analytics a(stdb, stpred);
+    // The table formats std::cout its way (std::scientific, precision 6):
+    // the next writer of std::cout finds it as it was.
+    const StreamFormatGuard keep_format(std::cout);
 
     const int col_width = 24;  // the longest row name and a blank
     const int val_width = 16;
