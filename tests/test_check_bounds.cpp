@@ -630,3 +630,35 @@ TEST_CASE("check_bounds: a grid generator is read as the grid it makes",
   INFO(what);
   CHECK(rc == EXIT_SUCCESS);
 }
+
+/* Pins: a box whose high bound is not above its low bound is refused as
+ * tadah hpo refuses it ("Highbound must be greater than lowbound"): the
+ * parse of "OPTIM SGRIDMB (1) 0.2 0.2" (zero width) and of "OPTIM RCUT2B
+ * (1) 6 4" throws std::runtime_error naming the line number, the line and
+ * that its high bound is not above its low bound; "OPTIM RCUT2B (1) 4 6"
+ * is read.
+ * Before the fix: both were read as boxes (a corner of a box of zero width
+ * is its only value): check_bounds passed a box tadah hpo refuses. */
+TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
+          "its low bound",
+          "[check_bounds]") {
+  for (const std::string line : {"OPTIM SGRIDMB (1) 0.2 0.2",
+                                 "OPTIM RCUT2B (1) 6 4"}) {
+    CAPTURE(line);
+    const auto path = write_tmp("OPTIM RCUTMB (1) 4 6\n" + line + "\n");
+    std::string what;
+    try {
+      parse_hpo_target_bounds(path);
+    } catch (const std::runtime_error& e) {
+      what = e.what();
+    }
+    std::remove(path.c_str());
+    INFO(what);
+    CHECK(what.find("line 2") != std::string::npos);
+    CHECK(what.find(line) != std::string::npos);
+    CHECK(what.find("not above") != std::string::npos);
+  }
+  const auto path = write_tmp("OPTIM RCUT2B (1) 4 6\n");
+  CHECK(parse_hpo_target_bounds(path).size() == 1u);
+  std::remove(path.c_str());
+}

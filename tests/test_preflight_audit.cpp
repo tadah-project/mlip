@@ -757,3 +757,105 @@ TEST_CASE("preflight_audit: each descriptor of a DM_mJoin line is judged by "
     CHECK(n == 1u);
   }
 }
+
+// ---------------------------------------------------------------------------
+//  The critical-OPTIM audit of a joined line, and a cutoff that holds no
+//  neighbour
+// ---------------------------------------------------------------------------
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+namespace {
+
+/* The findings of @p rep as "label.key: text", sorted. */
+std::vector<std::string> findings_of(const AuditReport& rep) {
+  std::vector<std::string> out;
+  for (const auto& m : rep.messages)
+    out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+/* TYPEMB DM_EAD 0 1 1 Ta Ta, one Gaussian channel at @p centre, SGRIDMB 1,
+ * RCUTMB 5.6. */
+Context single_ead_seed(const std::string& centre) {
+  Context c;
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.6);
+  c.add("CGRIDMB", centre);
+  c.add("SGRIDMB", 1.0);
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the critical-OPTIM audit (tadah hpo under AUDIT warn and error)
+ * judges each descriptor of a DM_mJoin line by its own values: for DM_mJoin
+ * of DM_EAD with its Gaussian at the origin (CGRIDMB(1) = 0) and DM_EAD with
+ * its Gaussian on the first shell (CGRIDMB(2) = 2.9), RCUTMB 5.6 5.6, a
+ * search of SGRIDMB, the findings are those of the two descriptors alone,
+ * together: RCUTMB of each and CGRIDMB of the second (a centre at the
+ * origin is not flagged), three findings.
+ * Before the fix: each descriptor read the whole line: CGRIDMB 0 2.9 is not
+ * every centre at the origin, so both descriptors' CGRIDMB were flagged,
+ * four findings. */
+TEST_CASE("preflight_audit: critical_optim_audit judges each descriptor of a "
+          "joined line by its own values",
+          "[preflight_audit][join]") {
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "5.6 5.6");
+  joined.add("CGRIDMB", "0 2.9");
+  joined.add("SGRIDMB", "1 1");
+  const std::vector<std::string> space = {"SGRIDMB"};
+  std::vector<std::string> alone = findings_of(
+      run_critical_optim_audit(single_ead_seed("0"), space));
+  const std::vector<std::string> second = findings_of(
+      run_critical_optim_audit(single_ead_seed("2.9"), space));
+  alone.insert(alone.end(), second.begin(), second.end());
+  std::sort(alone.begin(), alone.end());
+  const std::vector<std::string> together =
+      findings_of(run_critical_optim_audit(joined, space));
+  CAPTURE(alone, together);
+  CHECK(together == alone);
+  CHECK(together.size() == 3u);
+}
+
+/* Pins: the pre-flight audit fails a descriptor whose cutoff holds no
+ * neighbour distance, whichever descriptor it is: D2_Knot5 with RCUT2B 2
+ * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL,
+ * naming RCUT2B and 2, under AUDIT error.
+ * Before the fix: D2_Knot5's cutoff had no check: no FAIL, and tadah
+ * train trained a descriptor that is 0 for every structure. */
+TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
+          "FAIL finding",
+          "[preflight_audit][cutoff]") {
+  Context seed;
+  seed.add("INIT2B", "true");
+  seed.add("TYPE2B", "D2_Knot5 2 2 Ta Ta");
+  seed.add("RCTYPE2B", "Cut_Dummy");
+  seed.add("RCUT2B", 2.0);
+  seed.add("CGRID2B", "1.5 2.0");
+  seed.add("KDEG2B", "5 5");
+  const auto rep = run_preflight_soft(bcc_ta_distances(), seed,
+                                      AuditMode::Error);
+  const std::string fails = fails_of(rep);
+  INFO(fails);
+  std::size_t n = 0;
+  for (const auto& m : rep.messages) {
+    if (m.level != AuditMessage::Level::Fail) continue;
+    ++n;
+    CHECK(m.descriptor_label == "D2_Knot5");
+    CHECK(m.param_key == "RCUT2B");
+    CHECK(m.text.find("RCUT2B = 2 ") != std::string::npos);
+  }
+  CHECK(n == 1u);
+}
