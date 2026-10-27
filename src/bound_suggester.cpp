@@ -94,14 +94,66 @@ void refuse_zero_width(OptimSuggestion &s) {
   s.rationale = open_ended(s.rationale) + ": a range of zero width (" +
                 value.str() + "), which tadah hpo refuses";
 }
+
+/* The suggestion of entry @p ap of @p pm on the statistics @p line of the
+ * element pairs of a descriptor's line: the suggester's on the statistics of
+ * each pair (one per_pair entry), the range that holds the range of each
+ * (no row when no pair gives one). Without a pair, the suggester's on
+ * @p line (no row, naming the pairs of the line). The rationale gives each
+ * pair's once (none when the suggester gives none); a range is fixed when
+ * every pair's is. */
+models::BoundSuggestion suggest_over_pairs(
+    const models::ParamMeta &pm, const tadah::core::stats::DataStats &line,
+    const models::SeedView &sv, int ap) {
+  if (line.per_pair.size() < 2) return pm.suggest(line, sv, ap);
+  std::vector<models::BoundSuggestion> each;
+  for (const auto &pp : line.per_pair) {
+    tadah::core::stats::DataStats one = line;
+    one.per_pair = {pp};
+    each.push_back(pm.suggest(one, sv, ap));
+  }
+  std::vector<std::string> why;
+  for (const auto &b : each)
+    if (!b.rationale.empty() &&
+        std::find(why.begin(), why.end(), b.rationale) == why.end())
+      why.push_back(b.rationale);
+  std::string joined;
+  for (const auto &w : why)
+    joined += (joined.empty() ? "" : "; ") + open_ended(w);
+  bool ranged = false, fixed = true;
+  double lo = 0.0, hi = 0.0;
+  for (const auto &b : each) {
+    if (b.none) continue;
+    const double l = std::min(b.first, b.second);
+    const double h = std::max(b.first, b.second);
+    lo = ranged ? std::min(lo, l) : l;
+    hi = ranged ? std::max(hi, h) : h;
+    fixed = fixed && b.fixed;
+    ranged = true;
+  }
+  if (why.size() > 1)
+    joined = "the range that holds the range of each element pair of the "
+             "descriptor's line: " + joined;
+  if (!ranged) return models::BoundSuggestion::no_row(joined);
+  models::BoundSuggestion out(lo, hi, joined);
+  out.fixed = fixed;
+  return out;
+}
 }  // namespace
 
 std::vector<OptimSuggestion>
 suggest_bounds_for(const tadah::core::stats::DataStats& data,
                    const models::DescriptorMeta&        meta,
-                   const tadah::core::Context&          seed) {
+                   const tadah::core::Context&          seed,
+                   const std::optional<models::LinePairs>& pairs) {
   std::vector<OptimSuggestion> out;
-  models::SeedView sv(seed);
+  // A descriptor sums over the neighbours of the element pairs its line
+  // names: its ranges come from their statistics, which its rationales
+  // name.
+  const models::SeedView sv = pairs ? models::SeedView(seed, {}, *pairs)
+                                    : models::SeedView(seed);
+  const tadah::core::stats::DataStats line =
+      pairs ? pairs->stats(data) : data;
 
   for (const auto& pm : meta.params) {
     // A value of the descriptor's TYPE line (ParamMeta::arg_pos > 0: its
@@ -166,7 +218,9 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
     for (std::size_t i = 0; i < n_entries; ++i) {
       const int ap = (pm.arg_pos < 0) ? -1
                                       : static_cast<int>(base_arg_pos < 0 ? i : base_arg_pos);
-      const models::BoundSuggestion bracket = pm.suggest(data, sv, ap);
+      const models::BoundSuggestion bracket =
+          pairs ? suggest_over_pairs(pm, line, sv, ap)
+                : pm.suggest(data, sv, ap);
 
       OptimSuggestion s;
       s.descriptor_label = meta.label;

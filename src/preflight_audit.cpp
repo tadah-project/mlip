@@ -4,6 +4,7 @@
 #include <tadah/core/number_format.h>
 
 #include <map>
+#include <optional>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -34,14 +35,29 @@ const char* level_str(AuditMessage::Level l) {
   return "?";
 }
 
+/* A descriptor of the seed with the context its parameters are read from:
+ * the seed for a single descriptor, a descriptor's own context for one of
+ * a joined line (joined_descriptors()), whose entries the messages number
+ * as the whole key numbers them (SeedView::entry_number()), and the element
+ * pairs its line names, by whose neighbour statistics it is judged (none:
+ * metadata given without a line, judged by every pair of the data). */
+struct DescriptorCheck {
+  std::string label;
+  tadah::models::DescriptorMeta meta;
+  tadah::core::Context context;
+  std::map<std::string, std::size_t> first_entries;
+  std::optional<tadah::models::LinePairs> pairs;
+};
+
 // Walk seed for TYPE2B / TYPEMB labels and instantiate via the no-arg
 // D_Base factory (the only path that covers both D2_* and DM_*).
-// Returns the labels paired with their meta() — descriptors that fail
+// Returns each descriptor with its meta() and the element pairs of its
+// line (D_Base::get_init_atoms() of the seed) — descriptors that fail
 // to instantiate or whose meta() is nullopt are silently skipped (the
 // audit is best-effort across the configured descriptor set).
-std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>
+std::vector<DescriptorCheck>
 collect_descriptor_metas(const tadah::core::Context& seed) {
-  std::vector<std::pair<std::string, tadah::models::DescriptorMeta>> out;
+  std::vector<DescriptorCheck> out;
   for (const char* type_key : {"TYPE2B", "TYPEMB"}) {
     if (!seed.contains(type_key)) continue;
     const std::size_t n = seed.size(type_key);
@@ -50,36 +66,35 @@ collect_descriptor_metas(const tadah::core::Context& seed) {
       try {
         label = seed.get<std::string>(type_key, i);
       } catch (...) { continue; }
+      std::unique_ptr<tadah::models::D_Base> obj;
+      std::optional<tadah::models::DescriptorMeta> m;
       try {
-        std::unique_ptr<tadah::models::D_Base> obj(
-            tadah::core::factory<tadah::models::D_Base>(label));
-        auto m = obj->meta();
-        if (m.has_value()) out.emplace_back(label, std::move(*m));
+        obj.reset(tadah::core::factory<tadah::models::D_Base>(label));
+        m = obj->meta();
       } catch (...) {
         // Descriptor class not registered with no-arg factory or meta()
         // not yet implemented — skip; suggester / audit cover other
         // descriptors uniformly.
+        continue;
       }
+      if (!m.has_value()) continue;
+      out.push_back(DescriptorCheck{
+          label, std::move(*m), seed, {},
+          tadah::models::LinePairs(obj->get_init_atoms(seed))});
     }
   }
   if(!seed.blocks("DESCRIPTOR").empty())
     for(const auto &child:models::embed_contexts(seed))if(!child.blocks("DESCRIPTOR").empty()) {
       std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(child.get<std::string>("TYPEMB"),child));
-      if(auto meta=descriptor->meta())out.emplace_back(meta->label,std::move(*meta));
+      if(auto meta=descriptor->meta()) {
+        std::string label = meta->label;
+        out.push_back(DescriptorCheck{
+            std::move(label), std::move(*meta), seed, {},
+            tadah::models::LinePairs(descriptor->get_init_atoms(child))});
+      }
     }
   return out;
 }
-
-/* A descriptor of the seed with the context its parameters are read from:
- * the seed for a single descriptor, a descriptor's own context for one of
- * a joined line (joined_descriptors()), whose entries the messages number
- * as the whole key numbers them (SeedView::entry_number()). */
-struct DescriptorCheck {
-  std::string label;
-  tadah::models::DescriptorMeta meta;
-  tadah::core::Context context;
-  std::map<std::string, std::size_t> first_entries;
-};
 
 /* The descriptors of the seed as collect_descriptor_metas() finds them,
  * with each descriptor of a joined TYPE2B or TYPEMB line on its own
@@ -96,14 +111,19 @@ collect_descriptor_checks(const tadah::core::Context& seed) {
           tadah::core::factory<tadah::models::D_Base>(jd.label));
       auto m = obj->meta();
       if (!m.has_value()) continue;
+      tadah::models::LinePairs pairs(obj->get_init_atoms(jd.context));
       out.push_back(DescriptorCheck{jd.label, std::move(*m),
                                     std::move(jd.context),
-                                    std::move(jd.first_entries)});
+                                    std::move(jd.first_entries),
+                                    std::move(pairs)});
     }
     single.remove(type_key);
   }
-  for (auto& [label, meta] : collect_descriptor_metas(single))
-    out.push_back(DescriptorCheck{label, std::move(meta), seed, {}});
+  // The descriptors of the other lines, each with the seed as its context.
+  for (auto& c : collect_descriptor_metas(single)) {
+    c.context = seed;
+    out.push_back(std::move(c));
+  }
   return out;
 }
 
@@ -176,7 +196,13 @@ AuditReport run_preflight_checks(
   if (mode == AuditMode::Off) return report;
 
   for (const auto& c : checks) {
-    const tadah::models::SeedView sv(c.context, c.first_entries);
+    // A descriptor sums over the neighbours of the element pairs its line
+    // names: its checks read their statistics, and name them.
+    const tadah::models::SeedView sv =
+        c.pairs ? tadah::models::SeedView(c.context, c.first_entries, *c.pairs)
+                : tadah::models::SeedView(c.context, c.first_entries);
+    const tadah::core::stats::DataStats line_data =
+        c.pairs ? c.pairs->stats(data) : data;
     // Per-parameter HealthChecks.
     for (const auto& pm : c.meta.params) {
       if (!pm.check) continue;
@@ -185,7 +211,7 @@ AuditReport run_preflight_checks(
       // handle absent-but-derivable cases).
       if (!sv.contains(pm.key)) continue;
 
-      auto v = pm.check(data, sv);
+      auto v = pm.check(line_data, sv);
       if (tadah::models::is_ok(v)) continue;
       AuditMessage msg;
       msg.descriptor_label = c.label;
@@ -200,7 +226,7 @@ AuditReport run_preflight_checks(
     // Whole-descriptor cross-parameter checks (e.g. ρ-collapse).
     for (const auto& chk : c.meta.cross_param_checks) {
       if (!chk) continue;
-      auto v = chk(data, sv);
+      auto v = chk(line_data, sv);
       if (tadah::models::is_ok(v)) continue;
       AuditMessage msg;
       msg.descriptor_label = c.label;
@@ -232,7 +258,7 @@ AuditReport run_preflight_soft_with_metas(
   if (mode == AuditMode::Off) return {};
   std::vector<DescriptorCheck> checks;
   for (const auto& [label, meta] : metas)
-    checks.push_back(DescriptorCheck{label, meta, seed, {}});
+    checks.push_back(DescriptorCheck{label, meta, seed, {}, std::nullopt});
   return run_preflight_checks(data, checks, mode);
 }
 
@@ -414,7 +440,7 @@ AuditReport run_critical_optim_audit_with_metas(
     const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
   std::vector<DescriptorCheck> checks;
   for (const auto& [label, meta] : metas)
-    checks.push_back(DescriptorCheck{label, meta, seed, {}});
+    checks.push_back(DescriptorCheck{label, meta, seed, {}, std::nullopt});
   SearchSpace space;
   space.names.insert(optim_keys.begin(), optim_keys.end());
   return critical_optim_audit(checks, space);

@@ -84,7 +84,11 @@ struct AuditReport {
  *  `data` and `seed`, accumulates verdicts. Each descriptor of a joined
  *  line (D2_mJoin, DM_mJoin) is checked on its own context
  *  (joined_descriptors(): its channels, its cutoff), and its messages
- *  name an entry by its place in the whole key.
+ *  name an entry by its place in the whole key. A descriptor sums over the
+ *  neighbours of the element pairs its own line names (models::LinePairs,
+ *  "D2_Blip 4 4 Ta Ta": the Ta-Ta pairs): its checks are given the
+ *  statistics of those pairs of `data` alone, and their messages name them
+ *  ("below the smallest (Ta, Ta) neighbour distance of the dataset").
  *
  *  Honours `mode`:
  *    Off   -> returns an empty report immediately
@@ -104,7 +108,8 @@ AuditReport run_preflight_soft(
  *  `(label, DescriptorMeta)` pairs instead of looking them up via the
  *  Registry. This avoids the static-initializer-elision pitfall when
  *  the audit is exercised from a unit test that does not link the
- *  full descriptor registration chain.
+ *  full descriptor registration chain. The metadata name no line, so
+ *  each check is given `data` as it is (every element pair of it).
  */
 AuditReport run_preflight_soft_with_metas(
     const tadah::core::stats::DataStats& data,

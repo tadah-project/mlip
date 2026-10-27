@@ -150,7 +150,11 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         // The rows name the descriptor as the configuration does (the
         // label of a class's metadata can be the class's: DM_Poly).
         m->label = jd.label;
-        auto sug = suggest_bounds_for(data, *m, jd.context);
+        // Its ranges come from the neighbour distances of the element
+        // pairs its own line names.
+        auto sug = suggest_bounds_for(
+            data, *m, jd.context,
+            models::LinePairs(obj->get_init_atoms(jd.context)));
         sug.erase(std::remove_if(sug.begin(), sug.end(),
                                  [&](const OptimSuggestion& s) {
                                    return jd.first_entries.count(s.key) &&
@@ -200,7 +204,8 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         continue;
       }
       m->label = label;
-      auto sug = suggest_bounds_for(data, *m, workCtx);
+      auto sug = suggest_bounds_for(
+          data, *m, workCtx, models::LinePairs(obj->get_init_atoms(workCtx)));
       all_suggestions.insert(all_suggestions.end(),
                              sug.begin(), sug.end());
     }
@@ -212,7 +217,9 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
     for(const auto &child:models::embed_contexts(workCtx))if(!child.blocks("DESCRIPTOR").empty()) {
       std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(child.get<std::string>("TYPEMB"),child));
       if(auto meta=descriptor->meta()) {
-        auto suggestions=suggest_bounds_for(data,*meta,workCtx);
+        auto suggestions=suggest_bounds_for(
+            data,*meta,workCtx,
+            models::LinePairs(descriptor->get_init_atoms(child)));
         all_suggestions.insert(all_suggestions.end(),suggestions.begin(),suggestions.end());
       }
     }
