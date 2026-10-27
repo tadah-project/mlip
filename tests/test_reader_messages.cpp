@@ -62,6 +62,34 @@ TEST_CASE("A structure that no reader takes is refused, naming what is read",
         "NOMAD entry id)");
 }
 
+/* Pins: -s of a path that names a structure file by its name (a .cif or
+ * .cell extension in any letter case, a file name that begins with POSCAR
+ * or CONTCAR) and that does not exist is refused as such: "the structure
+ * file missing.cif does not exist", "... sub/POSCAR does not exist",
+ * "... missing.CELL does not exist"; a path of no such name stays "... is
+ * neither a structure file tadah reads ... nor an online id ...".
+ * Before the fix: "missing.cif is neither a structure file tadah reads
+ * (CIF, POSCAR or CASTEP .cell) nor an online id (...)": the format was
+ * guessed from the name of an existing file only, so a mistyped path read
+ * as a format tadah does not read. */
+TEST_CASE("A structure file that does not exist is refused as such",
+          "[structure_readers][messages]") {
+  for (const std::string path :
+       {"missing.cif", "sub/POSCAR", "sub/CONTCAR_relaxed", "missing.CELL"}) {
+    INFO(path);
+    CHECK(thrown([&] {
+            (void)tadah::mlip::StructureReaderSelector::getReader(path);
+          }) == "the structure file " + path + " does not exist");
+  }
+  CHECK(thrown([] {
+          (void)tadah::mlip::StructureReaderSelector::getReader(
+              "missing.xyz");
+        }) ==
+        "missing.xyz is neither a structure file tadah reads (CIF, POSCAR or "
+        "CASTEP .cell) nor an online id (mp-..., cod-..., aflow:... or a "
+        "NOMAD entry id)");
+}
+
 /* Pins: a COD URL without a COD ID is refused before any request: "COD:
  * the COD ID cannot be read from the URL
  * https://www.crystallography.net/cod/".

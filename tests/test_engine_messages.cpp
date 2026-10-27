@@ -71,7 +71,12 @@ std::string refusal_of(const std::string &command,
  * stop and the number of points", ...); tadah train names INIT2B and
  * INITMB ("tadah train: INIT2B and INITMB are both false, so the potential
  * has no term; tadah train needs INIT2B true or INITMB true"); tadah refit
- * says which line names the EAM file.
+ * says which line names the EAM file. Most of these the command line
+ * refuses first (an option's required values and the options it needs:
+ * tadah predict -d without -p is "--dbfile requires --potential"), so
+ * validate() gives them to a Task that a C++ program builds; the refusals
+ * of tadah train, tadah refit and the OUTFILE counts of tadah predict are
+ * reached from the command line too.
  * Before the fix: every refusal began with the engine's class
  * ("PredictEngine requires a potential file to be set.", "TrainEngine
  * requires INIT2B or/and INITMB parameters to be set", "RefitEngine requires
@@ -142,6 +147,50 @@ TEST_CASE("The refusals of a command's engine name the command",
         "tadah refit: no EAM line in the configuration (-c) names the input "
         "EAM file, a single-element setfl file (eam/alloy or eam/fs); --edit "
         "and --retarget take the outputs of an earlier refit");
+}
+
+/* Pins: tadah predict refuses an --outfile that does not name a file for
+ * each output, before anything is read, in one message: the energy file,
+ * then the force file with --force and the stress file with --stress, or
+ * the three files of the default layout (energy, force, stress):
+ * "tadah predict writes the energies and the forces (--force): --outfile
+ * names 1 file, e.dat, and takes 2, the energy file and the force file, or
+ * 3, the energy, force and stress files", and the forms of --stress, of
+ * both and of neither; 3 files are accepted with --force alone.
+ * Before the fix: validate() logged an ERROR, "Provide 2 output files: one
+ * for energy and one for forces.", "Provide 3 output files for energy
+ * forces and stress." or "Provide single output file for energy.", and
+ * returned; the run was refused later, when the output was written
+ * ("Invalid OUTFILE size 1. Expected either 2 for the requested outputs or
+ * 3 for the default [energy, force, stress] layout."). */
+TEST_CASE("tadah predict refuses an --outfile without a file for each "
+          "output",
+          "[engines][messages][predict]") {
+  const auto refused = [](const std::vector<std::string> &keys) {
+    std::vector<std::string> all = {"POTENTIAL pot.tadah",
+                                    "DBFILE db.tadah"};
+    all.insert(all.end(), keys.begin(), keys.end());
+    return refusal_of<engines::PredictEngine>("predict", all);
+  };
+  CHECK(refused({"FORCE true", "OUTFILE e.dat"}) ==
+        "tadah predict writes the energies and the forces (--force): "
+        "--outfile names 1 file, e.dat, and takes 2, the energy file and the "
+        "force file, or 3, the energy, force and stress files");
+  CHECK(refused({"STRESS true", "OUTFILE e.dat"}) ==
+        "tadah predict writes the energies and the stresses (--stress): "
+        "--outfile names 1 file, e.dat, and takes 2, the energy file and the "
+        "stress file, or 3, the energy, force and stress files");
+  CHECK(refused({"FORCE true", "STRESS true", "OUTFILE e.dat f.dat"}) ==
+        "tadah predict writes the energies, the forces and the stresses "
+        "(--force, --stress): --outfile names 2 files, e.dat f.dat, and "
+        "takes 3, the energy, force and stress files");
+  CHECK(refused({"OUTFILE e.dat f.dat"}) ==
+        "tadah predict writes the energies: --outfile names 2 files, e.dat "
+        "f.dat, and takes 1, the energy file, or 3, the energy, force and "
+        "stress files");
+  CHECK(refused({"FORCE true", "OUTFILE e.dat f.dat s.dat"}) ==
+        "no exception");
+  CHECK(refused({"OUTFILE e.dat"}) == "no exception");
 }
 
 /* Pins: the structure writer of an unknown format is refused, naming the
