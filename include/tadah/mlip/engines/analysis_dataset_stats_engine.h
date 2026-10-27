@@ -16,6 +16,13 @@ namespace engines {
  * context, computes per-element-pair distance percentiles + KDE peaks,
  * neighbour-count percentiles per element, energy/force scales, and a
  * material-class label.
+ * The cutoff is RCUTMAX, the largest RCUT2B or RCUTMB value of the
+ * configuration (-c). The data are its DBFILE and STRUCTURE lines, or, when
+ * the command line gives --dbfile or --structure (KeyProvenance:
+ * KeyOrigin::Kind::CommandLine), the values of those options alone: the
+ * configuration's DBFILE and STRUCTURE lines are then not read. A task
+ * without a KeyProvenance reads every DBFILE and STRUCTURE value of its
+ * context.
  * Every pair strictly inside RCUTMAX counts, a pair at distance 0 (two
  * atoms at one position) included, so r_min is 0 for such a dataset
  * (compute_data_stats).
@@ -31,7 +38,9 @@ namespace engines {
  * pair through an image; s, i and j are 1-based. A CLOSE_CONTACT beyond
  * RCUTMAX is answered in full (lists out to it are built for the scan).
  * validate() refuses a CLOSE_CONTACT that is not a finite distance greater
- * than 0, before anything is read, computed or written.
+ * than 0, and a context without an RCUT2B or RCUTMB value or whose RCUTMAX
+ * is not above 0, before anything is read, computed or written; run()
+ * refuses them likewise before it reads the data.
  */
 class AnalysisDatasetStatsEngine: public IEngine {
 public:
