@@ -1033,3 +1033,50 @@ TEST_CASE("preflight_audit: a FAIL of the sampled scan is judged on every "
   CHECK(from_db_fails(stdb, ta_w_joined_sampled_seed()) ==
         std::vector<std::string>{none});
 }
+
+// ---------------------------------------------------------------------------
+//  Each element pair of a descriptor's line is judged on its own
+// ---------------------------------------------------------------------------
+
+/* Pins: on the Ta-W data (ta_w_db(): (Ta, Ta) 2.86 A, (W, W) 2.5 A, (Ta,
+ * W) from 2.4 A), D2_Blip 2 2 Ta Ta W W is judged by each pair of its line
+ * on its own:
+ *  - check_bounds_at_corners of a box RCUT2B 2.6 to 5: the corner at 2.6,
+ *    below the (Ta, Ta) distance, fails (1 of 2 corners);
+ *  - run_preflight_from_db (the audit of tadah train and tadah hpo) with
+ *    RCUT2B 2.6 under AUDIT error, its statistics taken up to the cutoff:
+ *    one FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.6 holds no (Ta, Ta) pair of
+ *    atoms of the dataset: the (Ta, Ta) pair adds nothing to the descriptor,
+ *    which sums over its other element pairs alone.";
+ *  - with RCUT2B 5, which holds every pair of the line: no FAIL (a pin).
+ * Before the fix: the pairs of the line were judged together, RCUT2B 2.6
+ * holding the (W, W) distance: no corner failed (0 of 2) and the audit gave
+ * no FAIL, although the descriptor is 0 for every Ta atom. */
+TEST_CASE("check_bounds and the audit judge each element pair of a "
+          "descriptor's line on its own",
+          "[check_bounds][preflight_audit][cutoff][line_pairs]") {
+  const std::vector<Bound> b = {box("RCUT2B", -1, 2.6, 5.0)};
+  {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    const auto res = run_corners(stdb, ta_w_blip_seed("Ta Ta W W"), b);
+    CHECK(res.n_corners == 2);
+    CHECK(res.n_corners_failing == 1);
+    if (res.failing_corner_indices.size() == 1u)
+      CHECK(sample_corners(b)[res.failing_corner_indices[0]][0] == 2.6);
+  }
+  {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    Context seed = ta_w_blip_seed("Ta Ta W W");
+    seed.remove("RCUT2B");
+    seed.add("RCUT2B", 2.6);
+    CHECK(from_db_fails(stdb, seed) ==
+          std::vector<std::string>{
+              "D2_Blip.RCUT2B: RCUT2B = 2.6 holds no (Ta, Ta) pair of atoms "
+              "of the dataset: the (Ta, Ta) pair adds nothing to the "
+              "descriptor, which sums over its other element pairs alone."});
+  }
+  {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    CHECK(from_db_fails(stdb, ta_w_blip_seed("Ta Ta W W")).empty());
+  }
+}

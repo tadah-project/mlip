@@ -1769,3 +1769,45 @@ TEST_CASE("analysis suggest_bounds gives a descriptor placed among "
               "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00"});
   }
 }
+
+/* Pins: tadah analysis suggest_bounds of a configuration whose many-body
+ * term is a DESCRIPTOR block alone (kTaBlock, PAIRS Ta Ta, RADIUS 5; no
+ * TYPE2B, TYPEMB, RCUT2B or RCUTMB line) takes the reach of its statistics
+ * from the block's cutoff: exit 0, and the block written has the row of the
+ * cutoff, "OPTIM TA.DENSITY.CUTOFF.RADIUS (1) 4.500000e+00 5.500000e+00";
+ * a configuration with no cutoff at all (DBFILE alone) is refused, "analysis
+ * suggest_bounds: the neighbour statistics reach 1.25 times the largest
+ * cutoff of the configuration (an RCUT2B or RCUTMB value, or the cutoff
+ * RADIUS of a DESCRIPTOR block), and the configuration gives no cutoff above
+ * 0".
+ * Before the fix: the cutoff was looked for before the blocks were read: the
+ * block alone was refused, "analysis suggest_bounds: RCUTMAX is not set (set
+ * RCUT2B / RCUTMB).", and so was the configuration with no cutoff, in
+ * those words. */
+TEST_CASE("analysis suggest_bounds takes its reach from the cutoff of a "
+          "DESCRIPTOR block alone",
+          "[bound_suggester][suggest_bounds][embed]") {
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_with_block("", "", tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.what.empty());
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM TA.DENSITY.CUTOFF.RADIUS") ==
+          std::vector<std::string>{
+              "OPTIM TA.DENSITY.CUTOFF.RADIUS (1) 4.500000e+00 "
+              "5.500000e+00"});
+  }
+  {
+    SbTempDir tmp;
+    Context c;
+    c.add("DBFILE", ta_w_dataset(tmp));
+    const SbRun r = run_suggest_bounds_ctx(c, tmp);
+    CHECK(r.rc == -1);
+    CHECK(r.what ==
+          "analysis suggest_bounds: the neighbour statistics reach 1.25 "
+          "times the largest cutoff of the configuration (an RCUT2B or "
+          "RCUTMB value, or the cutoff RADIUS of a DESCRIPTOR block), and "
+          "the configuration gives no cutoff above 0");
+  }
+}

@@ -1188,11 +1188,20 @@ Context blip_line(const std::string& pairs, double rcut) {
  *  - "Ta Ta W W", r = 2.45: one FAIL naming "(Ta, Ta) or (W, W)" and 2.5 Å;
  *  - "Mo Mo", r = 5: one FAIL, "RCUT2B = 5: no (Mo, Mo) pair of atoms of the
  *    dataset lies within it, ...";
- *  - "W W" and "Ta Ta W W" at 2.6, "Ta W" and "* *" at 2.45: no finding (a
- *    pin: no false FAIL, as since the check read every element pair).
+ *  - "Ta Ta W W", r = 2.6, each pair of the line judged on its own: one
+ *    FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta)
+ *    neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair adds
+ *    nothing to the descriptor, which sums over its other element pairs
+ *    alone.";
+ *  - "W W" at 2.6, "Ta W" and "* *" at 2.45: no finding (a pin: no false
+ *    FAIL, as since the check read every element pair).
  * Before the fix: the check read the smallest neighbour distance of every
- * element pair of the data, 2.4 A: none of the four FAILs was given, and
- * AUDIT error trained descriptors that are 0 for every atom. */
+ * element pair of the data, 2.4 A: none of the four FAILs before "Ta Ta W
+ * W" at 2.6 was given, and AUDIT error trained descriptors that are 0 for
+ * every atom.
+ * Before each pair was judged on its own: "Ta Ta W W" at 2.6 gave no
+ * finding, the (W, W) pairs being within 2.6 A, and AUDIT error trained a
+ * descriptor that is 0 for every Ta atom. */
 TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
           "descriptor's line",
           "[preflight_audit][cutoff][line_pairs]") {
@@ -1225,8 +1234,13 @@ TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
             "D2_Blip.RCUT2B: RCUT2B = 5: no (Mo, Mo) pair of atoms of the "
             "dataset lies within it, so the descriptor sums over no "
             "neighbour and is 0 for every atom."});
+  CHECK(fails("Ta Ta W W", 2.6) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta) "
+            "neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair "
+            "adds nothing to the descriptor, which sums over its other "
+            "element pairs alone."});
   CHECK(fails("W W", 2.6).empty());
-  CHECK(fails("Ta Ta W W", 2.6).empty());
   CHECK(fails("Ta W", 2.45).empty());
   CHECK(fails("* *", 2.45).empty());
 }
