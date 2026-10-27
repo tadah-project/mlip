@@ -184,6 +184,7 @@ TEST_CASE("print_suggestions: writes a header and one row per suggestion", "[bou
 //  tadah analysis suggest_bounds on a dataset with two atoms at one position
 // ---------------------------------------------------------------------------
 
+#include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
@@ -909,4 +910,586 @@ TEST_CASE("print_suggestions: the heading names every kind of rationale",
   CHECK(table.str().find("scale=") != std::string::npos);
   CHECK(table.str().find("the scale and the role of the parameter") !=
         std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+//  No range of zero width; cutoffs past the seed's; blips centred at the
+//  origin; one row per key and index of a joined line
+// ---------------------------------------------------------------------------
+
+#include <set>
+#include <vector>
+
+namespace {
+
+/* ta_shell_stats() without a pair of atoms within the reach of the
+ * statistics, its atoms kept. */
+DataStats no_pair_stats() {
+  DataStats d = ta_shell_stats();
+  d.per_pair.clear();
+  return d;
+}
+
+/* The lines of @p block that start with @p prefix. */
+std::vector<std::string> lines_starting(const std::string &block,
+                                        const std::string &prefix) {
+  std::vector<std::string> out;
+  std::istringstream in(block);
+  for (std::string line; std::getline(in, line);)
+    if (line.compare(0, prefix.size(), prefix) == 0) out.push_back(line);
+  return out;
+}
+
+/* The comment line before the line of @p block that starts with @p
+ * prefix ("" when there is none). */
+std::string comment_before(const std::string &block,
+                           const std::string &prefix) {
+  std::istringstream in(block);
+  std::string last;
+  for (std::string line; std::getline(in, line);) {
+    if (line.compare(0, prefix.size(), prefix) == 0) return last;
+    if (!line.empty()) last = line;
+  }
+  return "";
+}
+
+}  // namespace
+
+/* Pins: no descriptor gets a range of zero width: for every registered
+ * descriptor with metadata, suggest_bounds_for with an empty seed gives,
+ * on the bcc Ta distances (ta_shell_stats()), rows that have no range
+ * (none) or a range whose ends differ, and on data with atoms but no pair
+ * within reach rows that have no range or a fixed one (no row comes from
+ * distances that are not there); the OPTIM block of the second has no line
+ * whose two bounds are equal.
+ * Before the fix: the suggesters gave (0, 0) on data without a pair, and
+ * DM_REAM's grids (CGRIDMB, SGRIDMB, AMPGRIDMB, CEMBFUNC, SEMBFUNC, KDEGMB,
+ * KDEGEMB) gave (0, 0) on any data: "OPTIM CGRIDMB (1) 0.000000e+00
+ * 0.000000e+00", a box tadah hpo refuses. */
+TEST_CASE("bound_suggester: no descriptor gets a range of zero width",
+          "[bound_suggester][suggest_bounds][zero_width]") {
+  const DataStats data = ta_shell_stats();
+  const DataStats none = no_pair_stats();
+  std::size_t described = 0;
+  for (const auto &label :
+       tadah::core::Registry<tadah::models::D_Base>::names()) {
+    std::unique_ptr<tadah::models::D_Base> d(
+        tadah::core::factory<tadah::models::D_Base>(label));
+    const auto meta = d->meta();
+    if (!meta.has_value()) continue;
+    ++described;
+    CAPTURE(label);
+    for (const auto &r : suggest_bounds_for(data, *meta, Context{})) {
+      INFO(r.key << "(" << r.arg_pos + 1 << "): " << r.lo << " .. " << r.hi
+                 << ": " << r.rationale);
+      if (!r.none) CHECK(r.lo != r.hi);
+    }
+    const auto rows = suggest_bounds_for(none, *meta, Context{});
+    for (const auto &r : rows) {
+      INFO("no pair: " << r.key << "(" << r.arg_pos + 1 << "): " << r.lo
+                       << " .. " << r.hi << ": " << r.rationale);
+      CHECK((r.none || r.fixed));
+    }
+    std::ostringstream block;
+    write_optim_block(rows, block);
+    for (const auto &line : lines_starting(block.str(), "OPTIM ")) {
+      std::istringstream in(line);
+      std::string optim, key, index;
+      double lo = 0.0, hi = 0.0;
+      in >> optim >> key >> index >> lo >> hi;
+      INFO(line);
+      CHECK(lo != hi);
+    }
+  }
+  CHECK(described > 20u);
+}
+
+/* Pins: for data with no pair of atoms within reach of the seed's
+ * cutoffs (two bcc Ta cells, nearest neighbours 2.86 A; D2_Blip with
+ * RCUT2B 2 and DM_EAD with RCUTMB 2, CGRIDMB 0), tadah analysis
+ * suggest_bounds exits 0 and its block has no OPTIM line: each row is a
+ * comment "no OPTIM line" saying that no pair of atoms is within reach.
+ * Before the fix: the rows were (0, 0) ranges widened to hold the seed's
+ * value: "OPTIM RCUT2B (1) 0.000000e+00 2.000000e+00", "OPTIM SGRID2B
+ * (1) 0.000000e+00 1.000000e+00" (a width box from 0, which tadah hpo
+ * refuses) and "OPTIM CGRIDMB (1) 0.000000e+00 0.000000e+00", of zero
+ * width. */
+TEST_CASE("analysis suggest_bounds writes no OPTIM line for data without a "
+          "pair within reach",
+          "[bound_suggester][suggest_bounds][zero_width]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "true");
+  c.add("TYPE2B", "D2_Blip 2 2 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", 2.0);
+  c.add("CGRID2B", "1.0 1.5");
+  c.add("SGRID2B", "1 1");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 2.0);
+  c.add("CGRIDMB", 0.0);
+  c.add("SGRIDMB", 1.0);
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM ").empty());
+  std::size_t rows = 0;
+  for (const auto &line : lines_starting(r.block, "# ")) {
+    if (line.find("no OPTIM line") == std::string::npos) continue;
+    ++rows;
+    CHECK(line.find("no pair of atoms") != std::string::npos);
+  }
+  CHECK(rows >= 6u);
+}
+
+namespace {
+
+/* Two simple-cubic Ta cells (a = 3 A, one atom each) in a dataset file of
+ * @p tmp: every neighbour distance below 4.24 A is 3 A. */
+std::string sc_ta_dataset(const SbTempDir &tmp) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  StructureDB db;
+  for (const char *label : {"sc-Ta-1", "sc-Ta-2"}) {
+    Structure st;
+    st.label = label;
+    st.energy = -10.0;
+    st.cell.load(3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0);
+    st.add_atom(Atom(ta, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+    db.add(st);
+  }
+  const std::string dbfile = tmp.path("sc.tadahdb");
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  return dbfile;
+}
+
+}  // namespace
+
+/* Pins: a range of zero width gets no OPTIM line, saying so: for DM_EAD
+ * with one Gaussian at 3 A (CGRIDMB 3, SGRIDMB 1, RCUTMB 3.2) on two
+ * simple-cubic Ta cells (a = 3 A: every neighbour distance within the
+ * reach of the statistics, 4 A, is 3 A), the CGRIDMB range, the 10th to
+ * 90th percentiles of the distances, is 3 to 3 and holds the seed's 3:
+ * tadah analysis suggest_bounds exits 0, the block says "CGRIDMB (1): no
+ * OPTIM line" and "a range of zero width (3), which tadah hpo refuses",
+ * has no line that starts "OPTIM CGRIDMB", and the two bounds of each of
+ * its OPTIM lines differ.
+ * Before the fix: the block had "OPTIM CGRIDMB (1) 3.000000e+00
+ * 3.000000e+00", a box of zero width, which tadah hpo refuses (the table
+ * row 3.0000e+00 .. 3.0000e+00, its comment the Gaussian centred on the
+ * first neighbour shell), and so it has without the zero-width rule of
+ * suggest_bounds_for. */
+TEST_CASE("analysis suggest_bounds writes no OPTIM line for a range of zero "
+          "width",
+          "[bound_suggester][suggest_bounds][zero_width]") {
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", sc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 3.2);
+  c.add("CGRIDMB", 3.0);
+  c.add("SGRIDMB", 1.0);
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(r.block.find("CGRIDMB (1): no OPTIM line") != std::string::npos);
+  CHECK(r.block.find("a range of zero width (3), which tadah hpo refuses") !=
+        std::string::npos);
+  CHECK(lines_starting(r.block, "OPTIM CGRIDMB").empty());
+  for (const auto &line : lines_starting(r.block, "OPTIM ")) {
+    std::istringstream in(line);
+    std::string optim, key, index, lo, hi;
+    in >> optim >> key >> index >> lo >> hi;
+    CAPTURE(line);
+    CHECK(lo != hi);
+  }
+}
+
+/* Pins: the neighbour statistics reach 1.25 times the largest cutoff of
+ * the seed when that is the RADIUS of a DESCRIPTOR block: for D2_Blip with
+ * RCUT2B 4 and a DM_Embed block whose density cutoff has RADIUS 6 A, on
+ * two bcc Ta cells (shells at 5.72, 6.6, 7.19 and 7.38 A), the statistics
+ * reach 7.5 A, so the line "OPTIM RCUT2B (1) lo hi" ends past 6 A, at the
+ * 99th percentile of the distances up to 7.5 A, and its comment names the
+ * 99th percentile and the reach (1.25 times).
+ * Before the fix: the statistics stopped at the RADIUS, 6 A (RCUT2B and
+ * RCUTMB were scaled, the radius was not): "OPTIM RCUT2B (1) 3.407919e+00
+ * 5.715768e+00", the 99th percentile of the distances within 6 A, while
+ * its comment said that the statistics reach 1.25 times the largest cutoff
+ * of the seed. */
+TEST_CASE("analysis suggest_bounds takes the statistics past the radius of "
+          "a DESCRIPTOR block",
+          "[bound_suggester][suggest_bounds][cutoff]") {
+  SbTempDir tmp;
+  std::istringstream text(
+      "DBFILE " + bcc_ta_dataset(tmp) + "\n"
+      "INIT2B true\nTYPE2B D2_Blip 3 3 Ta Ta\nRCTYPE2B Cut_Cos\n"
+      "RCUT2B 4.0\nCGRID2B 2.5 3.0 3.5\nSGRID2B 1 1 1\n"
+      "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS Blip5\n"
+      "FORM NONNEG\nCENTRES 1.0 2.5 4.0\nETA 1.5 1.5 1.5\n"
+      "AMPLITUDES 0.4 0.2 0.1\nCUTOFF\nTYPE Cut_Poly\nRADIUS 6.0\n"
+      "ENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+      "CENTRES 0.0 0.5 1.0 1.5\nWIDTHS 0.5 0.5 0.5 0.5\nREFERENCE ZERO\n"
+      "ENVELOPE\nTYPE Smoothstep2\nCUTOFF 2.0\nENDENVELOPE\n"
+      "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  const Context c = tadah::core::CoreUserConfigParser().parse(text);
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  REQUIRE(r.rc == EXIT_SUCCESS);
+  const auto rcut = lines_starting(r.block, "OPTIM RCUT2B (1) ");
+  REQUIRE(rcut.size() == 1u);
+  std::istringstream in(rcut[0]);
+  std::string optim, key, index;
+  double lo = 0.0, hi = 0.0;
+  in >> optim >> key >> index >> lo >> hi;
+  CHECK(hi > 6.0);
+  const std::string why = comment_before(r.block, "OPTIM RCUT2B (1) ");
+  CHECK(why.find("99th percentile") != std::string::npos);
+  CHECK(why.find("1.25 times") != std::string::npos);
+}
+
+/* Pins: the range of a cutoff can reach past the seed's cutoff: the
+ * neighbour statistics of tadah analysis suggest_bounds reach 1.25 times
+ * the largest cutoff of the seed, so for D2_Blip with RCUT2B 5.6 on two
+ * bcc Ta cells (a = 3.3 A: shells at 5.47, 5.72 and 6.6 A) the RCUT2B row
+ * of the table is not reversed (its first value below its second), the
+ * line "OPTIM RCUT2B (1) lo hi" has lo below 5.6 and hi above 6 (the 99th
+ * percentile of the distances up to 7 A, 6.6 A: no distance within 5.6
+ * gives it), lo is 1.05 times the distance its comment names, below the
+ * 99th percentile, and the comment names the 99th percentile and the reach
+ * (1.25 times) and was not widened to hold the seed.
+ * Before the fix: the statistics stopped at the seed's cutoff: the table
+ * row was the reversed range "5.7185e+00 .. 5.4724e+00" (1.05 times the
+ * second peak of the distances within 5.6, 5.446 A, to their 99th
+ * percentile, 5.4724 A), which the block wrote swapped, "OPTIM RCUT2B (1)
+ * 5.472431e+00 5.718462e+00", its comment the scale and the role of RCUT2B
+ * ("scale=Å; role=Outer cutoff for the 2-body neighbour sum."); that box
+ * held 5.6 by chance. */
+TEST_CASE("analysis suggest_bounds suggests a cutoff range past the seed's "
+          "cutoff",
+          "[bound_suggester][suggest_bounds][cutoff]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_Blip 4 4 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", 5.6);
+  c.add("CGRID2B", "2.5 3.0 3.5 4.0");
+  c.add("SGRID2B", "1 1 1 1");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  REQUIRE(r.rc == EXIT_SUCCESS);
+  const auto rcut = lines_starting(r.block, "OPTIM RCUT2B (1) ");
+  REQUIRE(rcut.size() == 1u);
+  std::istringstream in(rcut[0]);
+  std::string optim, key, index;
+  double lo = 0.0, hi = 0.0;
+  in >> optim >> key >> index >> lo >> hi;
+  CHECK(lo < 5.6);
+  CHECK(hi > 6.0);
+  // The table row: "D2_Blip.RCUT2B(1)  lo .. hi  ...".
+  const auto row = lines_starting(r.out, "D2_Blip.RCUT2B(1) ");
+  REQUIRE(row.size() == 1u);
+  std::istringstream table(row[0]);
+  std::string label, dots;
+  double table_lo = 0.0, table_hi = 0.0;
+  table >> label >> table_lo >> dots >> table_hi;
+  CAPTURE(row[0]);
+  CHECK(table_lo < table_hi);
+  const std::string why = comment_before(r.block, "OPTIM RCUT2B (1) ");
+  CHECK(why.find("99th percentile") != std::string::npos);
+  CHECK(why.find("1.25 times") != std::string::npos);
+  CHECK(why.find("widened") == std::string::npos);
+  // "from 1.05 times its distance (3.25278 Å)": the second peak.
+  const std::string from = "1.05 times its distance (";
+  const auto at = why.find(from);
+  REQUIRE(at != std::string::npos);
+  const double peak = std::stod(why.substr(at + from.size()));
+  CHECK(lo == Approx(1.05 * peak).epsilon(1e-5));
+  CHECK(peak < hi);
+}
+
+/* Pins: a blip density centred at the origin is searched by its width
+ * alone: for DM_Blip with CGRIDMB 0 4.7 (SGRIDMB 0.8 1, RCUTMB 5.6) on two
+ * bcc Ta cells, the block says "CGRIDMB (1): no OPTIM line", has an "OPTIM
+ * CGRIDMB (2)" line and no OPTIM line of CGRIDMB entry 1.
+ * Before the fix: the seed's centre was not read for a blip: "OPTIM
+ * CGRIDMB (1) 0.000000e+00 ..." (the first shell's range widened to hold
+ * 0). */
+TEST_CASE("analysis suggest_bounds gives a blip density centred at the "
+          "origin no CGRIDMB line",
+          "[bound_suggester][suggest_bounds][seed]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_Blip 0 2 2 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.6);
+  c.add("CGRIDMB", "0 4.7");
+  c.add("SGRIDMB", "0.8 1");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(r.block.find("CGRIDMB (1): no OPTIM line") != std::string::npos);
+  CHECK(lines_starting(r.block, "OPTIM CGRIDMB (1").empty());
+  CHECK(lines_starting(r.block, "OPTIM CGRIDMB (2) ").size() == 1u);
+}
+
+/* Pins: a key that the descriptors of a joined line share (not split
+ * among them, RCUTENV of DM_mBlipEnv) gets one row: for DM_mJoin of two
+ * DM_mBlipEnv on two bcc Ta cells the block has one "OPTIM RCUTENV (1)"
+ * line, and each key and index one OPTIM line.
+ * Before the fix: each descriptor gave its own RCUTENV row, both "OPTIM
+ * RCUTENV (1)": tadah hpo refused the second ("the index is already
+ * selected by the OPTIM RCUTENV line"). */
+TEST_CASE("analysis suggest_bounds gives a key the descriptors of a joined "
+          "line share one row",
+          "[bound_suggester][suggest_bounds][join]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_mJoin");
+  c.add("TYPEMB", "DM_mBlipEnv 0 1 1 3 3 Ta Ta");
+  c.add("TYPEMB", "DM_mBlipEnv 0 1 1 3 3 Ta Ta");
+  c.add("RCUTENV", 5.0);
+  c.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  c.add("RCUTMB", "5.6 5.0");
+  c.add("SGRIDMB", "0.2 0.3");
+  c.add("CGRIDMB", "0.0 2.9");
+  c.add("SEMBFUNC", "1 1 1 1 1 1");
+  c.add("CEMBFUNC", "1 2 3 1 2 3");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM RCUTENV (1) ").size() == 1u);
+  std::set<std::string> selected;
+  for (const auto &line : lines_starting(r.block, "OPTIM ")) {
+    std::istringstream in(line);
+    std::string optim, key, index;
+    in >> optim >> key >> index;
+    INFO(line);
+    CHECK(selected.insert(key + " " + index).second);
+  }
+}
+
+/* Pins: the rows of the values of the TYPE2B lines of a joined line are
+ * numbered as an OPTIM line numbers the values of the whole key (its
+ * numbers, from 1): for D2_mJoin of "D2_MIE 12 6 Ta Ta" and "D2_ZBL 0.5292
+ * 0.88534 0.23 0.27 Ta Ta" the block has the comments "# D2_MIE :: TYPE2B
+ * (1)" and "(2)" and "# D2_ZBL :: TYPE2B (3)" to "(6)", each once, every
+ * one "no OPTIM line", and no line that starts "OPTIM TYPE2B"; the table
+ * has the rows D2_MIE.TYPE2B(1), (2) and D2_ZBL.TYPE2B(3) to (6).
+ * Before the fix: each descriptor numbered the values of its own line:
+ * D2_ZBL's rows were TYPE2B (1) to (4), so (1) and (2) named a value of
+ * each line. */
+TEST_CASE("analysis suggest_bounds numbers the values of the TYPE2B lines "
+          "of a join as the whole key does",
+          "[bound_suggester][suggest_bounds][join][arg_pos]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_mJoin");
+  c.add("TYPE2B", "D2_MIE 12 6 Ta Ta");
+  c.add("TYPE2B", "D2_ZBL 0.5292 0.88534 0.23 0.27 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  c.add("RCUT2B", "5.0 2.0");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM TYPE2B").empty());
+  const std::pair<const char *, int> rows[] = {
+      {"D2_MIE", 1}, {"D2_MIE", 2}, {"D2_ZBL", 3},
+      {"D2_ZBL", 4}, {"D2_ZBL", 5}, {"D2_ZBL", 6}};
+  for (const auto &[label, n] : rows) {
+    CAPTURE(label, n);
+    const std::string comment =
+        "# " + std::string(label) + " :: TYPE2B (" + std::to_string(n) + ")";
+    const auto found = lines_starting(r.block, comment);
+    REQUIRE(found.size() == 1u);
+    CHECK(found[0].find("no OPTIM line") != std::string::npos);
+    CHECK(r.out.find(std::string(label) + ".TYPE2B(" + std::to_string(n) +
+                     ")") != std::string::npos);
+  }
+  CHECK(lines_starting(r.block, "# D2_ZBL :: TYPE2B (1)").empty());
+  CHECK(lines_starting(r.block, "# D2_ZBL :: TYPE2B (2)").empty());
+}
+
+/* Pins: the rows of tadah analysis suggest_bounds name a descriptor as the
+ * configuration does: for TYPEMB DM_PS_SQ 2 2 2 Ta Ta the table has the
+ * rows DM_PS_SQ.RCUTMB(1) and DM_PS_SQ.CGRIDMB(1), the block the comments
+ * "# DM_PS_SQ ::", and neither names DM_Poly.
+ * Before the fix: the rows took the label of the descriptor's metadata,
+ * the class's ("DM_Poly.RCUTMB(1)", "# DM_Poly ::") for every DM_PS_*,
+ * DM_GPS_*, DM_OW_* and DM_GOW_* descriptor (and "DM_mEAD" for DM_mRLR,
+ * DM_mSQRT, ...). */
+TEST_CASE("analysis suggest_bounds names a descriptor as the configuration "
+          "does",
+          "[bound_suggester][suggest_bounds]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_PS_SQ 2 2 2 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.6);
+  c.add("CGRIDMB", "2.9 4.7");
+  c.add("SGRIDMB", "1 1");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(r.out.find("DM_PS_SQ.RCUTMB(1)") != std::string::npos);
+  CHECK(r.out.find("DM_PS_SQ.CGRIDMB(1)") != std::string::npos);
+  CHECK(r.block.find("# DM_PS_SQ ::") != std::string::npos);
+  CHECK(r.out.find("DM_Poly") == std::string::npos);
+  CHECK(r.block.find("DM_Poly") == std::string::npos);
+}
+
+/* Pins: the OPTIM block holds each range it writes: its low bound is
+ * written rounded down and its high bound rounded up at the 7 significant
+ * digits of the block, so that the box holds the range and the seed's
+ * value at an end of it (a range widened to hold the seed ends at it): for
+ * rows 1.0666666666666667 to 53.458357 (SGRID2B, the seed 1.0666666666666667
+ * of LIN 7 1 1.2), -2.3333333333333335 to 0.66666666666666663 (CGRID2B),
+ * 0.5 to 1.0333333333333334 (SGRIDMB, the seed 1.0333333333333334 of LIN 7
+ * 1 1.2 at the top of its range) and 1 to 53.4583549 (CGRIDMB), the
+ * written bounds, read back, hold the ranges: the high bounds of the last
+ * two rows, whose nearest 7 digits are below them, are rounded up.
+ * Before the fix: the bounds were rounded to the nearest at 7 digits: the
+ * low bounds "OPTIM SGRID2B (1) 1.066667e+00 ...", above the seed's
+ * 1.06666... (tadah hpo refused the block with its seed: "SGRID2B[3] =
+ * 1.06667 lies outside its OPTIM bounds [1.06667, 53.4584]"), and "OPTIM
+ * CGRID2B (1) -2.333333e+00 ...", above the low end -2.3333...; and the
+ * high bounds "OPTIM SGRIDMB (1) ... 1.033333e+00", below 1.0333..., and
+ * "OPTIM CGRIDMB (1) ... 5.345835e+01", below 53.4583549 (the high bounds
+ * of the first two rows round up at the nearest digit). */
+TEST_CASE("write_optim_block writes bounds that hold the range",
+          "[bound_suggester][suggest_bounds]") {
+  OptimSuggestion a;
+  a.descriptor_label = "D2_Blip";
+  a.key = "SGRID2B";
+  a.arg_pos = 0;
+  a.lo = 1.0666666666666667;
+  a.hi = 53.458357;
+  a.rationale = "widened to hold the seed's value";
+  OptimSuggestion b = a;
+  b.key = "CGRID2B";
+  b.lo = -2.3333333333333335;
+  b.hi = 0.66666666666666663;
+  OptimSuggestion c = a;
+  c.key = "SGRIDMB";
+  c.lo = 0.5;
+  c.hi = 1.0333333333333334;
+  OptimSuggestion d = a;
+  d.key = "CGRIDMB";
+  d.lo = 1.0;
+  d.hi = 53.4583549;
+  std::ostringstream block;
+  write_optim_block({a, b, c, d}, block);
+  INFO(block.str());
+  for (const OptimSuggestion &r : {a, b, c, d}) {
+    const auto lines = lines_starting(block.str(), "OPTIM " + r.key + " ");
+    REQUIRE(lines.size() == 1u);
+    std::istringstream in(lines[0]);
+    std::string optim, key, index;
+    double lo = 0.0, hi = 0.0;
+    in >> optim >> key >> index >> lo >> hi;
+    CAPTURE(lines[0]);
+    CHECK(lo <= r.lo);
+    CHECK(hi >= r.hi);
+    CHECK(lo > r.lo - 1e-6 * std::fabs(r.lo));
+    CHECK(hi < r.hi + 1e-6 * std::fabs(r.hi));
+  }
+}
+
+/* Pins: the cutoff that tadah hpo derives from the largest knot gets a row
+ * without an OPTIM line, naming the largest knot: for D2_Knot5 (knots 3 4
+ * 5, RCUT2B 5) and a knot DM_REAM density (knots 3 4 5, RCUTMB 5), each
+ * alone on its TYPE2B or TYPEMB line, on two bcc Ta cells, tadah analysis
+ * suggest_bounds exits 0, the block says "RCUT2B (1): no OPTIM line" and
+ * "RCUTMB (1): no OPTIM line", each comment naming the largest knot ("is
+ * its largest knot (5 Å)"), and has no OPTIM RCUT2B or RCUTMB line; on a
+ * D2_mJoin line of D2_Knot5 and D2_Blip (RCUT2B 5 5), whose cutoffs tadah
+ * hpo takes as stated, the block has an "OPTIM RCUT2B (1)" and an "OPTIM
+ * RCUT2B (2)" line.
+ * Before the fix: the knot DM_REAM density got "OPTIM RCUTMB (1) ...", a
+ * line that tadah hpo calls a wasted search dimension, and D2_Knot5's
+ * RCUT2B no row at all, alone and on the joined line, where tadah hpo
+ * warns that it is fixed. */
+TEST_CASE("analysis suggest_bounds gives the cutoff of a knot line alone no "
+          "OPTIM line, and that of a joined one a range",
+          "[bound_suggester][suggest_bounds][knot]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "true");
+  c.add("TYPE2B", "D2_Knot5 3 0 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "3 4 5");
+  c.add("TYPEMB", "DM_REAM 2 3 0 3 3 0 0 0 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Dummy");
+  c.add("RCUTMB", 5.0);
+  c.add("CGRIDMB", "3 4 5");
+  c.add("AMPGRIDMB", "0.3 0.2 0.1");
+  c.add("CEMBFUNC", "0 1 2");
+  c.add("RHOFORM", "SIGNED");
+  c.add("EMBF0", "FREE");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM RCUT2B").empty());
+  CHECK(lines_starting(r.block, "OPTIM RCUTMB").empty());
+  for (const char *row : {"RCUT2B (1): no OPTIM line",
+                          "RCUTMB (1): no OPTIM line"}) {
+    CAPTURE(row);
+    std::size_t found = 0;
+    for (const auto &line : lines_starting(r.block, "# ")) {
+      if (line.find(row) == std::string::npos) continue;
+      ++found;
+      CHECK(line.find("is its largest knot (5 Å)") != std::string::npos);
+    }
+    CHECK(found == 1u);
+  }
+
+  SbTempDir joined_tmp;
+  Context j;
+  j.add("DBFILE", bcc_ta_dataset(joined_tmp));
+  j.add("INIT2B", "true");
+  j.add("INITMB", "false");
+  j.add("TYPE2B", "D2_mJoin");
+  j.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  j.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  j.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  j.add("RCUT2B", "5.0 5.0");
+  j.add("CGRID2B", "3 4 5 2.5 3.0 3.5");
+  j.add("KDEG2B", "5 5 5");
+  j.add("SGRID2B", "1 1 1");
+  const SbRun rj = run_suggest_bounds_ctx(j, joined_tmp);
+  INFO(rj.what << "\n" << rj.out << "\n" << rj.block);
+  CHECK(rj.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (1) ").size() == 1u);
+  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (2) ").size() == 1u);
 }

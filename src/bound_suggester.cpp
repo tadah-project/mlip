@@ -2,10 +2,17 @@
 #include <tadah/mlip/stream_format_guard.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
+
+#include <tadah/core/number_format.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
 namespace mlip {
@@ -51,6 +58,41 @@ void hold_seed(OptimSuggestion &s) {
   s.rationale = open_ended(s.rationale) + "; widened to hold the seed's "
                 "value " + value.str() + ", where tadah hpo starts";
 }
+
+/* @p v as the OPTIM block writes a bound (scientific, 7 significant
+ * digits), rounded down (@p up false) or up (@p up true): the bound read
+ * back holds @p v, so that a box holds its range and a seed's value at an
+ * end of it (rounding to the nearest can put the bound past the value). */
+std::string bound_text(double v, bool up) {
+  auto text_of = [](double x) {
+    std::ostringstream os;
+    os << std::scientific << std::setprecision(6) << x;
+    return os.str();
+  };
+  std::string text = text_of(v);
+  for (int i = 0; i < 3; ++i) {
+    const double back = std::stod(text);
+    if (up ? back >= v : back <= v) return text;
+    // One unit of the 7th significant digit outward.
+    const double step = std::pow(
+        10.0, std::floor(std::log10(std::fabs(back))) - 6.0);
+    text = text_of(up ? back + step : back - step);
+  }
+  throw std::logic_error("write_optim_block: no 7-digit bound holds " +
+                         text_of(v));
+}
+
+/* A range of zero width (both ends one value, the seed's or none) is no
+ * box: tadah hpo refuses it. Such a row has no OPTIM line, and its
+ * rationale says why. */
+void refuse_zero_width(OptimSuggestion &s) {
+  if (s.none || s.lo != s.hi) return;
+  std::ostringstream value;
+  value << s.lo;
+  s.none = true;
+  s.rationale = open_ended(s.rationale) + ": a range of zero width (" +
+                value.str() + "), which tadah hpo refuses";
+}
 }  // namespace
 
 std::vector<OptimSuggestion>
@@ -61,31 +103,40 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
   models::SeedView sv(seed);
 
   for (const auto& pm : meta.params) {
-    // A value of the descriptor's TYPE line (arg_pos > 0: the value at
-    // index arg_pos - 1 of its line, as the screening parameters of D2_ZBL
-    // are values 2 to 5 of "TYPE2B D2_ZBL a0 s0 p0 p1 Ta Ta"): a row
-    // without an OPTIM line, as tadah hpo searches no value of a TYPE2B or
-    // TYPEMB line (it refuses OPTIM TYPE2B at its line). Its arg_pos is its
-    // place after the descriptor's name; the seed's value is read from the
-    // descriptor's line, the first one of the key its name opens.
+    // A value of the descriptor's TYPE line (ParamMeta::arg_pos > 0: its
+    // position on the descriptor's line, from 1, the descriptor's name being
+    // 1, as the screening length a0 of "TYPE2B D2_ZBL a0 s0 p0 p1 Ta Ta" is
+    // 2): a row without an OPTIM line, as tadah hpo searches no value of a
+    // TYPE2B or TYPEMB line (it refuses OPTIM TYPE2B at its line). The row
+    // numbers the value as an OPTIM line numbers the values of a key, by
+    // the numbers among them (a0 is (1)), and its seed value is read from
+    // the descriptor's line, which @p seed gives (its own context for a
+    // descriptor of a joined line). A seed without the line has no such
+    // value, and no row.
     if (pm.arg_pos > 0) {
+      if (!sv.contains(pm.key)) continue;
+      const std::size_t at = static_cast<std::size_t>(pm.arg_pos - 1);
+      const std::size_t n = sv.size(pm.key);
+      if (n == 0 || sv.get<std::string>(pm.key, 0) != meta.label || at >= n)
+        throw std::logic_error(
+            "suggest_bounds_for: the " + pm.key + " line of the seed is not "
+            "the line of " + meta.label + " with its value " +
+            std::to_string(pm.arg_pos) + " (ParamMeta arg_pos)");
+      std::size_t numbers = 0;
+      for (std::size_t i = 0; i <= at; ++i) {
+        double v = 0.0;
+        if (tadah::core::parse_number(sv.get<std::string>(pm.key, i), v))
+          ++numbers;
+      }
       OptimSuggestion s;
       s.descriptor_label = meta.label;
       s.key      = pm.key;
-      s.arg_pos  = std::max(0, pm.arg_pos - 2);
       s.none     = true;
       s.crit     = pm.crit;
       s.scale    = pm.scale;
       s.units    = pm.units;
-      if (sv.contains(pm.key)) {
-        const std::size_t n = sv.size(pm.key);
-        for (std::size_t i = 0; i < n; ++i) {
-          if (sv.get<std::string>(pm.key, i) != meta.label) continue;
-          const std::size_t at = i + static_cast<std::size_t>(pm.arg_pos) - 1;
-          if (at < n) s.seed_value = sv.get<double>(pm.key, at);
-          break;
-        }
-      }
+      s.seed_value = sv.get<double>(pm.key, at);
+      s.arg_pos  = static_cast<int>(numbers) - 1;
       s.rationale = open_ended(pm.role) + ": a value of the " + meta.label +
                     " line of " + pm.key + ", which tadah hpo does not "
                     "search (it refuses OPTIM " + pm.key + "); the seed's " +
@@ -146,11 +197,79 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
         s.rationale = rs.str();
       }
       hold_seed(s);
+      refuse_zero_width(s);
 
       out.push_back(std::move(s));
     }
   }
   return out;
+}
+
+void merge_shared_rows(std::vector<OptimSuggestion>& rows) {
+  std::vector<OptimSuggestion> out;
+  std::map<std::pair<std::string, int>, std::size_t> row_of;
+  for (auto& r : rows) {
+    // "(1)" names entry 1 of a key of one value (arg_pos -1) and of a list.
+    const auto entry = std::make_pair(r.key, std::max(0, r.arg_pos));
+    const auto it = row_of.find(entry);
+    if (it == row_of.end()) {
+      row_of.emplace(entry, out.size());
+      out.push_back(std::move(r));
+      continue;
+    }
+    OptimSuggestion& f = out[it->second];
+    const bool same = f.none == r.none && f.fixed == r.fixed &&
+                      (f.none || (f.lo == r.lo && f.hi == r.hi)) &&
+                      f.rationale == r.rationale;
+    std::string why = open_ended(f.rationale);
+    if (!same) {
+      if (f.none && !r.none) {
+        f.lo = r.lo;
+        f.hi = r.hi;
+        f.fixed = r.fixed;
+        f.none = false;
+      } else if (!r.none) {
+        f.lo = std::min(f.lo, r.lo);
+        f.hi = std::max(f.hi, r.hi);
+        f.fixed = f.fixed && r.fixed;
+      }
+      why += "; with that of " + r.descriptor_label + ": " +
+             open_ended(r.rationale);
+    }
+    if (f.descriptor_label != r.descriptor_label &&
+        ("+" + f.descriptor_label + "+").find("+" + r.descriptor_label +
+                                              "+") == std::string::npos)
+      f.descriptor_label += "+" + r.descriptor_label;
+    const std::string shared = "; a key the descriptors of the line share";
+    if (why.size() < shared.size() ||
+        why.compare(why.size() - shared.size(), shared.size(), shared) != 0)
+      why += shared;
+    f.rationale = why;
+  }
+  rows = std::move(out);
+}
+
+void leave_out_derived_cutoffs(std::vector<OptimSuggestion>& rows,
+                               const tadah::core::Context& seed) {
+  for (const char* sfx : {"2B", "MB"}) {
+    const auto knot = models::potedit::derived_knot_rcut(seed, sfx);
+    if (!knot) continue;
+    const std::string key = std::string("RCUT") + sfx;
+    const std::string line = std::string(sfx) == "2B"
+                                 ? "a D2_Knot5 line alone on TYPE2B"
+                                 : "a knot DM_REAM density alone on TYPEMB";
+    std::ostringstream value;
+    value << *knot;
+    for (auto& r : rows) {
+      if (r.key != key) continue;
+      r.none = true;
+      r.fixed = false;
+      r.rationale = "the cutoff of " + line + " is its largest knot (" +
+                    value.str() + " Å), which tadah train and tadah hpo "
+                    "derive: tadah hpo warns that an OPTIM " + key +
+                    " line has no effect";
+    }
+  }
 }
 
 void print_suggestions(const std::vector<OptimSuggestion>& sug,
@@ -249,9 +368,8 @@ void write_optim_block(const std::vector<OptimSuggestion>& sug,
       continue;
     }
     os << "# " << g.label << " :: " << g.rationale << "\n";
-    os << "OPTIM " << g.key << " " << index.str()
-       << " " << std::scientific << std::setprecision(6) << g.lo
-       << " " << std::scientific << std::setprecision(6) << g.hi
+    os << "OPTIM " << g.key << " " << index.str() << " "
+       << bound_text(g.lo, false) << " " << bound_text(g.hi, true)
        << "\n\n";
   }
 }

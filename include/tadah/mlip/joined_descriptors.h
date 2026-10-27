@@ -11,7 +11,8 @@
 // its list values (CGRID*, SGRID*, ...) among its descriptors, in the order
 // of the line (D_mJoin::parse_context). A descriptor's parameters are read
 // from its own share; an OPTIM line numbers a value by its place in the
-// whole key, after the shares of the descriptors before it.
+// whole key, after the shares of the descriptors before it; a value of a
+// descriptor's TYPE line by the numbers of the whole line before it.
 
 #include <cstddef>
 #include <map>
@@ -35,7 +36,10 @@ struct JoinedDescriptor {
   tadah::core::Context context;
   /** For each key the line splits (its RCUT and RCTYPE keys and the list
    *  keys of its descriptors), the number of the key's values that come
-   *  before the descriptor's own: those of the descriptors before it. */
+   *  before the descriptor's own: those of the descriptors before it; and,
+   *  for the line's TYPE2B or TYPEMB key, the number of the numbers among
+   *  the values of the lines before its own, as an OPTIM line numbers the
+   *  values of a key (a descriptor name and an element are not numbers). */
   std::map<std::string, std::size_t> first_entries;
 };
 

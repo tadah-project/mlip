@@ -160,7 +160,15 @@ public:
         bool          early_rejected     = false;   /* exited via Options::early_reject predicate */
         bool          wall_time_exceeded = false;   /* exited via Options::max_wall_time_s cap */
         double        final_fmax_atoms = 0.0;
-        double        final_strain_force = 0.0;     /* |F_ε|, Iso only */
+        /* Iso only: the strain force of the cell the relaxation ends at,
+         * |F_ε| = |dH/dε| (eV per unit strain), and |F_ε| / (3V), the
+         * strain part of the convergence test, which ftol bounds (eV/Å³:
+         * the magnitude of the cell's pressure less the external one). A
+         * relaxation that stops after an accepted step (maxiter, maxeval,
+         * max_wall_time_s, early_reject) measures them at its final cell,
+         * with two more energy evaluations, counted in n_evals. */
+        double        final_strain_force = 0.0;
+        double        final_strain_force_norm = 0.0;
         double        final_energy    = 0.0;
         double        scale_factor    = 1.0;        /* cumulative (1+ε)_total, Iso only */
     };

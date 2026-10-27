@@ -146,6 +146,43 @@ relax(Structure& st_inout,
     result.final_energy = E0;
     result.final_fmax_atoms = fmax_inf(F);
 
+    /* Strain force (Iso mode only): F_eps = -dH/deps of the current cell,
+     * the baseline scaled by scale_total, by central difference on the
+     * strain (two energy evaluations), with H = E + P.V (dV/deps = 3 V).
+     * record_strain keeps it in the result with |F_eps| / (3 V), the
+     * strain part of the convergence test; strain_current says whether the
+     * recorded value is that of st_inout, which an accepted step changes. */
+    auto strain_force = [&](double scale) {
+        const double dh = opts.eps_strain_fd;
+        Structure st_p = st_inout;
+        apply_iso_strain(st_p, scale * (1.0 + dh), st_baseline);
+        const double E_plus = eval_e(st_p, /*use_cache=*/false);
+
+        Structure st_m = st_inout;
+        apply_iso_strain(st_m, scale * (1.0 - dh), st_baseline);
+        const double E_minus = eval_e(st_m, /*use_cache=*/false);
+
+        const double dE_deps = (E_plus - E_minus) / (2.0 * dh);
+        const double V0 = st_inout.get_volume();
+        const double dH_deps = dE_deps + opts.pressure * 3.0 * V0;
+        return -dH_deps;
+    };
+    bool strain_current = true;
+    auto record_strain = [&](double F_eps) {
+        const double V0 = st_inout.get_volume();
+        result.final_strain_force = std::abs(F_eps);
+        result.final_strain_force_norm =
+            std::abs(F_eps) / (3.0 * std::max(V0, 1.0e-9));
+        strain_current = true;
+    };
+    /* At an exit after an accepted step, the strain force of the cell the
+     * relaxation ends at (the last one measured was that of the cell
+     * before the step). */
+    auto finish_strain = [&]() {
+        if (opts.box_mode == Options::Iso && !strain_current)
+            record_strain(strain_force(scale_total));
+    };
+
     if (opts.verbose >= 1) {
         std::cerr << "[NativeRelaxer] iter=0  E=" << E0
                   << "  fmax=" << fmax_inf(F) << "\n";
@@ -165,24 +202,8 @@ relax(Structure& st_inout,
      * both fmax_atoms AND fmax_strain_norm). Cost: 2 extra E evals on
      * iter 0; amortised against the maxiter=5000 budget this is noise. */
     {
-        double fmax_strain_norm = 0.0;
-        if (opts.box_mode == Options::Iso) {
-            const double dh = opts.eps_strain_fd;
-            Structure st_p = st_inout;
-            apply_iso_strain(st_p, 1.0 + dh, st_baseline);
-            const double E_plus = eval_e(st_p, /*use_cache=*/false);
-
-            Structure st_m = st_inout;
-            apply_iso_strain(st_m, 1.0 - dh, st_baseline);
-            const double E_minus = eval_e(st_m, /*use_cache=*/false);
-
-            const double dE_deps = (E_plus - E_minus) / (2.0 * dh);
-            const double V0 = st_inout.get_volume();
-            const double dH_deps = dE_deps + opts.pressure * 3.0 * V0;
-            const double F_eps = -dH_deps;
-            result.final_strain_force = std::abs(F_eps);
-            fmax_strain_norm = std::abs(F_eps) / (3.0 * std::max(V0, 1.0e-9));
-        }
+        if (opts.box_mode == Options::Iso) record_strain(strain_force(1.0));
+        const double fmax_strain_norm = result.final_strain_force_norm;
         if (result.final_fmax_atoms < opts.ftol && fmax_strain_norm < opts.ftol) {
             result.converged = true;
             result.scale_factor = 1.0;
@@ -209,6 +230,7 @@ relax(Structure& st_inout,
             result.final_energy    = E0;
             result.final_fmax_atoms = fmax_inf(F);
             result.scale_factor    = scale_total;
+            finish_strain();
             return result;
         }
         if (wall_exceeded()) {
@@ -216,37 +238,23 @@ relax(Structure& st_inout,
             result.final_energy       = E0;
             result.final_fmax_atoms   = fmax_inf(F);
             result.scale_factor       = scale_total;
+            finish_strain();
             return result;
         }
 
         /* Strain force (Iso mode only). */
         double F_eps = 0.0;
         if (opts.box_mode == Options::Iso) {
-            const double dh = opts.eps_strain_fd;
-            Structure st_p = st_inout;
-            apply_iso_strain(st_p, scale_total * (1.0 + dh), st_baseline);
-            const double E_plus = eval_e(st_p, /*use_cache=*/false);
-
-            Structure st_m = st_inout;
-            apply_iso_strain(st_m, scale_total * (1.0 - dh), st_baseline);
-            const double E_minus = eval_e(st_m, /*use_cache=*/false);
-
-            const double dE_deps = (E_plus - E_minus) / (2.0 * dh);
-            /* Add external-pressure contribution: H = E + P·V; for iso
-             *   strain dV/dε = 3·V_0. */
-            const double V0 = st_inout.get_volume();
-            const double dH_deps = dE_deps + opts.pressure * 3.0 * V0;
-            F_eps = -dH_deps;
-            result.final_strain_force = std::abs(F_eps);
+            F_eps = strain_force(scale_total);
+            record_strain(F_eps);
         }
 
         const double fmax_a = fmax_inf(F);
         result.final_fmax_atoms = fmax_a;
 
         /* Convergence on max(atomic forces, strain force normalised). */
-        const double V0 = st_inout.get_volume();
         const double fmax_strain_norm = (opts.box_mode == Options::Iso)
-            ? std::abs(F_eps) / (3.0 * std::max(V0, 1.0e-9))
+            ? result.final_strain_force_norm
             : 0.0;
         if (fmax_a < opts.ftol && fmax_strain_norm < opts.ftol) {
             result.converged = true;
@@ -375,6 +383,7 @@ relax(Structure& st_inout,
                 accepted = true;
                 /* Commit. */
                 st_inout = st_trial;
+                strain_current = false;
                 if (opts.box_mode == Options::Iso) scale_total = scale_trial;
                 E_prev = E0;       /* snapshot for next iter's etol test */
                 E0 = E_trial;
@@ -430,6 +439,7 @@ relax(Structure& st_inout,
                 result.final_energy     = E0;
                 result.final_fmax_atoms = fmax_inf(F);
                 result.scale_factor     = scale_total;
+                finish_strain();
                 return result;
             }
         }
@@ -447,6 +457,7 @@ relax(Structure& st_inout,
     result.final_energy = E0;
     result.final_fmax_atoms = fmax_inf(F);
     result.scale_factor = scale_total;
+    finish_strain();
     return result;
 }
 

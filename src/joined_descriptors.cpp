@@ -3,6 +3,7 @@
 #include <memory>
 #include <set>
 
+#include <tadah/core/number_format.h>
 #include <tadah/core/registry.h>
 #include <tadah/models/descriptors/d_base.h>
 #include <tadah/models/descriptors/d_mjoin.h>
@@ -36,6 +37,9 @@ std::vector<JoinedDescriptor> joined_descriptors(
     split.insert(d->data_keys.begin(), d->data_keys.end());
   }
   std::map<std::string, std::size_t> before;
+  // The numbers of the TYPE line before a descriptor's own line: an OPTIM
+  // line numbers the values of a key by the numbers among them.
+  std::size_t numbers_before = 0;
   for (std::size_t k = 0; k < contexts.size(); ++k) {
     JoinedDescriptor jd;
     jd.label = labels[k];
@@ -44,6 +48,13 @@ std::vector<JoinedDescriptor> joined_descriptors(
     for (const auto &key : split) {
       jd.first_entries[key] = before[key];
       if (contexts[k].contains(key)) before[key] += contexts[k].size(key);
+    }
+    jd.first_entries[type_key] = numbers_before;
+    for (std::size_t i = 0; i < contexts[k].size(type_key); ++i) {
+      double v = 0.0;
+      if (tadah::core::parse_number(
+              contexts[k].get<std::string>(type_key, i), v))
+        ++numbers_before;
     }
     out.push_back(std::move(jd));
   }

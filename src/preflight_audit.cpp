@@ -284,18 +284,26 @@ bool centres_at_origin(const tadah::core::Context& seed,
 }
 }  // namespace
 
-AuditReport run_critical_optim_audit_with_metas(
-    const tadah::core::Context&     seed,
-    const std::vector<std::string>& optim_keys,
-    const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
-  AuditReport report;
-  if (metas.empty()) return report;
-  tadah::models::SeedView sv(seed);
+namespace {
 
+/* The critical-OPTIM audit of @p checks, each descriptor judged by its own
+ * values of a key (every centre at the origin, in its own context); the
+ * cutoff of a knot channel, and of a bump channel under a hard cutoff, is
+ * left out where tadah hpo derives it or holds the bump supports within
+ * it, which it does for the TYPE line of @p seed, the whole configuration
+ * (derived_knot_rcut and bump_channel_halfwidth read the line's first
+ * value: a line of one descriptor, not a D2_mJoin or DM_mJoin line). */
+AuditReport critical_optim_audit(const tadah::core::Context& seed,
+                                 const std::vector<DescriptorCheck>& checks,
+                                 const std::vector<std::string>& optim_keys) {
+  AuditReport report;
   std::unordered_set<std::string> optim_set(optim_keys.begin(),
                                             optim_keys.end());
 
-  for (const auto& [label, meta] : metas) {
+  for (const auto& c : checks) {
+    const auto& meta = c.meta;
+    const tadah::core::Context& ctx = c.context;
+    const tadah::models::SeedView sv(ctx, c.first_entries);
     // A descriptor with no key in the search space is not searched: its
     // fixed keys are the seed's choice, and no warning is given about them
     // (a search of FIXWEIGHT alone, or of another descriptor's keys).
@@ -312,6 +320,9 @@ AuditReport run_critical_optim_audit_with_metas(
       // Knot channels: RCUT2B/RCUTMB are DERIVED from the largest knot and
       // re-derived on every HPO evaluation — recommending an OPTIM block on
       // them would contradict that contract (the search knob is CGRID*).
+      // tadah hpo derives them for a line of one knot descriptor (the whole
+      // seed): the cutoff of a knot descriptor of a joined line is a fixed
+      // value, and the warning stays.
       if ((pm.key == "RCUT2B" &&
            tadah::models::potedit::derived_knot_rcut(seed, "2B")) ||
           (pm.key == "RCUTMB" &&
@@ -326,6 +337,9 @@ AuditReport run_critical_optim_audit_with_metas(
       // bump centres/widths (CGRID*/SGRID*); the per-candidate bump-support
       // gate in tadah hpo is what keeps them consistent with RCUT. Under a
       // SMOOTH cutoff the damping tail depends on RCUT, so the warning stays.
+      // The gate holds the bumps of a line of one bump descriptor (the
+      // whole seed): a bump descriptor of a joined line is not held within
+      // its cutoff, and the warning stays.
       if ((pm.key == "RCUT2B" &&
            tadah::models::potedit::bump_channel_halfwidth(seed, "2B") &&
            tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B")) ||
@@ -339,20 +353,27 @@ AuditReport run_critical_optim_audit_with_metas(
       // (SGRID*), not its centre, decides whether it reaches the neighbour
       // shells (a compact blip reaches 2/eta); a fixed width is audited on
       // its own.
-      if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(seed, pm.key))
+      if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(ctx, pm.key))
         continue;
 
+      // The descriptor's entries of the key, as an OPTIM line numbers them
+      // (SeedView::entry_number: those of a joined line's descriptor follow
+      // the entries of the descriptors before it): "(2)", "(1-7)".
+      const std::size_t n = sv.size(pm.key);
+      const std::size_t first = sv.entry_number(pm.key, 0);
+      const std::size_t last = sv.entry_number(pm.key, n > 0 ? n - 1 : 0);
+      const std::string entries =
+          first == last ? std::to_string(first)
+                        : std::to_string(first) + "-" + std::to_string(last);
       AuditMessage msg;
-      msg.descriptor_label = label;
+      msg.descriptor_label = c.label;
       msg.param_key        = pm.key;
       msg.text =
-          "Critical hyperparameter is fixed in the seed config and is "
-          "not in any OPTIM block. If the seed value misses the "
-          "neighbour distances of the training data (e.g. a cutoff or "
-          "radial grid that does not overlap the neighbour shells), the "
-          "descriptor block can collapse silently. "
-          "Consider adding `OPTIM " + pm.key + " (...) <lo> <hi>` "
-          "from `tadah analysis suggest_bounds`.";
+          pm.key + "(" + entries + ") is a critical parameter that the seed "
+          "fixes and no OPTIM line searches: a seed value that misses the "
+          "neighbour distances of the training data can make the descriptor "
+          "0 for every atom. `tadah analysis suggest_bounds` suggests a "
+          "range for an `OPTIM " + pm.key + " (" + entries + ")` line.";
       msg.level = AuditMessage::Level::Warn;
       report.messages.push_back(std::move(msg));
     }
@@ -360,11 +381,23 @@ AuditReport run_critical_optim_audit_with_metas(
   return report;
 }
 
+}  // namespace
+
+AuditReport run_critical_optim_audit_with_metas(
+    const tadah::core::Context&     seed,
+    const std::vector<std::string>& optim_keys,
+    const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas) {
+  std::vector<DescriptorCheck> checks;
+  for (const auto& [label, meta] : metas)
+    checks.push_back(DescriptorCheck{label, meta, seed, {}});
+  return critical_optim_audit(seed, checks, optim_keys);
+}
+
 AuditReport run_critical_optim_audit(
     const tadah::core::Context&     seed,
     const std::vector<std::string>& optim_keys) {
-  return run_critical_optim_audit_with_metas(
-      seed, optim_keys, collect_descriptor_metas(seed));
+  return critical_optim_audit(seed, collect_descriptor_checks(seed),
+                              optim_keys);
 }
 
 void enforce_audit_mode(const AuditReport& report, AuditMode mode) {

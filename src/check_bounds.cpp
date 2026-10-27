@@ -18,6 +18,7 @@
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
 namespace mlip {
@@ -82,6 +83,17 @@ std::vector<Bound> parse_hpo_target_bounds(const std::string& path) {
       throw std::runtime_error(
           "check_bounds: malformed OPTIM line " + std::to_string(lineno) +
           " in " + path + " — missing <lo> <hi>");
+    }
+    // tadah hpo refuses a box whose high bound is not above its low bound
+    // (a box of zero width included): so is it here, as its corners would
+    // pass the audit at one value.
+    if (!(lo < hi)) {
+      std::ostringstream os;
+      os << "check_bounds: line " << lineno << " of " << path << ", '"
+         << line.substr(p) << "': the high bound " << hi
+         << " is not above the low bound " << lo
+         << "; tadah hpo refuses such a box";
+      throw std::runtime_error(os.str());
     }
     auto range = parse_index_spec(idx);
     if (range.first < 0 && range.second < 0) {
@@ -177,6 +189,17 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
     ctx.remove(b.key);
     for (const auto& t : tokens) ctx.add(b.key, t);
   }
+  // A knot channel's cutoff is its largest knot: tadah hpo re-derives
+  // RCUT2B / RCUTMB from the knots of each candidate
+  // (apply_knot_rcut_derivation), so a corner that moves a knot moves the
+  // cutoff with it, and a box on the cutoff itself has no effect there.
+  for (const char* sfx : {"2B", "MB"}) {
+    const auto derived = tadah::models::potedit::derived_knot_rcut(ctx, sfx);
+    if (!derived) continue;
+    const std::string key = std::string("RCUT") + sfx;
+    ctx.remove(key);
+    ctx.add(key, tadah::core::format_roundtrip(*derived));
+  }
   return ctx;
 }
 
@@ -189,38 +212,53 @@ CheckBoundsResult check_bounds_at_corners(
   res.n_corners = corners.size();
   res.n_corners_failing = 0;
 
+  // A knot channel's stated cutoff is replaced with its largest knot, as
+  // tadah hpo (and tadah train) replace it before they audit, with the
+  // same WARNING: audited at a stale stated cutoff, a corner would fail a
+  // check of a cutoff that no evaluation uses.
+  tadah::models::potedit::normalize_knot_rcut(seed,
+                                              "tadah analysis check_bounds");
+
   // Pre-compute DataStats ONCE up front. The dataset's per-pair r_ij
   // distribution does not depend on the corner's parameter choices, only
   // on the cutoff used to walk neighbours, so the statistics are computed
   // at the largest cutoff any corner has: in a copy of the seed, each
-  // cutoff key of the box (RCUT2B, RCUTMB) takes its largest upper bound
-  // where that is above the seed's value, and RCUTMAX, which the Context
-  // derives from RCUT2B and RCUTMB, covers every corner's neighbours. A
-  // corner's own cutoff then bounds the distances its checks look at
-  // (neighbour_range). The previous implementation re-ran
+  // value of RCUT2B and RCUTMB takes the largest it has in the seed and in
+  // every corner's context (a box on the cutoff, or on the knots of a knot
+  // channel, whose cutoff follows its largest knot), and RCUTMAX, which
+  // the Context derives from RCUT2B and RCUTMB, covers every corner's
+  // neighbours. A corner's own cutoff then bounds the distances its checks
+  // look at (neighbour_range). The previous implementation re-ran
   // `compute_data_stats` per corner -- O(corners x n_atoms) -- which on a
   // 38-dim blip search box (200 LHS samples x 326k atoms) takes ~80
   // minutes. With the pre-compute it drops to one full-dataset pass plus
   // one O(K) audit per corner.
-  tadah::core::Context stats_ctx = seed;
-  for (const char* key : {"RCUT2B", "RCUTMB"}) {
-    bool boxed = false;
-    double hi = 0.0;
-    for (const auto& b : bounds)
-      if (b.key == key) {
-        hi = boxed ? std::max(hi, b.hi) : b.hi;
-        boxed = true;
-      }
-    if (!boxed) continue;
-    const std::size_t n = stats_ctx.has_stored(key) ? stats_ctx.size(key) : 0;
-    std::vector<double> values(n);
+  std::vector<double> reach2b, reachmb;
+  auto widen = [](std::vector<double>& reach,
+                  const tadah::core::Context& c, const char* key) {
+    if (!c.has_stored(key)) return;
+    const std::size_t n = c.size(key);
+    if (reach.size() < n) reach.resize(n, 0.0);
     for (std::size_t i = 0; i < n; ++i)
-      values[i] = stats_ctx.get<double>(key, i);
-    if (values.empty()) values.push_back(hi);
-    stats_ctx.remove(key);
-    for (double v : values)
-      stats_ctx.add(key, tadah::core::format_roundtrip(std::max(v, hi)));
+      reach[i] = std::max(reach[i], c.get<double>(key, i));
+  };
+  widen(reach2b, seed, "RCUT2B");
+  widen(reachmb, seed, "RCUTMB");
+  for (const auto& c : corners) {
+    const tadah::core::Context corner_ctx = corner_context(seed, bounds, c);
+    widen(reach2b, corner_ctx, "RCUT2B");
+    widen(reachmb, corner_ctx, "RCUTMB");
   }
+  tadah::core::Context stats_ctx = seed;
+  auto set_reach = [&stats_ctx](const char* key,
+                                const std::vector<double>& reach) {
+    if (reach.empty()) return;
+    stats_ctx.remove(key);
+    for (double v : reach)
+      stats_ctx.add(key, tadah::core::format_roundtrip(v));
+  };
+  set_reach("RCUT2B", reach2b);
+  set_reach("RCUTMB", reachmb);
   // Statistics that cannot be computed (two atoms at one position, a cell
   // too small for the cutoff, ...) stop the audit: audited against empty
   // statistics every corner would pass.

@@ -606,8 +606,9 @@ TEST_CASE("preflight_audit: the setfl cutoff of D2_EAM and DM_EAM is not "
  * SGRID2B alone flags the D2_BP keys (RCUT2B, CGRID2B) and none of the
  * DM_mBlipEnv-like descriptor's.
  * Before the fix: every Critical key of every configured descriptor was
- * flagged whatever the search space ("Critical hyperparameter is fixed in
- * the seed config and is not in any OPTIM block ..."), also for a search
+ * flagged whatever the search space (the warning then read "Critical
+ * hyperparameter is fixed in the seed config and is not in any OPTIM block
+ * ..."), also for a search
  * of FIXWEIGHT alone, which tadah hpo printed on every run, AUDIT off
  * included. */
 TEST_CASE("preflight_audit: critical_optim_audit flags nothing for a "
@@ -756,4 +757,265 @@ TEST_CASE("preflight_audit: each descriptor of a DM_mJoin line is judged by "
     }
     CHECK(n == 1u);
   }
+}
+
+// ---------------------------------------------------------------------------
+//  The critical-OPTIM audit of a joined line, and a cutoff that holds no
+//  neighbour
+// ---------------------------------------------------------------------------
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+namespace {
+
+/* The findings of @p rep as "label.key: text", sorted. */
+std::vector<std::string> findings_of(const AuditReport& rep) {
+  std::vector<std::string> out;
+  for (const auto& m : rep.messages)
+    out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+/* The findings of @p rep as "label.key", sorted. */
+std::vector<std::string> keys_of(const AuditReport& rep) {
+  std::vector<std::string> out;
+  for (const auto& m : rep.messages)
+    out.push_back(m.descriptor_label + "." + m.param_key);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+/* TYPEMB DM_EAD 0 1 1 Ta Ta, one Gaussian channel at @p centre, SGRIDMB 1,
+ * RCUTMB 5.6. */
+Context single_ead_seed(const std::string& centre) {
+  Context c;
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.6);
+  c.add("CGRIDMB", centre);
+  c.add("SGRIDMB", 1.0);
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the critical-OPTIM audit (tadah hpo under AUDIT warn and error)
+ * judges each descriptor of a DM_mJoin line by its own values: for DM_mJoin
+ * of DM_EAD with its Gaussian at the origin (CGRIDMB(1) = 0) and DM_EAD with
+ * its Gaussian on the first shell (CGRIDMB(2) = 2.9), RCUTMB 5.6 5.6, a
+ * search of SGRIDMB, the findings are those of the two descriptors alone,
+ * together: RCUTMB of each and CGRIDMB of the second (a centre at the
+ * origin is not flagged), three findings, each naming its descriptor and
+ * key as alone (its text names its entries of the whole key: see the next
+ * test case).
+ * Before the fix: each descriptor read the whole line: CGRIDMB 0 2.9 is not
+ * every centre at the origin, so both descriptors' CGRIDMB were flagged,
+ * four findings. */
+TEST_CASE("preflight_audit: critical_optim_audit judges each descriptor of a "
+          "joined line by its own values",
+          "[preflight_audit][join]") {
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "5.6 5.6");
+  joined.add("CGRIDMB", "0 2.9");
+  joined.add("SGRIDMB", "1 1");
+  const std::vector<std::string> space = {"SGRIDMB"};
+  std::vector<std::string> alone =
+      keys_of(run_critical_optim_audit(single_ead_seed("0"), space));
+  const std::vector<std::string> second =
+      keys_of(run_critical_optim_audit(single_ead_seed("2.9"), space));
+  alone.insert(alone.end(), second.begin(), second.end());
+  std::sort(alone.begin(), alone.end());
+  const std::vector<std::string> together =
+      keys_of(run_critical_optim_audit(joined, space));
+  CAPTURE(alone, together);
+  CHECK(together == alone);
+  CHECK(together.size() == 3u);
+}
+
+/* Pins: a critical-parameter warning names the entries of its descriptor
+ * as an OPTIM line numbers them, and the OPTIM line that searches them, in
+ * impersonal words: for DM_mJoin of two DM_EAD (CGRIDMB 0 2.9, RCUTMB 5.6
+ * 5.6) and a search of SGRIDMB the three texts begin "RCUTMB(1) is a
+ * critical parameter that the seed fixes and no OPTIM line searches",
+ * "RCUTMB(2) ..." and "CGRIDMB(2) ...", and name `OPTIM RCUTMB (1)`,
+ * `OPTIM RCUTMB (2)` and `OPTIM CGRIDMB (2)` and tadah analysis
+ * suggest_bounds; for a DM_EAD alone with centres 2.9 and 3.3, the CGRIDMB
+ * text begins "CGRIDMB(1-2) is a critical parameter" and names `OPTIM
+ * CGRIDMB (1-2)`. No text says "Consider", "OPTIM block" or
+ * "hyperparameter".
+ * Before the fix: every text read "Critical hyperparameter is fixed in the
+ * seed config and is not in any OPTIM block. ... Consider adding `OPTIM
+ * RCUTMB (...) <lo> <hi>` from `tadah analysis suggest_bounds`.", the
+ * warnings about the two cutoffs of the join alike. */
+TEST_CASE("preflight_audit: a critical-parameter warning names the entries "
+          "of its descriptor and the OPTIM line that searches them",
+          "[preflight_audit][join]") {
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "5.6 5.6");
+  joined.add("CGRIDMB", "0 2.9");
+  joined.add("SGRIDMB", "1 1");
+  const std::string fixed =
+      " is a critical parameter that the seed fixes and no OPTIM line "
+      "searches";
+  std::vector<std::string> texts;
+  for (const auto& m : run_critical_optim_audit(joined, {"SGRIDMB"}).messages)
+    texts.push_back(m.text);
+  std::sort(texts.begin(), texts.end());
+  CAPTURE(texts);
+  REQUIRE(texts.size() == 3u);
+  const char* const entries[] = {"CGRIDMB(2)", "RCUTMB(1)", "RCUTMB(2)"};
+  const char* const lines[] = {"`OPTIM CGRIDMB (2)", "`OPTIM RCUTMB (1)",
+                               "`OPTIM RCUTMB (2)"};
+  for (std::size_t i = 0; i < 3; ++i) {
+    CAPTURE(entries[i]);
+    CHECK(texts[i].rfind(entries[i] + fixed, 0) == 0);
+    CHECK(texts[i].find(lines[i]) != std::string::npos);
+    CHECK(texts[i].find("tadah analysis suggest_bounds") != std::string::npos);
+  }
+
+  Context lone;
+  lone.add("INITMB", "true");
+  lone.add("TYPEMB", "DM_EAD 0 2 2 Ta Ta");
+  lone.add("RCTYPEMB", "Cut_Cos");
+  lone.add("RCUTMB", 5.6);
+  lone.add("CGRIDMB", "2.9 3.3");
+  lone.add("SGRIDMB", "1 1");
+  std::size_t centres = 0;
+  for (const auto& m : run_critical_optim_audit(lone, {"SGRIDMB"}).messages) {
+    texts.push_back(m.text);
+    if (m.param_key != "CGRIDMB") continue;
+    ++centres;
+    CAPTURE(m.text);
+    CHECK(m.text.rfind("CGRIDMB(1-2)" + fixed, 0) == 0);
+    CHECK(m.text.find("`OPTIM CGRIDMB (1-2)") != std::string::npos);
+  }
+  CHECK(centres == 1u);
+  for (const auto& text : texts) {
+    CAPTURE(text);
+    CHECK(text.find("Consider") == std::string::npos);
+    CHECK(text.find("OPTIM block") == std::string::npos);
+    CHECK(text.find("hyperparameter") == std::string::npos);
+  }
+}
+
+namespace {
+
+/* TYPE2B D2_Knot5 3 3 Ta Ta alone: knots 2.5 3.5 4.5 (KDEG2B 5),
+ * Cut_Dummy, RCUT2B 4.5. */
+Context knot_alone_seed() {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("RCUT2B", 4.5);
+  c.add("CGRID2B", "2.5 3.5 4.5");
+  c.add("KDEG2B", "5 5 5");
+  return c;
+}
+
+/* TYPE2B D2_Blip 3 3 Ta Ta alone: centres 2.5 3 3.5, SGRID2B 1, under
+ * @p rctype, RCUT2B 5. */
+Context blip_alone_seed(const std::string& rctype) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  c.add("RCTYPE2B", rctype);
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "2.5 3.0 3.5");
+  c.add("SGRID2B", "1 1 1");
+  return c;
+}
+
+/* TYPE2B D2_mJoin of the two above, under @p rctype ("Cut_Cos Cut_Cos"),
+ * RCUT2B 4.5 5. */
+Context knot_blip_join_seed(const std::string& rctype) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_mJoin");
+  c.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  c.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  c.add("RCTYPE2B", rctype);
+  c.add("RCUT2B", "4.5 5.0");
+  c.add("CGRID2B", "2.5 3.5 4.5 2.5 3.0 3.5");
+  c.add("KDEG2B", "5 5 5");
+  c.add("SGRID2B", "1 1 1");
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the critical-OPTIM audit leaves out the cutoff of a knot channel,
+ * and that of a bump channel under a hard cutoff, only where tadah hpo
+ * derives it from the largest knot or holds the bump supports within it:
+ * on a line of that descriptor alone. For a search of CGRID2B:
+ *  - D2_Knot5 alone (Cut_Dummy) and D2_Blip alone under Cut_Dummy give no
+ *    finding, and D2_Blip alone under Cut_Cos gives D2_Blip.RCUT2B;
+ *  - D2_mJoin of D2_Knot5 and D2_Blip gives D2_Blip.RCUT2B and
+ *    D2_Knot5.RCUT2B under Cut_Cos Cut_Cos and under Cut_Dummy Cut_Dummy:
+ *    tadah hpo neither derives the cutoff of a knot channel of a joined
+ *    line nor holds its bump supports within the cutoff, so the cutoffs of
+ *    a joined line are fixed values of the search.
+ * Before the fix: each descriptor of the joined line was judged as if it
+ * were alone: Cut_Cos Cut_Cos gave D2_Blip.RCUT2B only, and Cut_Dummy
+ * Cut_Dummy no finding. */
+TEST_CASE("preflight_audit: critical_optim_audit leaves out a knot or bump "
+          "cutoff only on a line of that descriptor alone",
+          "[preflight_audit][join][knot]") {
+  const std::vector<std::string> space = {"CGRID2B"};
+  CHECK(keys_of(run_critical_optim_audit(knot_alone_seed(), space)).empty());
+  CHECK(keys_of(run_critical_optim_audit(blip_alone_seed("Cut_Dummy"), space))
+            .empty());
+  CHECK(keys_of(run_critical_optim_audit(blip_alone_seed("Cut_Cos"), space)) ==
+        std::vector<std::string>{"D2_Blip.RCUT2B"});
+  for (const std::string rctype : {"Cut_Cos Cut_Cos", "Cut_Dummy Cut_Dummy"}) {
+    CAPTURE(rctype);
+    CHECK(keys_of(run_critical_optim_audit(knot_blip_join_seed(rctype),
+                                           space)) ==
+          std::vector<std::string>{"D2_Blip.RCUT2B", "D2_Knot5.RCUT2B"});
+  }
+}
+
+/* Pins: the pre-flight audit fails a descriptor whose cutoff holds no
+ * neighbour distance, whichever descriptor it is: D2_Knot5 with RCUT2B 2
+ * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL,
+ * naming RCUT2B and 2, under AUDIT error.
+ * Before the fix: D2_Knot5's cutoff had no check: no FAIL, and tadah
+ * train trained a descriptor that is 0 for every structure. */
+TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
+          "FAIL finding",
+          "[preflight_audit][cutoff]") {
+  Context seed;
+  seed.add("INIT2B", "true");
+  seed.add("TYPE2B", "D2_Knot5 2 2 Ta Ta");
+  seed.add("RCTYPE2B", "Cut_Dummy");
+  seed.add("RCUT2B", 2.0);
+  seed.add("CGRID2B", "1.5 2.0");
+  seed.add("KDEG2B", "5 5");
+  const auto rep = run_preflight_soft(bcc_ta_distances(), seed,
+                                      AuditMode::Error);
+  const std::string fails = fails_of(rep);
+  INFO(fails);
+  std::size_t n = 0;
+  for (const auto& m : rep.messages) {
+    if (m.level != AuditMessage::Level::Fail) continue;
+    ++n;
+    CHECK(m.descriptor_label == "D2_Knot5");
+    CHECK(m.param_key == "RCUT2B");
+    CHECK(m.text.find("RCUT2B = 2 ") != std::string::npos);
+  }
+  CHECK(n == 1u);
 }
