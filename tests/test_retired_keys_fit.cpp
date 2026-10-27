@@ -48,6 +48,7 @@
 #include <tadah/mlip/engines/refit_engine.h>
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/itask_input.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
@@ -258,16 +259,80 @@ TEST_CASE("The C++ API refuses a fit of a configuration with retired keys",
   }
 }
 
+/* Pins: a fit refuses a configuration with a line that changes nothing it
+ * gives (MODELS inert_keys.h), through the C++ API (Trainer, M_BLR and
+ * M_KRR train) as tadah train does (require_fit_settings): MBLOCK 64,
+ * EMBF0 FREE and RHOFORM SIGNED (no DM_REAM block) on line 16, each named
+ * with its line ("MBLOCK 64 (line 16)"); require_fit_settings refuses
+ * WATOM 2.5 with D2_EAM and DM_EAM ("WATOM 2.5 (line 2)") and takes WATOM
+ * 1 with them.
+ * Before the fix: the fit ran: MBLOCK and EMBF0 gave a WARNING, RHOFORM
+ * and WATOM nothing. */
+TEST_CASE("The C++ API refuses a fit of a configuration with a key that "
+          "changes nothing it gives",
+          "[inert][fit]") {
+  PeriodicTable::initialize();
+  IgnoredKeyNoticeCapture quiet;
+  StructureDB db;
+  for (std::size_t s = 0; s < 4; ++s) db.add(cell(3.25 + 0.03 * s, 0.02 * s, s));
+  for (const std::string line : {"MBLOCK 64", "EMBF0 FREE", "RHOFORM SIGNED"}) {
+    for (const std::string model : {"M_BLR BF_Linear", "M_KRR Kern_Linear"}) {
+      DYNAMIC_SECTION(line << ", " << model) {
+        std::vector<std::string> lines = model_lines({line});
+        lines[14] = "MODEL " + model;
+        Context c = tadah::core::CoreUserConfigParser().parse(lines);
+        MLIPWorkspaceManager ws;
+        Trainer tr(c, ws);
+        StructureDB d = db;
+        std::string what;
+        try {
+          tr.train(d);
+        } catch (const std::exception &e) {
+          what = e.what();
+        }
+        INFO("refusal: " << what);
+        CHECK_THAT(what, Contains(line + " (line 16)") &&
+                             Contains("changes nothing a fit gives"));
+      }
+    }
+  }
+  {
+    const std::vector<std::string> eam = {
+        "ATOM Ta", "WATOM 2.5", "INIT2B true", "TYPE2B D2_EAM 0 Ta Ta",
+        "INITMB true", "TYPEMB DM_EAM 0 Ta Ta", "SETFL eam.alloy",
+        "MODEL M_BLR BF_Linear"};
+    const Context c = tadah::core::CoreUserConfigParser().parse(eam);
+    std::string what;
+    try {
+      tadah::mlip::require_fit_settings(c, "tadah train");
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    INFO("refusal: " << what);
+    CHECK_THAT(what, Contains("tadah train: ") &&
+                         Contains("WATOM 2.5 (line 2)") &&
+                         Contains("D2_EAM and DM_EAM"));
+    std::vector<std::string> one = eam;
+    one[1] = "WATOM 1";
+    CHECK_NOTHROW(tadah::mlip::require_fit_settings(
+        tadah::core::CoreUserConfigParser().parse(one), "tadah train"));
+  }
+}
+
 /* Pins: tadah train -c of a configuration that includes the 1.5.0
  * potential (CONFIG old.tadah and a DBFILE line) is refused before any
  * structure is fitted, naming the five retired lines of the potential file
  * (its UNCERTAINTY false among them, marked as converted by deleting the
- * line) and the conversion of each, and writes no potential; the parse
- * gives one notice listing them.
+ * line) and the conversion of each, and, in the same refusal, its
+ * deprecated SIGMA line ("the configuration also has a line that changes
+ * nothing a fit gives ...: SIGMA 3 ... and 7 more values (line 21 of
+ * <file>)"), and writes no potential; the parse gives one notice listing
+ * the retired keys.
  * Before the fix: the retrain ran with EWEIGHT 1.0, FWEIGHT 100 and
  * SWEIGHT 1.0 and wrote pot.tadah. Before UNCERTAINTY was retired: the
  * refusal named four lines, the UNCERTAINTY line not read; then it named
- * the UNCERTAINTY line without the mark. */
+ * the UNCERTAINTY line without the mark. Before the deprecated keys were
+ * refused: the SIGMA line was ignored with a notice. */
 TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
           "conversion",
           "[retired][fit]") {
@@ -290,7 +355,11 @@ TEST_CASE("tadah train -c refuses a potential of Tadah! 1.5.0 with the "
                        Contains("WDBFILE_AUTO 0.0 (line 27 of " + f) &&
                        Contains("UNCERTAINTY false (line 25 of " + f +
                                 "; converted by deleting the line)") &&
-                       Contains("SSIGMA = 160.2/sqrt(SWEIGHT)"));
+                       Contains("SSIGMA = 160.2/sqrt(SWEIGHT)") &&
+                       Contains("The configuration also has a line that "
+                                "changes nothing a fit gives") &&
+                       Contains("SIGMA 3 ") &&
+                       Contains("more values (line 21 of " + f + ")"));
   CHECK_FALSE(fs::exists("pot.tadah"));
   CHECK(retired_notices(notices) == 1);
 }
@@ -488,12 +557,15 @@ TEST_CASE("refit --edit keeps the retired lines, and a fit refuses the "
  * configuration converted as the refusal says -- those three lines
  * deleted, EWEIGHT 1.0 as ESIGMA = 1000/(N sqrt(EWEIGHT)) = 500 for the
  * 2-atom cells, FWEIGHT 100 as FSIGMA = 1/sqrt(FWEIGHT) = 0.1, its DBFILE
- * line (the data of the 1.5.0 fit) for db.tadah -- trains and writes a
- * potential.
+ * line (the data of the 1.5.0 fit) for db.tadah, and the deprecated SIGMA
+ * line, which the refusal names as a line that changes nothing, deleted --
+ * trains and writes a potential.
  * Before the fix: the refusal gave SSIGMA = 160.2/sqrt(SWEIGHT) for the
  * SWEIGHT line too, and the configuration converted so (SSIGMA 160.2) was
  * refused again, as SSIGMA other than its default with STRESS false; then
- * it did not mark the UNCERTAINTY line. */
+ * it did not mark the UNCERTAINTY line. Before the deprecated keys were
+ * refused: the refusal did not name the SIGMA line, which the fit ignored
+ * with a notice. */
 TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
           "trains",
           "[retired][fit]") {
@@ -518,7 +590,8 @@ TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
                  Contains("WDBFILE_AUTO 0.0 (line 27 of " + f +
                           "; 0: converted by deleting the line)") &&
                  Contains("UNCERTAINTY false (line 25 of " + f +
-                          "; converted by deleting the line)"));
+                          "; converted by deleting the line)") &&
+                 Contains("more values (line 21 of " + f + ")"));
   {
     std::istringstream in(slurp(kOldPot));
     std::ofstream out("converted.tadah");
@@ -529,7 +602,7 @@ TEST_CASE("A potential of Tadah! 1.5.0 converted as its refusal says "
       // DBFILE: the data of the 1.5.0 fit, which the test does not have
       // (the retrain reads db.tadah).
       if (key == "SWEIGHT" || key == "WDBFILE_AUTO" || key == "DBFILE" ||
-          key == "UNCERTAINTY")
+          key == "UNCERTAINTY" || key == "SIGMA")
         continue;
       if (key == "EWEIGHT") l = "ESIGMA 500";
       if (key == "FWEIGHT") l = "FSIGMA 0.1";
