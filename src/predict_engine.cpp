@@ -301,28 +301,44 @@ int PredictEngine::run(mlip::Task &task) {
 void PredictEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
   require_command_options(context, "PREDICT");
+  // The command line refuses -d and -s without -p (--dbfile requires
+  // --potential): this check serves a Task a C++ program builds.
   if (!context.contains("POTENTIAL")) {
     throw std::runtime_error(
         "tadah predict needs a potential file (--potential)");
   }
-  // require context OUTFILE to be size 1 if no force or stress
-  // size 2 if force or stress
-  // size 3 if force and stress
-  // use logger to inform user do not throw error
-  if (context.get<bool>("FORCE") && context.get<bool>("STRESS")) {
-    if (context.size("OUTFILE") != 3) {
-      core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-          "Provide 3 output files for energy forces and stress.");
-    }
-  } else if (context.get<bool>("FORCE") || context.get<bool>("STRESS")) {
-    if (context.size("OUTFILE") < 2) {
-      std::string which = context.get<bool>("FORCE") ? "forces" : "stress";
-      core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-          "Provide 2 output files: one for energy and one for " + which + ".");
-    }
-  } else  if (context.size("OUTFILE") != 1 && context.size("OUTFILE") != 3) {
-    core::Logger::instance().log(tadah::core::LogLevel::ERROR,
-        "Provide single output file for energy.");
+  // OUTFILE: the energy file, then the force file with FORCE and the stress
+  // file with STRESS, or the three files of the default layout (energy,
+  // force, stress), as Output writes them; refused before anything is read.
+  const bool force = context.get<bool>("FORCE");
+  const bool stress = context.get<bool>("STRESS");
+  const std::size_t takes = 1 + (force ? 1 : 0) + (stress ? 1 : 0);
+  const std::size_t given = context.size("OUTFILE");
+  if (given != takes && given != 3) {
+    std::string named;
+    for (std::size_t i = 0; i < given; ++i)
+      named += (i == 0 ? "" : " ") + context.get<std::string>("OUTFILE", i);
+    const std::string writes =
+        force && stress ? "the energies, the forces and the stresses "
+                          "(--force, --stress)"
+        : force         ? "the energies and the forces (--force)"
+        : stress        ? "the energies and the stresses (--stress)"
+                        : "the energies";
+    const std::string files =
+        force && stress ? "3, the energy, force and stress files"
+        : force ? "2, the energy file and the force file, or 3, the energy, "
+                  "force and stress files"
+        : stress ? "2, the energy file and the stress file, or 3, the "
+                   "energy, force and stress files"
+                 : "1, the energy file, or 3, the energy, force and stress "
+                   "files";
+    const std::string names =
+        given == 0 ? std::string("no file")
+                   : std::to_string(given) +
+                         (given == 1 ? " file, " : " files, ") + named;
+    throw std::runtime_error("tadah predict writes " + writes +
+                             ": --outfile names " + names + ", and takes " +
+                             files);
   }
 }
 

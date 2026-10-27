@@ -234,6 +234,9 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void AnalysisBfuncEngine::validate(const tadah::mlip::Task &task) {
+  // The command line refuses most of these first (the values an option
+  // takes, the options it needs and excludes); validate() checks them for
+  // a Task a C++ program builds too.
   const auto &context = task.getContext();
   // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therefore we do not check either.
   // if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {

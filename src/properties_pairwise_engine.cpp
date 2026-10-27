@@ -183,6 +183,9 @@ int PropertiesPairwiseEngine::run(mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void PropertiesPairwiseEngine::validate(const tadah::mlip::Task &task) {
+  // The command line refuses most of these first (the values an option
+  // takes, the options it needs and excludes); validate() checks them for
+  // a Task a C++ program builds too.
   const auto &taskContext = task.getContext();
   require_command_options(taskContext, "PROPERTIES.pairwise");
   if (!taskContext.contains("POTENTIAL")) {
