@@ -1130,3 +1130,160 @@ TEST_CASE("preflight_audit: a finding names the key AUDIT, its level and "
   CHECK(printed.str().find("\n  FAIL DM_mBlipEnv: a failure\n") !=
         std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+//  The element pairs of a descriptor's line: a descriptor sums over the
+//  neighbours of the element pairs its TYPE2B or TYPEMB line names, and the
+//  audit judges it by their distances alone
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Ta-W data (DataStats sorts per_pair by element pair): the (Ta, Ta) pairs
+ * from 2.86 to 3.3 A, the (Ta, W) pairs from 2.4 to 2.6 A and the (W, W)
+ * pairs from 2.5 to 2.7 A. */
+DataStats ta_w_distances() {
+  DataStats d;
+  d.n_atoms = 40;
+  d.n_structures = 4;
+  d.elements = {"Ta", "W"};
+  auto pair = [](const char* a, const char* b, double lo, double hi) {
+    PerPairStats pp;
+    pp.elements = {a, b};
+    pp.n_pairs = 100;
+    pp.r_min = lo;
+    pp.r_max = hi;
+    for (std::size_t i = 0; i < pp.r_percentiles.size(); ++i)
+      pp.r_percentiles[i] = lo + (hi - lo) * static_cast<double>(i) / 10.0;
+    return pp;
+  };
+  d.per_pair = {pair("Ta", "Ta", 2.86, 3.3), pair("Ta", "W", 2.4, 2.6),
+                pair("W", "W", 2.5, 2.7)};
+  return d;
+}
+
+/* TYPE2B D2_Blip 2 2 <pairs> alone, RCUT2B @p rcut, centres 1 and 2,
+ * SGRID2B 1 1, Cut_Cos. */
+Context blip_line(const std::string& pairs, double rcut) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Blip 2 2 " + pairs);
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", rcut);
+  c.add("CGRID2B", "1 2");
+  c.add("SGRID2B", "1 1");
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the pre-flight audit judges the cutoff of a descriptor by the
+ * neighbour distances of the element pairs its line names, on Ta-W data
+ * whose (Ta, Ta) pairs start at 2.86 A, (Ta, W) at 2.4 A and (W, W) at
+ * 2.5 A (ta_w_distances()), for D2_Blip 2 2 <pairs> with RCUT2B r:
+ *  - "Ta Ta", r = 2.6: one FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the
+ *    smallest (Ta, Ta) neighbour distance of the dataset (2.86 Å): the
+ *    descriptor sums over no neighbour and is 0 for every atom.";
+ *  - "W W", r = 2.45: one FAIL naming "(W, W)" and 2.5 Å;
+ *  - "Ta Ta W W", r = 2.45: one FAIL naming "(Ta, Ta) or (W, W)" and 2.5 Å;
+ *  - "Mo Mo", r = 5: one FAIL, "RCUT2B = 5: no (Mo, Mo) pair of atoms of the
+ *    dataset lies within it, ...";
+ *  - "W W" and "Ta Ta W W" at 2.6, "Ta W" and "* *" at 2.45: no finding (a
+ *    pin: no false FAIL, as since the check read every element pair).
+ * Before the fix: the check read the smallest neighbour distance of every
+ * element pair of the data, 2.4 A: none of the four FAILs was given, and
+ * AUDIT error trained descriptors that are 0 for every atom. */
+TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
+          "descriptor's line",
+          "[preflight_audit][cutoff][line_pairs]") {
+  const DataStats data = ta_w_distances();
+  auto fails = [&](const std::string& pairs, double rcut) {
+    std::vector<std::string> out;
+    for (const auto& m :
+         run_preflight_soft(data, blip_line(pairs, rcut), AuditMode::Error)
+             .messages)
+      if (m.level == AuditMessage::Level::Fail)
+        out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+    return out;
+  };
+  const std::string none =
+      ": the descriptor sums over no neighbour and is 0 for every atom.";
+  CHECK(fails("Ta Ta", 2.6) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta) "
+            "neighbour distance of the dataset (2.86 Å)" + none});
+  CHECK(fails("W W", 2.45) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (W, W) "
+            "neighbour distance of the dataset (2.5 Å)" + none});
+  CHECK(fails("Ta Ta W W", 2.45) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (Ta, Ta) or "
+            "(W, W) neighbour distance of the dataset (2.5 Å)" + none});
+  CHECK(fails("Mo Mo", 5.0) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 5: no (Mo, Mo) pair of atoms of the "
+            "dataset lies within it, so the descriptor sums over no "
+            "neighbour and is 0 for every atom."});
+  CHECK(fails("W W", 2.6).empty());
+  CHECK(fails("Ta Ta W W", 2.6).empty());
+  CHECK(fails("Ta W", 2.45).empty());
+  CHECK(fails("* *", 2.45).empty());
+}
+
+/* Pins: a Gaussian channel of a many-body density is judged by the
+ * neighbour distances of the element pairs of its descriptor's line: on
+ * the Ta-W data, CGRIDMB 3.1 with SGRIDMB 100 (below 1e-6 farther than
+ * 0.37 A from 3.1 A) under RCUTMB 3.5:
+ *  - DM_EAD 0 1 1 W W: one FAIL, DM_EAD.CGRIDMB, "... below 1e-6 at every
+ *    (W, W) neighbour distance within RCUTMB = 3.5 (2.5 to 2.7 Å) ...";
+ *  - DM_EAD 0 1 1 Ta Ta: no FAIL (the (Ta, Ta) pairs reach 3.3 A);
+ *  - DM_mJoin of the two (CGRIDMB 3.1 3.1, SGRIDMB 100 100, RCUTMB 3.5
+ *    3.5): one FAIL, the W W descriptor's, naming CGRIDMB(2).
+ * Before the fix: the channel was judged by the distances of every element
+ * pair (2.4 to 3.3 A), which hold 3.1 A: no FAIL. */
+TEST_CASE("preflight_audit: a density channel is judged by the element pairs "
+          "of its descriptor's line",
+          "[preflight_audit][density_reach][line_pairs]") {
+  const DataStats data = ta_w_distances();
+  auto ead = [](const std::string& pairs) {
+    Context c;
+    c.add("INITMB", "true");
+    c.add("TYPEMB", "DM_EAD 0 1 1 " + pairs);
+    c.add("RCTYPEMB", "Cut_Cos");
+    c.add("RCUTMB", 3.5);
+    c.add("CGRIDMB", 3.1);
+    c.add("SGRIDMB", 100.0);
+    return c;
+  };
+  auto fails = [&](const Context& seed) {
+    std::vector<std::string> out;
+    for (const auto& m :
+         run_preflight_soft(data, seed, AuditMode::Error).messages)
+      if (m.level == AuditMessage::Level::Fail)
+        out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+    return out;
+  };
+  const auto ww = fails(ead("W W"));
+  REQUIRE(ww.size() == 1u);
+  CHECK(ww[0].rfind("DM_EAD.CGRIDMB: CGRIDMB(1) = 3.1 with SGRIDMB(1) = 100",
+                    0) == 0);
+  CHECK(ww[0].find("is below 1e-6 at every (W, W) neighbour distance within "
+                   "RCUTMB = 3.5 (2.5 to 2.7 Å)") != std::string::npos);
+  CHECK(fails(ead("Ta Ta")).empty());
+
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 W W");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "3.5 3.5");
+  joined.add("CGRIDMB", "3.1 3.1");
+  joined.add("SGRIDMB", "100 100");
+  const auto j = fails(joined);
+  INFO(j.size());
+  REQUIRE(j.size() == 1u);
+  CHECK(j[0].rfind("DM_EAD.CGRIDMB: CGRIDMB(2) = 3.1", 0) == 0);
+  CHECK(j[0].find("(W, W)") != std::string::npos);
+}

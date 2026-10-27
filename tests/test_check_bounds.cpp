@@ -800,3 +800,78 @@ TEST_CASE("check_bounds: the cutoff of a knot descriptor of a joined line "
     CHECK(c.get<double>("RCUT2B", 1) == 5.0);
   }
 }
+
+// ---------------------------------------------------------------------------
+//  check_bounds_at_corners judges a descriptor by the element pairs of its
+//  line
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Two copies of a cell of two Ta and two W atoms 20 A wide: Ta (0, 0, 0),
+ * Ta (2.86, 0, 0), W (0, 2.4, 0), W (0, 2.4, 2.5); the (Ta, Ta) distance is
+ * 2.86 A, the (W, W) distance 2.5 A, the (Ta, W) distances from 2.4 A. */
+tadah::mlip::StructureDB ta_w_db() {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  const auto w = tadah::core::PeriodicTable::find_by_symbol("W");
+  tadah::mlip::StructureDB stdb;
+  for (const char *label : {"ta-w-1", "ta-w-2"}) {
+    tadah::mlip::Structure st;
+    st.label = label;
+    st.energy = -40.0;
+    st.cell.load(20.0, 0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 20.0);
+    st.add_atom(tadah::mlip::Atom(ta, 0.0, 0.0, 0.0));
+    st.add_atom(tadah::mlip::Atom(ta, 2.86, 0.0, 0.0));
+    st.add_atom(tadah::mlip::Atom(w, 0.0, 2.4, 0.0));
+    st.add_atom(tadah::mlip::Atom(w, 0.0, 2.4, 2.5));
+    stdb.add(st);
+  }
+  return stdb;
+}
+
+/* TYPE2B D2_Blip 2 2 <pairs> alone, RCUT2B 5, centres 1 and 2, SGRID2B 1 1,
+ * Cut_Cos. */
+Context ta_w_blip_seed(const std::string &pairs) {
+  Context c;
+  c.add("ATOM", "Ta W");
+  c.add("WATOM", "73 74");
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_Blip 2 2 " + pairs);
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "1 2");
+  c.add("SGRID2B", "1 1");
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+}  // namespace
+
+/* Pins: a box RCUT2B 2.6 to 5 on the Ta-W data (ta_w_db()): for D2_Blip
+ * 2 2 Ta Ta, the corner at 2.6, below the (Ta, Ta) distance of 2.86 A,
+ * fails (1 of 2 corners); for D2_Blip 2 2 W W no corner fails, 2.6 holding
+ * the (W, W) distance of 2.5 A (a pin: as since the check read every
+ * element pair).
+ * Before the fix: the corner at 2.6 of the Ta Ta descriptor passed, as it
+ * holds the (Ta, W) distance of 2.4 A, a pair the descriptor does not sum
+ * over (0 of 2 corners failed). */
+TEST_CASE("check_bounds: a corner is judged by the element pairs of the "
+          "descriptor's line",
+          "[check_bounds][cutoff][line_pairs]") {
+  const std::vector<Bound> b = {box("RCUT2B", -1, 2.6, 5.0)};
+  {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    const auto res = run_corners(stdb, ta_w_blip_seed("Ta Ta"), b);
+    CHECK(res.n_corners == 2);
+    REQUIRE(res.n_corners_failing == 1);
+    CHECK(sample_corners(b)[res.failing_corner_indices[0]][0] == 2.6);
+  }
+  {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    const auto res = run_corners(stdb, ta_w_blip_seed("W W"), b);
+    CHECK(res.n_corners == 2);
+    CHECK(res.n_corners_failing == 0);
+  }
+}

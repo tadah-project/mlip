@@ -1008,7 +1008,10 @@ TEST_CASE("bound_suggester: no descriptor gets a range of zero width",
  * cutoffs (two bcc Ta cells, nearest neighbours 2.86 A; D2_Blip with
  * RCUT2B 2 and DM_EAD with RCUTMB 2, CGRIDMB 0), tadah analysis
  * suggest_bounds exits 0 and its block has no OPTIM line: each row is a
- * comment "no OPTIM line" saying that no pair of atoms is within reach.
+ * comment "no OPTIM line" saying that no (Ta, Ta) pair of atoms, the
+ * element pairs of the descriptors' lines, is within reach.
+ * Before the fix that names the element pairs of a descriptor's line: "no
+ * pair of atoms".
  * Before the fix: the rows were (0, 0) ranges widened to hold the seed's
  * value: "OPTIM RCUT2B (1) 0.000000e+00 2.000000e+00", "OPTIM SGRID2B
  * (1) 0.000000e+00 1.000000e+00" (a width box from 0, which tadah hpo
@@ -1041,7 +1044,7 @@ TEST_CASE("analysis suggest_bounds writes no OPTIM line for data without a "
   for (const auto &line : lines_starting(r.block, "# ")) {
     if (line.find("no OPTIM line") == std::string::npos) continue;
     ++rows;
-    CHECK(line.find("no pair of atoms") != std::string::npos);
+    CHECK(line.find("no (Ta, Ta) pair of atoms") != std::string::npos);
   }
   CHECK(rows >= 6u);
 }
@@ -1517,4 +1520,159 @@ TEST_CASE("analysis suggest_bounds gives the cutoff of a knot descriptor no "
                     "effect") != std::string::npos);
   }
   CHECK(found == 1u);
+}
+
+// ---------------------------------------------------------------------------
+//  The element pairs of a descriptor's line: its suggestions come from the
+//  neighbour distances of the element pairs its TYPE2B or TYPEMB line names
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Two copies of a cell of two Ta and two W atoms 20 A wide (no periodic
+ * image within the reach of the statistics) in a dataset file of @p tmp:
+ * Ta (0, 0, 0), Ta (2.86, 0, 0), W (0, 2.4, 0) and W (0, 2.4, 2.5), so the
+ * (Ta, Ta) distance is 2.86 A, the (W, W) distance 2.5 A and the (Ta, W)
+ * distances 2.4, 3.47, 3.73 and 4.49 A. */
+std::string ta_w_dataset(const SbTempDir &tmp) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  const auto w = tadah::core::PeriodicTable::find_by_symbol("W");
+  StructureDB db;
+  for (const char *label : {"ta-w-1", "ta-w-2"}) {
+    Structure st;
+    st.label = label;
+    st.energy = -40.0;
+    st.cell.load(20.0, 0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 20.0);
+    st.add_atom(Atom(ta, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+    st.add_atom(Atom(ta, 2.86, 0.0, 0.0, 0.0, 0.0, 0.0));
+    st.add_atom(Atom(w, 0.0, 2.4, 0.0, 0.0, 0.0, 0.0));
+    st.add_atom(Atom(w, 0.0, 2.4, 2.5, 0.0, 0.0, 0.0));
+    db.add(st);
+  }
+  const std::string dbfile = tmp.path("ta_w.tadahdb");
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  return dbfile;
+}
+
+/* `tadah analysis suggest_bounds` of TYPE2B D2_Blip 2 2 <pairs> alone,
+ * RCUT2B 5 (the statistics reach 6.25 A), on ta_w_dataset(). */
+SbRun suggest_blip_line(const std::string &pairs, const SbTempDir &tmp) {
+  Context c;
+  c.add("DBFILE", ta_w_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_Blip 2 2 " + pairs);
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "1 2");
+  c.add("SGRID2B", "1 1");
+  return run_suggest_bounds_ctx(c, tmp);
+}
+
+}  // namespace
+
+/* Pins: tadah analysis suggest_bounds takes the range of a cutoff from the
+ * neighbour distances of the element pairs of the descriptor's line, on
+ * Ta-W data whose (Ta, Ta) distance is 2.86 A, (W, W) 2.5 A and (Ta, W)
+ * from 2.4 A (ta_w_dataset()), for D2_Blip 2 2 <pairs> with RCUT2B 5 (the
+ * range from the median of the distances to their 99th percentile, widened
+ * to hold the seed's 5):
+ *  - "W W": "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00", its comment
+ *    naming the W-W neighbour distances and no Ta-Ta;
+ *  - "Ta Ta": "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00", naming Ta-Ta;
+ *  - "Ta Ta W W": the range that holds the range of each pair, "OPTIM
+ *    RCUT2B (1) 2.500000e+00 5.000000e+00", its comment naming both;
+ *  - "Mo Mo", which the data do not have: no OPTIM RCUT2B line, its
+ *    comment "no OPTIM line: no (Mo, Mo) pair of atoms of the data lies
+ *    within the reach of the neighbour statistics ...".
+ * Before the fix: every range came from the first element pair of the
+ * data, Ta-Ta: "W W" and "Mo Mo" got "OPTIM RCUT2B (1) 2.860000e+00
+ * 5.000000e+00", their comments naming the Ta-Ta distances, and so did
+ * "Ta Ta W W". */
+TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
+          "element pairs of the descriptor's line",
+          "[bound_suggester][suggest_bounds][line_pairs]") {
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_blip_line("W W", tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUT2B") ==
+          std::vector<std::string>{
+              "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00"});
+    const std::string why = comment_before(r.block, "OPTIM RCUT2B");
+    CHECK(why.find("W-W neighbour distances") != std::string::npos);
+    CHECK(why.find("Ta-Ta") == std::string::npos);
+  }
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_blip_line("Ta Ta", tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUT2B") ==
+          std::vector<std::string>{
+              "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00"});
+    CHECK(comment_before(r.block, "OPTIM RCUT2B")
+              .find("Ta-Ta neighbour distances") != std::string::npos);
+  }
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_blip_line("Ta Ta W W", tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUT2B") ==
+          std::vector<std::string>{
+              "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00"});
+    const std::string why = comment_before(r.block, "OPTIM RCUT2B");
+    CHECK(why.find("Ta-Ta neighbour distances") != std::string::npos);
+    CHECK(why.find("W-W neighbour distances") != std::string::npos);
+  }
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_blip_line("Mo Mo", tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUT2B").empty());
+    CHECK(r.block.find("RCUT2B (1): no OPTIM line: no (Mo, Mo) pair of atoms "
+                       "of the data lies within the reach of the neighbour "
+                       "statistics") != std::string::npos);
+  }
+}
+
+/* Pins: each descriptor of a joined line gets the suggestions of the
+ * element pairs of its own line: for TYPEMB DM_mJoin of DM_EAD 0 1 1 Ta Ta
+ * and DM_EAD 0 1 1 W W (RCUTMB 5 5, CGRIDMB 0 0, SGRIDMB 1 1) on the Ta-W
+ * data, the cutoff of the first, "OPTIM RCUTMB (1)", starts at the Ta-Ta
+ * distance, 2.86 A, and that of the second, "OPTIM RCUTMB (2)", at the W-W
+ * distance, 2.5 A, each comment naming its own pair.
+ * Before the fix: both came from the Ta-Ta distances: "OPTIM RCUTMB (1)
+ * 2.860000e+00 5.000000e+00" and "OPTIM RCUTMB (2) 2.860000e+00
+ * 5.000000e+00". */
+TEST_CASE("analysis suggest_bounds gives each descriptor of a DM_mJoin line "
+          "the ranges of its own element pairs",
+          "[bound_suggester][suggest_bounds][line_pairs][join]") {
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", ta_w_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_mJoin");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("TYPEMB", "DM_EAD 0 1 1 W W");
+  c.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  c.add("RCUTMB", "5 5");
+  c.add("CGRIDMB", "0 0");
+  c.add("SGRIDMB", "1 1");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM RCUTMB") ==
+        std::vector<std::string>{
+            "OPTIM RCUTMB (1) 2.860000e+00 5.000000e+00",
+            "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00"});
+  CHECK(comment_before(r.block, "OPTIM RCUTMB (1)")
+            .find("Ta-Ta neighbour distances") != std::string::npos);
+  CHECK(comment_before(r.block, "OPTIM RCUTMB (2)")
+            .find("W-W neighbour distances") != std::string::npos);
 }
