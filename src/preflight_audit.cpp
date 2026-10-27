@@ -208,8 +208,9 @@ AuditReport run_preflight_checks(
 
   for (const auto& c : checks) {
     // A descriptor sums over the neighbours of the element pairs its line
-    // names: its checks read their statistics, judge each pair of the line
-    // on its own (the reach of a cutoff or a channel), and name them.
+    // names: its checks read their statistics, judge each element pair the
+    // line stands for on its own (the reach of a cutoff, or of the channels
+    // of a density), and name them.
     const tadah::models::SeedView sv =
         c.pairs ? tadah::models::SeedView(c.context, c.first_entries, *c.pairs)
                 : tadah::models::SeedView(c.context, c.first_entries);

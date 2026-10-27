@@ -90,11 +90,13 @@ struct AuditReport {
  *  neighbours of the element pairs its own line names (models::LinePairs,
  *  "D2_Blip 4 4 Ta Ta": the Ta-Ta pairs): its checks are given the
  *  statistics of those pairs of `data` alone, the checks of the reach of a
- *  cutoff or a channel judge each pair of the line on its own (a cutoff
- *  that holds the (W, W) distances of "Ta Ta W W" and no (Ta, Ta) one
- *  fails: models::cutoff_reach_check, models::radial_reach_check), and
- *  their messages name them ("below the smallest (Ta, Ta) neighbour
- *  distance of the dataset").
+ *  cutoff or of the channels of a density judge each element pair the line
+ *  stands for on its own, a pair with "*" each element pair of the data it
+ *  matches (a cutoff that holds the (W, W) distances of "Ta Ta W W" and no
+ *  (Ta, Ta) one fails, and so does a density none of whose channels
+ *  reaches one pair: models::cutoff_reach_check,
+ *  models::radial_reach_check), and their messages name them ("below the
+ *  smallest (Ta, Ta) neighbour distance of the dataset").
  *
  *  Honours `mode`:
  *    Off   -> returns an empty report immediately
