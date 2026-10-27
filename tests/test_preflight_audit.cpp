@@ -829,6 +829,92 @@ TEST_CASE("preflight_audit: critical_optim_audit judges each descriptor of a "
   CHECK(together.size() == 3u);
 }
 
+namespace {
+
+/* The findings of @p rep as "label.key", sorted. */
+std::vector<std::string> keys_of(const AuditReport& rep) {
+  std::vector<std::string> out;
+  for (const auto& m : rep.messages)
+    out.push_back(m.descriptor_label + "." + m.param_key);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+/* TYPE2B D2_Knot5 3 3 Ta Ta alone: knots 2.5 3.5 4.5 (KDEG2B 5),
+ * Cut_Dummy, RCUT2B 4.5. */
+Context knot_alone_seed() {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("RCUT2B", 4.5);
+  c.add("CGRID2B", "2.5 3.5 4.5");
+  c.add("KDEG2B", "5 5 5");
+  return c;
+}
+
+/* TYPE2B D2_Blip 3 3 Ta Ta alone: centres 2.5 3 3.5, SGRID2B 1, under
+ * @p rctype, RCUT2B 5. */
+Context blip_alone_seed(const std::string& rctype) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  c.add("RCTYPE2B", rctype);
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "2.5 3.0 3.5");
+  c.add("SGRID2B", "1 1 1");
+  return c;
+}
+
+/* TYPE2B D2_mJoin of the two above, under @p rctype ("Cut_Cos Cut_Cos"),
+ * RCUT2B 4.5 5. */
+Context knot_blip_join_seed(const std::string& rctype) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_mJoin");
+  c.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  c.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  c.add("RCTYPE2B", rctype);
+  c.add("RCUT2B", "4.5 5.0");
+  c.add("CGRID2B", "2.5 3.5 4.5 2.5 3.0 3.5");
+  c.add("KDEG2B", "5 5 5");
+  c.add("SGRID2B", "1 1 1");
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the critical-OPTIM audit leaves out the cutoff of a knot channel,
+ * and that of a bump channel under a hard cutoff, only where tadah hpo
+ * derives it from the largest knot or holds the bump supports within it:
+ * on a line of that descriptor alone. For a search of CGRID2B:
+ *  - D2_Knot5 alone (Cut_Dummy) and D2_Blip alone under Cut_Dummy give no
+ *    finding, and D2_Blip alone under Cut_Cos gives D2_Blip.RCUT2B;
+ *  - D2_mJoin of D2_Knot5 and D2_Blip gives D2_Blip.RCUT2B and
+ *    D2_Knot5.RCUT2B under Cut_Cos Cut_Cos and under Cut_Dummy Cut_Dummy:
+ *    tadah hpo neither derives the cutoff of a knot channel of a joined
+ *    line nor holds its bump supports within the cutoff, so the cutoffs of
+ *    a joined line are fixed values of the search.
+ * Before the fix: each descriptor of the joined line was judged as if it
+ * were alone: Cut_Cos Cut_Cos gave D2_Blip.RCUT2B only, and Cut_Dummy
+ * Cut_Dummy no finding. */
+TEST_CASE("preflight_audit: critical_optim_audit leaves out a knot or bump "
+          "cutoff only on a line of that descriptor alone",
+          "[preflight_audit][join][knot]") {
+  const std::vector<std::string> space = {"CGRID2B"};
+  CHECK(keys_of(run_critical_optim_audit(knot_alone_seed(), space)).empty());
+  CHECK(keys_of(run_critical_optim_audit(blip_alone_seed("Cut_Dummy"), space))
+            .empty());
+  CHECK(keys_of(run_critical_optim_audit(blip_alone_seed("Cut_Cos"), space)) ==
+        std::vector<std::string>{"D2_Blip.RCUT2B"});
+  for (const std::string rctype : {"Cut_Cos Cut_Cos", "Cut_Dummy Cut_Dummy"}) {
+    CAPTURE(rctype);
+    CHECK(keys_of(run_critical_optim_audit(knot_blip_join_seed(rctype),
+                                           space)) ==
+          std::vector<std::string>{"D2_Blip.RCUT2B", "D2_Knot5.RCUT2B"});
+  }
+}
+
 /* Pins: the pre-flight audit fails a descriptor whose cutoff holds no
  * neighbour distance, whichever descriptor it is: D2_Knot5 with RCUT2B 2
  * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL,

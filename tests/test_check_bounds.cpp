@@ -662,3 +662,75 @@ TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
   CHECK(parse_hpo_target_bounds(path).size() == 1u);
   std::remove(path.c_str());
 }
+
+// ---------------------------------------------------------------------------
+//  The cutoff of a knot channel is its largest knot, as tadah hpo takes it
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* TYPE2B D2_Knot5 with the knots @p knots (KDEG2B 5 each) under Cut_Dummy,
+ * with the stated cutoff RCUT2B @p rcut. */
+Context knot_seed(const std::vector<double> &knots, double rcut) {
+  tadah::core::PeriodicTable::initialize();
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("WATOM", 73);
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  const std::string n = std::to_string(knots.size());
+  c.add("TYPE2B", "D2_Knot5 " + n + " " + n + " Ta Ta");
+  for (double k : knots) {
+    c.add("CGRID2B", k);
+    c.add("KDEG2B", 5);
+  }
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("RCUT2B", rcut);
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+}  // namespace
+
+/* Pins: check_bounds audits a knot channel at the cutoff tadah hpo gives
+ * it, its largest knot (tadah hpo and tadah train replace a stated cutoff
+ * that differs): for D2_Knot5 with knots 2.5, 3.5 and 4.5 A and a stated
+ * RCUT2B of 2 A, below every neighbour distance of bcc Ta (from 2.858 A),
+ * and a box CGRID2B (1) 2.4 to 2.6, both corners pass.
+ * Before the fix: the statistics were taken at the stated 2 A, where the
+ * data have no pair, and the RCUT2B check failed both corners ("RCUT2B =
+ * 2: no pair of atoms of the dataset lies within it"), a box that tadah
+ * hpo --check accepts. */
+TEST_CASE("check_bounds: a knot channel is audited at its largest knot",
+          "[check_bounds][knot]") {
+  tadah::mlip::StructureDB stdb = bcc_ta_db();
+  const std::vector<Bound> b = {box("CGRID2B", 0, 2.4, 2.6)};
+  const auto res = run_corners(stdb, knot_seed({2.5, 3.5, 4.5}, 2.0), b);
+  CHECK(res.n_corners == 2);
+  CHECK(res.n_corners_failing == 0);
+}
+
+/* Pins: the cutoff of a knot channel follows the largest knot of each
+ * corner, as tadah hpo re-derives it for each candidate: for D2_Knot5 with
+ * knots 1.5, 2 and 4.5 A (RCUT2B 4.5) and a box CGRID2B (3) 2.2 to 4.5,
+ * the context of the corner at 2.2 has RCUT2B 2.2 and that of the corner
+ * at 4.5 has RCUT2B 4.5; on bcc Ta (neighbour distances from 2.858 A) the
+ * corner at 2.2, whose cutoff holds no neighbour, fails and the corner at
+ * 4.5 passes.
+ * Before the fix: every corner kept the seed's RCUT2B 4.5, and both
+ * corners passed. */
+TEST_CASE("check_bounds: the cutoff of a knot channel follows the largest "
+          "knot of each corner",
+          "[check_bounds][knot]") {
+  const Context seed = knot_seed({1.5, 2.0, 4.5}, 4.5);
+  const std::vector<Bound> b = {box("CGRID2B", 2, 2.2, 4.5)};
+  CHECK(tadah::mlip::corner_context(seed, b, {2.2}).get<double>("RCUT2B") ==
+        2.2);
+  CHECK(tadah::mlip::corner_context(seed, b, {4.5}).get<double>("RCUT2B") ==
+        4.5);
+  tadah::mlip::StructureDB stdb = bcc_ta_db();
+  const auto res = run_corners(stdb, seed, b);
+  CHECK(res.n_corners == 2);
+  REQUIRE(res.n_corners_failing == 1);
+  CHECK(sample_corners(b)[res.failing_corner_indices[0]][0] == 2.2);
+}

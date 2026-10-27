@@ -184,6 +184,7 @@ TEST_CASE("print_suggestions: writes a header and one row per suggestion", "[bou
 //  tadah analysis suggest_bounds on a dataset with two atoms at one position
 // ---------------------------------------------------------------------------
 
+#include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/logger.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/atom.h>
@@ -1045,17 +1046,132 @@ TEST_CASE("analysis suggest_bounds writes no OPTIM line for data without a "
   CHECK(rows >= 6u);
 }
 
+namespace {
+
+/* Two simple-cubic Ta cells (a = 3 A, one atom each) in a dataset file of
+ * @p tmp: every neighbour distance below 4.24 A is 3 A. */
+std::string sc_ta_dataset(const SbTempDir &tmp) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  StructureDB db;
+  for (const char *label : {"sc-Ta-1", "sc-Ta-2"}) {
+    Structure st;
+    st.label = label;
+    st.energy = -10.0;
+    st.cell.load(3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0);
+    st.add_atom(Atom(ta, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+    db.add(st);
+  }
+  const std::string dbfile = tmp.path("sc.tadahdb");
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  return dbfile;
+}
+
+}  // namespace
+
+/* Pins: a range of zero width gets no OPTIM line, saying so: for DM_EAD
+ * with one Gaussian at 3 A (CGRIDMB 3, SGRIDMB 1, RCUTMB 3.2) on two
+ * simple-cubic Ta cells (a = 3 A: every neighbour distance within the
+ * reach of the statistics, 4 A, is 3 A), the CGRIDMB range, the 10th to
+ * 90th percentiles of the distances, is 3 to 3 and holds the seed's 3:
+ * tadah analysis suggest_bounds exits 0, the block says "CGRIDMB (1): no
+ * OPTIM line" and "a range of zero width (3), which tadah hpo refuses",
+ * has no line that starts "OPTIM CGRIDMB", and the two bounds of each of
+ * its OPTIM lines differ.
+ * Before the fix: the block had "OPTIM CGRIDMB (1) 3.000000e+00
+ * 3.000000e+00", a box of zero width, which tadah hpo refuses (the table
+ * row 3.0000e+00 .. 3.0000e+00, its comment the Gaussian centred on the
+ * first neighbour shell), and so it has without the zero-width rule of
+ * suggest_bounds_for. */
+TEST_CASE("analysis suggest_bounds writes no OPTIM line for a range of zero "
+          "width",
+          "[bound_suggester][suggest_bounds][zero_width]") {
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", sc_ta_dataset(tmp));
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 3.2);
+  c.add("CGRIDMB", 3.0);
+  c.add("SGRIDMB", 1.0);
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(r.block.find("CGRIDMB (1): no OPTIM line") != std::string::npos);
+  CHECK(r.block.find("a range of zero width (3), which tadah hpo refuses") !=
+        std::string::npos);
+  CHECK(lines_starting(r.block, "OPTIM CGRIDMB").empty());
+  for (const auto &line : lines_starting(r.block, "OPTIM ")) {
+    std::istringstream in(line);
+    std::string optim, key, index, lo, hi;
+    in >> optim >> key >> index >> lo >> hi;
+    CAPTURE(line);
+    CHECK(lo != hi);
+  }
+}
+
+/* Pins: the neighbour statistics reach 1.25 times the largest cutoff of
+ * the seed when that is the RADIUS of a DESCRIPTOR block: for D2_Blip with
+ * RCUT2B 4 and a DM_Embed block whose density cutoff has RADIUS 6 A, on
+ * two bcc Ta cells (shells at 5.72, 6.6, 7.19 and 7.38 A), the statistics
+ * reach 7.5 A, so the line "OPTIM RCUT2B (1) lo hi" ends past 6 A, at the
+ * 99th percentile of the distances up to 7.5 A, and its comment names the
+ * 99th percentile and the reach (1.25 times).
+ * Before the fix: the statistics stopped at the RADIUS, 6 A (RCUT2B and
+ * RCUTMB were scaled, the radius was not): "OPTIM RCUT2B (1) 3.407919e+00
+ * 5.715768e+00", the 99th percentile of the distances within 6 A, while
+ * its comment said that the statistics reach 1.25 times the largest cutoff
+ * of the seed. */
+TEST_CASE("analysis suggest_bounds takes the statistics past the radius of "
+          "a DESCRIPTOR block",
+          "[bound_suggester][suggest_bounds][cutoff]") {
+  SbTempDir tmp;
+  std::istringstream text(
+      "DBFILE " + bcc_ta_dataset(tmp) + "\n"
+      "INIT2B true\nTYPE2B D2_Blip 3 3 Ta Ta\nRCTYPE2B Cut_Cos\n"
+      "RCUT2B 4.0\nCGRID2B 2.5 3.0 3.5\nSGRID2B 1 1 1\n"
+      "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS Blip5\n"
+      "FORM NONNEG\nCENTRES 1.0 2.5 4.0\nETA 1.5 1.5 1.5\n"
+      "AMPLITUDES 0.4 0.2 0.1\nCUTOFF\nTYPE Cut_Poly\nRADIUS 6.0\n"
+      "ENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+      "CENTRES 0.0 0.5 1.0 1.5\nWIDTHS 0.5 0.5 0.5 0.5\nREFERENCE ZERO\n"
+      "ENVELOPE\nTYPE Smoothstep2\nCUTOFF 2.0\nENDENVELOPE\n"
+      "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  const Context c = tadah::core::CoreUserConfigParser().parse(text);
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  REQUIRE(r.rc == EXIT_SUCCESS);
+  const auto rcut = lines_starting(r.block, "OPTIM RCUT2B (1) ");
+  REQUIRE(rcut.size() == 1u);
+  std::istringstream in(rcut[0]);
+  std::string optim, key, index;
+  double lo = 0.0, hi = 0.0;
+  in >> optim >> key >> index >> lo >> hi;
+  CHECK(hi > 6.0);
+  const std::string why = comment_before(r.block, "OPTIM RCUT2B (1) ");
+  CHECK(why.find("99th percentile") != std::string::npos);
+  CHECK(why.find("1.25 times") != std::string::npos);
+}
+
 /* Pins: the range of a cutoff can reach past the seed's cutoff: the
  * neighbour statistics of tadah analysis suggest_bounds reach 1.25 times
  * the largest cutoff of the seed, so for D2_Blip with RCUT2B 5.6 on two
- * bcc Ta cells (a = 3.3 A: shells at 5.47, 5.72 and 6.6 A) the line
- * "OPTIM RCUT2B (1) lo hi" has hi above 5.6, and its comment names the
- * 99th percentile and the reach (1.25 times) and was not widened to hold
- * the seed.
- * Before the fix: the statistics stopped at the seed's cutoff, so the
- * range ended at the 99th percentile of the distances within 5.6 and was
- * widened to the seed's 5.6: "OPTIM RCUT2B (1) ... 5.600000e+00", its
- * comment "scale=Å; role=...; widened to hold the seed's value 5.6". */
+ * bcc Ta cells (a = 3.3 A: shells at 5.47, 5.72 and 6.6 A) the RCUT2B row
+ * of the table is not reversed (its first value below its second), the
+ * line "OPTIM RCUT2B (1) lo hi" has lo below 5.6 and hi above 6 (the 99th
+ * percentile of the distances up to 7 A, 6.6 A: no distance within 5.6
+ * gives it), lo is 1.05 times the distance its comment names, below the
+ * 99th percentile, and the comment names the 99th percentile and the reach
+ * (1.25 times) and was not widened to hold the seed.
+ * Before the fix: the statistics stopped at the seed's cutoff: the table
+ * row was the reversed range "5.7185e+00 .. 5.4724e+00" (1.05 times the
+ * second peak of the distances within 5.6, 5.446 A, to their 99th
+ * percentile, 5.4724 A), which the block wrote swapped, "OPTIM RCUT2B (1)
+ * 5.472431e+00 5.718462e+00", its comment the scale and the role of RCUT2B
+ * ("scale=Å; role=Outer cutoff for the 2-body neighbour sum."); that box
+ * held 5.6 by chance. */
 TEST_CASE("analysis suggest_bounds suggests a cutoff range past the seed's "
           "cutoff",
           "[bound_suggester][suggest_bounds][cutoff]") {
@@ -1080,11 +1196,27 @@ TEST_CASE("analysis suggest_bounds suggests a cutoff range past the seed's "
   double lo = 0.0, hi = 0.0;
   in >> optim >> key >> index >> lo >> hi;
   CHECK(lo < 5.6);
-  CHECK(hi > 5.6);
+  CHECK(hi > 6.0);
+  // The table row: "D2_Blip.RCUT2B(1)  lo .. hi  ...".
+  const auto row = lines_starting(r.out, "D2_Blip.RCUT2B(1) ");
+  REQUIRE(row.size() == 1u);
+  std::istringstream table(row[0]);
+  std::string label, dots;
+  double table_lo = 0.0, table_hi = 0.0;
+  table >> label >> table_lo >> dots >> table_hi;
+  CAPTURE(row[0]);
+  CHECK(table_lo < table_hi);
   const std::string why = comment_before(r.block, "OPTIM RCUT2B (1) ");
   CHECK(why.find("99th percentile") != std::string::npos);
   CHECK(why.find("1.25 times") != std::string::npos);
   CHECK(why.find("widened") == std::string::npos);
+  // "from 1.05 times its distance (3.25278 Å)": the second peak.
+  const std::string from = "1.05 times its distance (";
+  const auto at = why.find(from);
+  REQUIRE(at != std::string::npos);
+  const double peak = std::stod(why.substr(at + from.size()));
+  CHECK(lo == Approx(1.05 * peak).epsilon(1e-5));
+  CHECK(peak < hi);
 }
 
 /* Pins: a blip density centred at the origin is searched by its width
@@ -1238,14 +1370,19 @@ TEST_CASE("analysis suggest_bounds names a descriptor as the configuration "
  * digits of the block, so that the box holds the range and the seed's
  * value at an end of it (a range widened to hold the seed ends at it): for
  * rows 1.0666666666666667 to 53.458357 (SGRID2B, the seed 1.0666666666666667
- * of LIN 7 1 1.2) and -2.3333333333333335 to 0.66666666666666663, the
- * written bounds, read back, hold the ranges.
- * Before the fix: the bounds were rounded to the nearest at 7 digits:
- * "OPTIM SGRID2B (1) 1.066667e+00 ...", above the seed's 1.06666..., and
- * tadah hpo refused the block with its seed ("SGRID2B[3] = 1.06667 lies
- * outside its OPTIM bounds [1.06667, 53.4584]"), and "OPTIM CGRID2B (1)
- * -2.333333e+00 ...", above the low end -2.3333...; a high bound was
- * rounded up only when the nearest was above it. */
+ * of LIN 7 1 1.2), -2.3333333333333335 to 0.66666666666666663 (CGRID2B),
+ * 0.5 to 1.0333333333333334 (SGRIDMB, the seed 1.0333333333333334 of LIN 7
+ * 1 1.2 at the top of its range) and 1 to 53.4583549 (CGRIDMB), the
+ * written bounds, read back, hold the ranges: the high bounds of the last
+ * two rows, whose nearest 7 digits are below them, are rounded up.
+ * Before the fix: the bounds were rounded to the nearest at 7 digits: the
+ * low bounds "OPTIM SGRID2B (1) 1.066667e+00 ...", above the seed's
+ * 1.06666... (tadah hpo refused the block with its seed: "SGRID2B[3] =
+ * 1.06667 lies outside its OPTIM bounds [1.06667, 53.4584]"), and "OPTIM
+ * CGRID2B (1) -2.333333e+00 ...", above the low end -2.3333...; and the
+ * high bounds "OPTIM SGRIDMB (1) ... 1.033333e+00", below 1.0333..., and
+ * "OPTIM CGRIDMB (1) ... 5.345835e+01", below 53.4583549 (the high bounds
+ * of the first two rows round up at the nearest digit). */
 TEST_CASE("write_optim_block writes bounds that hold the range",
           "[bound_suggester][suggest_bounds]") {
   OptimSuggestion a;
@@ -1259,10 +1396,18 @@ TEST_CASE("write_optim_block writes bounds that hold the range",
   b.key = "CGRID2B";
   b.lo = -2.3333333333333335;
   b.hi = 0.66666666666666663;
+  OptimSuggestion c = a;
+  c.key = "SGRIDMB";
+  c.lo = 0.5;
+  c.hi = 1.0333333333333334;
+  OptimSuggestion d = a;
+  d.key = "CGRIDMB";
+  d.lo = 1.0;
+  d.hi = 53.4583549;
   std::ostringstream block;
-  write_optim_block({a, b}, block);
+  write_optim_block({a, b, c, d}, block);
   INFO(block.str());
-  for (const OptimSuggestion &r : {a, b}) {
+  for (const OptimSuggestion &r : {a, b, c, d}) {
     const auto lines = lines_starting(block.str(), "OPTIM " + r.key + " ");
     REQUIRE(lines.size() == 1u);
     std::istringstream in(lines[0]);
