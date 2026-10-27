@@ -269,6 +269,38 @@ TEST_CASE("check_bounds: a radial bump width box needs lo > 0 in every form",
   }
 }
 
+/* Pins: on a D2_mJoin of D2_BP 2 2 (SGRID2B entries 1-2) and D2_Blip 2 2
+ * (entries 3-4), a width box of the D2_BP below 0, SGRID2B (1) -0.5 1.0,
+ * fails no corner, as on a D2_BP alone (a Gaussian width has no rule), and
+ * a box of the D2_Blip from 0, SGRID2B (4) 0 2, fails its corner at 0
+ * (models::optim_low_bound_rule of the box's entry, the rule tadah hpo
+ * refuses such a box by).
+ * Before the fix: the D2_BP's box failed its corner at -0.5 by the
+ * D2_Blip's rule, which held every SGRID2B entry of the line. */
+TEST_CASE("check_bounds: a width box of a D2_BP of a D2_mJoin with a D2_Blip "
+          "is held as on a D2_BP alone",
+          "[check_bounds][bump_width][join]") {
+  tadah::core::PeriodicTable::initialize();
+  tadah::mlip::StructureDB stdb;
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("WATOM", 73);
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_mJoin D2_BP 2 2 Ta Ta D2_Blip 2 2 Ta Ta");
+  c.add("CGRID2B", "0 0 4.0 3.0");
+  c.add("SGRID2B", "0.5 1.0 2.0 1.0");
+  c.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  c.add("RCUT2B", "5.0 5.0");
+  c.add("VERBOSE", 0);
+  const auto bp = run_corners(stdb, c, {box("SGRID2B", 0, -0.5, 1.0)});
+  CHECK(bp.n_corners == 2);
+  CHECK(bp.n_corners_failing == 0);
+  const auto blip = run_corners(stdb, c, {box("SGRID2B", 3, 0.0, 2.0)});
+  CHECK(blip.n_corners == 2);
+  CHECK(blip.n_corners_failing == 1);
+}
+
 TEST_CASE("check_bounds: a corner of a vector key changes only its own entry",
           "[check_bounds]") {
   // The corner context took (arg_pos + 1) copies of the corner value for
