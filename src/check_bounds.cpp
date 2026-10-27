@@ -277,7 +277,12 @@ CheckBoundsResult check_bounds_at_corners(
   auto form_findings = [&](const std::vector<double>& c) {
     std::vector<std::string> out;
     for (std::size_t j = 0; j < bounds.size(); ++j) {
-      const auto rule = tadah::models::optim_low_bound_rule(bounds[j].key, seed);
+      // the rule of the box's entry: on a D2_mJoin line, that of the
+      // descriptor whose entry it is
+      const auto rule = tadah::models::optim_low_bound_rule(
+          bounds[j].key, seed,
+          bounds[j].arg_pos < 0 ? 0
+                                : static_cast<std::size_t>(bounds[j].arg_pos));
       if (!rule || rule->admits(c[j])) continue;
       std::ostringstream os;
       os << bounds[j].key << "("
