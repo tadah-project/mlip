@@ -16,7 +16,9 @@
 // The dataset scan that backs the audit is sampled by default (256
 // structures, deterministic) — opt out with `AUDIT_SAMPLE 0` to use
 // the entire StructureDB. The sample size is read from the context by
-// `run_preflight_from_db` and forwarded to `compute_data_stats`.
+// `run_preflight_from_db` and forwarded to `compute_data_stats`; a FAIL
+// finding of a sample is judged again on the statistics of every
+// structure.
 //
 // The audit is intentionally "soft": it depends on `DataStats` and the
 // seed `Context`, never on a built `DesignMatrix`. This lets it run
@@ -124,7 +126,11 @@ AuditReport run_critical_optim_audit_with_metas(
     const std::vector<std::pair<std::string, tadah::models::DescriptorMeta>>& metas);
 
 /** \brief Convenience wrapper. Computes DataStats from `stdb` (no
- *  per-descriptor ρ stats) and runs `run_preflight_soft`. */
+ *  per-descriptor ρ stats; from AUDIT_SAMPLE structures, 256 by default)
+ *  and runs `run_preflight_soft`. When the statistics of a sample give a
+ *  FAIL finding, the report is that of the statistics of every structure:
+ *  a pair that only structures outside the sample hold is not reported as
+ *  absent from the dataset. */
 AuditReport run_preflight_from_db(
     StructureDB&                stdb,
     const tadah::core::Context& seed,
