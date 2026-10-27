@@ -17,7 +17,11 @@
 //   4. The strain force of the result, raw and over 3 V, is that of the
 //      cell the relaxation ends at, also after an accepted last step.
 //   5. The pressure tolerance ptol, not the force tolerance ftol of the
-//      atoms, ends the Iso relaxation of the cell.
+//      atoms, ends the Iso relaxation of the cell; the cell reaches a ptol
+//      whose energy change is below the rounding error of the energy, and
+//      a ptol that no cell meets ends the relaxation long before maxeval.
+//   6. A relaxation whose final cell meets the tolerances when it stops at
+//      maxiter or maxeval is converged; ptol bounds an Iso cell only.
 
 #include "catch2/catch.hpp"
 
@@ -39,6 +43,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -333,7 +340,8 @@ TEST_CASE("NativeRelaxer scale_out_of_range fires when LS exhausts on soft bound
     opts.init_step = 1.0e-3;
     opts.max_step  = 0.05;
     /* Tight scale bounds: scale must stay in [0.999, 1.001]. The relax
-     * from a 3% compressed cell wants to expand → trial scale > 1.001 →
+     * from a cell compressed by about 16 % (the model's minimum is near
+     * a0 = 3.67 A) wants to expand → trial scale > 1.001 →
      * LS halving exhausts → scale_out_of_range = true. */
     opts.scale_min = 0.999;
     opts.scale_max = 1.001;
@@ -367,7 +375,8 @@ TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
     auto train_db = make_ta_train_db(rcut);
     host.train(train_db);
 
-    /* Start away from equilibrium: compressed by ~3%. */
+    /* Start away from equilibrium: compressed by about 16 % (the model's
+     * minimum is near a0 = 3.67 A). */
     auto st = make_bcc_ta_supercell(3.10);
 
     NativeRelaxer::Options opts;
@@ -410,7 +419,8 @@ TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
 
 /* Pins: the pressure tolerance ptol, and not the force tolerance ftol of
  * the atoms, ends the Iso relaxation of the cell. From the bcc cell of
- * a0 = 3.10 (compressed by about 3 %), with ftol 1e3 eV/A, which every
+ * a0 = 3.10 (compressed by about 16 %: the model's minimum is near
+ * a0 = 3.67 A), with ftol 1e3 eV/A, which every
  * atomic force meets, the relaxation converges with ptol 1e-3 and with
  * ptol 1e-8 eV/A^3: it moves the cell (scale factor not 1), reports a
  * final_strain_force_norm below its ptol, and the pressure of the cell it
@@ -493,6 +503,250 @@ TEST_CASE("NativeRelaxer Iso: the cell converges to the pressure tolerance, "
     const double loose = relax_to(1.0e-3);
     const double tight = relax_to(1.0e-8);
     CHECK(tight != loose);
+}
+
+namespace {
+
+/* |dE/deps| / (3V) of @p start with its cell and positions scaled by
+ * @p scale, by a central difference of the energy in the isotropic strain
+ * (step 1e-5, lists built afresh at @p rcut): the magnitude of the pressure
+ * of that cell in eV/A^3, measured independently of the relaxer. */
+double iso_pressure(Trainer& host, const Structure& start, double scale,
+                    double rcut) {
+    const double h = 1.0e-5;
+    auto energy = [&](double s) {
+        Structure x = start;
+        for (std::size_t i = 0; i < 3; ++i)
+            for (std::size_t j = 0; j < 3; ++j)
+                x.cell(i, j) = s * start.cell(i, j);
+        for (std::size_t a = 0; a < x.natoms(); ++a)
+            for (int k = 0; k < 3; ++k)
+                x.atoms[a].position[k] = s * start.atoms[a].position[k];
+        x.nn.reset();
+        NNFinder().calc(x, rcut);
+        return host.model->epredict(host.dc.calc(x));
+    };
+    Structure end = start;
+    for (std::size_t i = 0; i < 3; ++i)
+        for (std::size_t j = 0; j < 3; ++j)
+            end.cell(i, j) = scale * start.cell(i, j);
+    return std::abs(energy(scale * (1.0 + h)) - energy(scale * (1.0 - h))) /
+           (2.0 * h) / (3.0 * end.get_volume());
+}
+
+std::uint64_t bits_of(double x) {
+    std::uint64_t b = 0;
+    std::memcpy(&b, &x, sizeof b);
+    return b;
+}
+
+}  // namespace
+
+/* Pins: the relaxation of the cell reaches a pressure tolerance whose
+ * energy change is far below the rounding error of the energy. The model
+ * of make_ta_train_db has its bcc minimum near a0 = 3.6725 A, where the
+ * 4x4x4 cell has E = -15.64 eV, V = 3170 A^3 and a bulk modulus B of about
+ * 0.045 eV/A^3. From a0 = 3.60, about 2 % below it, with ptol 1e-11
+ * eV/A^3 (ftol 1e3 eV/A, which the atoms meet): a pressure P leaves the
+ * energy above its minimum by about V P^2 / (2B), 4e-18 eV at 1e-11, while
+ * an ulp of E is 1.8e-15 eV; the pressure, a central difference of the
+ * energy over the strain +-1e-5, resolves 1e-11 (an ulp of E over
+ * 2e-5 x 3V is about 1e-14 eV/A^3). The relaxation converges, without
+ * reaching maxeval (5000), at a cell whose final_strain_force_norm and
+ * pressure, measured here independently, are below 1e-11 eV/A^3.
+ * Before the fix: a backtracking line search on the energy decided each
+ * step of the cell; below about 1e-10 eV/A^3 the decrease was lost in the
+ * rounding of E, the search accepted steps that left the cell where it
+ * was, and the relaxation used all its evaluations, unconverged (5005
+ * evaluations, maxeval_reached, at 8.2e-11 eV/A^3). */
+TEST_CASE("NativeRelaxer Iso: the cell converges to a pressure tolerance "
+          "below the resolution of the energy",
+          "[mlip][native_relaxer][iso][ptol]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    const Structure start = make_bcc_ta_supercell(3.60);
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.ftol      = 1.0e3;
+    opts.ptol      = 1.0e-11;
+    opts.maxiter   = 5000;
+    opts.maxeval   = 5000;
+    Structure st = start;
+    const auto res =
+        NativeRelaxer().relax(st, *host.model, host.dc, host.context, opts);
+    const double p_end = iso_pressure(host, start, res.scale_factor, rcut);
+    INFO(std::setprecision(17) << "converged " << res.converged
+         << ", iterations " << res.n_iter << ", evaluations " << res.n_evals
+         << ", maxeval_reached " << res.maxeval_reached << ", a0 at the end "
+         << 3.60 * res.scale_factor << ", final_strain_force_norm "
+         << res.final_strain_force_norm << ", pressure at the end " << p_end
+         << ", E " << res.final_energy);
+    CHECK(res.converged);
+    CHECK_FALSE(res.maxeval_reached);
+    CHECK(res.final_strain_force_norm < opts.ptol);
+    CHECK(p_end < opts.ptol);
+}
+
+/* Pins: a pressure tolerance that no cell meets ends the relaxation once
+ * the zero of the pressure is resolved, long before maxeval. From
+ * a0 = 3.67 with ptol 1e-300 eV/A^3 (the model of the case above): the
+ * relaxation stops after fewer than 500 of its 5000 evaluations, without
+ * maxeval_reached, at a cell whose pressure, final_strain_force_norm, is
+ * below 1e-11 eV/A^3 (it is converged only if the central difference of
+ * the energy there is exactly 0).
+ * Before the fix: the line search on the energy accepted steps that left
+ * the cell where it was until the evaluations ran out, 5001 of them (1087
+ * iterations; it ended when its last line search had no evaluation left). */
+TEST_CASE("NativeRelaxer Iso: a pressure tolerance that no cell meets ends "
+          "the relaxation before maxeval",
+          "[mlip][native_relaxer][iso][ptol]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    Structure st = make_bcc_ta_supercell(3.67);
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.ftol      = 1.0e3;
+    opts.ptol      = 1.0e-300;
+    opts.maxiter   = 5000;
+    opts.maxeval   = 5000;
+    const auto res =
+        NativeRelaxer().relax(st, *host.model, host.dc, host.context, opts);
+    INFO(std::setprecision(17) << "converged " << res.converged
+         << ", iterations " << res.n_iter << ", evaluations " << res.n_evals
+         << ", maxeval_reached " << res.maxeval_reached
+         << ", final_strain_force_norm " << res.final_strain_force_norm);
+    CHECK_FALSE(res.maxeval_reached);
+    CHECK(res.n_evals < 500u);
+    CHECK(res.final_strain_force_norm < 1.0e-11);
+}
+
+/* Pins: a relaxation whose final cell meets ftol and ptol is converged,
+ * also when it stops at maxiter or at maxeval right after the step that
+ * reached them. From a0 = 3.60 with ptol 1e-8 eV/A^3 (ftol 1e-3), the
+ * relaxation converges at the start of its iteration N, where it measures
+ * the strain force of the cell N - 1 steps made, after M evaluations in
+ * all. Capped at maxiter N - 1, or at maxeval M - 2 (the evaluations
+ * before that measurement), it ends at the same cell, bit for bit, measures
+ * it (M evaluations in all) and is converged, without maxeval_reached.
+ * Before the fix: both capped relaxations were unconverged, the second
+ * with maxeval_reached: the tolerances were compared at the start of an
+ * iteration only, and the exits at maxiter, maxeval and max_wall_time_s
+ * measured the final cell without comparing it with them. */
+TEST_CASE("NativeRelaxer Iso: a relaxation that meets the tolerances when "
+          "it stops at maxiter or maxeval is converged",
+          "[mlip][native_relaxer][iso][caps]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.ftol      = 1.0e-3;
+    opts.ptol      = 1.0e-8;
+    opts.maxiter   = 5000;
+    opts.maxeval   = 5000;
+    auto relax = [&](const NativeRelaxer::Options& o) {
+        Structure st = make_bcc_ta_supercell(3.60);
+        return NativeRelaxer().relax(st, *host.model, host.dc, host.context,
+                                     o);
+    };
+    const auto free = relax(opts);
+    INFO(std::setprecision(17) << "without a cap: converged "
+         << free.converged << " at iteration " << free.n_iter << " after "
+         << free.n_evals << " evaluations, scale " << free.scale_factor
+         << ", final_strain_force_norm " << free.final_strain_force_norm);
+    REQUIRE(free.converged);
+    REQUIRE(free.n_iter >= 2u);
+    REQUIRE(free.n_evals >= 4u);
+
+    SECTION("at maxiter") {
+        NativeRelaxer::Options o = opts;
+        o.maxiter = free.n_iter - 1;
+        const auto res = relax(o);
+        INFO(std::setprecision(17) << "maxiter " << o.maxiter
+             << ": converged " << res.converged << ", evaluations "
+             << res.n_evals << ", scale " << res.scale_factor
+             << ", final_strain_force_norm " << res.final_strain_force_norm);
+        CHECK(res.converged);
+        CHECK(bits_of(res.scale_factor) == bits_of(free.scale_factor));
+        CHECK(res.n_evals == free.n_evals);
+        CHECK(res.final_strain_force_norm < opts.ptol);
+    }
+    SECTION("at maxeval") {
+        NativeRelaxer::Options o = opts;
+        o.maxeval = free.n_evals - 2;
+        const auto res = relax(o);
+        INFO(std::setprecision(17) << "maxeval " << o.maxeval
+             << ": converged " << res.converged << ", maxeval_reached "
+             << res.maxeval_reached << ", evaluations " << res.n_evals
+             << ", scale " << res.scale_factor
+             << ", final_strain_force_norm " << res.final_strain_force_norm);
+        CHECK(res.converged);
+        CHECK_FALSE(res.maxeval_reached);
+        CHECK(bits_of(res.scale_factor) == bits_of(free.scale_factor));
+        CHECK(res.n_evals == free.n_evals);
+        CHECK(res.final_strain_force_norm < opts.ptol);
+    }
+}
+
+/* Pins: ptol is the pressure tolerance of an Iso cell only. A Fixed
+ * relaxation of the perfect bcc cell, whose atomic forces vanish by
+ * symmetry (below ftol 1e-6), converges at iteration 0 with ptol 0, -1 or
+ * NaN, as with the default.
+ * Before the fix: the strain part of the convergence test, 0 in a Fixed
+ * relaxation, was compared with ptol as well, so with ptol 0, -1 or NaN no
+ * state met the test: the relaxation ended unconverged (after 44
+ * iterations, when its line search failed). */
+TEST_CASE("NativeRelaxer Fixed: ptol does not bound a fixed cell",
+          "[mlip][native_relaxer][fixed][ptol]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    for (const double ptol :
+         {0.0, -1.0, std::numeric_limits<double>::quiet_NaN()}) {
+        auto st = make_bcc_ta_supercell(3.30);
+        NativeRelaxer::Options opts;
+        opts.box_mode = NativeRelaxer::Options::Fixed;
+        opts.ftol     = 1.0e-6;
+        opts.ptol     = ptol;
+        opts.maxiter  = 100;
+        const auto res =
+            NativeRelaxer().relax(st, *host.model, host.dc, host.context, opts);
+        INFO("ptol " << ptol << ": converged " << res.converged
+             << ", iterations " << res.n_iter << ", fmax "
+             << res.final_fmax_atoms);
+        CHECK(res.converged);
+        CHECK(res.n_iter == 0u);
+    }
 }
 
 /* Pins: the strain force a relaxation reports is that of the cell it ends
