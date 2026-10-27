@@ -60,6 +60,15 @@ public:
         BoxMode      box_mode      = Fixed;
         double       pressure      = 0.0;     /* eV/Å³ (×1.602e2 = GPa) — external pressure for Iso */
         double       ftol          = 1.0e-2;  /* |F|∞ on atoms (eV/Å) */
+        /* Pressure tolerance of the cell (Iso only), eV/Å³: the cell has
+         * converged when |F_ε| / (3V) = |dH/dε| / (3V), the magnitude of
+         * its pressure less the external one, falls below it. A residual
+         * pressure P leaves the energy per atom above its minimum by about
+         * P² (V/N) / (2B), for the bulk modulus B: at the default, 1e-4 GPa
+         * (6.241509074e-7 eV/Å³), about 3e-12 eV/atom for bcc Ta. ftol
+         * does not bound it: the atomic forces and the cell are separate
+         * degrees of freedom, in different units. */
+        double       ptol          = 6.241509074e-7;
         /* Energy convergence tolerance. When > 0 and the relative change
          * between successive accepted steps falls below this value, the
          * relax converges. Matches LAMMPS `minimize etol ftol ...`
@@ -162,7 +171,7 @@ public:
         double        final_fmax_atoms = 0.0;
         /* Iso only: the strain force of the cell the relaxation ends at,
          * |F_ε| = |dH/dε| (eV per unit strain), and |F_ε| / (3V), the
-         * strain part of the convergence test, which ftol bounds (eV/Å³:
+         * strain part of the convergence test, which ptol bounds (eV/Å³:
          * the magnitude of the cell's pressure less the external one). A
          * relaxation that stops after an accepted step (maxiter, maxeval,
          * max_wall_time_s, early_reject) measures them at its final cell,

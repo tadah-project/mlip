@@ -187,9 +187,9 @@ relax(Structure& st_inout,
                   << ", fmax=" << fmax_inf(F) << "\n";
     }
 
-    /* Iter-0 convergence check. If the initial state is already at
-     * (or below) ftol, declare convergence without entering the iter
-     * loop. Handles two real cases:
+    /* Iter-0 convergence check. If the initial state is already below
+     * the tolerances (ftol for the atoms, ptol for the cell), declare
+     * convergence without entering the iter loop. Handles two real cases:
      *  - caller asks for maxiter=0 ("don't relax, just evaluate") —
      *    test_cohesive_energy_observable.cpp:207 relies on this for
      *    FD-vs-analytical dO/dW parity on a fixed cell;
@@ -203,7 +203,7 @@ relax(Structure& st_inout,
     {
         if (opts.box_mode == Options::Iso) record_strain(strain_force(1.0));
         const double fmax_strain_norm = result.final_strain_force_norm;
-        if (result.final_fmax_atoms < opts.ftol && fmax_strain_norm < opts.ftol) {
+        if (result.final_fmax_atoms < opts.ftol && fmax_strain_norm < opts.ptol) {
             result.converged = true;
             result.scale_factor = 1.0;
             return result;
@@ -251,11 +251,12 @@ relax(Structure& st_inout,
         const double fmax_a = fmax_inf(F);
         result.final_fmax_atoms = fmax_a;
 
-        /* Convergence on max(atomic forces, strain force normalised). */
+        /* Convergence: the atomic forces below ftol and the strain force
+         * normalised, the cell's pressure, below ptol. */
         const double fmax_strain_norm = (opts.box_mode == Options::Iso)
             ? result.final_strain_force_norm
             : 0.0;
-        if (fmax_a < opts.ftol && fmax_strain_norm < opts.ftol) {
+        if (fmax_a < opts.ftol && fmax_strain_norm < opts.ptol) {
             result.converged = true;
             result.final_energy = E0;
             result.scale_factor = scale_total;
