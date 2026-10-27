@@ -666,38 +666,39 @@ TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
  *   - without a KeyProvenance (every key the configuration's): the retrain
  *     trains (no "WDBFILE size" refusal, no structure dropped), prints the
  *     WARNING "tadah train: the configuration is a potential (it has
- *     WEIGHTS): its EFILTER 5 6, FFILTER 50, ESHIFT_DBATOM true and
- *     WDBFILE 1 1 prepared the training data of the fit that wrote it, not
- *     of this run, and are ignored (tadah keeps such keys in a potential's
- *     training record, not as key lines). Give --efilter, --ffilter,
- *     --eshift-dbatom or --wdbfile on the command line to apply one to this
- *     run. The ESHIFT of the configuration, the energy reference of the
- *     model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT from
- *     the data of this run, delete the ESHIFT line and give the run one of
- *     them (the Training page of the documentation, Retraining from a
- *     potential)." (ZERO_COM_FORCE false, its default, changes nothing and
- *     is not named), and no "Multiple ESHIFT sources" WARNING; pot2.tadah has the
- *     potential's ESHIFT 0.001, a training record of DBFILE and OUTFILE
- *     alone, and the WEIGHTS of a training configuration of the same keys
- *     without them (pot3.tadah), token for token;
+ *     WEIGHTS): its EFILTER 5 6, FFILTER 50, ESHIFT_DBATOM true and WDBFILE 1
+ *     1 prepared the training data of the fit that wrote it, not of this run,
+ *     and are ignored (tadah keeps such keys in a potential's training
+ *     record, not as key lines). This run takes its own EFILTER, FFILTER,
+ *     ESHIFT_DBATOM or WDBFILE from --efilter, --ffilter, --eshift-dbatom or
+ *     --wdbfile on the command line. The ESHIFT of the configuration, the
+ *     energy reference of the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM:
+ *     ESHIFT is derived from the data of this run when the ESHIFT line is
+ *     deleted and the run is given one of them (the Training page of the
+ *     documentation, Retraining from a potential)." (ZERO_COM_FORCE false,
+ *     its default, changes nothing and is not named), and no "Multiple ESHIFT
+ *     sources" WARNING; pot2.tadah has the potential's ESHIFT 0.001, a
+ *     training record of DBFILE and OUTFILE alone, and the WEIGHTS of a
+ *     training configuration of the same keys without them (pot3.tadah),
+ *     token for token;
  *   - `tadah train -c retrain.train --wdbfile 2` (TaskFactory and
  *     TrainEngine::run), retrain.train being that potential as a file: the
  *     command line's WDBFILE 2 applies to the retrain and is recorded
  *     ("WDBFILE 2" after "DBFILE db.tadah" in pot2.tadah's record), the
  *     file's other dataset keys are not read, and the WARNING is "tadah
  *     train: the configuration file retrain.train is a potential (it has
- *     WEIGHTS): its EFILTER 5 6, FFILTER 50 and ESHIFT_DBATOM true
- *     prepared the training data of the fit that wrote it, not of this
- *     run, and are ignored (tadah keeps such keys in a potential's
- *     training record, not as key lines). Give --efilter, --ffilter
- *     or --eshift-dbatom on the command line, or an EFILTER, FFILTER
- *     or ESHIFT_DBATOM line in a configuration file that includes the
- *     potential with CONFIG, to apply one to this run. The ESHIFT of the
- *     configuration, ..." (no WDBFILE: the run gives its own).
- * Each -c run of a file with WEIGHTS gives its output file with -o (the
- * potN.tadah named): a potential's OUTFILE line is not read (before the fix
- * that reads no run setting of a potential the copies had an OUTFILE line
- * instead).
+ *     WEIGHTS): its EFILTER 5 6, FFILTER 50 and ESHIFT_DBATOM true prepared
+ *     the training data of the fit that wrote it, not of this run, and are
+ *     ignored (tadah keeps such keys in a potential's training record, not as
+ *     key lines). This run takes its own EFILTER, FFILTER or ESHIFT_DBATOM
+ *     from --efilter, --ffilter or --eshift-dbatom on the command line, or
+ *     from an EFILTER, FFILTER or ESHIFT_DBATOM line in a configuration file
+ *     that includes the potential with CONFIG. The ESHIFT of the
+ *     configuration, ..." (no WDBFILE: the run gives its own). Each -c run of
+ *     a file with WEIGHTS gives its output file with -o (the potN.tadah
+ *     named): a potential's OUTFILE line is not read (before the fix that
+ *     reads no run setting of a potential the copies had an OUTFILE line
+ *     instead).
  * Before the fix: the potential's keys applied to the retrain: EFILTER 5 6
  * dropped every structure, the WARNING "Multiple ESHIFT sources set;
  * precedence: explicit > ATOM > DBATOM." was printed, and TrainEngine::run
@@ -719,6 +720,11 @@ TEST_CASE("TrainEngine::run writes the keys that prepared the training data "
  * reference of the model, is used: to derive ESHIFT from the data of this
  * run, delete the ESHIFT line and set ESHIFT_ATOM or ESHIFT_DBATOM", which
  * a toggle set in the copy of the potential no longer follows: both
+ * WARNING checks fail.
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give --efilter, --ffilter, --eshift-dbatom or --wdbfile on the command
+ * line to apply one to this run." and "... to derive ESHIFT from the data
+ * of this run, delete the ESHIFT line and give the run one of them": both
  * WARNING checks fail. */
 TEST_CASE("TrainEngine::run of a potential used as the configuration "
           "ignores the keys that prepared its own training data",
@@ -753,19 +759,19 @@ TEST_CASE("TrainEngine::run of a potential used as the configuration "
     INFO("pot2: thrown: " << what << "\nprinted:\n" << printed);
     REQUIRE(what.empty());
     CHECK(printed.find(
-              "WARNING: tadah train: the configuration is a potential (it "
-              "has WEIGHTS): its EFILTER 5 6, FFILTER 50, ESHIFT_DBATOM "
-              "true and WDBFILE 1 1 prepared the training data "
-              "of the fit that wrote it, not of this run, and are ignored "
-              "(tadah keeps such keys in a potential's training record, not "
-              "as key lines). Give --efilter, --ffilter, --eshift-dbatom "
-              "or --wdbfile on the command line to apply one "
-              "to this run. The ESHIFT of the configuration, the energy "
+              "WARNING: tadah train: the configuration is a potential (it has "
+              "WEIGHTS): its EFILTER 5 6, FFILTER 50, ESHIFT_DBATOM true and "
+              "WDBFILE 1 1 prepared the training data of the fit that wrote "
+              "it, not of this run, and are ignored (tadah keeps such keys in "
+              "a potential's training record, not as key lines). This run "
+              "takes its own EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE from "
+              "--efilter, --ffilter, --eshift-dbatom or --wdbfile on the "
+              "command line. The ESHIFT of the configuration, the energy "
               "reference of the model, overrules ESHIFT_ATOM and "
-              "ESHIFT_DBATOM: to derive ESHIFT from the data of this run, "
-              "delete the ESHIFT line and give the run one of them (the "
-              "Training page of the documentation, Retraining from a "
-              "potential).") != std::string::npos);
+              "ESHIFT_DBATOM: ESHIFT is derived from the data of this run "
+              "when the ESHIFT line is deleted and the run is given one of "
+              "them (the Training page of the documentation, Retraining from "
+              "a potential).") != std::string::npos);
     CHECK(printed.find("Multiple ESHIFT sources") == std::string::npos);
     INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
     const std::vector<std::string> eshift = pot_line("pot2.tadah", "ESHIFT");
@@ -787,19 +793,20 @@ TEST_CASE("TrainEngine::run of a potential used as the configuration "
     REQUIRE(what.empty());
     CHECK(printed.find(
               "WARNING: tadah train: the configuration file retrain.train is "
-              "a potential (it has WEIGHTS): its EFILTER 5 6, FFILTER 50 "
-              "and ESHIFT_DBATOM true prepared the training data of the "
-              "fit that wrote it, not of this run, and are ignored (tadah "
-              "keeps such keys in a potential's training record, not as key "
-              "lines). Give --efilter, --ffilter or --eshift-dbatom on "
-              "the command line, or an EFILTER, FFILTER or "
-              "ESHIFT_DBATOM line in a configuration file that includes the "
-              "potential with CONFIG, to apply one to this run. The ESHIFT "
-              "of the configuration, the energy reference of the model, "
-              "overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT from "
-              "the data of this run, delete the ESHIFT line and give the run "
-              "one of them (the Training page of the documentation, "
-              "Retraining from a potential).") != std::string::npos);
+              "a potential (it has WEIGHTS): its EFILTER 5 6, FFILTER 50 and "
+              "ESHIFT_DBATOM true prepared the training data of the fit that "
+              "wrote it, not of this run, and are ignored (tadah keeps such "
+              "keys in a potential's training record, not as key lines). This "
+              "run takes its own EFILTER, FFILTER or ESHIFT_DBATOM from "
+              "--efilter, --ffilter or --eshift-dbatom on the command line, "
+              "or from an EFILTER, FFILTER or ESHIFT_DBATOM line in a "
+              "configuration file that includes the potential with CONFIG. "
+              "The ESHIFT of the configuration, the energy reference of the "
+              "model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: ESHIFT is "
+              "derived from the data of this run when the ESHIFT line is "
+              "deleted and the run is given one of them (the Training page of "
+              "the documentation, Retraining from a "
+              "potential).") != std::string::npos);
     CHECK(printed.find("WDBFILE 1 1") == std::string::npos);
     INFO("pot2.tadah:\n" << slurp("pot2.tadah"));
     CHECK(read_record("pot2.tadah").lines ==
@@ -819,43 +826,43 @@ TEST_CASE("TrainEngine::run of a potential used as the configuration "
  * 0 too, until they were retired); db1.tadah,
  * db2.tadah and db3.tadah are three datasets (TaskFactory and
  * TrainEngine::run, as `tadah train -c` runs them):
- *   - `tadah train -c run.train`, run.train being "ZERO_COM_FORCE
- *     true", "CONFIG old.tadah", "DBFILE db1.tadah db2.tadah db3.tadah",
- *     "WDBFILE 1 0.001 1", "EFILTER -1 1", "OUTFILE pot2.tadah": trains;
- *     pot2.tadah has the training record "DBFILE db1.tadah db2.tadah
- *     db3.tadah", "EFILTER -1 1", "ZERO_COM_FORCE true", "WDBFILE 1 0.001
- *     1", "OUTFILE pot2.tadah" (the line before CONFIG too: the potential's
- *     ZERO_COM_FORCE false does not replace it), the potential's ESHIFT
- *     0.001, and the WEIGHTS of a training configuration of the same keys
- *     (pot3.tadah), token for token; the WARNING names the potential's
- *     lines the run does not give itself: "tadah train: old.tadah, which
- *     the configuration file run.train includes with CONFIG, is a
- *     potential (it has WEIGHTS): its FFILTER 50 and ESHIFT_DBATOM true
- *     prepared the training data of the fit that wrote it, not of this
- *     run, and are ignored (tadah keeps such keys in a potential's training
- *     record, not as key lines). Give --ffilter or --eshift-dbatom on the
- *     command line, or an FFILTER or ESHIFT_DBATOM line in run.train, to
- *     apply one to this run. The ESHIFT of the configuration,
- *     the energy reference of the model, overrules ESHIFT_ATOM and
- *     ESHIFT_DBATOM: ... (the Training page of the documentation,
- *     Retraining from a potential)."; no "Multiple ESHIFT sources";
+ *   - `tadah train -c run.train`, run.train being "ZERO_COM_FORCE true",
+ *     "CONFIG old.tadah", "DBFILE db1.tadah db2.tadah db3.tadah", "WDBFILE 1
+ *     0.001 1", "EFILTER -1 1", "OUTFILE pot2.tadah": trains; pot2.tadah has
+ *     the training record "DBFILE db1.tadah db2.tadah db3.tadah", "EFILTER -1
+ *     1", "ZERO_COM_FORCE true", "WDBFILE 1 0.001 1", "OUTFILE pot2.tadah"
+ *     (the line before CONFIG too: the potential's ZERO_COM_FORCE false does
+ *     not replace it), the potential's ESHIFT 0.001, and the WEIGHTS of a
+ *     training configuration of the same keys (pot3.tadah), token for token;
+ *     the WARNING names the potential's lines the run does not give itself:
+ *     "tadah train: old.tadah, which the configuration file run.train
+ *     includes with CONFIG, is a potential (it has WEIGHTS): its FFILTER 50
+ *     and ESHIFT_DBATOM true prepared the training data of the fit that wrote
+ *     it, not of this run, and are ignored (tadah keeps such keys in a
+ *     potential's training record, not as key lines). This run takes its own
+ *     FFILTER or ESHIFT_DBATOM from --ffilter or --eshift-dbatom on the
+ *     command line, or from an FFILTER or ESHIFT_DBATOM line in run.train.
+ *     The ESHIFT of the configuration, the energy reference of the model,
+ *     overrules ESHIFT_ATOM and ESHIFT_DBATOM: ... (the Training page of the
+ *     documentation, Retraining from a potential)."; no "Multiple ESHIFT
+ *     sources";
  *   - `tadah train -c none.train` with none of them ("CONFIG old.tadah",
  *     "DBFILE db1.tadah", "OUTFILE pot4.tadah": WDBFILE 1 1 has two values
  *     for its one dataset): trains, and the WARNING names EFILTER 5 6,
- *     FFILTER 50, ESHIFT_DBATOM true and WDBFILE 1 1, with "Give
- *     --efilter, --ffilter, --eshift-dbatom or --wdbfile on the command
- *     line, or an EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE line in
- *     none.train, to apply one to this run.";
+ *     FFILTER 50, ESHIFT_DBATOM true and WDBFILE 1 1, with "This run takes
+ *     its own EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE from --efilter,
+ *     --ffilter, --eshift-dbatom or --wdbfile on the command line, or from an
+ *     EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE line in none.train.";
  *   - `tadah train -c outer.train`, outer.train being "CONFIG old.tadah",
  *     "DBFILE db1.tadah db2.tadah db3.tadah", "WDBFILE 1 0.001 1", "OUTFILE
  *     pot5.tadah": pot5.tadah's record is "DBFILE db1.tadah db2.tadah
  *     db3.tadah", "WDBFILE 1 0.001 1", "OUTFILE pot5.tadah", and the WARNING
  *     "tadah train: old.tadah, which the configuration file outer.train
- *     includes with CONFIG, is a potential (it has WEIGHTS): its EFILTER 5
- *     6, FFILTER 50 and ESHIFT_DBATOM true prepared ... Give
- *     --efilter, --ffilter or --eshift-dbatom on the command line, or
- *     an EFILTER, FFILTER or ESHIFT_DBATOM line in outer.train, to
- *     apply one to this run. ...".
+ *     includes with CONFIG, is a potential (it has WEIGHTS): its EFILTER 5 6,
+ *     FFILTER 50 and ESHIFT_DBATOM true prepared ... This run takes its own
+ *     EFILTER, FFILTER or ESHIFT_DBATOM from --efilter, --ffilter or
+ *     --eshift-dbatom on the command line, or from an EFILTER, FFILTER or
+ *     ESHIFT_DBATOM line in outer.train. ...".
  * Before the fix: the CONFIG include mixed the potential's lines with the
  * run's, and the run's keys of a configuration with WEIGHTS that were not
  * command-line options were removed with the potential's: the WDBFILE of
@@ -867,7 +874,12 @@ TEST_CASE("TrainEngine::run of a potential used as the configuration "
  * keys the run can give ("Give --efilter or --eweight-temp ...") and ended
  * "The potential's ESHIFT, the energy reference of the model, is used: to
  * derive ESHIFT from the data of this run, delete the ESHIFT line and set
- * ESHIFT_ATOM or ESHIFT_DBATOM": the WARNING checks fail. */
+ * ESHIFT_ATOM or ESHIFT_DBATOM": the WARNING checks fail.
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give --ffilter or --eshift-dbatom on the command line, or an FFILTER or
+ * ESHIFT_DBATOM line in run.train, to apply one to this run." and "... to
+ * derive ESHIFT from the data of this run, delete the ESHIFT line and give
+ * the run one of them": the WARNING checks fail. */
 TEST_CASE("A retrain from a potential included with CONFIG applies the "
           "run's own keys that prepare the training data",
           "[train][potential_content][retrain][dataset_keys]") {
@@ -890,9 +902,9 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
   const std::string datasets = "db1.tadah db2.tadah db3.tadah";
   const std::string eshift_advice =
       " The ESHIFT of the configuration, the energy reference of the model, "
-      "overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT from the "
-      "data of this run, delete the ESHIFT line and give the run one of them "
-      "(the Training page of the documentation, Retraining from a "
+      "overrules ESHIFT_ATOM and ESHIFT_DBATOM: ESHIFT is derived from the "
+      "data of this run when the ESHIFT line is deleted and the run is given "
+      "one of them (the Training page of the documentation, Retraining from a "
       "potential).";
   std::string printed;
   SECTION("the configuration file's keys, after and before the CONFIG "
@@ -922,9 +934,10 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
               "WEIGHTS): its FFILTER 50 and ESHIFT_DBATOM true prepared the "
               "training data of the fit that wrote it, not of this run, and "
               "are ignored (tadah keeps such keys in a potential's training "
-              "record, not as key lines). Give --ffilter or --eshift-dbatom "
-              "on the command line, or an FFILTER or ESHIFT_DBATOM line in "
-              "run.train, to apply one to this run." + eshift_advice) !=
+              "record, not as key lines). This run takes its own FFILTER or "
+              "ESHIFT_DBATOM from --ffilter or --eshift-dbatom on the command "
+              "line, or from an FFILTER or ESHIFT_DBATOM "
+              "line in run.train." + eshift_advice) !=
           std::string::npos);
     CHECK(printed.find("Multiple ESHIFT sources") == std::string::npos);
     Context c3 = training_context_of("M_BLR BF_Linear");
@@ -956,10 +969,11 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
               "WEIGHTS): its EFILTER 5 6, FFILTER 50, ESHIFT_DBATOM true and "
               "WDBFILE 1 1 prepared the training data of the fit that wrote "
               "it, not of this run, and are ignored (tadah keeps such keys in "
-              "a potential's training record, not as key lines). Give "
+              "a potential's training record, not as key lines). This run "
+              "takes its own EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE from "
               "--efilter, --ffilter, --eshift-dbatom or --wdbfile on the "
-              "command line, or an EFILTER, FFILTER, ESHIFT_DBATOM or WDBFILE "
-              "line in none.train, to apply one to this run." +
+              "command line, or from an EFILTER, FFILTER, ESHIFT_DBATOM or "
+              "WDBFILE line in none.train." +
               eshift_advice) != std::string::npos);
     CHECK(read_record("pot4.tadah").lines ==
           std::vector<std::string>{"DBFILE db1.tadah", "OUTFILE pot4.tadah"});
@@ -980,13 +994,14 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
     CHECK(printed.find(
               "WARNING: tadah train: old.tadah, which the configuration file "
               "outer.train includes with CONFIG, is a potential (it has "
-              "WEIGHTS): its EFILTER 5 6, FFILTER 50 and ESHIFT_DBATOM "
-              "true prepared the training data of the fit that wrote it, not "
-              "of this run, and are ignored (tadah keeps such keys in a "
-              "potential's training record, not as key lines). Give "
-              "--efilter, --ffilter or --eshift-dbatom on the command "
-              "line, or an EFILTER, FFILTER or ESHIFT_DBATOM line in "
-              "outer.train, to apply one to this run." + eshift_advice) !=
+              "WEIGHTS): its EFILTER 5 6, FFILTER 50 and ESHIFT_DBATOM true "
+              "prepared the training data of the fit that wrote it, not of "
+              "this run, and are ignored (tadah keeps such keys in a "
+              "potential's training record, not as key lines). This run takes "
+              "its own EFILTER, FFILTER or ESHIFT_DBATOM from --efilter, "
+              "--ffilter or --eshift-dbatom on the command line, or from an "
+              "EFILTER, FFILTER or ESHIFT_DBATOM line in "
+              "outer.train." + eshift_advice) !=
           std::string::npos);
   }
 }
@@ -1001,21 +1016,21 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
  * value):
  *   - without a KeyProvenance, the potential with "ESHIFT_DBATOM true":
  *     pot2.tadah has no ESHIFT line and the WEIGHTS of the training
- *     configuration without the toggle (pot5.tadah), token for token, and
- *     the WARNING is "tadah train: the configuration is a potential (it has
- *     WEIGHTS): its ESHIFT_DBATOM true prepared the training data of the
- *     fit that wrote it, not of this run, and is ignored (tadah keeps such
- *     keys in a potential's training record, not as key lines). Give
- *     --eshift-dbatom on the command line to apply it to this run (the
+ *     configuration without the toggle (pot5.tadah), token for token, and the
+ *     WARNING is "tadah train: the configuration is a potential (it has
+ *     WEIGHTS): its ESHIFT_DBATOM true prepared the training data of the fit
+ *     that wrote it, not of this run, and is ignored (tadah keeps such keys
+ *     in a potential's training record, not as key lines). This run takes its
+ *     own ESHIFT_DBATOM from --eshift-dbatom on the command line (the
  *     Training page of the documentation, Retraining from a potential).";
  *   - `tadah train -c copy.train` (TaskFactory and TrainEngine::run),
  *     copy.train being that potential with "ESHIFT_DBATOM true": no ESHIFT
  *     line, the record "DBFILE db.tadah", "OUTFILE pot7.tadah", and the
- *     WARNING "tadah train: the configuration file copy.train is a
- *     potential (it has WEIGHTS): its ESHIFT_DBATOM true prepared ... Give
- *     --eshift-dbatom on the command line, or an ESHIFT_DBATOM line in a
- *     configuration file that includes the potential with CONFIG, to apply
- *     it to this run (...).";
+ *     WARNING "tadah train: the configuration file copy.train is a potential
+ *     (it has WEIGHTS): its ESHIFT_DBATOM true prepared ... This run takes
+ *     its own ESHIFT_DBATOM from --eshift-dbatom on the command line, or from
+ *     an ESHIFT_DBATOM line in a configuration file that includes the
+ *     potential with CONFIG (...).";
  *   - `tadah train -c rederive.train --eshift-dbatom`, rederive.train being
  *     the potential without a toggle, and `tadah train -c outer.train`,
  *     outer.train being "CONFIG rederive.tadah" and "ESHIFT_DBATOM true":
@@ -1023,25 +1038,25 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
  *     record lists "ESHIFT_DBATOM true", and no WARNING calls a file a
  *     potential (a pin: the run's own toggle was read before the fix too);
  *   - the run's own toggle beside the potential's other one (the two choose
- *     one thing, the source of the shift, and exclude each other):
- *     `tadah train -c atom.train --eshift-dbatom`, atom.train being the
- *     potential with "ESHIFT_ATOM true", writes the ESHIFT of pot3.tadah,
- *     token for token, pot9.tadah's record is "DBFILE db.tadah",
- *     "ESHIFT_DBATOM true", "OUTFILE pot9.tadah", and nothing printed calls
- *     a file a potential or says "Multiple ESHIFT sources";
- *     `tadah train -c dbatom.train --eshift-atom`, dbatom.train being the
- *     potential with "ESHIFT_DBATOM true", writes ESHIFT 0 (db.tadah has
- *     no isolated atom), the record "DBFILE db.tadah", "ESHIFT_ATOM true",
- *     "OUTFILE pot10.tadah", and the same nothing; a run's toggle given
- *     false chooses no source: `tadah train -c outer.train`, outer.train
- *     being "CONFIG dbatom.tadah" (the potential with "ESHIFT_DBATOM
- *     true"), "ESHIFT_ATOM false", "DBFILE db.tadah", "OUTFILE
- *     pot11.tadah", writes no ESHIFT line and the WARNING "tadah train:
- *     dbatom.tadah, which the configuration file outer.train includes with
- *     CONFIG, is a potential (it has WEIGHTS): its ESHIFT_DBATOM true
- *     prepared ... Give --eshift-dbatom on the command line, or an
- *     ESHIFT_DBATOM line in outer.train, to apply it to this run (...)."
- *     (that WARNING a pin: it was printed before this rule too);
+ *     one thing, the source of the shift, and exclude each other): `tadah
+ *     train -c atom.train --eshift-dbatom`, atom.train being the potential
+ *     with "ESHIFT_ATOM true", writes the ESHIFT of pot3.tadah, token for
+ *     token, pot9.tadah's record is "DBFILE db.tadah", "ESHIFT_DBATOM true",
+ *     "OUTFILE pot9.tadah", and nothing printed calls a file a potential or
+ *     says "Multiple ESHIFT sources"; `tadah train -c dbatom.train
+ *     --eshift-atom`, dbatom.train being the potential with "ESHIFT_DBATOM
+ *     true", writes ESHIFT 0 (db.tadah has no isolated atom), the record
+ *     "DBFILE db.tadah", "ESHIFT_ATOM true", "OUTFILE pot10.tadah", and the
+ *     same nothing; a run's toggle given false chooses no source: `tadah
+ *     train -c outer.train`, outer.train being "CONFIG dbatom.tadah" (the
+ *     potential with "ESHIFT_DBATOM true"), "ESHIFT_ATOM false", "DBFILE
+ *     db.tadah", "OUTFILE pot11.tadah", writes no ESHIFT line and the WARNING
+ *     "tadah train: dbatom.tadah, which the configuration file outer.train
+ *     includes with CONFIG, is a potential (it has WEIGHTS): its
+ *     ESHIFT_DBATOM true prepared ... This run takes its own ESHIFT_DBATOM
+ *     from --eshift-dbatom on the command line, or from an ESHIFT_DBATOM line
+ *     in outer.train (...)." (that WARNING a pin: it was printed before this
+ *     rule too);
  *   - `tadah train -c old.train`, old.train being the potential with the
  *     key lines "ESHIFT_ATOM false" and "ESHIFT_DBATOM false" that every
  *     potential of an earlier tadah train has when its run set no shift:
@@ -1067,7 +1082,11 @@ TEST_CASE("A retrain from a potential included with CONFIG applies the "
  * toggles (ATOM then overrules the run's DBATOM, "Multiple ESHIFT sources
  * set"), and dbatom.train with --eshift-atom "... its ESHIFT_DBATOM true
  * ... Give --eshift-dbatom ...", advice that does not apply it (ATOM
- * wins): the two "is a potential" CHECKs fail. */
+ * wins): the two "is a potential" CHECKs fail.
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give --eshift-dbatom on the command line to apply it to this run" (and
+ * "..., or an ESHIFT_DBATOM line in outer.train, to apply it to this
+ * run"): the WARNING checks fail. */
 TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
           "potential; the run's own derives ESHIFT",
           "[train][potential_content][retrain][dataset_keys]") {
@@ -1109,13 +1128,13 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
     CHECK(pot_line("pot2.tadah", "WEIGHTS") ==
           pot_line("pot5.tadah", "WEIGHTS"));
     CHECK(printed.find(
-              "WARNING: tadah train: the configuration is a potential (it "
-              "has WEIGHTS): its ESHIFT_DBATOM true prepared the training "
-              "data of the fit that wrote it, not of this run, and is "
-              "ignored (tadah keeps such keys in a potential's training "
-              "record, not as key lines). Give --eshift-dbatom on the "
-              "command line to apply it to this run (the Training page of "
-              "the documentation, Retraining from a potential).") !=
+              "WARNING: tadah train: the configuration is a potential (it has "
+              "WEIGHTS): its ESHIFT_DBATOM true prepared the training data of "
+              "the fit that wrote it, not of this run, and is ignored (tadah "
+              "keeps such keys in a potential's training record, not as key "
+              "lines). This run takes its own ESHIFT_DBATOM from "
+              "--eshift-dbatom on the command line (the Training page of the "
+              "documentation, Retraining from a potential).") !=
           std::string::npos);
   }
   SECTION("a copy of the potential with the toggle") {
@@ -1137,11 +1156,12 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
               "potential (it has WEIGHTS): its ESHIFT_DBATOM true prepared "
               "the training data of the fit that wrote it, not of this run, "
               "and is ignored (tadah keeps such keys in a potential's "
-              "training record, not as key lines). Give --eshift-dbatom on "
-              "the command line, or an ESHIFT_DBATOM line in a configuration "
-              "file that includes the potential with CONFIG, to apply it to "
-              "this run (the Training page of the documentation, Retraining "
-              "from a potential).") != std::string::npos);
+              "training record, not as key lines). This run takes its own "
+              "ESHIFT_DBATOM from --eshift-dbatom on the command line, or "
+              "from an ESHIFT_DBATOM line in a configuration file that "
+              "includes the potential with CONFIG (the Training page of the "
+              "documentation, Retraining from a "
+              "potential).") != std::string::npos);
   }
   SECTION("the run's own toggle") {
     const Context base = potential_context("M_BLR BF_Linear");
@@ -1235,10 +1255,10 @@ TEST_CASE("A retrain reads no ESHIFT_ATOM or ESHIFT_DBATOM line of a "
               "WEIGHTS): its ESHIFT_DBATOM true prepared the training data of "
               "the fit that wrote it, not of this run, and is ignored (tadah "
               "keeps such keys in a potential's training record, not as key "
-              "lines). Give --eshift-dbatom on the command line, or an "
-              "ESHIFT_DBATOM line in outer.train, to apply it to this run "
-              "(the Training page of the documentation, Retraining from a "
-              "potential).") != std::string::npos);
+              "lines). This run takes its own ESHIFT_DBATOM from "
+              "--eshift-dbatom on the command line, or from an ESHIFT_DBATOM "
+              "line in outer.train (the Training page of the documentation, "
+              "Retraining from a potential).") != std::string::npos);
   }
   SECTION("an earlier version's toggles at their defaults") {
     Context old = potential_context("M_BLR BF_Linear");
@@ -1469,33 +1489,33 @@ void write_retrain_copy(const fs::path &path, const std::string &extra) {
  * config.val, HPOTARGET config.hpo, VERBOSE 2, NUMERIC 12, OUTFILE
  * old_out.tadah, AUDIT warn, AUDIT_SAMPLE 2, HEALTH_LOG full; base.train the
  * same without the eight lines:
- *   - `tadah train -c old.train`: writes pot.tadah (the default OUTFILE),
- *     not old_out.tadah; the Logger is at WARNING after the run (where it
- *     was: the run gives no VERBOSE) and printed no INFO line; no NUMERIC
- *     WARNING
- *     ("NUMERIC 12 limits"); pot.tadah's WEIGHTS are those of `tadah train
- *     -c base.train -o base.tadah`, token for token (18 digits); its record
- *     is "DBFILE db.tadah" alone; and the one WARNING is "tadah train: the
+ *   - `tadah train -c old.train`: writes pot.tadah (the default OUTFILE), not
+ *     old_out.tadah; the Logger is at WARNING after the run (where it was:
+ *     the run gives no VERBOSE) and printed no INFO line; no NUMERIC WARNING
+ *     ("NUMERIC 12 limits"); pot.tadah's WEIGHTS are those of `tadah train -c
+ *     base.train -o base.tadah`, token for token (18 digits); its record is
+ *     "DBFILE db.tadah" alone; and the one WARNING is "tadah train: the
  *     configuration file old.train is a potential (it has WEIGHTS): its
  *     VERBOSE 2, NUMERIC 12, OUTFILE old_out.tadah, AUDIT warn and
- *     AUDIT_SAMPLE 2 were settings of the run that wrote it, not of this
- *     run, and are ignored (tadah keeps such keys in a potential's training
- *     record, not as key lines). Give --verbose or --outfile on the command
- *     line, or a VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a
- *     configuration file that includes the potential with CONFIG, to apply
- *     one to this run (the Training page of the documentation, Retraining
- *     from a potential)." -- VALIDATION, HPOTARGET and HEALTH_LOG, which
- *     tadah train does not read, are not named;
+ *     AUDIT_SAMPLE 2 were settings of the run that wrote it, not of this run,
+ *     and are ignored (tadah keeps such keys in a potential's training
+ *     record, not as key lines). This run takes its own VERBOSE, NUMERIC,
+ *     OUTFILE, AUDIT or AUDIT_SAMPLE from --verbose or --outfile on the
+ *     command line, or from a VERBOSE, NUMERIC, OUTFILE, AUDIT or
+ *     AUDIT_SAMPLE line in a configuration file that includes the potential
+ *     with CONFIG (the Training page of the documentation, Retraining from a
+ *     potential)." -- VALIDATION, HPOTARGET and HEALTH_LOG, which tadah train
+ *     does not read, are not named;
  *   - `tadah train -c outer.train`, outer.train being "VERBOSE 1", "CONFIG
  *     old.train", "NUMERIC 17", "OUTFILE mine.tadah", "AUDIT_SAMPLE 3": the
  *     run's own apply (mine.tadah, the Logger at WARNING after the run) and
  *     are recorded ("DBFILE db.tadah", "VERBOSE 1", "NUMERIC 17", "OUTFILE
  *     mine.tadah", "AUDIT_SAMPLE 3"); the potential's AUDIT warn alone is
  *     named: "tadah train: old.train, which the configuration file
- *     outer.train includes with CONFIG, is a potential (it has WEIGHTS):
- *     its AUDIT warn was a setting of the run that wrote it, not of this
- *     run, and is ignored (...). Give an AUDIT line in outer.train to apply
- *     it to this run (...).";
+ *     outer.train includes with CONFIG, is a potential (it has WEIGHTS): its
+ *     AUDIT warn was a setting of the run that wrote it, not of this run, and
+ *     is ignored (...). This run takes its own AUDIT from an AUDIT line in
+ *     outer.train (...).";
  *   - `tadah train -c v1.train`, the potential with the "VERBOSE 1" every
  *     1.5.x best_pot.tadah of a run at the default verbosity has: no
  *     WARNING calls it a potential (VERBOSE 1 is the default) and the
@@ -1506,7 +1526,12 @@ void write_retrain_copy(const fs::path &path, const std::string &extra) {
  * the potential's OUTFILE first and the run's own line was appended after
  * it), its VERBOSE 1 replaced by the potential's VERBOSE 2 (INFO lines
  * printed; the REQUIRE on mine.tadah stops the section); and v1.train's
- * record listed "VERBOSE 1" as the run's: the record check fails. */
+ * record listed "VERBOSE 1" as the run's: the record check fails.
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give --verbose or --outfile on the command line, or a VERBOSE, ...
+ * line in a configuration file that includes the potential with CONFIG, to
+ * apply one to this run" and "Give an AUDIT line in outer.train to apply it
+ * to this run": the WARNING checks fail. */
 TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
           "apply",
           "[train][potential_content][retrain][run_settings]") {
@@ -1549,12 +1574,12 @@ TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
         "potential (it has WEIGHTS): its VERBOSE 2, NUMERIC 12, OUTFILE "
         "old_out.tadah, AUDIT warn and AUDIT_SAMPLE 2 were settings of the "
         "run that wrote it, not of this run, and are ignored (tadah keeps "
-        "such keys in a potential's training record, not as key lines). "
-        "Give --verbose or --outfile on the command line, or a VERBOSE, "
-        "NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a configuration "
-        "file that includes the potential with CONFIG, to apply one to this "
-        "run (the Training page of the documentation, Retraining from a "
-        "potential).";
+        "such keys in a potential's training record, not as key lines). This "
+        "run takes its own VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE "
+        "from --verbose or --outfile on the command line, or from a VERBOSE, "
+        "NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a configuration file "
+        "that includes the potential with CONFIG (the Training page of the "
+        "documentation, Retraining from a potential).";
     CHECK(printed.find(warning) != std::string::npos);
     CHECK(printed.find("VALIDATION") == std::string::npos);
     CHECK(printed.find("HPOTARGET") == std::string::npos);
@@ -1584,8 +1609,8 @@ TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
               "outer.train includes with CONFIG, is a potential (it has "
               "WEIGHTS): its AUDIT warn was a setting of the run that wrote "
               "it, not of this run, and is ignored (tadah keeps such keys in "
-              "a potential's training record, not as key lines). Give an "
-              "AUDIT line in outer.train to apply it to this run (the "
+              "a potential's training record, not as key lines). This run "
+              "takes its own AUDIT from an AUDIT line in outer.train (the "
               "Training page of the documentation, Retraining from a "
               "potential).") != std::string::npos);
   }
@@ -1608,27 +1633,34 @@ TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
  * "DBFILE db.tadah", no ESHIFT line; copy2.train the same with "ESHIFT
  * 0.02"):
  *   - `tadah train -c copy.train --eshift 0.01 -o e1.tadah`: e1.tadah's
- *     ESHIFT is 0.01 and the WARNING names ESHIFT_DBATOM true and ends
- *     "Give --eshift-dbatom on the command line, or an ESHIFT_DBATOM line in
- *     a configuration file that includes the potential with CONFIG, to
- *     apply it to this run. The ESHIFT given with --eshift, the energy
- *     reference of the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to
- *     derive ESHIFT from the data of this run, leave out --eshift and give
- *     the run one of them (the Training page of the documentation,
- *     Retraining from a potential)." (there is no ESHIFT line to delete);
- *   - `tadah train -c copy2.train --eshift 0.01 -o e2.tadah`: ESHIFT 0.01
- *     and the sentence "... to derive ESHIFT from the data of this run,
- *     leave out --eshift, delete the ESHIFT line and give the run one of
- *     them (...)": both set the shift;
+ *     ESHIFT is 0.01 and the WARNING names ESHIFT_DBATOM true and ends "This
+ *     run takes its own ESHIFT_DBATOM from --eshift-dbatom on the command
+ *     line, or from an ESHIFT_DBATOM line in a configuration file that
+ *     includes the potential with CONFIG. The ESHIFT given with --eshift, the
+ *     energy reference of the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM:
+ *     ESHIFT is derived from the data of this run when --eshift is left out
+ *     and the run is given one of them (the Training page of the
+ *     documentation, Retraining from a potential)." (there is no ESHIFT line
+ *     to delete);
+ *   - `tadah train -c copy2.train --eshift 0.01 -o e2.tadah`: ESHIFT 0.01 and
+ *     the sentence "... ESHIFT is derived from the data of this run when
+ *     --eshift is left out, the ESHIFT line is deleted and the run is given
+ *     one of them (...)": both set the shift;
  *   - `tadah train -c copy2.train -o e3.tadah`: ESHIFT 0.02 and the sentence
  *     as it was: "The ESHIFT of the configuration, the energy reference of
- *     the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT
- *     from the data of this run, delete the ESHIFT line and give the run one
- *     of them (...)" (a pin).
+ *     the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: ESHIFT is derived
+ *     from the data of this run when the ESHIFT line is deleted and the run
+ *     is given one of them (...)" (a pin).
  * Before the fix: both --eshift runs said "The ESHIFT of the configuration
  * ... delete the ESHIFT line and give the run one of them", though copy.train
  * has no ESHIFT line and --eshift would still set the shift: the first two
- * CHECKs of the sentence fail. */
+ * CHECKs of the sentence fail.
+ * Before the fix that states the advice in the impersonal voice: the
+ * sentence read "to derive ESHIFT from the data of this run, leave out
+ * --eshift and give the run one of them" (", leave out --eshift, delete
+ * the ESHIFT line and give ...", ", delete the ESHIFT line and give ..."),
+ * after "Give --eshift-dbatom on the command line, or ..., to apply it to
+ * this run.": the checks fail. */
 TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
           "the run's ESHIFT by where it came from",
           "[train][potential_content][retrain][dataset_keys][eshift]") {
@@ -1641,9 +1673,10 @@ TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
   const std::string named =
       "its ESHIFT_DBATOM true prepared the training data of the fit that "
       "wrote it, not of this run, and is ignored (tadah keeps such keys in a "
-      "potential's training record, not as key lines). Give --eshift-dbatom "
-      "on the command line, or an ESHIFT_DBATOM line in a configuration file "
-      "that includes the potential with CONFIG, to apply it to this run. ";
+      "potential's training record, not as key lines). This run takes its own "
+      "ESHIFT_DBATOM from --eshift-dbatom on the command line, or from an "
+      "ESHIFT_DBATOM line in a configuration file that includes the potential "
+      "with CONFIG. ";
   const std::string tail =
       " (the Training page of the documentation, Retraining from a "
       "potential).";
@@ -1660,8 +1693,9 @@ TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
     CHECK(printed.find(named +
                        "The ESHIFT given with --eshift, the energy reference "
                        "of the model, overrules ESHIFT_ATOM and "
-                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
-                       "run, leave out --eshift and give the run one of them" +
+                       "ESHIFT_DBATOM: ESHIFT is derived from the data of "
+                       "this run when --eshift is left out and the run is "
+                       "given one of them" +
                        tail) != std::string::npos);
   }
   SECTION("--eshift over an ESHIFT line") {
@@ -1676,9 +1710,9 @@ TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
     CHECK(printed.find(named +
                        "The ESHIFT given with --eshift, the energy reference "
                        "of the model, overrules ESHIFT_ATOM and "
-                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
-                       "run, leave out --eshift, delete the ESHIFT line and "
-                       "give the run one of them" +
+                       "ESHIFT_DBATOM: ESHIFT is derived from the data of "
+                       "this run when --eshift is left out, the ESHIFT line "
+                       "is deleted and the run is given one of them" +
                        tail) != std::string::npos);
   }
   SECTION("an ESHIFT line") {
@@ -1692,9 +1726,9 @@ TEST_CASE("The WARNING naming a potential's ESHIFT toggle says how to drop "
     CHECK(printed.find(named +
                        "The ESHIFT of the configuration, the energy reference "
                        "of the model, overrules ESHIFT_ATOM and "
-                       "ESHIFT_DBATOM: to derive ESHIFT from the data of this "
-                       "run, delete the ESHIFT line and give the run one of "
-                       "them" +
+                       "ESHIFT_DBATOM: ESHIFT is derived from the data of "
+                       "this run when the ESHIFT line is deleted and the run "
+                       "is given one of them" +
                        tail) != std::string::npos);
   }
 }
@@ -1723,26 +1757,26 @@ std::string hpo_notice_of(const std::string &config) {
  * each file is the Ta pair potential with "DBFILE db.tadah" and the lines
  * named):
  *   - `tadah train -c n12.train -o n12.tadah` (TrainEngine::run), n12.train
- *     with "NUMERIC 12" and "HEALTH_LOG full": the WARNING "tadah train:
- *     the configuration file n12.train is a potential (it has WEIGHTS): its
- *     NUMERIC 12 was a setting of the run that wrote it, not of this run,
- *     and is ignored (tadah keeps such keys in a potential's training
- *     record, not as key lines). Give a NUMERIC line in a configuration
- *     file that includes the potential with CONFIG to apply it to this run
- *     (the Training page of the documentation, Retraining from a
- *     potential)." (tadah train has no --numeric and reads no HEALTH_LOG,
- *     which is not named);
+ *     with "NUMERIC 12" and "HEALTH_LOG full": the WARNING "tadah train: the
+ *     configuration file n12.train is a potential (it has WEIGHTS): its
+ *     NUMERIC 12 was a setting of the run that wrote it, not of this run, and
+ *     is ignored (tadah keeps such keys in a potential's training record, not
+ *     as key lines). This run takes its own NUMERIC from a NUMERIC line in a
+ *     configuration file that includes the potential with CONFIG (the
+ *     Training page of the documentation, Retraining from a potential)."
+ *     (tadah train has no --numeric and reads no HEALTH_LOG, which is not
+ *     named);
  *   - the tadah hpo task of `-c hl.tadah --hpotarget config.hpo`, hl.tadah
  *     with "HEALTH_LOG full": ignore_configuration_potential_lines gives
  *     "tadah hpo: the configuration file hl.tadah is a potential (it has
- *     WEIGHTS): its HEALTH_LOG full was a setting ... Give a HEALTH_LOG line
- *     in a configuration file that includes the potential with CONFIG to
- *     apply it to this run (...).";
+ *     WEIGHTS): its HEALTH_LOG full was a setting ... This run takes its own
+ *     HEALTH_LOG from a HEALTH_LOG line in a configuration file that includes
+ *     the potential with CONFIG (...).";
  *   - the same of ha.tadah, with "AUDIT warn", "AUDIT_SAMPLE 2" and
  *     "HEALTH_LOG full": "... its AUDIT warn, AUDIT_SAMPLE 2 and HEALTH_LOG
- *     full were settings ... Give an AUDIT, AUDIT_SAMPLE or HEALTH_LOG line
- *     in a configuration file that includes the potential with CONFIG to
- *     apply one to this run (...).".
+ *     full were settings ... This run takes its own AUDIT, AUDIT_SAMPLE or
+ *     HEALTH_LOG from an AUDIT, AUDIT_SAMPLE or HEALTH_LOG line in a
+ *     configuration file that includes the potential with CONFIG (...).".
  * Before the fix: the run settings were not among the keys of a potential
  * whose lines a run does not read: the lines were the run's, no WARNING
  * called n12.train a potential and the hpo notices were empty, so every
@@ -1753,7 +1787,10 @@ std::string hpo_notice_of(const std::string &config) {
  * notices fail); the keys tadah train and tadah hpo read without NUMERIC,
  * AUDIT, AUDIT_SAMPLE and HEALTH_LOG (the task's keys and its groups'
  * alone) gave no WARNING for n12.train and empty hpo notices (the three
- * CHECKs of a notice fail). */
+ * CHECKs of a notice fail).
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give a NUMERIC line in a configuration file that includes the potential
+ * with CONFIG to apply it to this run" (and so on): the checks fail. */
 TEST_CASE("The WARNING of a potential's run settings says 'a NUMERIC' and 'a "
           "HEALTH_LOG', and tadah hpo names AUDIT, AUDIT_SAMPLE and "
           "HEALTH_LOG",
@@ -1781,8 +1818,9 @@ TEST_CASE("The WARNING of a potential's run settings says 'a NUMERIC' and 'a "
               "potential (it has WEIGHTS): its NUMERIC 12 was a setting of "
               "the run that wrote it, not of this run, and is ignored" +
               record_note +
-              "Give a NUMERIC line in a configuration file that includes the "
-              "potential with CONFIG to apply it to this run" + tail) !=
+              "This run takes its own NUMERIC from a NUMERIC line in a "
+              "configuration file that includes the potential with "
+              "CONFIG" + tail) !=
           std::string::npos);
     CHECK(printed.find("HEALTH_LOG") == std::string::npos);
   }
@@ -1792,8 +1830,8 @@ TEST_CASE("The WARNING of a potential's run settings says 'a NUMERIC' and 'a "
           "tadah hpo: the configuration file hl.tadah is a potential (it has "
           "WEIGHTS): its HEALTH_LOG full was a setting of the run that wrote "
           "it, not of this run, and is ignored" + record_note +
-          "Give a HEALTH_LOG line in a configuration file that includes the "
-          "potential with CONFIG to apply it to this run" + tail);
+          "This run takes its own HEALTH_LOG from a HEALTH_LOG line in a "
+          "configuration file that includes the potential with CONFIG" + tail);
   }
   SECTION("tadah hpo: AUDIT, AUDIT_SAMPLE and HEALTH_LOG") {
     write_retrain_copy("ha.tadah",
@@ -1803,9 +1841,9 @@ TEST_CASE("The WARNING of a potential's run settings says 'a NUMERIC' and 'a "
           "WEIGHTS): its AUDIT warn, AUDIT_SAMPLE 2 and HEALTH_LOG full were "
           "settings of the run that wrote it, not of this run, and are "
           "ignored" + record_note +
-          "Give an AUDIT, AUDIT_SAMPLE or HEALTH_LOG line in a configuration "
-          "file that includes the potential with CONFIG to apply one to this "
-          "run" + tail);
+          "This run takes its own AUDIT, AUDIT_SAMPLE or HEALTH_LOG from an "
+          "AUDIT, AUDIT_SAMPLE or HEALTH_LOG line in a configuration file "
+          "that includes the potential with CONFIG" + tail);
   }
 }
 
@@ -1844,40 +1882,43 @@ std::string check_bounds_error(const tadah::mlip::ITaskInput &input,
  * VALIDATION config.val, VERBOSE 2 and NUMERIC 12 of a 1.5.x tadah hpo
  * seed):
  *   - `tadah analysis check_bounds -c old_best.tadah` throws "tadah analysis
- *     check_bounds: no HPOTARGET: name the hpotarget file with --hpotarget,
+ *     check_bounds: no HPOTARGET: the target file is given with --hpotarget,
  *     or with an HPOTARGET line in a configuration file without WEIGHTS.
  *     old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET
  *     config.hpo line was a setting of the run that wrote it and is not
  *     read.", after the WARNING "tadah analysis check_bounds: the
- *     configuration file old_best.tadah is a potential (it has WEIGHTS):
- *     its HPOTARGET config.hpo and VERBOSE 2 were settings of the run that
- *     wrote it, not of this run, and are ignored (...). Give --hpotarget or
- *     --verbose on the command line, or an HPOTARGET or VERBOSE line in a
- *     configuration file that includes the potential with CONFIG, to apply
- *     one to this run (...)." (check_bounds reads no VALIDATION or NUMERIC,
- *     which are not named);
+ *     configuration file old_best.tadah is a potential (it has WEIGHTS): its
+ *     HPOTARGET config.hpo and VERBOSE 2 were settings of the run that wrote
+ *     it, not of this run, and are ignored (...). This run takes its own
+ *     HPOTARGET or VERBOSE from --hpotarget or --verbose on the command line,
+ *     or from an HPOTARGET or VERBOSE line in a configuration file that
+ *     includes the potential with CONFIG (...)." (check_bounds reads no
+ *     VALIDATION or NUMERIC, which are not named);
  *   - with --hpotarget config.hpo (one OPTIM line) it runs, and the WARNING
- *     names VERBOSE 2 alone ("its VERBOSE 2 was a setting ... Give
- *     --verbose on the command line, or a VERBOSE line in a configuration
- *     file that includes the potential with CONFIG, to apply it to this
- *     run");
- *   - `-c run.cfg`, run.cfg being "CONFIG old_best.tadah", throws the
- *     message of `-c old_best.tadah`: "tadah analysis check_bounds: no
- *     HPOTARGET: name the hpotarget file with --hpotarget, or with an
- *     HPOTARGET line in a configuration file without WEIGHTS.
- *     old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET
- *     config.hpo line was a setting of the run that wrote it and is not
- *     read." (a file that includes the potential);
+ *     names VERBOSE 2 alone ("its VERBOSE 2 was a setting ... This run takes
+ *     its own VERBOSE from --verbose on the command line, or from a VERBOSE
+ *     line in a configuration file that includes the potential with CONFIG");
+ *   - `-c run.cfg`, run.cfg being "CONFIG old_best.tadah", throws the message
+ *     of `-c old_best.tadah`: "tadah analysis check_bounds: no HPOTARGET: the
+ *     target file is given with --hpotarget, or with an HPOTARGET line in a
+ *     configuration file without WEIGHTS. old_best.tadah is a potential (it
+ *     has WEIGHTS): its HPOTARGET config.hpo line was a setting of the run
+ *     that wrote it and is not read." (a file that includes the potential);
  *   - `-c plain.tadah`, a configuration without WEIGHTS and without
- *     HPOTARGET: "tadah analysis check_bounds: no HPOTARGET: name the
- *     hpotarget file with --hpotarget, or with an HPOTARGET line in a
- *     configuration file without WEIGHTS." (no potential, no sentence on
- *     one).
+ *     HPOTARGET: "tadah analysis check_bounds: no HPOTARGET: the target file
+ *     is given with --hpotarget, or with an HPOTARGET line in a configuration
+ *     file without WEIGHTS." (no potential, no sentence on one).
  * Before the fix: no WARNING named a line of old_best.tadah, and every run
  * without HPOTARGET threw "analysis check_bounds: HPOTARGET is required
  * (set HPOTARGET in config or pass via the CLI).": every CHECK of a
  * refusal or a WARNING fails. (On v1-dev the parse stored old_best.tadah's
- * HPOTARGET line and the -c run used it.) */
+ * HPOTARGET line and the -c run used it.)
+ * Before the fix that states the refusal and the advice in the impersonal
+ * voice: the refusal read "tadah analysis check_bounds: no HPOTARGET: name
+ * the hpotarget file with --hpotarget, or with an HPOTARGET line in a
+ * configuration file without WEIGHTS." and the advice "Give --hpotarget or
+ * --verbose on the command line, or ..., to apply one to this run": the
+ * checks fail. */
 TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
           "potential, names them, and refuses a run without HPOTARGET "
           "naming where it goes",
@@ -1904,18 +1945,19 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
     const std::string what = check_bounds_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     CHECK(what ==
-          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
-          "file with --hpotarget, or with an HPOTARGET line in a "
+          "tadah analysis check_bounds: no HPOTARGET: the target file is "
+          "given with --hpotarget, or with an HPOTARGET line in a "
           "configuration file without WEIGHTS." + not_read);
     CHECK(printed.find(
               "WARNING: tadah analysis check_bounds: the configuration file "
               "old_best.tadah is a potential (it has WEIGHTS): its HPOTARGET "
               "config.hpo and VERBOSE 2 were settings of the run that wrote "
-              "it, not of this run, and are ignored (tadah keeps such keys "
-              "in a potential's training record, not as key lines). Give "
-              "--hpotarget or --verbose on the command line, or an HPOTARGET "
-              "or VERBOSE line in a configuration file that includes the "
-              "potential with CONFIG, to apply one to this run" + tail) !=
+              "it, not of this run, and are ignored (tadah keeps such keys in "
+              "a potential's training record, not as key lines). This run "
+              "takes its own HPOTARGET or VERBOSE from --hpotarget or "
+              "--verbose on the command line, or from an HPOTARGET or VERBOSE "
+              "line in a configuration file that includes the potential with "
+              "CONFIG" + tail) !=
           std::string::npos);
     CHECK(printed.find("VALIDATION") == std::string::npos);
     CHECK(printed.find("NUMERIC") == std::string::npos);
@@ -1932,9 +1974,10 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
               "old_best.tadah is a potential (it has WEIGHTS): its VERBOSE 2 "
               "was a setting of the run that wrote it, not of this run, and "
               "is ignored (tadah keeps such keys in a potential's training "
-              "record, not as key lines). Give --verbose on the command "
-              "line, or a VERBOSE line in a configuration file that includes "
-              "the potential with CONFIG, to apply it to this run" + tail) !=
+              "record, not as key lines). This run takes its own VERBOSE from "
+              "--verbose on the command line, or from a VERBOSE line in a "
+              "configuration file that includes the potential with "
+              "CONFIG" + tail) !=
           std::string::npos);
     CHECK(printed.find("HPOTARGET") == std::string::npos);
   }
@@ -1945,8 +1988,8 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
     const std::string what = check_bounds_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     CHECK(what ==
-          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
-          "file with --hpotarget, or with an HPOTARGET line in a "
+          "tadah analysis check_bounds: no HPOTARGET: the target file is "
+          "given with --hpotarget, or with an HPOTARGET line in a "
           "configuration file without WEIGHTS." + not_read);
   }
   SECTION("a configuration without WEIGHTS") {
@@ -1958,8 +2001,8 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
     const std::string what = check_bounds_error(input, printed);
     INFO("thrown: " << what << "\nprinted:\n" << printed);
     CHECK(what ==
-          "tadah analysis check_bounds: no HPOTARGET: name the hpotarget "
-          "file with --hpotarget, or with an HPOTARGET line in a "
+          "tadah analysis check_bounds: no HPOTARGET: the target file is "
+          "given with --hpotarget, or with an HPOTARGET line in a "
           "configuration file without WEIGHTS.");
     CHECK(printed.find("is a potential") == std::string::npos);
   }
@@ -1976,19 +2019,23 @@ TEST_CASE("tadah analysis check_bounds reads no run setting of a seed "
  *   - the same from a configuration file with CHECK true above or below
  *     the line CONFIG plain.train (OUTFILE g.tadah and t.tadah);
  *   - the tadah hpo task of `-c seed.tadah --hpotarget config.hpo`,
- *     seed.tadah the Ta pair potential (WEIGHTS) with "DBFILE db.tadah" and
- *     a CHECK true line: TaskFactory does not read the line, so the task's
+ *     seed.tadah the Ta pair potential (WEIGHTS) with "DBFILE db.tadah" and a
+ *     CHECK true line: TaskFactory does not read the line, so the task's
  *     CHECK is false, its default (the run is a run, not a check), and the
  *     notice of ignore_configuration_potential_lines names it: "tadah hpo:
- *     the configuration file seed.tadah is a potential (it has WEIGHTS):
- *     its CHECK true was a setting of the run that wrote it, not of this
- *     run, and is ignored (...). Give --check on the command line, or a
- *     CHECK line in a configuration file that includes the potential with
- *     CONFIG, to apply it to this run (...).".
+ *     the configuration file seed.tadah is a potential (it has WEIGHTS): its
+ *     CHECK true was a setting of the run that wrote it, not of this run, and
+ *     is ignored (...). This run takes its own CHECK from --check on the
+ *     command line, or from a CHECK line in a configuration file that
+ *     includes the potential with CONFIG (...).".
  * Before the fix: CHECK was a key of the model: tadah train wrote "CHECK
  * true" as a key line and no record line, the potential's line was the
  * hpo task's CHECK true (the run became a check) and the notice was empty:
- * the key line, record, CHECK and notice checks fail. */
+ * the key line, record, CHECK and notice checks fail.
+ * Before the fix that states the advice in the impersonal voice: it read
+ * "Give --check on the command line, or a CHECK line in a configuration
+ * file that includes the potential with CONFIG, to apply it to this run":
+ * the check fails. */
 TEST_CASE("CHECK is a setting of tadah hpo: tadah train writes no CHECK "
           "line, and no run reads a potential's",
           "[train][hpo][potential_content][run_settings][check]") {
@@ -2046,11 +2093,10 @@ TEST_CASE("CHECK is a setting of tadah hpo: tadah train writes no CHECK "
   CHECK(tadah::mlip::ignore_configuration_potential_lines(
             tasks[0].getContext(), tasks[0].getKeyProvenance(), "hpo") ==
         "tadah hpo: the configuration file seed.tadah is a potential (it has "
-        "WEIGHTS): its CHECK true was a setting of the run that wrote it, "
-        "not of this run, and is ignored (tadah keeps such keys in a "
-        "potential's training record, not as key lines). Give --check on "
-        "the command line, or a CHECK line in a configuration file that "
-        "includes the potential with CONFIG, to apply it to this run (the "
-        "Training page of the documentation, Retraining from a "
-        "potential).");
+        "WEIGHTS): its CHECK true was a setting of the run that wrote it, not "
+        "of this run, and is ignored (tadah keeps such keys in a potential's "
+        "training record, not as key lines). This run takes its own CHECK "
+        "from --check on the command line, or from a CHECK line in a "
+        "configuration file that includes the potential with CONFIG (the "
+        "Training page of the documentation, Retraining from a potential).");
 }
