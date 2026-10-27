@@ -1051,10 +1051,15 @@ TEST_CASE("preflight_audit: critical_optim_audit judges the search of a "
 
 /* Pins: the pre-flight audit fails a descriptor whose cutoff holds no
  * neighbour distance, whichever descriptor it is: D2_Knot5 with RCUT2B 2
- * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL,
- * naming RCUT2B and 2, under AUDIT error.
+ * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL
+ * under AUDIT error, naming RCUT2B, its value and the element pair of the
+ * line: "RCUT2B = 2 is below the smallest (Ta, Ta) neighbour distance of
+ * the dataset (2.25 Å): the descriptor sums over no neighbour and is 0 for
+ * every atom.".
  * Before the fix: D2_Knot5's cutoff had no check: no FAIL, and tadah
- * train trained a descriptor that is 0 for every structure. */
+ * train trained a descriptor that is 0 for every structure. The whole
+ * text passes as well (a pin of the message; the case checked "RCUT2B = 2
+ * " alone). */
 TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
           "FAIL finding",
           "[preflight_audit][cutoff]") {
@@ -1075,7 +1080,10 @@ TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
     ++n;
     CHECK(m.descriptor_label == "D2_Knot5");
     CHECK(m.param_key == "RCUT2B");
-    CHECK(m.text.find("RCUT2B = 2 ") != std::string::npos);
+    CHECK(m.text ==
+          "RCUT2B = 2 is below the smallest (Ta, Ta) neighbour distance of "
+          "the dataset (2.25 Å): the descriptor sums over no neighbour and "
+          "is 0 for every atom.");
   }
   CHECK(n == 1u);
 }
