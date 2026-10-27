@@ -1,5 +1,7 @@
 #include <tadah/mlip/structure_transformations.h>
 #include <tadah/mlip/structure_properties.h>
+#include <tadah/mlip/detail/cell_geometry.h>
+#include <tadah/core/number_format.h>
 #include <random>
 #include <iostream>
 #include <stdexcept>
@@ -37,6 +39,7 @@ void StructureTransformation::reflect(Structure &st, const tadah::core::Matrix3d
     atom.force    = M * atom.force;
   }
   transformStress(st, M);
+  st.clear_nn();
 }
 
 void StructureTransformation::transformStress(Structure &st, const tadah::core::Matrix3d &M)
@@ -65,7 +68,7 @@ void StructureTransformation::scale(Structure &st, double factor)
   }
   // The energy, forces and stress belong to the structure before scaling;
   // they are left as they are.
-
+  st.clear_nn();
   checkNearSingular(st);
 }
 
@@ -83,6 +86,7 @@ void StructureTransformation::rescaleLength(Structure &st, double s)
   // E'(r') = E(r'/s): the energy and the virial V*sigma are invariant, and
   // V grows by s^3, so the stored stress (eV/A^3) becomes sigma / s^3.
   st.stress = (inv_s * inv_s * inv_s) * st.stress;
+  st.clear_nn();
   checkNearSingular(st);
 }
 
@@ -129,6 +133,7 @@ void StructureTransformation::rotate(Structure &st, const tadah::core::Matrix3d 
     atom.force    = R * atom.force;
   }
   transformStress(st, R);
+  st.clear_nn();
   checkNearSingular(st);
 }
 
@@ -141,6 +146,7 @@ void StructureTransformation::shear(Structure &st, const tadah::core::Matrix3d &
     atom.position = shearMatrix * atom.position;
   }
   transformStress(st, shearMatrix);
+  st.clear_nn();
   checkNearSingular(st);
 }
 
@@ -194,6 +200,7 @@ void StructureTransformation::shift(Structure &st, const tadah::core::Vec3d &shi
     atom.position += shiftVec;
   }
   // cell, stress unchanged
+  st.clear_nn();
 }
 
 void StructureTransformation::mirrorOrigin(Structure &st)
@@ -204,6 +211,7 @@ void StructureTransformation::mirrorOrigin(Structure &st)
     atom.position = -atom.position;
     atom.force    = -atom.force;
   }
+  st.clear_nn();
 }
 
 void StructureTransformation::mirrorPlane(Structure &st, const tadah::core::Vec3d &normalVec)
@@ -278,6 +286,7 @@ void StructureTransformation::center(Structure &st, bool useCenterOfMass, bool s
   for (auto &atom : st.atoms) {
     atom.position -= c;
   }
+  st.clear_nn();
 
   if (shiftCell) {
     // The cell matrix typically has its origin at (0,0,0). 
@@ -305,6 +314,7 @@ void StructureTransformation::remapToCell(Structure &st)
     // r[k] = sum_j frac[j] * cell(j, k)
     atom.position = st.cell.transpose() * frac;
   }
+  st.clear_nn();
 }
 
 void StructureTransformation::addAtom(
@@ -341,23 +351,28 @@ void StructureTransformation::addAtom(
   }
 
   st.atoms.push_back(newAtom);
+  st.clear_nn();
 }
 
 void StructureTransformation::removeAtom(Structure &st, size_t index)
 {
-  if (index < st.atoms.size()) {
-    st.atoms.erase(st.atoms.begin() + index);
-  } else {
-    std::cerr << "[WARNING] removeAtom: index out of range (" << index << "). No atom removed.\n";
-  }
+  if (index >= st.atoms.size())
+    throw std::out_of_range(
+        "StructureTransformation::removeAtom: index " + std::to_string(index) +
+        " is past the last atom of structure '" + st.label + "', which has " +
+        std::to_string(st.atoms.size()) + " atoms (indices from 0)");
+  st.atoms.erase(st.atoms.begin() + index);
+  st.clear_nn();
 }
 
 void StructureTransformation::shakeAtoms(Structure &st, double maxDisplacement)
 {
-  if (maxDisplacement <= 0.0) {
-    std::cerr << "[WARNING] shakeAtoms: non-positive maxDisplacement => no action.\n";
-    return;
-  }
+  if (!(detail::is_finite_bits(maxDisplacement) && maxDisplacement > 0.0))
+    throw std::invalid_argument(
+        "StructureTransformation::shakeAtoms: maxDisplacement " +
+        core::format_roundtrip(maxDisplacement) +
+        " is not a finite number > 0 (the largest displacement of a "
+        "coordinate, in A)");
 
   for (auto &atom : st.atoms) {
     // random in [-maxDisplacement, +maxDisplacement]
@@ -368,6 +383,7 @@ void StructureTransformation::shakeAtoms(Structure &st, double maxDisplacement)
     atom.position[1] += ry;
     atom.position[2] += rz;
   }
+  st.clear_nn();
 }
 
 } // namespace mlip

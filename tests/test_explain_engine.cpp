@@ -777,6 +777,57 @@ TEST_CASE("tadah explain: a retired key's text ends with why it is retired, "
   CHECK(explain("ESIGMA").find("RETIRED:") == std::string::npos);
 }
 
+TEST_CASE("tadah explain: a deprecated key's text ends with why it is "
+          "deprecated and that a fit refuses it",
+          "[explain][deprecated]") {
+  /* Pins: `tadah explain MBLOCK` (NBLOCK, MPIWPCKG, SIGMA: the deprecated
+   * keys of the blueprint) prints the key's text, then a blank line and the
+   * line "DEPRECATED: <the blueprint's deprecated text>", which says "A fit
+   * refuses it." (MBLOCK's also "the key has no effect"); a deprecated key has
+   * no EXAMPLES; the text of ESIGMA, a key that is not deprecated, has no
+   * DEPRECATED line.
+   * Before the fix: the text of a deprecated key was its description alone
+   * ("ScaLAPACK row block size MB of the removed MPI training build."), and
+   * said nothing of its having no effect or of a fit refusing it. */
+  for (const char *key : {"MBLOCK", "NBLOCK", "MPIWPCKG", "SIGMA"}) {
+    const std::string out = explain(key);
+    INFO(key << ":\n" << out);
+    const auto lines = lines_of(out);
+    const std::size_t d = std::find_if(lines.begin(), lines.end(),
+                                       [](const std::string &l) {
+                                         return l.rfind("DEPRECATED: ", 0) ==
+                                                0;
+                                       }) -
+                          lines.begin();
+    REQUIRE(d < lines.size());
+    REQUIRE(d >= 2);
+    CHECK(lines[d - 1].empty());
+    CHECK_THAT(lines[d], Catch::Matchers::Contains("A fit refuses it."));
+    CHECK(out.find("EXAMPLES:") == std::string::npos);
+  }
+  CHECK_THAT(explain("MBLOCK"),
+             Catch::Matchers::Contains("the key has no effect"));
+  CHECK(explain("ESIGMA").find("DEPRECATED:") == std::string::npos);
+}
+
+TEST_CASE("tadah explain: WATOM gives its two formats",
+          "[explain]") {
+  /* Pins: `tadah explain WATOM` prints the long description of WATOM, which
+   * gives the two formats of its values, per species parallel to ATOM (the
+   * weight of a pair the geometric mean) and explicit pair triples, then
+   * which descriptors it weights.
+   * Before the fix: the long description, which explain prints in place of
+   * the description, gave which descriptors WATOM weights but not the
+   * formats, which only the description had. */
+  const std::string out = explain("WATOM");
+  INFO(out);
+  CHECK_THAT(out, Catch::Matchers::Contains("Per species, parallel to ATOM") &&
+                      Catch::Matchers::Contains("sqrt(wi*wj)") &&
+                      Catch::Matchers::Contains("pair triples") &&
+                      Catch::Matchers::Contains("w(sym1,sym2) = w(sym2,sym1)"));
+  CHECK_THAT(out, Catch::Matchers::Contains("D2_Dummy and DM_Dummy"));
+}
+
 TEST_CASE("tadah explain: a retired option of a command gives why it is "
           "retired, not the text of a key of its name",
           "[explain][retired]") {

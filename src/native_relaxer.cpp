@@ -182,16 +182,27 @@ relax(Structure& st_inout,
             record_strain(strain_force(scale_total));
     };
 
+    /* The tolerances: the largest atomic force below ftol and, for an Iso
+     * cell only, the magnitude of its pressure, |F_eps| / (3V), below
+     * ptol (a Fixed cell has no pressure to bound). */
+    const bool iso = opts.box_mode == Options::Iso;
+    auto cell_met = [&]() {
+        return !iso || result.final_strain_force_norm < opts.ptol;
+    };
+    auto tolerances_met = [&]() {
+        return result.final_fmax_atoms < opts.ftol && cell_met();
+    };
+
     if (opts.verbose >= 1) {
         std::cerr << "relaxation: iteration 0, E=" << E0
                   << ", fmax=" << fmax_inf(F) << "\n";
     }
 
-    /* Iter-0 convergence check. If the initial state is already at
-     * (or below) ftol, declare convergence without entering the iter
-     * loop. Handles two real cases:
+    /* Iter-0 convergence check. If the initial state is already below
+     * the tolerances (ftol for the atoms, ptol for an Iso cell), declare
+     * convergence without entering the iter loop. Handles two real cases:
      *  - caller asks for maxiter=0 ("don't relax, just evaluate") —
-     *    test_cohesive_energy_observable.cpp:207 relies on this for
+     *    test_cohesive_energy_observable.cpp relies on this for
      *    FD-vs-analytical dO/dW parity on a fixed cell;
      *  - perfect BCC under Fixed/Iso where F=0 and stress=0 by symmetry;
      *    previously the relaxer needed ≥1 iter to detect convergence.
@@ -201,20 +212,70 @@ relax(Structure& st_inout,
      * both fmax_atoms AND fmax_strain_norm). Cost: 2 extra E evals on
      * iter 0; amortised against the maxiter=5000 budget this is noise. */
     {
-        if (opts.box_mode == Options::Iso) record_strain(strain_force(1.0));
-        const double fmax_strain_norm = result.final_strain_force_norm;
-        if (result.final_fmax_atoms < opts.ftol && fmax_strain_norm < opts.ftol) {
+        if (iso) record_strain(strain_force(1.0));
+        if (tolerances_met()) {
             result.converged = true;
             result.scale_factor = 1.0;
             return result;
         }
     }
 
+    /* An exit after a step (maxiter, maxeval, max_wall_time_s): the cell
+     * the relaxation ends at is measured, and the relaxation has converged
+     * when it meets the tolerances (the step that met them was the last
+     * one taken); otherwise the caller sets the flag of the cap. */
+    auto finish = [&]() {
+        result.final_energy     = E0;
+        result.final_fmax_atoms = fmax_inf(F);
+        result.scale_factor     = scale_total;
+        finish_strain();
+        result.converged = tolerances_met();
+        if (result.converged && opts.verbose >= 1) {
+            std::cerr << "relaxation: converged at iteration "
+                      << result.n_iter << ", E=" << E0 << ", fmax="
+                      << result.final_fmax_atoms << ", scale=" << scale_total
+                      << "\n";
+        }
+        return result.converged;
+    };
+
     double step = opts.init_step;
 
     /* Track the previous accepted energy for the etol convergence test.
      * Updated only when an LS step is accepted (E0 reassigned). */
     double E_prev = E0;
+
+    /* The cell's search (Iso): the zero of the strain force F_eps(s) of
+     * the cell scaled by s, found from the values of F_eps alone, not from
+     * the energy. Near the minimum the energy a pressure P leaves,
+     * V P^2 / (2B), falls below the rounding error of E long before the
+     * central difference that gives F_eps loses P (the energy's error over
+     * 2 eps_strain_fd), so a line search on the energy stalls where the
+     * pressure is still resolved. F_eps > 0 below the minimum (the cell
+     * expands), < 0 above it. Until a cell of each sign is known, a step
+     * goes towards the minimum: to the zero of the secant through the
+     * last two cells when F_eps decreases between them, else the steepest
+     * descent step init_step * F_eps; each changes the scale by at most
+     * max_strain_step. Once the zero is bracketed, a step is the false
+     * position of the bracket, with the Illinois halving of the value of
+     * an end kept twice in a row and a bisection when two steps have not
+     * halved the bracket, so the bracket shrinks to the zero. A step below
+     * step_floor (relative), or a bracket with no scale between its ends,
+     * ends the relaxation unconverged: the zero is resolved, and a ptol
+     * that no cell there met cannot be met. An atom step resets the
+     * search (it changes F_eps(s)). */
+    struct CellPoint { double scale; double force; };
+    bool have_prev = false, have_lo = false, have_hi = false;
+    CellPoint prev{1.0, 0.0}, lo{1.0, 0.0}, hi{1.0, 0.0};
+    int last_side = 0;             /* +1: lo replaced last, -1: hi */
+    double width_ref = 0.0;        /* the bracket's width two steps ago */
+    int steps_unhalved = 0;
+    bool last_atom_step = false;
+    auto reset_cell_search = [&]() {
+        have_prev = have_lo = have_hi = false;
+        last_side = 0;
+        steps_unhalved = 0;
+    };
 
     for (std::size_t it = 1; it <= opts.maxiter; ++it) {
         result.n_iter = it;
@@ -225,25 +286,17 @@ relax(Structure& st_inout,
          * for its own convergence check (e.g. cohesive_energy's
          * eq_ok-style penalty). */
         if (!budget_left()) {
-            result.maxeval_reached = true;
-            result.final_energy    = E0;
-            result.final_fmax_atoms = fmax_inf(F);
-            result.scale_factor    = scale_total;
-            finish_strain();
+            if (!finish()) result.maxeval_reached = true;
             return result;
         }
         if (wall_exceeded()) {
-            result.wall_time_exceeded = true;
-            result.final_energy       = E0;
-            result.final_fmax_atoms   = fmax_inf(F);
-            result.scale_factor       = scale_total;
-            finish_strain();
+            if (!finish()) result.wall_time_exceeded = true;
             return result;
         }
 
         /* Strain force (Iso mode only). */
         double F_eps = 0.0;
-        if (opts.box_mode == Options::Iso) {
+        if (iso) {
             F_eps = strain_force(scale_total);
             record_strain(F_eps);
         }
@@ -251,11 +304,11 @@ relax(Structure& st_inout,
         const double fmax_a = fmax_inf(F);
         result.final_fmax_atoms = fmax_a;
 
-        /* Convergence on max(atomic forces, strain force normalised). */
-        const double fmax_strain_norm = (opts.box_mode == Options::Iso)
-            ? result.final_strain_force_norm
-            : 0.0;
-        if (fmax_a < opts.ftol && fmax_strain_norm < opts.ftol) {
+        /* Convergence: the atomic forces below ftol and, for an Iso cell,
+         * the strain force normalised, the cell's pressure, below ptol. */
+        const bool atoms_ok = fmax_a < opts.ftol;
+        const bool cell_ok = cell_met();
+        if (atoms_ok && cell_ok) {
             result.converged = true;
             result.final_energy = E0;
             result.scale_factor = scale_total;
@@ -286,144 +339,164 @@ relax(Structure& st_inout,
             }
         }
 
-        /* Compute step magnitude. Two simultaneous bounds:
-         *  - atomic displacement ≤ max_step / fmax_a
-         *  - |Δscale| ≤ max_strain_step (Iso mode only)
-         * For randomly-initialised potentials F_eps can be ~1e6+,
-         * which would otherwise drive scale_trial to ~0 inside the
-         * line-search halving sequence and make NNFinder refuse the
-         * resulting near-degenerate cell (its image-cell limit). */
-        const double safe_fmax = std::max(fmax_a, 1.0e-12);
-        double trial_step = std::min(step, opts.max_step / safe_fmax);
-        if (opts.box_mode == Options::Iso) {
-            const double safe_F_eps = std::max(std::abs(F_eps), 1.0e-12);
-            trial_step = std::min(trial_step,
-                                  opts.max_strain_step / safe_F_eps);
-        }
-
-        /* Armijo backtracking line search along (F_atoms, F_eps). */
-        double alpha = trial_step;
-        const double gdotd = -fmax_a * fmax_a;  /* approx; SD direction */
-        Structure st_trial;
-        double E_trial = E0;
-        bool accepted = false;
-        /* Track whether at least one LS trial was rejected by the soft
-         * scale-range gate; used to set `result.scale_out_of_range=true`
-         * if the LS exhausts. Previously the flag was declared on Result
-         * but never assigned — a latent bug that cohesive_energy reads
-         * (cohesive_energy.cpp:120). Fixed here as side cleanup. */
-        bool any_scale_violation_in_ls = false;
-        for (std::size_t ls = 0; ls < opts.maxiter_ls; ++ls) {
-            st_trial = st_inout;
-            /* Atom step. */
-            for (std::size_t a = 0; a < st_trial.natoms(); ++a) {
-                st_trial.atoms[a].position[0] += alpha * F[a][0];
-                st_trial.atoms[a].position[1] += alpha * F[a][1];
-                st_trial.atoms[a].position[2] += alpha * F[a][2];
-            }
-            /* Strain step (Iso). */
-            double scale_trial = scale_total;
-            if (opts.box_mode == Options::Iso) {
-                scale_trial = scale_total * (1.0 + alpha * F_eps);
-                apply_iso_strain(st_trial, scale_trial, st_baseline);
-                /* But the atom step above operated on the un-scaled
-                 * st_inout's positions. Re-apply atom step on top of the
-                 * affine-scaled baseline atoms (otherwise we'd double-
-                 * count). Simpler: keep the SD atom step ON st_inout's
-                 * current positions, then scale ONLY the baseline-cell
-                 * driven shift by (1+α·F_eps).
-                 *
-                 * Pragmatic MVP: for cohesive-energy on a perfect BCC
-                 * lattice, F_atoms ≈ 0 by symmetry, so the strain DOF
-                 * dominates. For atomically-relaxing cases (vacancy
-                 * etc., later observable), the atom-step contribution
-                 * is the primary driver and strain is a small correction.
-                 * Coupling them properly requires a generalised co-
-                 * ordinate system — deferred until that observable
-                 * actually needs it. For now: do atom step in
-                 * post-strain coordinates by recomputing positions:
-                 *   x_trial = (1 + α·F_eps) · x_baseline + α·F_atoms */
-                for (std::size_t a = 0; a < st_trial.natoms(); ++a) {
-                    st_trial.atoms[a].position[0] =
-                        scale_trial * st_baseline.atoms[a].position[0]
-                      + alpha * F[a][0];
-                    st_trial.atoms[a].position[1] =
-                        scale_trial * st_baseline.atoms[a].position[1]
-                      + alpha * F[a][1];
-                    st_trial.atoms[a].position[2] =
-                        scale_trial * st_baseline.atoms[a].position[2]
-                      + alpha * F[a][2];
-                }
-            }
-
-            E_trial = eval_e(st_trial, /*use_cache=*/false);
-
-            /* Scale-range gate (Iso): if this LS trial would push
-             * scale_total outside [scale_min, scale_max], reject it
-             * like an Armijo failure and let the LS halve. Successive
-             * halvings will eventually produce a step that lands
-             * inside the bound. If the LS exhausts all halvings
-             * without finding an in-range step, the outer "no accept"
-             * branch fires and we return scale_out_of_range=true
-             * (eq_ok-style penalty upstream). This way the bound is
-             * a soft constraint per-LS-step, not a hard whole-relax
-             * abort that would prematurely fail-score every θ whose
-             * strain force happens to overshoot on the first try. */
-            if (opts.box_mode == Options::Iso &&
-                (scale_trial < opts.scale_min ||
-                 scale_trial > opts.scale_max)) {
-                any_scale_violation_in_ls = true;
-                alpha *= opts.backtrack_rho;
-                if (alpha < opts.step_floor) break;
-                if (!budget_left()) break;
-                continue;
-            }
-            /* Armijo sufficient decrease, lenient form. */
-            if (E_trial <= E0 + opts.armijo_c1 * alpha * gdotd) {
-                accepted = true;
-                /* Commit. */
-                st_inout = st_trial;
-                strain_current = false;
-                if (opts.box_mode == Options::Iso) scale_total = scale_trial;
-                E_prev = E0;       /* snapshot for next iter's etol test */
-                E0 = E_trial;
-                /* Refresh forces for next iter. The new st_inout is at
-                 * the same positions as the just-evaluated st_trial, so
-                 * the NN list may still be valid (small cumulative drift
-                 * vs the cached snapshot). Use the cached path: cache
-                 * hit skips the rebuild entirely; miss rebuilds + updates
-                 * the snapshot for next iter. */
-                eval_ef(st_inout, F, /*use_cache=*/true);
-                /* Grow step for next iter (mild). */
-                step = std::min(opts.max_step, alpha * 1.5);
-                break;
-            }
-            /* Armijo failure path. */
-            alpha *= opts.backtrack_rho;
-            if (alpha < opts.step_floor) break;
-            /* Bail out of line search if we exhausted the eval budget
-             * mid-LS; the outer-loop gate will record maxeval_reached
-             * on the next iteration. */
-            if (!budget_left()) break;
-        }
-
-        if (!accepted) {
-            if (opts.verbose >= 1) {
-                std::cerr << "relaxation: the line search failed at iteration "
-                          << it << ", step=" << alpha << ", fmax=" << fmax_a
-                          << "\n";
-            }
+        /* An unconverged end at the current state (a failed step). */
+        auto stop_unconverged = [&]() {
             result.converged = false;
             result.final_energy = E0;
             result.scale_factor = scale_total;
-            /* LAMMPS-style scale_out_of_range exit: if the LS exhausted
-             * because every trial landed outside [scale_min, scale_max],
-             * tell the caller so it can short-circuit (cohesive_energy
-             * reads this flag at HPO/src/cohesive_energy.cpp:120). */
-            if (any_scale_violation_in_ls) {
-                result.scale_out_of_range = true;
-            }
             return result;
+        };
+
+        /* The step of this iteration: the cell's (Iso) when the atoms have
+         * converged, or in turn with the atoms' while neither has; the
+         * atoms' otherwise. */
+        const bool cell_step = iso && !cell_ok && (atoms_ok || last_atom_step);
+        double step_taken = 0.0;
+        if (cell_step) {
+            last_atom_step = false;
+            const double s = scale_total;
+            if (!std::isfinite(F_eps)) {
+                if (opts.verbose >= 1)
+                    std::cerr << "relaxation: the strain force is not a "
+                                 "number at iteration " << it << "\n";
+                return stop_unconverged();
+            }
+            /* The bracket keeps the nearest cell of each sign on its side
+             * of the zero. */
+            if (F_eps > 0.0 && (!have_lo || s > lo.scale) &&
+                (!have_hi || s < hi.scale)) {
+                if (last_side == 1 && have_hi) hi.force *= 0.5;
+                lo = {s, F_eps};
+                have_lo = true;
+                last_side = 1;
+            } else if (F_eps < 0.0 && (!have_hi || s < hi.scale) &&
+                       (!have_lo || s > lo.scale)) {
+                if (last_side == -1 && have_lo) lo.force *= 0.5;
+                hi = {s, F_eps};
+                have_hi = true;
+                last_side = -1;
+            }
+            double s_new = s;
+            bool clamped = false;
+            if (have_lo && have_hi) {
+                const double width = hi.scale - lo.scale;
+                if (steps_unhalved == 0 || width <= 0.5 * width_ref) {
+                    width_ref = width;
+                    steps_unhalved = 0;
+                }
+                const double mid = lo.scale + 0.5 * width;
+                if (steps_unhalved >= 2) {
+                    s_new = mid;
+                    steps_unhalved = 0;
+                    width_ref = 0.5 * width;
+                } else {
+                    s_new = lo.scale +
+                            width * (lo.force / (lo.force - hi.force));
+                    ++steps_unhalved;
+                }
+                if (!(s_new > lo.scale && s_new < hi.scale)) s_new = mid;
+                if (!(s_new > lo.scale && s_new < hi.scale)) {
+                    if (opts.verbose >= 1)
+                        std::cerr << "relaxation: no cell lies between the "
+                                     "two that bracket zero pressure, at "
+                                     "iteration " << it << "\n";
+                    return stop_unconverged();
+                }
+            } else {
+                double rel = opts.init_step * F_eps;
+                if (have_prev && prev.force != F_eps && prev.scale != s) {
+                    const double slope = (F_eps - prev.force) / (s - prev.scale);
+                    if (slope < 0.0) rel = (s - F_eps / slope) / s - 1.0;
+                }
+                rel = std::max(-opts.max_strain_step,
+                               std::min(opts.max_strain_step, rel));
+                s_new = s * (1.0 + rel);
+                if (s_new > opts.scale_max) { s_new = opts.scale_max; clamped = true; }
+                if (s_new < opts.scale_min) { s_new = opts.scale_min; clamped = true; }
+            }
+            if (std::abs(s_new - s) <= opts.step_floor * s) {
+                if (clamped) {
+                    result.scale_out_of_range = true;
+                } else if (opts.verbose >= 1) {
+                    std::cerr << "relaxation: the step of the cell fell "
+                                 "below the floor at iteration " << it
+                              << ", scale=" << s << "\n";
+                }
+                return stop_unconverged();
+            }
+            /* Commit (no test of the energy). */
+            apply_iso_strain(st_inout, s_new, st_baseline);
+            prev = {s, F_eps};
+            have_prev = true;
+            scale_total = s_new;
+            strain_current = false;
+            E_prev = E0;
+            E0 = eval_ef(st_inout, F, /*use_cache=*/true);
+            step_taken = s_new / s - 1.0;
+        } else {
+            last_atom_step = true;
+            /* Steepest descent on the atoms, at the fixed cell, with an
+             * Armijo backtracking line search on the energy; the step
+             * moves no atom by more than max_step. */
+            const double safe_fmax = std::max(fmax_a, 1.0e-12);
+            double alpha = std::min(step, opts.max_step / safe_fmax);
+            const double gdotd = -fmax_a * fmax_a;  /* approx; SD direction */
+            Structure st_trial;
+            bool accepted = false;
+            for (std::size_t ls = 0; ls < opts.maxiter_ls; ++ls) {
+                st_trial = st_inout;
+                for (std::size_t a = 0; a < st_trial.natoms(); ++a) {
+                    st_trial.atoms[a].position[0] += alpha * F[a][0];
+                    st_trial.atoms[a].position[1] += alpha * F[a][1];
+                    st_trial.atoms[a].position[2] += alpha * F[a][2];
+                }
+                const double E_trial = eval_e(st_trial, /*use_cache=*/false);
+                /* Armijo sufficient decrease, lenient form. */
+                if (E_trial <= E0 + opts.armijo_c1 * alpha * gdotd) {
+                    accepted = true;
+                    /* Commit. */
+                    st_inout = st_trial;
+                    /* The atoms' positions in the cell of scale 1, which
+                     * an Iso cell scales. */
+                    if (iso) {
+                        for (std::size_t a = 0; a < st_inout.natoms(); ++a)
+                            for (int k = 0; k < 3; ++k)
+                                st_baseline.atoms[a].position[k] =
+                                    st_inout.atoms[a].position[k] /
+                                    scale_total;
+                        reset_cell_search();
+                    }
+                    strain_current = false;
+                    E_prev = E0;       /* snapshot for next iter's etol test */
+                    E0 = E_trial;
+                    /* Refresh forces for next iter. The new st_inout is at
+                     * the same positions as the just-evaluated st_trial, so
+                     * the NN list may still be valid (small cumulative drift
+                     * vs the cached snapshot). Use the cached path: cache
+                     * hit skips the rebuild entirely; miss rebuilds + updates
+                     * the snapshot for next iter. */
+                    eval_ef(st_inout, F, /*use_cache=*/true);
+                    /* Grow step for next iter (mild). */
+                    step = std::min(opts.max_step, alpha * 1.5);
+                    break;
+                }
+                /* Armijo failure path. */
+                alpha *= opts.backtrack_rho;
+                if (alpha < opts.step_floor) break;
+                /* Bail out of line search if we exhausted the eval budget
+                 * mid-LS; the outer-loop gate will record maxeval_reached
+                 * on the next iteration. */
+                if (!budget_left()) break;
+            }
+            if (!accepted) {
+                if (opts.verbose >= 1) {
+                    std::cerr << "relaxation: the line search failed at "
+                                 "iteration " << it << ", step=" << alpha
+                              << ", fmax=" << fmax_a << "\n";
+                }
+                return stop_unconverged();
+            }
+            step_taken = alpha;
         }
 
         /* Early-bail predicate hook. Called once per accepted step with
@@ -449,16 +522,14 @@ relax(Structure& st_inout,
             std::cerr << "relaxation: iteration " << it
                       << ", E=" << E0
                       << ", fmax=" << fmax_inf(F)
-                      << ", step=" << alpha
+                      << ", step=" << step_taken
                       << ", scale=" << scale_total << "\n";
         }
     }
 
-    /* maxiter exhausted. */
-    result.final_energy = E0;
-    result.final_fmax_atoms = fmax_inf(F);
-    result.scale_factor = scale_total;
-    finish_strain();
+    /* maxiter exhausted: converged when the final cell meets the
+     * tolerances. */
+    finish();
     return result;
 }
 

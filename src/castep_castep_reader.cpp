@@ -427,6 +427,41 @@ void CastepCastepReader::parse_data() {
       if (debug) std::cout << "type of calculation: " << task << std::endl;
     }
 
+    // The output units of the run, its header lines 'output <quantity> unit
+    // : <unit>' after its 'type of calculation' line. The reader reads
+    // lengths in A, energies in eV, forces in eV/A and the stress in GPa,
+    // CASTEP's defaults: a run written in another unit (length_unit,
+    // energy_unit, force_unit or pressure_unit of its .param file) is
+    // refused, as its numbers would be stored as if in those units and its
+    // forces or stress boxes, headed by another unit, not read.
+    {
+      const std::string t = tadah::core::trim(line);
+      const auto colon = t.find(':');
+      if (t.rfind("output", 0) == 0 && colon != std::string::npos) {
+        std::istringstream ws(t.substr(0, colon));
+        std::vector<std::string> words;
+        for (std::string w; ws >> w;) words.push_back(w);
+        if (words.size() == 3 && words[0] == "output" && words[2] == "unit") {
+          struct Read {
+            const char *quantity, *unit, *what;
+          };
+          static const Read kRead[] = {{"length", "A", "lengths"},
+                                       {"energy", "eV", "energies"},
+                                       {"force", "eV/A", "forces"},
+                                       {"pressure", "GPa", "the stress"}};
+          for (const Read &r : kRead) {
+            if (words[1] != r.quantity) continue;
+            const std::string unit = tadah::core::trim(t.substr(colon + 1));
+            if (unit != r.unit)
+              refuse("output " + words[1] + " unit '" + unit +
+                     "': the reader reads " + r.what + " in " + r.unit +
+                     " only, CASTEP's default (" + words[1] +
+                     "_unit of the .param file)");
+          }
+        }
+      }
+    }
+
     if (line.find("stress calculation") != std::string::npos) {
       std::istringstream iss(line);
       std::string ignore, stress;

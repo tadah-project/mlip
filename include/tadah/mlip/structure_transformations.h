@@ -15,6 +15,11 @@ namespace mlip {
  *        shear or a scaling changes the structure itself; its stored energy,
  *        forces and stress no longer belong to it (shear applies
  *        S' = M * S * M^T, scale leaves them as they are).
+ *        Every method that moves an atom or the cell, or changes the
+ *        number of atoms, clears the structure's neighbour list
+ *        (Structure::clear_nn()): the list of the old geometry no longer
+ *        describes it, and a consumer then refuses the structure until
+ *        NNFinder builds a new one.
  *
  * New additions:
  *   - scaleVolumeToDensity: resizes the cell to achieve a target density.
@@ -147,14 +152,16 @@ public:
                       const tadah::core::Vec3d &pos = tadah::core::Vec3d(0.0, 0.0, 0.0), double minDistance = 0.8);
 
   /**
-   * Removes an atom with a given global index from the structure if valid.
-   * If index is out of range, does nothing or throws a warning.
+   * Removes the atom with the given index (from 0) from the structure.
+   * Throws std::out_of_range, naming the index and the number of atoms,
+   * when the index is past the last atom; nothing is removed then.
    */
   static void removeAtom(Structure &st, size_t index);
 
   /**
    * Applies random displacements to each atom’s position, up to maxDisplacement in each coordinate,
-   * to simulate thermal agitation.
+   * to simulate thermal agitation. Throws std::invalid_argument when
+   * maxDisplacement is not a finite number > 0; no atom moves then.
    * 
    * Example: shakeAtoms(st, 0.05) => random ±0.05 Å displacements in x,y,z.
    */
