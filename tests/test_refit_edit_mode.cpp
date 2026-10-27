@@ -836,19 +836,20 @@ TEST_CASE_METHOD(PTFixture,
           Catch::Contains("--rhoform"));
   // what the refusals say is a statement (before the fix: "...; remove it
   // from the configuration, and pass --rhoform ..." and "...; remove it
-  // from the configuration.")
+  // from the configuration."), and they call the file a target file
+  // (before the fix of their term: "(an hpotarget carries no potential")
   CHECK_THROWS_WITH(
       validate_refit_mode_keys(
           ctx({{"RETARGET", "b"}, {"RHOFORM", "NONNEG"}})),
-      "tadah refit --retarget: RHOFORM has no effect on --retarget (an "
-      "hpotarget carries no potential), so a configuration of --retarget "
+      "tadah refit --retarget: RHOFORM has no effect on --retarget (a "
+      "target file carries no potential), so a configuration of --retarget "
       "has no RHOFORM line; --rhoform <SIGNED|NONNEG|MONOTONE> rewrites the "
       "AMPGRIDMB boxes for the density form of the potential the file "
       "searches around.");
   CHECK_THROWS_WITH(
       validate_refit_mode_keys(ctx({{"RETARGET", "b"}, {"EMBF0", "FREE"}})),
-      "tadah refit --retarget: EMBF0 has no effect on --retarget (an "
-      "hpotarget carries no potential, and its bounds do not depend on the "
+      "tadah refit --retarget: EMBF0 has no effect on --retarget (a "
+      "target file carries no potential, and its bounds do not depend on the "
       "embedding reference), so a configuration of --retarget has no EMBF0 "
       "line.");
   REQUIRE_THROWS_WITH(
@@ -1510,34 +1511,43 @@ TEST_CASE_METHOD(PTFixture,
  *    key lines right after the record, so a potential whose end line was
  *    deleted has this shape): "open.tadah: line 1 opens a training record
  *    ('<opening line>') that no end line ('<end line>') closes before line
- *    3, the first line after it that is not a comment: restore the end line
- *    after the record, before line 3, or delete the record.", and not the
+ *    3, the first line after it that is not a comment: a file with the end
+ *    line after the record, before line 3, or without the record, is
+ *    accepted.", and not the
  *    key-line refusal ("is not a comment: every reader ...", whose advice
  *    would comment out line 3, a key line);
  *  - no end line before the end of the file (eof.tadah: the key lines, then
  *    the opening line and "# DBFILE x.db"): "eof.tadah: line <n> opens a
  *    training record ('<opening line>') that no end line ('<end line>')
- *    closes: restore the end line after the record, or delete the record.";
+ *    closes: a file with the end line after the record, or without the
+ *    record, is accepted.";
  *  - a second opening line before the end line (twice_open.tadah: lines 1
  *    and 3 open, line 5 ends): "twice_open.tadah: line 1 opens a training
  *    record (...) that no end line (...) closes before line 3, which opens
- *    another: restore the end line after the record, before line 3, ...";
+ *    another: a file with the end line after the record, before line 3,
+ *    ...";
  *  - an end line without an opening line (no_open.tadah: "# DBFILE x.db",
  *    the end line on line 2): "no_open.tadah: line 2 ends a training record
- *    ('<end line>') that no opening line ('<opening line>') opens: restore
- *    the opening line before the record, or delete the end line.";
+ *    ('<end line>') that no opening line ('<opening line>') opens: a file
+ *    with the opening line before the record, or without the end line, is
+ *    accepted.";
  *  - the opening line as it read before its correction (old_open.tadah:
  *    "# --- training record (not read by tadah) ---", "# DBFILE x.db", the
  *    end line on line 3): "old_open.tadah: line 3 ends a training record
- *    ('<end line>') that no opening line ('<opening line>') opens: restore
- *    the opening line before the record, or delete the end line." (no
- *    shipped potential has that line);
+ *    ('<end line>') that no opening line ('<opening line>') opens: a file
+ *    with the opening line before the record, or without the end line, is
+ *    accepted." (no shipped potential has that line);
  *  - a key line inside the block (keyline.tadah: line 2, "DBFILE x.db",
  *    between the opening line 1 and the end line 3): "keyline.tadah: line
  *    2, inside the training record that line 1 opens and line 3 ends, is
- *    not a comment: every reader of the potential reads it as a key. Begin
- *    it with '#' if it belongs to the record, or move it after the end
+ *    not a comment: every reader of the potential reads it as a key. A line
+ *    of the record begins with '#', and a key line comes after the end
  *    line.", and not the missing-end-line refusal.
+ * Each refusal states what is accepted (before the fix of their wording
+ * they ended with instructions: "restore the end line after the record,
+ * ..., or delete the record.", "restore the opening line before the
+ * record, or delete the end line." and "Begin it with '#' if it belongs to
+ * the record, or move it after the end line.").
  * Before the fix: open.tadah was refused as a key line inside the record
  * ("open.tadah: line 3, inside the training record that line 1 opens, is
  * not a comment: ... Begin each line of the record with '#', ...": line 3
@@ -1573,8 +1583,9 @@ TEST_CASE_METHOD(PTFixture,
         Catch::Contains("open.tadah: line 1 opens a training record " +
                         open_quoted + " that no end line " + end_quoted +
                         " closes before line 3, the first line after it "
-                        "that is not a comment: restore the end line after "
-                        "the record, before line 3, or delete the record.") &&
+                        "that is not a comment: a file with the end line "
+                        "after the record, before line 3, or without the "
+                        "record, is accepted.") &&
             !Catch::Contains("is not a comment: every reader"));
     CHECK_FALSE(fs::exists("o.tadah"));
   }
@@ -1587,8 +1598,8 @@ TEST_CASE_METHOD(PTFixture,
         Catch::Contains("eof.tadah: line " + std::to_string(opening) +
                         " opens a training record " + open_quoted +
                         " that no end line " + end_quoted +
-                        " closes: restore the end line after the record, or "
-                        "delete the record."));
+                        " closes: a file with the end line after the record, "
+                        "or without the record, is accepted."));
     CHECK_FALSE(fs::exists("e.tadah"));
   }
   SECTION("a second opening line before the end line") {
@@ -1601,9 +1612,9 @@ TEST_CASE_METHOD(PTFixture,
         run_edit_capturing(edit_of("twice_open.tadah", "t.tadah")),
         Catch::Contains("twice_open.tadah: line 1 opens a training record " +
                         open_quoted + " that no end line " + end_quoted +
-                        " closes before line 3, which opens another: "
-                        "restore the end line after the record, before line "
-                        "3, or delete the record."));
+                        " closes before line 3, which opens another: a file "
+                        "with the end line after the record, before line 3, "
+                        "or without the record, is accepted."));
     CHECK_FALSE(fs::exists("t.tadah"));
   }
   SECTION("an end line without an opening line") {
@@ -1614,8 +1625,8 @@ TEST_CASE_METHOD(PTFixture,
         run_edit_capturing(edit_of("no_open.tadah", "n.tadah")),
         Catch::Contains("no_open.tadah: line 2 ends a training record " +
                         end_quoted + " that no opening line " + open_quoted +
-                        " opens: restore the opening line before the record, "
-                        "or delete the end line."));
+                        " opens: a file with the opening line before the "
+                        "record, or without the end line, is accepted."));
     CHECK_FALSE(fs::exists("n.tadah"));
   }
   SECTION("the opening line before its correction") {
@@ -1630,8 +1641,8 @@ TEST_CASE_METHOD(PTFixture,
         run_edit_capturing(edit_of("old_open.tadah", "oo.tadah")),
         Catch::Contains("old_open.tadah: line 3 ends a training record " +
                         end_quoted + " that no opening line " + open_quoted +
-                        " opens: restore the opening line before the record, "
-                        "or delete the end line."));
+                        " opens: a file with the opening line before the "
+                        "record, or without the end line, is accepted."));
     CHECK_FALSE(fs::exists("oo.tadah"));
   }
   SECTION("a key line inside the block") {
@@ -1643,8 +1654,8 @@ TEST_CASE_METHOD(PTFixture,
         Catch::Contains("keyline.tadah: line 2, inside the training record "
                         "that line 1 opens and line 3 ends, is not a "
                         "comment: every reader of the potential reads it as "
-                        "a key. Begin it with '#' if it belongs to the "
-                        "record, or move it after the end line.") &&
+                        "a key. A line of the record begins with '#', and a "
+                        "key line comes after the end line.") &&
             !Catch::Contains("no end line"));
     CHECK_FALSE(fs::exists("k.tadah"));
   }

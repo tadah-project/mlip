@@ -150,6 +150,28 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(slurp("c10b.hpotarget") == slurp("c10.hpotarget"));
 }
 
+/* Pins: the starter target file of tadah refit that cannot be opened, or
+ * not written, is refused naming it a target file, the term of the
+ * documentation: "tadah refit: cannot open the target file
+ * no_such_dir/a.hpotarget for writing." and, on /dev/full (which opens and
+ * takes no byte), "tadah refit: cannot write the target file /dev/full.".
+ * Before the fix: both said "the hpotarget file". */
+TEST_CASE_METHOD(PTFixture,
+                 "the writer of the starter target file names a file it "
+                 "cannot open or write a target file",
+                 "[retarget][hpotarget_writer]") {
+  ScopedTempDir tmp;
+  const Context pot = make_knot_pot();
+  CHECK_THROWS_WITH(write_hpotarget("no_such_dir/a.hpotarget", pot, 5.0),
+                    "tadah refit: cannot open the target file "
+                    "no_such_dir/a.hpotarget for writing.");
+  if (fs::exists("/dev/full"))
+    CHECK_THROWS_WITH(write_hpotarget("/dev/full", pot, 5.0),
+                      "tadah refit: cannot write the target file /dev/full.");
+  else
+    WARN("no /dev/full: the refusal of a failed write is not checked");
+}
+
 TEST_CASE_METHOD(PTFixture, "retarget rewrites bounds around the centres",
                  "[retarget]") {
   ScopedTempDir tmp;
@@ -896,13 +918,20 @@ TEST_CASE_METHOD(PTFixture,
   }
   CHECK(retarget("SET", "CGRID2B(1)=2.9,3.1") == EXIT_SUCCESS);
   // the refusals give their examples without "e.g." (before the fix:
-  // "...; e.g. --pct 10 FIXWEIGHT=2)." and "(e.g. --set ...)")
+  // "...; e.g. --pct 10 FIXWEIGHT=2)." and "(e.g. --set ...)"), and name
+  // the grammar that of the target file (before the fix of the term: "the
+  // number grammar of the hpotarget file")
   CHECK_THROWS_WITH(
       retarget("PCT", "5x"),
       "tadah refit --retarget: cannot parse --pct token '5x' — expected a "
       "positive number or KEY=<positive number> in the number grammar of "
-      "the hpotarget file ([+-]digits[.digits][e[+-]digits]; such as --pct "
+      "the target file ([+-]digits[.digits][e[+-]digits]; such as --pct "
       "10 FIXWEIGHT=2).");
+  CHECK_THROWS_WITH(
+      retarget("SET", "CGRID2B(1)=5x,3.1"),
+      "tadah refit --retarget: --set token 'CGRID2B(1)=5x,3.1': '5x' is not "
+      "a number in the number grammar of the target file "
+      "([+-]digits[.digits][e[+-]digits]).");
   CHECK_THROWS_WITH(
       retarget("SET", "CGRID2B=2.9,3.1"),
       "tadah refit --retarget: cannot parse --set token 'CGRID2B=2.9,3.1' — "

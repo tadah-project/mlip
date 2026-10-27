@@ -65,8 +65,8 @@ const char *kTasks =
  * std::invalid_argument that names it and lists the task names (those
  * without tasks of their own), and, when the name matches one but for the
  * case of its letters, names that one:
- *   "unknown task 'DATA.SPLIT': task names are matched with case, and the
- *    task is spelt 'DATA.split'. The tasks: ..."
+ *   "unknown task 'DATA.SPLIT': task names are case-sensitive, and
+ *    'DATA.split' differs from it only in letter case. The tasks: ..."
  *   "unknown task 'bogus'. The tasks: ..."
  * and the empty name likewise; before any configuration file is read (a
  * CONFIG naming a missing file is not reached).
@@ -77,17 +77,19 @@ const char *kTasks =
  * ("MLIPUserConfigParser::parse(file): Cannot open file: ...").
  * Before the fix that states the case rule: "TaskFactory::createTasksFromInput
  * - unknown task 'DATA.SPLIT': task names are case-sensitive, did you mean
- * 'DATA.split'? ...", the class and a question: the checks fail. */
+ * 'DATA.split'? ...", the class and a question: the checks fail. Before
+ * the fix of its wording: "... task names are matched with case, and the
+ * task is spelt 'DATA.split'.". */
 TEST_CASE("TaskFactory refuses an unknown task name, naming it and the tasks",
           "[task_factory][task_names]") {
   const std::string head =
       "invalid_argument: unknown task ";
   CHECK(outcome("DATA.SPLIT", {{"percent", {"80", "20"}}}) ==
-        head + "'DATA.SPLIT': task names are matched with case, and the task "
-               "is spelt 'DATA.split'. " + kTasks);
+        head + "'DATA.SPLIT': task names are case-sensitive, and "
+               "'DATA.split' differs from it only in letter case. " + kTasks);
   CHECK(outcome("train") == head +
-        "'train': task names are matched with case, and the task is spelt "
-        "'TRAIN'. " + kTasks);
+        "'train': task names are case-sensitive, and 'TRAIN' differs from "
+        "it only in letter case. " + kTasks);
   CHECK(outcome("bogus") == head + "'bogus'. " + kTasks);
   CHECK(outcome("") == head + "''. " + kTasks);
   CHECK(outcome("bogus", {{"config", {"/nonexistent_dir/config.train"}}}) ==

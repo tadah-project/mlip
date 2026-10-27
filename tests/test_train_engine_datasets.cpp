@@ -96,11 +96,12 @@ const std::string kNoDatasetsAdvice =
     "training record, the comment block above its key lines, lists the "
     "datasets its weights were fitted to in a '# DBFILE' line when there "
     "were any: a refit has none, and a potential of an earlier version has "
-    "no record): to train from one, add a DBFILE line to a copy of it; a "
-    "potential of tadah refit or refit --edit also pins every weight with "
-    "its FIXINDEX and FIXWEIGHT lines, the seed of a tadah hpo coefficient "
-    "search, so delete them from the copy for the fit to change the weights "
-    "(the Training page of the documentation, Retraining from a potential).";
+    "no record): a retrain from one takes a copy of it with a DBFILE line "
+    "added; a potential of tadah refit or refit --edit also pins every "
+    "weight with its FIXINDEX and FIXWEIGHT lines, the seed of a tadah hpo "
+    "coefficient search, and the fit changes the weights when both are "
+    "deleted from the copy (the Training page of the documentation, "
+    "Retraining from a potential).";
 
 /* What TrainEngine::run throws for @p c, "" when it does not throw; what
  * it prints on std::cout (the Logger's lines) goes to @p printed. */
@@ -128,10 +129,13 @@ std::string train_error(const Context &c, std::string &printed) {
  * configuration without a training DBFILE gives (kNoDatasetsAdvice: a
  * potential has no DBFILE line, its training record lists the datasets
  * its weights were fitted to when there were any, which a refit and a
- * potential of an earlier version have not; add a DBFILE line to a copy of
- * it, and delete the FIXINDEX and FIXWEIGHT lines with which a refit
- * potential pins every weight), prints no "Key not found" line, and writes
- * no pot2.tadah.
+ * potential of an earlier version have not; a retrain takes a copy of it
+ * with a DBFILE line added, and the fit changes the weights of a refit
+ * potential when its FIXINDEX and FIXWEIGHT lines are deleted), prints no
+ * "Key not found" line, and writes no pot2.tadah. The advice says what a
+ * retrain takes (before the fix of its wording: "to train from one, add a
+ * DBFILE line to a copy of it; ..., so delete them from the copy ...",
+ * instructions).
  * Before the fix: the DBFILE read of find_unique_elements threw "Key not
  * found in the Context object: DBFILE", after the Logger's ERROR line
  * "Context::operator() -> Key not found: DBFILE".
@@ -223,9 +227,11 @@ std::vector<std::string> pot_line(const fs::path &p, const std::string &key) {
  * potential written are the FIXWEIGHT values. tadah refit and refit --edit
  * write FIXINDEX and FIXWEIGHT for every weight of their potentials, the
  * seed of a tadah hpo coefficient search, and so does a tadah hpo run that
- * pins every weight in its best_pot.tadah: to fit the weights to the
- * DBFILE data, delete both lines from the training configuration (the
- * Training page of the documentation, Retraining from a potential)." -- the
+ * pins every weight in its best_pot.tadah: the weights are fitted to the
+ * DBFILE data when both lines are deleted from the training configuration
+ * (the Training page of the documentation, Retraining from a potential)."
+ * (before the fix of its wording: "...: to fit the weights to the DBFILE
+ * data, delete both lines from the training configuration ...") -- the
  * Ta pair potential of the case above with a DBFILE of three bcc Ta
  * structures:
  *   - M_BLR BF_Linear, FIXINDEX 1-2, FIXWEIGHT 0.25 -0.5: the WARNING, once,
@@ -250,9 +256,10 @@ TEST_CASE("TrainEngine::run warns when FIXINDEX pins every weight, so the "
            "write FIXINDEX and FIXWEIGHT for every weight of their "
            "potentials, the seed of a tadah hpo coefficient search, and so "
            "does a tadah hpo run that pins every weight in its "
-           "best_pot.tadah: to fit the weights to the DBFILE data, delete "
-           "both lines from the training configuration (the Training page of "
-           "the documentation, Retraining from a potential).";
+           "best_pot.tadah: the weights are fitted to the DBFILE data when "
+           "both lines are deleted from the training configuration (the "
+           "Training page of the documentation, Retraining from a "
+           "potential).";
   };
   const std::string head = "FIXINDEX and FIXWEIGHT pin every weight";
   struct Case {
@@ -1500,12 +1507,14 @@ void write_retrain_copy(const fs::path &path, const std::string &extra) {
  *     AUDIT_SAMPLE 2 were settings of the run that wrote it, not of this run,
  *     and are ignored (tadah keeps such keys in a potential's training
  *     record, not as key lines). This run takes its own VERBOSE, NUMERIC,
- *     OUTFILE, AUDIT or AUDIT_SAMPLE from --verbose or --outfile on the
- *     command line, or from a VERBOSE, NUMERIC, OUTFILE, AUDIT or
- *     AUDIT_SAMPLE line in a configuration file that includes the potential
- *     with CONFIG (the Training page of the documentation, Retraining from a
- *     potential)." -- VALIDATION, HPOTARGET and HEALTH_LOG, which tadah train
- *     does not read, are not named;
+ *     OUTFILE, AUDIT or AUDIT_SAMPLE from a VERBOSE, NUMERIC, OUTFILE, AUDIT
+ *     or AUDIT_SAMPLE line in a configuration file that includes the
+ *     potential with CONFIG, or VERBOSE or OUTFILE from --verbose or
+ *     --outfile on the command line (the Training page of the documentation,
+ *     Retraining from a potential)." -- VALIDATION, HPOTARGET and
+ *     HEALTH_LOG, which tadah train does not read, are not named; the
+ *     options are paired with the keys they set (tadah train has no
+ *     --numeric, --audit or --audit-sample);
  *   - `tadah train -c outer.train`, outer.train being "VERBOSE 1", "CONFIG
  *     old.train", "NUMERIC 17", "OUTFILE mine.tadah", "AUDIT_SAMPLE 3": the
  *     run's own apply (mine.tadah, the Logger at WARNING after the run) and
@@ -1531,7 +1540,11 @@ void write_retrain_copy(const fs::path &path, const std::string &extra) {
  * "Give --verbose or --outfile on the command line, or a VERBOSE, ...
  * line in a configuration file that includes the potential with CONFIG, to
  * apply one to this run" and "Give an AUDIT line in outer.train to apply it
- * to this run": the WARNING checks fail. */
+ * to this run": the WARNING checks fail.
+ * Before the fix that pairs the options with their keys: "This run takes
+ * its own VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE from --verbose
+ * or --outfile on the command line, or from ...", which offered an option
+ * for NUMERIC, AUDIT and AUDIT_SAMPLE: the first WARNING check fails. */
 TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
           "apply",
           "[train][potential_content][retrain][run_settings]") {
@@ -1576,10 +1589,11 @@ TEST_CASE("A retrain reads none of a potential's run settings; the run's own "
         "run that wrote it, not of this run, and are ignored (tadah keeps "
         "such keys in a potential's training record, not as key lines). This "
         "run takes its own VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE "
-        "from --verbose or --outfile on the command line, or from a VERBOSE, "
-        "NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a configuration file "
-        "that includes the potential with CONFIG (the Training page of the "
-        "documentation, Retraining from a potential).";
+        "from a VERBOSE, NUMERIC, OUTFILE, AUDIT or AUDIT_SAMPLE line in a "
+        "configuration file that includes the potential with CONFIG, or "
+        "VERBOSE or OUTFILE from --verbose or --outfile on the command line "
+        "(the Training page of the documentation, Retraining from a "
+        "potential).";
     CHECK(printed.find(warning) != std::string::npos);
     CHECK(printed.find("VALIDATION") == std::string::npos);
     CHECK(printed.find("HPOTARGET") == std::string::npos);

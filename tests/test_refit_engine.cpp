@@ -243,8 +243,8 @@ std::string no_compact_fitter(bool defaulted = false) {
   return std::string("tadah refit: REFIT_MODE compact") +
          (defaulted ? " (the default)" : "") +
          " needs the compact fitter, which this tadah was built without (it "
-         "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE "
-         "dense";
+         "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); REFIT_MODE dense "
+         "fits without it";
 }
 
 // The mode rule's refusal of `what` (a key, "the <KEY> block" or
@@ -506,8 +506,12 @@ std::pair<std::string, std::string> refit_error(const Context &c) {
  * 1e-323 A, puts the nearest neighbours of the fcc crystal 5e-324 A apart
  * at the strongest compression the refit tests (a/a0 = REFIT_REACH_SMIN
  * 0.75), less than the step of the table's radial grid, dr = 0.0125313 A:
- * ... set the equilibrium lattice constant, in Angstrom." and writes no
- * pot.tadah; with REFIT_REACH_SMIN 0.1 the message says 0 A and 0.1.
+ * ... The a0 of the element line of the setfl file (`<Z> <mass> <a0>
+ * <lattice>`) is the equilibrium lattice constant in Angstrom." and writes
+ * no pot.tadah; with REFIT_REACH_SMIN 0.1 the message says 0 A and 0.1.
+ * Before the fix of its wording the message ended "Edit the element line
+ * of the setfl file (...): set the equilibrium lattice constant, in
+ * Angstrom.", an instruction.
  * Before the fix: the gate asked for a known lattice and a0 > 0 only, so
  * the dense refit ran (its crystal sums enumerated no neighbour: ceil(rcut
  * / a) does not fit an int) and wrote pot.tadah: no exception. */
@@ -518,9 +522,9 @@ TEST_CASE_METHOD(PTFixture,
                  "[refit][engine][integration]") {
   const std::string tail =
       " less than the step of the table's radial grid, dr = 0.0125313 A: "
-      "the table describes no pair distance of that crystal. Edit the "
-      "element line of the setfl file (`<Z> <mass> <a0> <lattice>`): set "
-      "the equilibrium lattice constant, in Angstrom.";
+      "the table describes no pair distance of that crystal. The a0 of the "
+      "element line of the setfl file (`<Z> <mass> <a0> <lattice>`) is the "
+      "equilibrium lattice constant in Angstrom.";
   for (const char *smin : {"", "0.1"}) {
     INFO("REFIT_REACH_SMIN '" << smin << "'");
     ScopedTempDir tmp;
@@ -549,10 +553,12 @@ TEST_CASE_METHOD(PTFixture,
  * constant of the EAM header, a0 = 361 A, puts the nearest neighbours of
  * the fcc crystal 255.26554800834364 A apart, at or beyond the table's
  * cutoff, rcut = 5 A, and LAMMPS (pair_style eam/alloy) counts a pair only
- * below rcut: the crystal has no interaction in LAMMPS. Edit the element
- * line of the setfl file (`<Z> <mass> <a0> <lattice>`): set the
- * equilibrium lattice constant, in Angstrom (a value in picometres is 100
- * times the value in Angstrom)." and writes no pot.tadah.
+ * below rcut: the crystal has no interaction in LAMMPS. The a0 of the
+ * element line of the setfl file (`<Z> <mass> <a0> <lattice>`) is the
+ * equilibrium lattice constant in Angstrom (a value in picometres is 100
+ * times the value in Angstrom)." and writes no pot.tadah (before the fix
+ * of its wording the last sentence read "Edit the element line of the
+ * setfl file (...): set the equilibrium lattice constant, ...").
  * Before the fix: the refusal said "...: the crystal has no pair within
  * the cutoff." (tadah itself counts a pair at exactly rcut), so the text
  * check fails. Before the crystal gate took the cutoff, the dense refit
@@ -573,11 +579,10 @@ TEST_CASE_METHOD(PTFixture,
         "puts the nearest neighbours of the fcc crystal 255.26554800834364 A "
         "apart, at or beyond the table's cutoff, rcut = 5 A, and LAMMPS "
         "(pair_style eam/alloy) counts a pair only below rcut: the crystal "
-        "has no interaction in LAMMPS. Edit the element line of the setfl "
-        "file "
-        "(`<Z> <mass> <a0> <lattice>`): set the equilibrium lattice constant, "
-        "in Angstrom (a value in picometres is 100 times the value in "
-        "Angstrom).");
+        "has no interaction in LAMMPS. The a0 of the element line of the "
+        "setfl file (`<Z> <mass> <a0> <lattice>`) is the equilibrium "
+        "lattice constant in Angstrom (a value in picometres is 100 times "
+        "the value in Angstrom).");
   CHECK_FALSE(fs::exists("pot.tadah"));
 }
 
@@ -777,10 +782,16 @@ TEST_CASE_METHOD(PTFixture,
     for (const char *b : {"Knot5", "Knot3", "KnotMix"}) {
       INFO(b);
       const auto [what, logged] = refit_error(config("MONOTONE", b, "dense"));
-      CHECK(what.find(std::string("RHOFORM MONOTONE is not defined for "
-                                  "REFIT_BASIS ") + b) != std::string::npos);
-      CHECK(what.find("use a bump basis (Blip, Blip5) or RHOFORM NONNEG") !=
-            std::string::npos);
+      // what fits is a statement (before the fix: "...: use a bump basis
+      // (Blip, Blip5) or RHOFORM NONNEG (...).")
+      CHECK(what == std::string("tadah refit: RHOFORM MONOTONE is not "
+                                "defined for REFIT_BASIS ") +
+                        b +
+                        " (the one-sided knot family): RHOFORM MONOTONE fits "
+                        "with a bump basis (Blip, Blip5), and a knot basis "
+                        "with RHOFORM NONNEG (a non-negative knot density is "
+                        "already non-increasing with a non-increasing "
+                        "cutoff).");
     }
   }
   // The REFIT_MODE compact cases of this matrix (MONOTONE with the
@@ -796,6 +807,14 @@ TEST_CASE_METHOD(PTFixture,
         refit_error(config("NONNEG", "Knot5", "dense"));
     CHECK(what.find("REFIT_BASIS Knot5 requires REFIT_MODE compact") !=
           std::string::npos);
+    // what fits is a statement, and the build is named by its options
+    // (before the fix: "... on an HPO (Ceres) build — ... Use REFIT_BASIS
+    // Blip/Blip5 for dense mode.")
+    CHECK(what ==
+          "tadah refit: REFIT_BASIS Knot5 requires REFIT_MODE compact, which "
+          "a tadah built with TADAH_ENABLE_NFP and TADAH_ENABLE_CERES runs: "
+          "the one-sided knot families have no dense windowed least-squares "
+          "fit; REFIT_BASIS Blip or Blip5 fits in REFIT_MODE dense.");
     CHECK(logged.find("HINT: RHOFORM NONNEG") == std::string::npos);
   }
 }
@@ -1923,15 +1942,24 @@ TEST_CASE_METHOD(PTFixture,
     CAPTURE(line);
     const Context c = component_refit_config(line);
     const std::string key = std::string(line).substr(0, std::string(line).find(' '));
+    // a statement (before the fix: "...; declare the setting in its
+    // component")
     REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(c)),
-                        Catch::Contains(key + " conflicts with component blocks"));
+                        "tadah refit: " + key +
+                            " conflicts with component blocks: a component "
+                            "block declares this setting itself");
   }
 }
 
 /* Pins: REFIT_MAX_ESCALATIONS with DESCRIPTOR blocks is refused, naming the
  * component counts as what sets the basis: a component fit does not escalate
- * its basis. Before the fix it was accepted and had no effect, and a fit
- * above tolerance advised raising it. */
+ * its basis: "tadah refit: REFIT_MAX_ESCALATIONS has no effect with
+ * component blocks: a component fit does not escalate its basis, whose
+ * size the component's DENSITY and EMBEDDING CENTRES set (CENTRES AUTO
+ * <count>, or an explicit grid)". Before the fix it was accepted and had
+ * no effect, and a fit above tolerance advised raising it. Before the fix
+ * of its wording the refusal ended "..., so remove REFIT_MAX_ESCALATIONS
+ * and give the component more functions there". */
 TEST_CASE_METHOD(PTFixture,
                  "DM_Embed refit refuses REFIT_MAX_ESCALATIONS",
                  "[unified-dm][refit][validation]") {
@@ -1939,8 +1967,11 @@ TEST_CASE_METHOD(PTFixture,
   write_synth_eam("source.eam", "bcc", 3.2);
   const Context c = component_refit_config("REFIT_MAX_ESCALATIONS 3\n");
   REQUIRE_THROWS_WITH(RefitEngine().validate(config_file_task(c)),
-                      Catch::Contains("REFIT_MAX_ESCALATIONS") &&
-                      Catch::Contains("CENTRES AUTO <count>"));
+                      "tadah refit: REFIT_MAX_ESCALATIONS has no effect with "
+                      "component blocks: a component fit does not escalate "
+                      "its basis, whose size the component's DENSITY and "
+                      "EMBEDDING CENTRES set (CENTRES AUTO <count>, or an "
+                      "explicit grid)");
 }
 
 /* Pins: REFIT_COMPONENT_ITERATIONS, the iteration limit of the component
@@ -2018,6 +2049,45 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(out.log.find("REFIT_MAX_ESCALATIONS") == std::string::npos);
   CHECK(out.log.find("NRHO_BASIS") == std::string::npos);
   CHECK(out.log.find("CENTRES AUTO <count>") != std::string::npos);
+  // what lowers the error and what accepts it, without an instruction
+  // (before the fix: "give the component more density or embedding
+  // functions ..., a larger N2B for the pair function, or relax
+  // REFIT_TOL_* if this regime is irrelevant for your use.")
+  CHECK(out.log.find(
+            "still above tolerance — a component fit has the basis its block "
+            "declares and does not escalate it: more density or embedding "
+            "functions in the component (CENTRES AUTO <count>, or a finer "
+            "explicit grid) or a larger N2B for the pair function can lower "
+            "the error, and a larger REFIT_TOL_* accepts it.") !=
+        std::string::npos);
+}
+
+/* Pins: a dense refit above its tolerances after its escalations
+ * (REFIT_TOL_AMBIENT and REFIT_TOL_COMPRESSED 1e-9, REFIT_MAX_ESCALATIONS
+ * 0) logs the WARNING "still above tolerance after escalation — a larger
+ * REFIT_MAX_ESCALATIONS, N2B, NRHO_BASIS or NF_BASIS can lower the error,
+ * and a larger REFIT_TOL_* accepts it.", which says what each setting does.
+ * Before the fix: "... — raise REFIT_MAX_ESCALATIONS, pin a larger
+ * N2B/NRHO_BASIS/NF_BASIS, or relax REFIT_TOL_* if this regime is
+ * irrelevant for your use.", instructions to the reader. */
+TEST_CASE_METHOD(PTFixture,
+                 "A dense refit above tolerance says what lowers the error "
+                 "and what accepts it",
+                 "[refit][engine][log]") {
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  Context c = dense_refit_context("synth_fcc.eam.alloy");
+  c.add("REFIT_TOL_AMBIENT", 1e-9);
+  c.add("REFIT_TOL_COMPRESSED", 1e-9);
+  c.add("REFIT_MAX_ESCALATIONS", 0);
+  const RefitOutputs out = run_refit(c);
+  INFO(out.log);
+  CHECK(out.log.find(
+            "still above tolerance after escalation — a larger "
+            "REFIT_MAX_ESCALATIONS, N2B, NRHO_BASIS or NF_BASIS can lower the "
+            "error, and a larger REFIT_TOL_* accepts it.") !=
+        std::string::npos);
+  CHECK(out.log.find("your use") == std::string::npos);
 }
 
 /* Pins: a dense REFIT_BASIS Gaussian refit says that it writes the smooth
