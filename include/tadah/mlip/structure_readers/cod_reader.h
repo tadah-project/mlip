@@ -43,7 +43,7 @@ public:
    * (without "cod-") and the provider's reason, cut to 300 characters
    * (failed_fetch_message()):
    *
-   *     CODReader: HTTP 500 for COD ID '1534932': CODDataProvider: cURL error: ...
+   *     COD: HTTP 500 for COD ID '1534932': COD: cURL error: ...
    *
    * The reason is the provider's cURL text or the server's body; the
    * message holds no request URL. The previous structure is kept.

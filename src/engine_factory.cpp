@@ -23,7 +23,9 @@ void EngineFactory::require(const std::string &taskName) {
   auto &nb = theNotBuilt();
   const auto it = nb.find(taskName);
   if (it != nb.end()) throw std::runtime_error(it->second);
-  throw std::runtime_error("EngineFactory::create: No engine found for " + taskName);
+  // TaskFactory refuses a task the blueprint does not know before.
+  throw std::runtime_error("internal error: no engine runs the task " +
+                           taskName);
 }
 
 std::unique_ptr<IEngine> EngineFactory::create(const std::string &taskName) {

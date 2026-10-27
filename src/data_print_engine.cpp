@@ -12,8 +12,6 @@ namespace engines {
 int DataPrintEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataPrintEngine started...");
 
   StructureDB stdb;
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
@@ -64,8 +62,6 @@ int DataPrintEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void DataPrintEngine::validate(const tadah::mlip::Task &) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataPrintEngine...");
 }
 
 

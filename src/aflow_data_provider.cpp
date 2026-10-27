@@ -23,7 +23,7 @@ RawResponse AFLOWDataProvider::QueryByFormula(const std::string &formula)
 {
   RawResponse r;
   r.httpStatus = 501;
-  r.response = "AFLOWDataProvider does not implement formula queries.";
+  r.response = "AFLOW: formula queries are not supported.";
   return r;
 }
 
@@ -35,7 +35,7 @@ RawResponse AFLOWDataProvider::httpGet(const std::string &url)
 
   CURL* curl = curl_easy_init();
   if (!curl) {
-    throw std::runtime_error("AFLOWDataProvider: cURL init failed.");
+    throw std::runtime_error("AFLOW: cURL does not initialise.");
   }
 
   std::string response;
@@ -53,7 +53,7 @@ RawResponse AFLOWDataProvider::httpGet(const std::string &url)
   if (res != CURLE_OK) {
     rr.httpStatus = 500;
     std::ostringstream oss;
-    oss << "AFLOWDataProvider: cURL error: " << curl_easy_strerror(res);
+    oss << "AFLOW: cURL error: " << curl_easy_strerror(res);
     rr.response = oss.str();
   } else {
     rr.response = response;
@@ -84,19 +84,19 @@ std::string AFLOWDataProvider::entry_url_from_aflux(const std::string &aflux_jso
   const nlohmann::json root = nlohmann::json::parse(aflux_json, nullptr, false);
   if (!root.is_array() || root.empty()) {
     throw std::runtime_error(
-        "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON array.");
+        "AFLOW: the AFLUX answer is not a non-empty JSON array.");
   }
   const nlohmann::json &first = root[0];
   if (!first.is_object() || !first.contains("aurl") ||
       !first["aurl"].is_string()) {
     throw std::runtime_error(
-        "AFLOWDataProvider: the first entry of the AFLUX answer has no "
+        "AFLOW: the first entry of the AFLUX answer has no "
         "\"aurl\" string.");
   }
   const std::string aurl = first["aurl"].get<std::string>();
   const std::size_t colon = aurl.find(':');
   if (colon == std::string::npos || colon == 0 || colon + 1 == aurl.size()) {
-    throw std::runtime_error("AFLOWDataProvider: aurl '" + aurl +
+    throw std::runtime_error("AFLOW: aurl '" + aurl +
                              "' in the AFLUX answer is not server:PATH.");
   }
   return "http://" + aurl.substr(0, colon) + "/" + aurl.substr(colon + 1) +

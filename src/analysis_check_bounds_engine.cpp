@@ -34,7 +34,7 @@ int AnalysisCheckBoundsEngine::run(tadah::mlip::Task& task) {
                                         ignored);
   if (!taskCtx.has_stored("HPOTARGET"))
     throw std::runtime_error(missing_run_setting(
-        "analysis check_bounds", "HPOTARGET", "the hpotarget file",
+        "analysis check_bounds", "HPOTARGET", "the target file",
         task.getKeyProvenance()));
   if (!taskCtx.contains("DBFILE")) {
     throw std::runtime_error(

@@ -145,23 +145,24 @@ void AuditReport::print(std::ostream& os) const {
   }
   os << "# pre-flight audit findings\n";
   for (const auto& m : messages) {
-    os << "  [" << level_str(m.level) << "] "
-       << m.descriptor_label;
+    os << "  " << level_str(m.level) << " " << m.descriptor_label;
     if (!m.param_key.empty()) os << "." << m.param_key;
-    os << " — " << m.text << "\n";
+    os << ": " << m.text << "\n";
   }
 }
 
 void AuditReport::log() const {
   for (const auto& m : messages) {
     if (m.level == AuditMessage::Level::Ok) continue;
-    std::string prefix = "preflight_audit: [" +
-                         std::string(level_str(m.level)) + "] " +
+    // "AUDIT finding WARN D2_Blip.RCUT2B: ...": the key that runs the
+    // audit, the level of the finding and its parameter.
+    std::string prefix = "AUDIT finding " +
+                         std::string(level_str(m.level)) + " " +
                          m.descriptor_label;
     if (!m.param_key.empty()) prefix += "." + m.param_key;
     tadah::core::Logger::instance().log(
         tadah::core::LogLevel::WARNING,
-        prefix + " — " + m.text);
+        prefix + ": " + m.text);
   }
 }
 

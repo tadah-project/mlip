@@ -109,7 +109,7 @@ tadah::core::t_type Analytics::calc_e_mae() const{
 }
 
 tadah::core::t_type Analytics::calc_f_mae() const{
-    require_predicted_forces(st, stp, "Analytics::calc_f_mae");
+    require_predicted_forces(st, stp, "the force MAE");
 
     tadah::core::t_type fmae_vec(st.dbidx.size()-1);
     double fmae=0;
@@ -204,7 +204,7 @@ tadah::core::t_type Analytics::calc_e_rmse() const{
 }
 
 tadah::core::t_type Analytics::calc_f_rmse() const{
-    require_predicted_forces(st, stp, "Analytics::calc_f_rmse");
+    require_predicted_forces(st, stp, "the force RMSE");
 
     tadah::core::t_type frmse_vec(st.dbidx.size()-1);
     double frmse=0;
@@ -286,7 +286,7 @@ tadah::core::t_type Analytics::calc_e_r_sq() const {
 }
 
 tadah::core::t_type Analytics::calc_f_r_sq() const {
-    require_predicted_forces(st, stp, "Analytics::calc_f_r_sq");
+    require_predicted_forces(st, stp, "the force R^2");
     const auto nseg = st.dbidx.size() - 1;
     tadah::core::t_type f_r_sq_vec(nseg);
 

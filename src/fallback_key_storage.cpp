@@ -33,5 +33,11 @@ bool FallbackKeyStorage::storeKey(const std::string& keyName, const std::string&
   return m_storages.back()->storeKey(keyName, keyValue);
 }
 
+std::string FallbackKeyStorage::location() const
+{
+  return m_storages.empty() ? std::string("no storage")
+                            : m_storages.back()->location();
+}
+
 } // namespace mlip
 } // namespace tadah

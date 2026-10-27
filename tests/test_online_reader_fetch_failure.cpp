@@ -129,7 +129,7 @@ std::shared_ptr<Script> script_of(std::vector<RawResponse> answers) {
  * must be asked for and the message names, and two answers (a cURL error
  * and a 404 with a short body). */
 struct FailCase {
-  std::string reader;   // "NomadReader"
+  std::string reader;   // "NOMAD": the source the message names
   std::string what;     // "entry"
   std::string read_id;  // what read() is given
   std::string id;       // what the provider is asked for and the message names
@@ -198,14 +198,12 @@ void check_failed_queries(const FailCase &fc) {
 
 /* A reader built on a null provider is refused at once. */
 template <class R>
-void check_null_provider_refused(const std::string &reader) {
-  INFO(reader);
+void check_null_provider_refused(const std::string &message) {
+  INFO(message);
   CHECK(takes_provider<R>);
   if constexpr (takes_provider<R>) {
     CHECK_THROWS_AS(R(ProviderPtr{}), std::invalid_argument);
-    CHECK_THROWS_WITH(R(ProviderPtr{}), Catch::Contains("provider is null"));
-    CHECK_THROWS_WITH(R(ProviderPtr{}),
-                      reader + ": the data provider is null.");
+    CHECK_THROWS_WITH(R(ProviderPtr{}), message);
   }
 }
 
@@ -213,44 +211,48 @@ void check_null_provider_refused(const std::string &reader) {
 
 /* Pins: NomadReader::read("zyXabc123zyXabc123zyXab") on a provider that
  * answers
- *   500 "NomadDataProvider::httpPost cURL error: Could not connect to server"
+ *   500 "NOMAD: cURL error: Could not connect to server"
  *   404 '{"detail":"The entry with the given id does not exist."}'
- * throws exactly "NomadReader: HTTP <status> for entry '<id>': <reason>";
+ * throws exactly "NOMAD: HTTP <status> for entry '<id>': <reason>";
  * the provider is asked once, for that ID; an empty reason gives "... for
  * entry '<id>'."; a 4107-character page is cut to its first 300 characters
  * followed by " ... (4107 characters)".
  * Before the fix: NomadReader cannot be built on a provider (it makes its
  * own NomadDataProvider), so takes_provider<NomadReader> is false and no
  * read is made (REQUIRE(got.size() == 1) fails); and the message was
- * "NomadReader: HTTP 500 fetching entry '<id>'.", without the reason. */
+ * "NomadReader: HTTP 500 fetching entry '<id>'.", without the reason.
+ * Before the fix that names the database: the message began "NomadReader:
+ * HTTP <status> ...", the class of the reader: the checks of the message
+ * fail. */
 TEST_CASE("NOMAD reader: a failed query gives the status, the entry ID and "
           "the provider's reason",
           "[nomad][structure_readers][data_providers]") {
   check_failed_queries<NomadReader>(
-      {"NomadReader", "entry", "zyXabc123zyXabc123zyXab",
+      {"NOMAD", "entry", "zyXabc123zyXabc123zyXab",
        "zyXabc123zyXabc123zyXab",
-       {500, "NomadDataProvider::httpPost cURL error: Could not connect to "
-             "server"},
+       {500, "NOMAD: cURL error: Could not connect to server"},
        {404, R"({"detail":"The entry with the given id does not exist."})"}});
 }
 
 /* Pins: the same for MaterialsProjectReader::read("mp-149"):
- *   500 "MaterialsProjectDataProvider: cURL error: Could not connect to
+ *   500 "Materials Project: cURL error: Could not connect to
  *       server"
  *   404 '{"detail":"Not Found"}'
- * give exactly "MaterialsProjectReader: HTTP <status> for material
+ * give exactly "Materials Project: HTTP <status> for material
  * 'mp-149': <reason>" (no URL, header or API key), asking the provider once
  * for "mp-149"; empty and long reasons as for NOMAD.
  * Before the fix: MaterialsProjectReader can be built only from an API key,
  * so no read is made; the message was "MaterialsProjectReader: HTTP <status>
- * retrieving 'mp-149'.". */
+ * retrieving 'mp-149'.".
+ * Before the fix that names the database: the message began
+ * "MaterialsProjectReader: HTTP <status> ...": the checks of the message
+ * fail. */
 TEST_CASE("Materials Project reader: a failed query gives the status, the "
           "material ID and the provider's reason",
           "[materials_project][structure_readers][data_providers]") {
   check_failed_queries<MaterialsProjectReader>(
-      {"MaterialsProjectReader", "material", "mp-149", "mp-149",
-       {500, "MaterialsProjectDataProvider: cURL error: Could not connect to "
-             "server"},
+      {"Materials Project", "material", "mp-149", "mp-149",
+       {500, "Materials Project: cURL error: Could not connect to server"},
        {404, R"({"detail":"Not Found"})"}});
 }
 
@@ -258,13 +260,15 @@ TEST_CASE("Materials Project reader: a failed query gives the status, the "
  * "cod-" prefix and names it as COD does: read("cod-1534932"),
  * read("1534932") and read("https://www.crystallography.net/cod/1534932.cif")
  * each ask the provider once for "1534932" and, for
- *   500 "CODDataProvider: cURL error: Could not connect to server"
+ *   500 "COD: cURL error: Could not connect to server"
  *   404 "<html><body><h1>404 Not Found</h1></body></html>"
- * throw exactly "CODReader: HTTP <status> for COD ID '1534932': <reason>";
+ * throw exactly "COD: HTTP <status> for COD ID '1534932': <reason>";
  * empty and long reasons as for NOMAD.
  * Before the fix: CODReader cannot be built on a provider, so no read is
  * made; the message was "CODReader: CODDataProvider returned HTTP <status>
- * for ID '1534932'.", without the reason. */
+ * for ID '1534932'.", without the reason.
+ * Before the fix that names the database: the message began "CODReader: HTTP
+ * <status> ...": the checks of the message fail. */
 TEST_CASE("COD reader: a failed query gives the status, the COD ID and the "
           "provider's reason",
           "[cod][structure_readers][data_providers]") {
@@ -272,22 +276,28 @@ TEST_CASE("COD reader: a failed query gives the status, the COD ID and the "
        {"cod-1534932", "1534932",
         "https://www.crystallography.net/cod/1534932.cif"}) {
     check_failed_queries<CODReader>(
-        {"CODReader", "COD ID", read_id, "1534932",
-         {500, "CODDataProvider: cURL error: Could not connect to server"},
+        {"COD", "COD ID", read_id, "1534932",
+         {500, "COD: cURL error: Could not connect to server"},
          {404, "<html><body><h1>404 Not Found</h1></body></html>"}});
   }
 }
 
 /* Pins: each reader built on a null provider is refused at once
- * (std::invalid_argument, "<Reader>: the data provider is null."), not when
- * it reads.
- * Before the fix: none of the three had a constructor taking a provider. */
+ * (std::invalid_argument, "internal error: the <database> reader has no
+ * data provider": NOMAD, Materials Project, COD), not when it reads.
+ * Before the fix: none of the three had a constructor taking a provider.
+ * Before the fix that names the database: "NomadReader: the data provider is
+ * null." (and so on), an internal error stated as the class's: the checks
+ * fail. */
 TEST_CASE("NOMAD, Materials Project and COD readers: a null provider is "
           "refused",
           "[structure_readers][data_providers]") {
-  check_null_provider_refused<NomadReader>("NomadReader");
-  check_null_provider_refused<MaterialsProjectReader>("MaterialsProjectReader");
-  check_null_provider_refused<CODReader>("CODReader");
+  check_null_provider_refused<NomadReader>(
+      "internal error: the NOMAD reader has no data provider");
+  check_null_provider_refused<MaterialsProjectReader>(
+      "internal error: the Materials Project reader has no data provider");
+  check_null_provider_refused<CODReader>(
+      "internal error: the COD reader has no data provider");
 }
 
 namespace {
@@ -428,17 +438,19 @@ std::string mp_fe(const std::string &material_id, const std::string &first,
  *     (the structure is replaced, not added to);
  *   - read("zyXD") of an entry whose second site has species 'D'
  *     (deuterium, which Tadah has not) throws exactly
- *       NomadReader: entry 'zyXD': site 2 has species 'D', which is not an
+ *       NOMAD entry 'zyXD': site 2 has species 'D', which is not an
  *       element symbol Tadah knows (H to Og).
  *     and keeps the previous structure (label and 2 atoms);
  *   - read("zyXbad") of a body that is not JSON throws a std::runtime_error
- *     that starts "NomadReader: entry 'zyXbad': ".
+ *     that starts "NOMAD entry 'zyXbad': ".
  * Before the fix: the periodic table's error escaped, 'Unknown symbol: D',
  * naming neither the entry nor the site; the second read of bcc Fe appended
  * its atoms to the first ones (4 atoms), the refused entry had set its label
  * and appended its first atom (5), and the JSON parser's own
  * exception (nlohmann::json::parse_error, not a std::runtime_error) escaped
- * read_through, naming no entry. */
+ * read_through, naming no entry.
+ * Before the fix that names the database: the messages began "NomadReader:
+ * entry '...': ": the checks fail. */
 TEST_CASE("NOMAD reader: a site whose element Tadah does not know is "
           "refused, naming the entry and the site",
           "[nomad][structure_readers][data_providers]") {
@@ -461,8 +473,8 @@ TEST_CASE("NOMAD reader: a site whose element Tadah does not know is "
   INFO("third read: " << got[2].error);
   CHECK(got[2].threw);
   CHECK(got[2].error ==
-        "NomadReader: entry 'zyXD': site 2 has species 'D', which is not an "
-        "element symbol Tadah knows (H to Og).");
+        "NOMAD entry 'zyXD': site 2 has species 'D', which is not an element "
+        "symbol Tadah knows (H to Og).");
   CHECK(got[2].st.label == got[0].st.label);
   CHECK(got[2].st.natoms() == 2);
   // A body that is not JSON: the parser's error, named by the reader.
@@ -472,7 +484,7 @@ TEST_CASE("NOMAD reader: a site whose element Tadah does not know is "
   REQUIRE(bad.size() == 1);
   INFO("not JSON: " << bad[0].error);
   CHECK(bad[0].threw);
-  CHECK(bad[0].error.rfind("NomadReader: entry 'zyXbad': ", 0) == 0);
+  CHECK(bad[0].error.rfind("NOMAD entry 'zyXbad': ", 0) == 0);
 }
 
 /* Pins: MaterialsProjectReader names the material, as the ID given to
@@ -481,16 +493,18 @@ TEST_CASE("NOMAD reader: a site whose element Tadah does not know is "
  *     atoms;
  *   - read("mp-xx") of a material whose second site has element 'Xx'
  *     throws exactly
- *       MaterialsProjectReader: material 'mp-xx': site 2 has element 'Xx',
+ *       Materials Project material 'mp-xx': site 2 has element 'Xx',
  *       which is not an element symbol Tadah knows (H to Og).
  *     and keeps the previous structure (label and 2 atoms);
  *   - read("mp-bad") of a body that is not JSON throws a std::runtime_error
- *     that starts "MaterialsProjectReader: material 'mp-bad': ".
+ *     that starts "Materials Project material 'mp-bad': ".
  * Before the fix: 'Unknown symbol: Xx' escaped, naming neither the material
  * nor the site; the second read of bcc Fe appended its atoms (4 atoms), the
  * refused material had set its label and appended its first atom (5), and
  * the JSON parser's own exception (nlohmann::json::parse_error, not a
- * std::runtime_error) escaped read_through, naming no material. */
+ * std::runtime_error) escaped read_through, naming no material.
+ * Before the fix that names the database: the messages began
+ * "MaterialsProjectReader: material '...': ": the checks fail. */
 TEST_CASE("Materials Project reader: a site whose element Tadah does not "
           "know is refused, naming the material and the site",
           "[materials_project][structure_readers][data_providers]") {
@@ -512,8 +526,8 @@ TEST_CASE("Materials Project reader: a site whose element Tadah does not "
   INFO("third read: " << got[2].error);
   CHECK(got[2].threw);
   CHECK(got[2].error ==
-        "MaterialsProjectReader: material 'mp-xx': site 2 has element 'Xx', "
-        "which is not an element symbol Tadah knows (H to Og).");
+        "Materials Project material 'mp-xx': site 2 has element 'Xx', which "
+        "is not an element symbol Tadah knows (H to Og).");
   CHECK(got[2].st.label == got[0].st.label);
   CHECK(got[2].st.natoms() == 2);
   // A body that is not JSON: the parser's error, named by the reader.
@@ -523,5 +537,5 @@ TEST_CASE("Materials Project reader: a site whose element Tadah does not "
   REQUIRE(bad.size() == 1);
   INFO("not JSON: " << bad[0].error);
   CHECK(bad[0].threw);
-  CHECK(bad[0].error.rfind("MaterialsProjectReader: material 'mp-bad': ", 0) == 0);
+  CHECK(bad[0].error.rfind("Materials Project material 'mp-bad': ", 0) == 0);
 }

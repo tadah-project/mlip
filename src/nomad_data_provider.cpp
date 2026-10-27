@@ -22,7 +22,7 @@ RawResponse NomadDataProvider::QueryByFormula(const std::string &formula)
 {
   RawResponse r;
   r.httpStatus = 501; 
-  r.response = "NomadDataProvider does not implement formula queries.";
+  r.response = "NOMAD: formula queries are not supported.";
   return r;
 }
 
@@ -53,7 +53,7 @@ RawResponse NomadDataProvider::httpPost(const std::string &url, const std::strin
 
   CURL* curl = curl_easy_init();
   if (!curl) {
-    throw std::runtime_error("NomadDataProvider: Failed to init cURL.");
+    throw std::runtime_error("NOMAD: cURL does not initialise.");
   }
 
   std::string response;
@@ -79,7 +79,7 @@ RawResponse NomadDataProvider::httpPost(const std::string &url, const std::strin
   if (res != CURLE_OK) {
     rr.httpStatus = 500;
     std::ostringstream oss;
-    oss << "NomadDataProvider::httpPost cURL error: " << curl_easy_strerror(res);
+    oss << "NOMAD: cURL error: " << curl_easy_strerror(res);
     rr.response = oss.str();
   } else {
     rr.response = response;

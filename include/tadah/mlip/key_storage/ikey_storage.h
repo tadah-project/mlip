@@ -35,6 +35,12 @@ public:
    * @return true if successfully stored, false if not supported or an error occurred.
    */
   virtual bool storeKey(const std::string& keyName, const std::string& keyValue) = 0;
+
+  /**
+   * @brief Where storeKey() writes a key, as a message names it (a file
+   *        path, or "the environment of this run").
+   */
+  virtual std::string location() const = 0;
 };
 
 } // namespace mlip

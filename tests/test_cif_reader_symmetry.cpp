@@ -489,11 +489,11 @@ TEST_CASE("CIF reader: a space-group number alone is expanded in the "
  * choice, another choice of axes), the reader prints one WARNING naming
  * the source, the number and the setting the cell was built with. The
  * text is
- *   WARNING: <source>: the space group is given only by its number (<n>),
- *   and the cell could be in more than one of its settings; the unit cell
- *   is built with space group <setting>, its standard setting (origin
- *   choice 2 where the group has two): give the H-M symbol if the cell is
- *   in another.
+ *   WARNING: <source>: the space group is given only by its number (<n>), and
+ *   the cell could be in more than one of its settings; the unit cell is
+ *   built with space group <setting>, its standard setting (origin choice 2
+ *   where the group has two); for a cell in another setting the reader takes
+ *   the H-M symbol.
  * with <source> "CIF file <path>" (CifReader::read and
  * StructureReaderSelector) or "CIF text (data_<block>)" (parseCifContents),
  * and <setting> gemmi's SpaceGroup::xhm(): F d -3 m:2 for
@@ -2314,10 +2314,12 @@ const std::string kR3ReverseLoop =
  *     (in no table) are refused, each naming hexagonal axes and 57.35;
  *   - in the hexagonal Bi cell, the 12 operators of R -3 m:R are refused,
  *     naming rhombohedral axes and 120;
- *   - in a cell that fits neither axes (a = b = 4.5332, c = 11.7967 A,
- *     gamma = 119.5), the number 166 and the H-M symbol 'R -3 m' (axes
- *     from the cell) are refused, naming 119.5 and saying to correct the
- *     cell ("correct the cell"), not to give the symbol without its axes.
+ *   - in a cell that fits neither axes (a = b = 4.5332, c = 11.7967 A, gamma
+ *     = 119.5), the number 166 and the H-M symbol 'R -3 m' (axes from the
+ *     cell) are refused, naming 119.5 and saying that the cell does not
+ *     match the symbol ("the cell does not match the symbol"; before the
+ *     fix of the voice, "correct the cell"), not that the reader takes the
+ *     symbol without its axes.
  * Before the fix: the origin-moved Hall symbol (18 atoms) and the reverse
  * loop (9 atoms) were accepted, with only the WARNING that the group is in
  * no table: their rotations were looked up without their centring, as
@@ -2364,7 +2366,7 @@ TEST_CASE("CIF reader: an R group must fit the axes of the cell however it "
     CHECK(contains(what, c.axes));
     CHECK(mentions_value(what, c.angle));
     if (c.correct_cell) {
-      CHECK(contains(what, "correct the cell"));
+      CHECK(contains(what, "the cell does not match the symbol"));
       CHECK_FALSE(contains(what, "without its axes"));
     }
   }
@@ -2512,14 +2514,15 @@ TEST_CASE("CIF reader: a supercell's translations by thirds are no R "
 /* Pins: a refusal advises correcting the cell when no setting of the group
  * fits it, and another setting when one does:
  *   - 'R -3 m H' and 'R -3 m:H' in a cell with gamma = 119.99 (a = b =
- *     4.5332, c = 11.7967 A), which fits neither hexagonal nor
- *     rhombohedral axes: "correct the cell", not "without its axes";
+ *     4.5332, c = 11.7967 A), which fits neither hexagonal nor rhombohedral
+ *     axes: "the cell does not match the symbol", not "without its axes";
  *   - 'R -3 m:R' in the hexagonal Bi cell (which fits hexagonal axes):
  *     "without its axes";
- *   - 'P 1 21/m 1' with alpha = 100 and gamma = 110 (a = 5, b = 6, c = 7
- *     A), which fits no unique axis: "correct the cell", not "full H-M
- *     symbol"; with only gamma = 110 (unique axis c fits): "full H-M
- *     symbol".
+ *   - 'P 1 21/m 1' with alpha = 100 and gamma = 110 (a = 5, b = 6, c = 7 A),
+ *     which fits no unique axis: "the cell does not match the symbol", not
+ *     "full H-M symbol"; with only gamma = 110 (unique axis c fits): "full
+ *     H-M symbol".
+ * (Before the fix of the voice the first advice read "correct the cell".)
  * Before the fix: a symbol naming its axes was always told to drop them,
  * and a monoclinic symbol to give the setting the cell is in, which a
  * second read refuses as well (the CHECKs for "correct the cell" fail
@@ -2536,18 +2539,18 @@ TEST_CASE("CIF reader: a refusal advises correcting the cell when no "
   const std::vector<Case> cases = {
       {cif_cell("R_named_H_off", 4.5332, 4.5332, 11.7967, 90, 90, 119.99,
                 hm_line("R -3 m H"), bi_site),
-       "correct the cell", "without its axes"},
+       "the cell does not match the symbol", "without its axes"},
       {cif_cell("R_colon_H_off", 4.5332, 4.5332, 11.7967, 90, 90, 119.99,
                 hm_line("R -3 m:H"), bi_site),
-       "correct the cell", "without its axes"},
+       "the cell does not match the symbol", "without its axes"},
       {bi_hex("R_colon_R_hex", hm_line("R -3 m:R")), "without its axes",
-       "correct the cell"},
+       "the cell does not match the symbol"},
       {cif_cell("P21m_no_axis", 5, 6, 7, 100, 90, 110, hm_line("P 1 21/m 1"),
                 kFeGeneral),
-       "correct the cell", "full H-M symbol"},
+       "the cell does not match the symbol", "full H-M symbol"},
       {cif_cell("P21m_axis_c", 5, 6, 7, 90, 90, 110, hm_line("P 1 21/m 1"),
                 kFeGeneral),
-       "full H-M symbol", "correct the cell"}};
+       "full H-M symbol", "the cell does not match the symbol"}};
   for (const Case &c : cases) {
     const std::string what = refusal(c.text);
     INFO("message: " << what);
@@ -3346,4 +3349,91 @@ TEST_CASE("CIF reader: a site whose element Tadah does not know is refused, "
     CHECK(refusal_with_origin(slurp(path), "COD entry 1534932") ==
           "COD entry 1534932: " + c.message);
   }
+}
+
+namespace {
+bool ends_with(const std::string &s, const std::string &tail) {
+  return s.size() >= tail.size() &&
+         s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+}  // namespace
+
+/* Pins: the refusals of a CIF's symmetry and sites end by saying what the
+ * reader takes, impersonally:
+ *  - a Hall symbol it cannot read: "...; the reader takes a Hall symbol in
+ *    standard form (such as '-F 4vw 2vw 3') or none (the Hall symbol is
+ *    read before the H-M symbol), or the symmetry-operator loop.";
+ *  - an H-M symbol: "...; the reader takes the symbol in a standard form
+ *    (such as 'F d -3 m:2', or 'F d -3 m Z' for origin choice 2), or the
+ *    symmetry-operator loop.";
+ *  - a number that is not an integer, alone: "...; the reader takes the
+ *    number (1 to 230), the H-M symbol or the symmetry-operator loop.";
+ *    one out of range: "...; the reader takes the H-M symbol or the
+ *    symmetry-operator loop.";
+ *  - a monoclinic symbol of another unique axis than the cell's: "...; the
+ *    reader takes the full H-M symbol of the setting the cell is in (such
+ *    as 'P 1 1 21/m' for unique axis c), or its symmetry-operator loop.";
+ *    an R symbol on rhombohedral axes in a hexagonal cell: "...; the reader
+ *    takes the H-M symbol without its axes (such as 'R -3 m', which takes
+ *    them from the cell), or the symmetry-operator loop."; a cell that fits
+ *    no axes of the symbol: "..., so the cell does not match the symbol.";
+ *  - a partly occupied site: "...; the reader takes an ordered structure,
+ *    one atom per site.".
+ * Before the fix: each ended with an instruction, "give ...", "correct the
+ * cell", with "e.g." for an example. */
+TEST_CASE("CIF reader: a refusal says what the reader takes",
+          "[structure_readers][cif][spacegroup][messages]") {
+  PeriodicTable::initialize();
+  const auto fe = [](const char *block, const std::string &symmetry) {
+    return cif_cell(block, 2.8665, 2.8665, 2.8665, 90, 90, 90, symmetry,
+                    "Fe1 Fe 0 0 0\n");
+  };
+  const std::string hall = refusal(fe("Hall_bad", hall_line("Q 9 z")));
+  INFO("Hall: " << hall);
+  CHECK(ends_with(hall,
+                  "; the reader takes a Hall symbol in standard form (such "
+                  "as '-F 4vw 2vw 3') or none (the Hall symbol is read before "
+                  "the H-M symbol), or the symmetry-operator loop."));
+  const std::string hm = refusal(fe("HM_bad", hm_line("Q 9 z")));
+  INFO("H-M: " << hm);
+  CHECK(ends_with(hm,
+                  "; the reader takes the symbol in a standard form (such as "
+                  "'F d -3 m:2', or 'F d -3 m Z' for origin choice 2), or "
+                  "the symmetry-operator loop."));
+  const std::string word = refusal(fe("Number_word", number_line("abc")));
+  INFO("number: " << word);
+  CHECK(ends_with(word, "; the reader takes the number (1 to 230), the H-M "
+                        "symbol or the symmetry-operator loop."));
+  const std::string range = refusal(fe("Number_range", number_line("231")));
+  INFO("range: " << range);
+  CHECK(ends_with(range, "; the reader takes the H-M symbol or the "
+                         "symmetry-operator loop."));
+  const std::string axis =
+      refusal(cif_cell("P21m_axis_c", 5, 6, 7, 90, 90, 110,
+                       hm_line("P 1 21/m 1"), kFeGeneral));
+  INFO("monoclinic: " << axis);
+  CHECK(ends_with(axis, "; the reader takes the full H-M symbol of the "
+                        "setting the cell is in (such as 'P 1 1 21/m' for "
+                        "unique axis c), or its symmetry-operator loop."));
+  const std::string rhomb =
+      refusal(bi_hex("R_colon_R_hex", hm_line("R -3 m:R")));
+  INFO("R: " << rhomb);
+  CHECK(ends_with(rhomb, "; the reader takes the H-M symbol without its axes "
+                         "(such as 'R -3 m', which takes them from the "
+                         "cell), or the symmetry-operator loop."));
+  const std::string off =
+      refusal(cif_cell("R_named_H_off", 4.5332, 4.5332, 11.7967, 90, 90,
+                       119.99, hm_line("R -3 m H"), "Bi1 Bi 0 0 0.2339\n"));
+  INFO("off: " << off);
+  CHECK(ends_with(off, ", so the cell does not match the symbol."));
+  const std::string partly = refusal(
+      "data_Partly\n_cell_length_a 2.8665\n_cell_length_b 2.8665\n"
+      "_cell_length_c 2.8665\n_cell_angle_alpha 90\n_cell_angle_beta 90\n"
+      "_cell_angle_gamma 90\n" + hm_line("I m -3 m") +
+      "loop_\n_atom_site_label\n_atom_site_type_symbol\n_atom_site_fract_x\n"
+      "_atom_site_fract_y\n_atom_site_fract_z\n_atom_site_occupancy\n"
+      "Fe1 Fe 0 0 0 0.5\n");
+  INFO("occupancy: " << partly);
+  CHECK(ends_with(partly, "; the reader takes an ordered structure, one atom "
+                          "per site."));
 }

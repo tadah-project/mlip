@@ -2,6 +2,8 @@
 #include <tadah/mlip/structure_writers/castep_cell_writer.h>
 #include <tadah/mlip/structure_writers/vasp_poscar_writer.h>
 #include <tadah/mlip/structure_writers/lammps_structure_writer.h>
+
+#include <stdexcept>
 namespace tadah {
 namespace mlip {
 
@@ -14,10 +16,10 @@ std::unique_ptr<StructureWriter> StructureWriterSelector::get_writer(const std::
     return std::make_unique<VaspPoscarWriter>(db);
   } else if (type == "LAMMPS") {
     return std::make_unique<LammpsStructureWriter>(db);
-  } else {
-    std::cerr << "Unknown type! Returning nullptr." << std::endl;
-    return nullptr;
   }
+  throw std::invalid_argument("unknown structure format '" + type +
+                              "': the formats written are CASTEP, LAMMPS and "
+                              "VASP");
 
 }
 } // namespace mlip

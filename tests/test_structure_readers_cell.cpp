@@ -533,8 +533,11 @@ TEST_CASE("POSCAR reader: an invalid scale line is rejected",
 
 // A POSCAR without the element-symbol line (the VASP 4 layout) names no
 // element; the reader filled the symbols with "X", which is no element, so
-// it failed with "Unknown symbol: X". It now says what is missing. A symbol
-// line and a count line of different lengths read past the symbols.
+// it failed with "Unknown symbol: X". It now says what is missing ("...
+// (the VASP 4 layout); an element-symbol line above the counts gives
+// them."; before the fix that states it, "...; add the element-symbol line
+// above the counts."). A symbol line and a count line of different lengths
+// read past the symbols.
 TEST_CASE("POSCAR reader: a missing element line or a symbol/count mismatch "
           "is refused",
           "[structure_readers][cell_convention][poscar]") {
@@ -557,6 +560,9 @@ TEST_CASE("POSCAR reader: a missing element line or a symbol/count mismatch "
     CHECK_THROWS_AS(read_poscar(path.string()), std::runtime_error);
     CHECK_THROWS_WITH(read_poscar(path.string()),
                       Catch::Contains("element", Catch::CaseSensitive::No));
+    CHECK_THROWS_WITH(read_poscar(path.string()),
+                      Catch::EndsWith("(the VASP 4 layout); an element-symbol "
+                                      "line above the counts gives them."));
   }
   {
     INFO("two symbols, three counts");

@@ -310,16 +310,17 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
     const std::string rkey = "RCUT" + sfx;
     if (groups.count(ckey) && !groups.count(skey)) {
       rep.warnings.push_back(
-          flag + " ignored: " + ckey + " is a knot channel — " + rkey +
-          " is derived from the largest knot; move the knots instead.");
+          flag + " is ignored: " + ckey + " is a knot channel, and " + rkey +
+          " is its largest knot, which the " + ckey + " boxes move.");
       continue;
     }
     forced_rcut.insert(rkey);
     if (!groups.count(rkey)) {
       rep.warnings.push_back(
           rkey + ": no OPTIM reference line in the file — the declared "
-          "cutoff " + sci8(r) + " still binds the bump-support cap; "
-          "remember to set " + rkey + " in the training config.");
+          "cutoff " + sci8(r) + " still binds the bump-support cap; the fit "
+          "takes " + rkey + " from the training configuration, which " +
+          flag + " does not change.");
       continue;
     }
     for (auto *ol : groups[rkey]) {
@@ -330,7 +331,8 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
             "): ACTIVE line commented out — " + flag + " declares a FIXED "
             "cutoff, and searching RCUT on a bump channel is a wasted "
             "dimension (the bump-support gate keeps every bump inside the "
-            "cutoff's LOW bound). Set " + rkey + " in the training config.");
+            "cutoff's LOW bound); the fit takes " + rkey + " from the "
+            "training configuration, which " + flag + " does not change.");
       }
       ol->centre = r;
     }
