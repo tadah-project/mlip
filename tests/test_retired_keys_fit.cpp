@@ -62,6 +62,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unistd.h>
@@ -867,5 +868,42 @@ TEST_CASE("The options of the retired keys give their conversion",
     }
     CHECK_THAT(what, Contains(o.second + ": ") && Contains("retired") &&
                          Contains("WDBFILE"));
+  }
+}
+
+/* Pins: StructureDB::check_watom_key, which tadah train and tadah hpo call
+ * on a configuration without WATOM, gives it WATOM = Z of each species only
+ * when a descriptor of the configuration reads WATOM: a D2_EAM + DM_EAM
+ * configuration keeps no WATOM (so its fit is not refused for a WATOM no
+ * line gave, its model gives no notice of WATOM and its potential has no
+ * WATOM line), a D2_LJ one gets WATOM 73 for Ta.
+ * Before the fix: both got WATOM 73 (written into the potential of the
+ * D2_EAM + DM_EAM fit, where it changes nothing); with the refusal of a
+ * WATOM no descriptor reads, that fit was then refused (M_BLR::train: "...
+ * WATOM 73: no descriptor of the configuration reads it ...") after its
+ * model had given the notice of WATOM 73. */
+TEST_CASE("check_watom_key gives WATOM = Z only to a configuration whose "
+          "descriptors read WATOM",
+          "[inert][fit][watom]") {
+  PeriodicTable::initialize();
+  std::set<Element> ta = {Element("Ta")};
+  {
+    Context eam = tadah::core::CoreUserConfigParser().parse(
+        std::vector<std::string>{"ATOM Ta", "INIT2B true",
+                                 "TYPE2B D2_EAM 0 Ta Ta", "INITMB true",
+                                 "TYPEMB DM_EAM 0 Ta Ta", "SETFL eam.alloy",
+                                 "MODEL M_BLR BF_Linear"});
+    StructureDB::check_watom_key(eam, ta);
+    CHECK_FALSE(eam.has_stored("WATOM"));
+    CHECK_NOTHROW(tadah::mlip::require_fit_settings(eam, "tadah train"));
+  }
+  {
+    Context lj = tadah::core::CoreUserConfigParser().parse(
+        std::vector<std::string>{"ATOM Ta", "INIT2B true",
+                                 "TYPE2B D2_LJ Ta Ta",
+                                 "MODEL M_BLR BF_Linear"});
+    StructureDB::check_watom_key(lj, ta);
+    REQUIRE(lj.has_stored("WATOM"));
+    CHECK(lj.get<std::string>("WATOM") == "73");
   }
 }
