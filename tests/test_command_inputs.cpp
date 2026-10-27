@@ -139,16 +139,21 @@ std::vector<Task> tasks_of(const CommandInput &input) {
 /* Pins: TaskFactory reads a configuration file given with -c (CONFIG) with
  * the configuration parser of CORE: a TASK line, in the file or in a file
  * it includes with CONFIG, is an unknown key, refused naming its line and
- * its file before any task is made ("Invalid key TASK on line 3 of
- * run.train (closest key: ...)"), and so is any line whose key begins with
- * TASK ("Invalid key TASKS on line 2 of tasks.train"); the file of the
- * other keys alone makes the one task.
+ * its file, and the CONFIG line of an included file, before any task is
+ * made ("Invalid key TASK on line 3 of run.train (closest key: ...)",
+ * "Invalid key TASK on line 2 of inc.cfg (CONFIG on line 2 of outer.train)
+ * (closest key: ...)"), and so is any line whose key begins with TASK
+ * ("Invalid key TASKS on line 2 of tasks.train"); the file of the other
+ * keys alone makes the one task.
  * Before the fix: TaskFactory read the file with MLIPUserConfigParser,
  * which took a line beginning with the four letters TASK for the start of a
  * TASK section: run.train made one TRAIN task of the lines above it
  * (LAMBDA 5 after the TASK line dropped, no exception), a TASK line of an
  * included file was stored as the key TASK (no exception), and "TASKS
- * predict" opened a TASK predict section, dropped the same way. */
+ * predict" opened a TASK predict section, dropped the same way. Until
+ * every error of a line of an included file named the CONFIG lines that
+ * include it, the line of inc.cfg was named without its CONFIG line
+ * ("Invalid key TASK on line 2 of inc.cfg (closest key: ..."). */
 TEST_CASE("TaskFactory: a TASK line in a configuration file, or in a file it "
           "includes, is refused naming its line and its file",
           "[task_factory][config][task_line]") {
@@ -167,8 +172,8 @@ TEST_CASE("TaskFactory: a TASK line in a configuration file, or in a file it "
                (void)tasks_of(CommandInput("TRAIN",
                                            {{"config", {"outer.train"}}}));
              }),
-             StartsWith("Invalid key TASK on line 2 of inc.cfg (closest "
-                        "key: "));
+             StartsWith("Invalid key TASK on line 2 of inc.cfg (CONFIG on "
+                        "line 2 of outer.train) (closest key: "));
   std::ofstream("tasks.train") << "ATOM Ta\nTASKS predict\n";
   CHECK_THAT(error_of([] {
                (void)tasks_of(CommandInput("TRAIN",
