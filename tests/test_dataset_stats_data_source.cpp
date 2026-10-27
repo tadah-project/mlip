@@ -252,3 +252,39 @@ TEST_CASE("analysis dataset_stats refuses a configuration without a cutoff "
   CHECK_THROWS_WITH(engine.run(tasks[0]), message);
   CHECK_FALSE(fs::exists(out));
 }
+
+/* Pins: a task whose configuration gives a cutoff of 0 ("RCUT2B 0", or
+ * "RCUTMB 0" without an RCUT2B line: RCUTMAX 0) is refused by validate(),
+ * before any data are read: "analysis dataset_stats: the cutoff of the
+ * statistics is the largest RCUT2B or RCUTMB value, 0, which is not above
+ * 0"; so is run() called without validate(), with that message and not
+ * that of the configuration's DBFILE, which names a file that does not
+ * exist. No report is written.
+ * Before the fix: validate() checked CLOSE_CONTACT alone and returned, and
+ * run() read the data first and threw "DBFILE does not exist: <dir>/
+ * absent.tadah", for either configuration. */
+TEST_CASE("analysis dataset_stats refuses a cutoff of 0 before it reads "
+          "the data",
+          "[dataset_stats][data_source]") {
+  PeriodicTable::initialize();
+  LogLevelGuard guard;
+  const std::string message =
+      "analysis dataset_stats: the cutoff of the statistics is the largest "
+      "RCUT2B or RCUTMB value, 0, which is not above 0";
+  for (const std::string cutoff_line : {"RCUT2B 0", "RCUTMB 0"}) {
+    INFO("configuration: " << cutoff_line);
+    DsSourceTempDir tmp;
+    const std::string cfg = tmp.write(
+        "zero.cfg",
+        cutoff_line + "\nDBFILE " + tmp.path("absent.tadah") + "\n");
+    const std::string out = tmp.path("stats.tadah");
+    auto tasks = TaskFactory().createTasksFromInput(OptionsInput(
+        "ANALYSIS.dataset_stats", KV{{"config", {cfg}}, {"outfile", {out}}}));
+    REQUIRE(tasks.size() == 1);
+
+    AnalysisDatasetStatsEngine engine;
+    CHECK_THROWS_WITH(engine.validate(tasks[0]), message);
+    CHECK_THROWS_WITH(engine.run(tasks[0]), message);
+    CHECK_FALSE(fs::exists(out));
+  }
+}
