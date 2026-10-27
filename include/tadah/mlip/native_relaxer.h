@@ -32,8 +32,19 @@ struct EarlyState {
 /** \brief In-place atomic-position + optional box-shape minimisation
  *         for the PC_OBSERVABLE pipeline.
  *
- *  Algorithm (MVP): steepest-descent on (atomic positions, optional
- *  isotropic strain DOF), with Armijo backtracking line search. The
+ *  Algorithm: each iteration moves either the atoms or the cell (Iso).
+ *  The atoms take a steepest-descent step at the fixed cell, with an
+ *  Armijo backtracking line search on the energy. The cell, an isotropic
+ *  strain degree of freedom, takes a step of a search for the zero of its
+ *  strain force F_ε (the cell's pressure), which uses the values of F_ε
+ *  alone: towards the zero (secant or steepest descent, at most
+ *  `max_strain_step` in the scale) until a cell of each sign brackets it,
+ *  then the Illinois false position of the bracket with bisection
+ *  safeguards. The energy a pressure P leaves near the minimum,
+ *  V P² / (2B), falls below the rounding error of the energy long before
+ *  the central difference that gives F_ε loses P, so a line search on the
+ *  energy could not reach a tight `ptol`. The cell steps when the atoms
+ *  have converged, in turn with the atoms while neither has. The
  *  isotropic-strain force is computed by central difference on a small
  *  strain `eps_strain_fd`, since stress sign conventions across Tadah's
  *  `spredict` are non-trivial — FD here is on a single physical
@@ -60,14 +71,19 @@ public:
         BoxMode      box_mode      = Fixed;
         double       pressure      = 0.0;     /* eV/Å³ (×1.602e2 = GPa) — external pressure for Iso */
         double       ftol          = 1.0e-2;  /* |F|∞ on atoms (eV/Å) */
-        /* Pressure tolerance of the cell (Iso only), eV/Å³: the cell has
-         * converged when |F_ε| / (3V) = |dH/dε| / (3V), the magnitude of
-         * its pressure less the external one, falls below it. A residual
-         * pressure P leaves the energy per atom above its minimum by about
-         * P² (V/N) / (2B), for the bulk modulus B: at the default, 1e-4 GPa
+        /* Pressure tolerance of the cell (Iso only; a Fixed relaxation
+         * ignores it), eV/Å³: the cell has converged when
+         * |F_ε| / (3V) = |dH/dε| / (3V), the magnitude of its pressure less
+         * the external one, falls below it. A residual pressure P leaves
+         * the energy per atom above its minimum by about P² (V/N) / (2B),
+         * for the bulk modulus B: at the default, 1e-4 GPa
          * (6.241509074e-7 eV/Å³), about 3e-12 eV/atom for bcc Ta. ftol
          * does not bound it: the atomic forces and the cell are separate
-         * degrees of freedom, in different units. */
+         * degrees of freedom, in different units. A ptol below the
+         * resolution of the central difference of F_ε (the energy's
+         * rounding error over 2 eps_strain_fd x 3V) is met only by
+         * chance: the search of the cell then ends, unconverged, once its
+         * step falls below step_floor. */
         double       ptol          = 6.241509074e-7;
         /* Energy convergence tolerance. When > 0 and the relative change
          * between successive accepted steps falls below this value, the
@@ -86,12 +102,16 @@ public:
          * have killed the subprocess at 1 s. Default 0 = disabled. */
         double       max_wall_time_s = 0.0;
         double       eps_strain_fd = 1.0e-5;  /* central-diff step for ε force (Iso) */
-        double       init_step     = 0.05;    /* initial line-search trial step */
+        /* Initial line-search trial step of the atoms (Å²/eV), and the
+         * steepest-descent step of the cell, init_step x F_ε in the
+         * strain, before its search has two cells to take a secant
+         * through. */
+        double       init_step     = 0.05;
         double       max_step      = 0.5;     /* cap on per-iter atomic displacement (Å) */
-        /* Maximum |Δscale| in a single line-search trial (Iso only).
+        /* Maximum relative change of the scale in one step of the cell
+         * before the zero of its pressure is bracketed (Iso only).
          * Acts as a strain analogue of `max_step`: caps how much the
-         * isotropic-strain DOF can move the cell relative to baseline
-         * in one trial. Matches LAMMPS `fix box/relax iso 0.0 vmax X`
+         * isotropic-strain DOF can move the cell in one step. Matches LAMMPS `fix box/relax iso 0.0 vmax X`
          * which caps per-iter dimension change at fraction X. Default
          * 0.001 mirrors Ecoh_fast.in (vmax 0.001). Without this bound,
          * F_eps from a wild model can drive scale_trial to ~0 within
@@ -111,9 +131,12 @@ public:
          * Default 2.0 Å matches LAMMPS `neighbor 2.0 bin`. Set to 0 to
          * disable caching (rebuild every eval, original behaviour). */
         double       nn_skin       = 2.0;
-        double       armijo_c1     = 1.0e-4;  /* Armijo sufficient-decrease constant */
-        double       backtrack_rho = 0.5;     /* step shrink factor on line-search reject */
-        double       step_floor    = 1.0e-12; /* minimum step before declaring failure */
+        double       armijo_c1     = 1.0e-4;  /* Armijo sufficient-decrease constant (atoms) */
+        double       backtrack_rho = 0.5;     /* step shrink factor on line-search reject (atoms) */
+        /* Minimum step before declaring failure: the atoms' line-search
+         * step, and the relative change of the scale in a step of the
+         * cell. */
+        double       step_floor    = 1.0e-12;
         std::size_t  maxiter       = 5000;
         /* Hard cap on total energy/force evaluations across the whole
          * relax (FD strain probes + LS retries + accept refresh all
@@ -127,8 +150,10 @@ public:
         /* Absolute bounds on scale_total (Iso mode only). Caller maps
          * its physical hot-var range onto these. E.g. cohesive_energy
          * with `--hotvar a0 2.7 3.9` and a0_current=3.3 sets
-         * scale_min = 2.7/3.3, scale_max = 3.9/3.3. The relaxer bails
-         * the moment an accepted step would push scale out of range,
+         * scale_min = 2.7/3.3, scale_max = 3.9/3.3. A step of the cell
+         * ends at the bound it would cross, and the relaxer bails
+         * (scale_out_of_range) when a step can no longer move the cell
+         * inside the range,
          * preventing two pathologies:
          *  (a) cell drifts to 1-2 Å where NN_finder/dc.calc cost per
          *      eval balloons 50× (slow evals);
@@ -161,11 +186,17 @@ public:
     };
 
     struct Result {
+        /* The tolerances are met at the end: the largest atomic force
+         * below ftol and, Iso, |F_ε| / (3V) below ptol (also when the
+         * relaxation stops at maxiter, maxeval or max_wall_time_s right
+         * after the step that met them), or etol stopped it. */
         bool          converged       = false;
         std::size_t   n_iter          = 0;
         std::size_t   n_evals         = 0;          /* total E and E+F evaluations consumed */
+        /* Why an unconverged relaxation stopped (none is set for a
+         * converged one). */
         bool          maxeval_reached = false;
-        bool          scale_out_of_range = false;   /* exited because LS exhausted on soft scale_min/max */
+        bool          scale_out_of_range = false;   /* a step of the cell could not move inside scale_min/max */
         bool          early_rejected     = false;   /* exited via Options::early_reject predicate */
         bool          wall_time_exceeded = false;   /* exited via Options::max_wall_time_s cap */
         double        final_fmax_atoms = 0.0;
