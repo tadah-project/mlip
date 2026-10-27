@@ -1582,8 +1582,14 @@ SbRun suggest_blip_line(const std::string &pairs, const SbTempDir &tmp) {
  *    naming the (W, W) neighbour distances and no (Ta, Ta);
  *  - "Ta Ta": "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00", naming (Ta,
  *    Ta);
- *  - "Ta Ta W W": the range that holds the range of each pair, "OPTIM
- *    RCUT2B (1) 2.500000e+00 5.000000e+00", its comment naming both;
+ *  - "Ta Ta W W": the range from the largest low end to the largest high
+ *    end of the ranges of the two pairs, so that each cutoff in it holds
+ *    neighbour distances of each pair, as the check of the cutoff judges
+ *    each pair on its own: "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00",
+ *    its comment saying so ("the range from the largest low end to the
+ *    largest high end of the ranges of the element pairs of the
+ *    descriptor's line, so that each value in it reaches each pair") and
+ *    naming both pairs;
  *  - "Mo Mo", which the data do not have: no OPTIM RCUT2B line, its
  *    comment "no OPTIM line: no (Mo, Mo) pair of atoms of the data lies
  *    within the reach of the neighbour statistics ...".
@@ -1593,7 +1599,11 @@ SbRun suggest_blip_line(const std::string &pairs, const SbTempDir &tmp) {
  * 5.000000e+00", their comments naming the Ta-Ta distances, and so did
  * "Ta Ta W W".
  * Before the fix of the notation: the comments named "the W-W neighbour
- * distances" and "the Ta-Ta neighbour distances". */
+ * distances" and "the Ta-Ta neighbour distances".
+ * Before the range of a cutoff reached each pair: "Ta Ta W W" got the range
+ * that holds the range of each pair, "OPTIM RCUT2B (1) 2.500000e+00
+ * 5.000000e+00", whose low end, 2.5 A, holds no (Ta, Ta) distance, a box
+ * whose corner at 2.5 tadah analysis check_bounds fails. */
 TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
           "element pairs of the descriptor's line",
           "[bound_suggester][suggest_bounds][line_pairs]") {
@@ -1627,8 +1637,12 @@ TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
     CHECK(r.rc == EXIT_SUCCESS);
     CHECK(lines_starting(r.block, "OPTIM RCUT2B") ==
           std::vector<std::string>{
-              "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00"});
+              "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00"});
     const std::string why = comment_before(r.block, "OPTIM RCUT2B");
+    CHECK(why.find("the range from the largest low end to the largest high "
+                   "end of the ranges of the element pairs of the "
+                   "descriptor's line, so that each value in it reaches each "
+                   "pair") != std::string::npos);
     CHECK(why.find("(Ta, Ta) neighbour distances") != std::string::npos);
     CHECK(why.find("(W, W) neighbour distances") != std::string::npos);
   }
@@ -1809,5 +1823,69 @@ TEST_CASE("analysis suggest_bounds takes its reach from the cutoff of a "
           "times the largest cutoff of the configuration (an RCUT2B or "
           "RCUTMB value, or the cutoff RADIUS of a DESCRIPTOR block), and "
           "the configuration gives no cutoff above 0");
+  }
+}
+
+/* Pins: tadah analysis suggest_bounds refuses a descriptor of a TYPE2B or
+ * TYPEMB line whose cutoff key the configuration does not have, before the
+ * datasets are read, naming the key, the descriptor and, for a line of a
+ * file, the line:
+ *  - TYPE2B D2_Blip 2 2 Ta Ta without RCUT2B: "analysis suggest_bounds:
+ *    TYPE2B names the descriptor D2_Blip, and the configuration has no
+ *    RCUT2B line, which gives its cutoff";
+ *  - TYPEMB DM_EAD 0 1 1 Ta Ta without RCUTMB: "... TYPEMB names the
+ *    descriptor DM_EAD, and the configuration has no RCUTMB line, ...";
+ *  - TYPEMB DM_EAD 0 1 1 W W on line 5, then TYPEMB @ta and the block of
+ *    PAIRS Ta Ta (kTaBlock), without RCUTMB: "analysis suggest_bounds:
+ *    TYPEMB on line 5 names the descriptor DM_EAD, and the configuration
+ *    has no RCUTMB line, which gives its cutoff".
+ * Before the fix: the grids were expanded before the cutoff was looked
+ * for, and the expansion threw the error of a key the Context does not
+ * have ("Key not found in the Context object: RCUT2B", "...: RCUTMB"),
+ * which names neither the command nor the descriptor. */
+TEST_CASE("analysis suggest_bounds refuses a descriptor line without its "
+          "cutoff, naming the key",
+          "[bound_suggester][suggest_bounds]") {
+  {
+    SbTempDir tmp;
+    Context c;
+    c.add("DBFILE", ta_w_dataset(tmp));
+    c.add("INIT2B", "true");
+    c.add("TYPE2B", "D2_Blip 2 2 Ta Ta");
+    c.add("RCTYPE2B", "Cut_Cos");
+    c.add("CGRID2B", "1 2");
+    c.add("SGRID2B", "1 1");
+    const SbRun r = run_suggest_bounds_ctx(c, tmp);
+    CHECK(r.rc == -1);
+    CHECK(r.what ==
+          "analysis suggest_bounds: TYPE2B names the descriptor D2_Blip, and "
+          "the configuration has no RCUT2B line, which gives its cutoff");
+  }
+  {
+    SbTempDir tmp;
+    Context c;
+    c.add("DBFILE", ta_w_dataset(tmp));
+    c.add("INIT2B", "false");
+    c.add("INITMB", "true");
+    c.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+    c.add("RCTYPEMB", "Cut_Cos");
+    c.add("CGRIDMB", "0");
+    c.add("SGRIDMB", "1");
+    const SbRun r = run_suggest_bounds_ctx(c, tmp);
+    CHECK(r.rc == -1);
+    CHECK(r.what ==
+          "analysis suggest_bounds: TYPEMB names the descriptor DM_EAD, and "
+          "the configuration has no RCUTMB line, which gives its cutoff");
+  }
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_with_block(
+        "TYPEMB DM_EAD 0 1 1 W W\nTYPEMB @ta\n",
+        "RCTYPEMB Cut_Cos\nCGRIDMB 0\nSGRIDMB 1\n", tmp);
+    CHECK(r.rc == -1);
+    CHECK(r.what ==
+          "analysis suggest_bounds: TYPEMB on line 5 names the descriptor "
+          "DM_EAD, and the configuration has no RCUTMB line, which gives its "
+          "cutoff");
   }
 }

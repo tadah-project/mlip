@@ -1193,15 +1193,29 @@ Context blip_line(const std::string& pairs, double rcut) {
  *    neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair adds
  *    nothing to the descriptor, which sums over its other element pairs
  *    alone.";
- *  - "W W" at 2.6, "Ta W" and "* *" at 2.45: no finding (a pin: no false
- *    FAIL, as since the check read every element pair).
+ *  - "* *" at 2.45, the pair (*, *) standing for the (Ta, Ta), (Ta, W) and
+ *    (W, W) pairs of the data, each judged on its own, as on "Ta Ta Ta W W
+ *    W": one FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest
+ *    (Ta, Ta) neighbour distance of the dataset (2.86 Å) and the smallest
+ *    (W, W) one (2.5 Å): the (Ta, Ta) and (W, W) pairs add nothing to the
+ *    descriptor, which sums over its other element pairs alone.";
+ *  - "Ta *" at 2.6, the (Ta, Ta) and (Ta, W) pairs, as on "Ta Ta Ta W": the
+ *    FAIL of "Ta Ta W W" at 2.6;
+ *  - "W W" at 2.6 and "Ta W" at 2.45: no finding (a pin: no false FAIL, as
+ *    since the check read every element pair).
  * Before the fix: the check read the smallest neighbour distance of every
  * element pair of the data, 2.4 A: none of the four FAILs before "Ta Ta W
  * W" at 2.6 was given, and AUDIT error trained descriptors that are 0 for
  * every atom.
  * Before each pair was judged on its own: "Ta Ta W W" at 2.6 gave no
  * finding, the (W, W) pairs being within 2.6 A, and AUDIT error trained a
- * descriptor that is 0 for every Ta atom. */
+ * descriptor that is 0 for every Ta atom.
+ * Before a pair with * stood for the element pairs of the data it matches:
+ * "* *" at 2.45 and "Ta *" at 2.6 gave no finding, each judged as one pair
+ * by the distances of the pairs it matches together, from 2.4 A, while the
+ * lines that name those pairs failed, "Ta Ta Ta W W W" naming each pair in
+ * its own clause ("... (2.86 Å) and is below the smallest (W, W) neighbour
+ * distance of the dataset (2.5 Å): ..."). */
 TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
           "descriptor's line",
           "[preflight_audit][cutoff][line_pairs]") {
@@ -1240,9 +1254,17 @@ TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
             "neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair "
             "adds nothing to the descriptor, which sums over its other "
             "element pairs alone."});
+  const std::vector<std::string> ta_ta_w_w = {
+      "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (Ta, Ta) "
+      "neighbour distance of the dataset (2.86 Å) and the smallest (W, W) "
+      "one (2.5 Å): the (Ta, Ta) and (W, W) pairs add nothing to the "
+      "descriptor, which sums over its other element pairs alone."};
+  CHECK(fails("* *", 2.45) == ta_ta_w_w);
+  CHECK(fails("Ta Ta Ta W W W", 2.45) == ta_ta_w_w);
+  CHECK(fails("Ta *", 2.6) == fails("Ta Ta W W", 2.6));
+  CHECK(fails("Ta Ta Ta W", 2.6) == fails("Ta Ta W W", 2.6));
   CHECK(fails("W W", 2.6).empty());
   CHECK(fails("Ta W", 2.45).empty());
-  CHECK(fails("* *", 2.45).empty());
 }
 
 /* Pins: a Gaussian channel of a many-body density is judged by the
