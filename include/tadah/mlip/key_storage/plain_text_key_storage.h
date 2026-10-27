@@ -46,6 +46,9 @@ public:
    */
   bool storeKey(const std::string& keyName, const std::string& keyValue) override;
 
+  /** @brief The path of the keys file. */
+  std::string location() const override;
+
 private:
   std::string m_configDir; ///< Directory path used for storing the "keys" file.
 

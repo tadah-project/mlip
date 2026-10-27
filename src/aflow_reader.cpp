@@ -32,9 +32,9 @@ using json = nlohmann::json;
   field.
 */
 
-// Refuses entry `auid`: "AflowReader: entry '<auid>': <what>".
+// Refuses entry `auid`: "AFLOW entry '<auid>': <what>".
 [[noreturn]] void refuse(const std::string &auid, const std::string &what) {
-  throw std::runtime_error("AflowReader: entry '" + auid + "': " + what);
+  throw std::runtime_error("AFLOW entry '" + auid + "': " + what);
 }
 
 // "not a JSON array." and the like, for a value in neither form.
@@ -258,7 +258,7 @@ AflowReader::AflowReader()
 AflowReader::AflowReader(std::unique_ptr<IMaterialsDataProvider> provider)
   : m_dataProvider(std::move(provider)) {
   if (!m_dataProvider)
-    throw std::invalid_argument("AflowReader: the data provider is null.");
+    throw std::invalid_argument("internal error: the AFLOW reader has no data provider");
 }
 
 void AflowReader::read(const std::string &auid) {
@@ -273,7 +273,7 @@ void AflowReader::fetchAndParseAflowByAuid(const std::string &auid) {
   RawResponse rr = m_dataProvider->QueryByID(auid);
   if (rr.httpStatus != 200)
     throw std::runtime_error(
-        failed_fetch_message("AflowReader", "AUID", auid, rr));
+        failed_fetch_message("AFLOW", "AUID", auid, rr));
   parseAflowJson(rr.response);
 }
 /*
@@ -308,11 +308,11 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   try {
     root = json::parse(jsonContent);
   } catch (const json::exception &e) {
-    throw std::runtime_error(std::string("AflowReader: the entry cannot be "
+    throw std::runtime_error(std::string("AFLOW: the entry cannot be "
                                          "read as JSON: ") + e.what());
   }
   if (!root.is_object()) {
-    throw std::runtime_error("AflowReader: an aflowlib entry is a JSON "
+    throw std::runtime_error("AFLOW: an aflowlib entry is a JSON "
                              "object, " + not_a(root));
   }
   Structure st;
@@ -324,7 +324,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   std::string auid = "N/A";
   if (const json *v = field(root, "auid")) {
     if (!v->is_string()) {
-      throw std::runtime_error("AflowReader: \"auid\" must be a string, " +
+      throw std::runtime_error("AFLOW: \"auid\" must be a string, " +
                                not_a(*v));
     }
     auid = v->get<std::string>();
@@ -345,7 +345,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   //------------------------------------------------------------------
   const json *geometry = field(root, "geometry");
   if (!geometry) {
-    throw std::runtime_error("AflowReader: entry '" + auid +
+    throw std::runtime_error("AFLOW entry '" + auid +
                              "' has no \"geometry\" (a,b,c,alpha,beta,gamma).");
   }
   const std::array<double, 6> g = read_geometry(*geometry, auid);
@@ -363,7 +363,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   //------------------------------------------------------------------
   const json *species = field(root, "species");
   if (!species) {
-    throw std::runtime_error("AflowReader: entry '" + auid +
+    throw std::runtime_error("AFLOW entry '" + auid +
                              "' has no \"species\".");
   }
   const std::vector<std::string> speciesList = read_species(*species, auid);
@@ -380,7 +380,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
 
   const json *composition = field(root, "composition");
   if (!composition) {
-    throw std::runtime_error("AflowReader: entry '" + auid +
+    throw std::runtime_error("AFLOW entry '" + auid +
                              "' has no \"composition\".");
   }
   const std::vector<double> stoichCount = read_composition(*composition, auid);
@@ -391,7 +391,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   //------------------------------------------------------------------
   const json *fractional = field(root, "positions_fractional");
   if (!fractional) {
-    throw std::runtime_error("AflowReader: entry '" + auid +
+    throw std::runtime_error("AFLOW entry '" + auid +
                              "' has no \"positions_fractional\".");
   }
   std::vector<std::array<double,3>> positions;
@@ -417,7 +417,7 @@ void AflowReader::parseAflowJson(const std::string &jsonContent) {
   if (speciesList.empty() || speciesList.size() != stoichCount.size() ||
       totalCount != static_cast<double>(positions.size())) {
     throw std::runtime_error(
-      "AflowReader: entry '" + auid + "' is inconsistent: " +
+      "AFLOW entry '" + auid + "' is inconsistent: " +
       std::to_string(speciesList.size()) + " species, " +
       std::to_string(stoichCount.size()) + " composition counts adding up to " +
       tadah::core::format_roundtrip(totalCount) + ", and " +
@@ -489,7 +489,7 @@ void AflowReader::makeCellMatrix(double a, double b, double c,
   // beta), or the cell is flat.
   if (!(a > 0.0 && b > 0.0 && c > 0.0) || !(term > 0.0)) {
     std::ostringstream msg;
-    msg << "AflowReader: geometry " << a << "," << b << "," << c << ","
+    msg << "AFLOW: geometry " << a << "," << b << "," << c << ","
         << alphaDeg << "," << betaDeg << "," << gammaDeg
         << " (a,b,c,alpha,beta,gamma) describes no cell.";
     throw std::runtime_error(msg.str());

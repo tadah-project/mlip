@@ -316,7 +316,7 @@ std::shared_ptr<NNTable> build_table(const Structure &st, double R, bool list_co
         " image cells, more than the limit of " + fmt(kMaxImageCells) +
         " (cell heights " + fmt(g.height[0]) + ", " + fmt(g.height[1]) +
         ", " + fmt(g.height[2]) +
-        " A). Such a cell is degenerate, e.g. the result of an unbounded "
+        " A). Such a cell is degenerate, such as the result of an unbounded "
         "relaxation step");
   }
   // The search itself covers the rounding margins. They are far below an

@@ -43,12 +43,12 @@ std::string potential_has_no_datasets_advice() {
          "its training record, the comment block above its key lines, lists "
          "the datasets its weights were fitted to in a '# DBFILE' line when "
          "there were any: a refit has none, and a potential of an earlier "
-         "version has no record): to train from one, add a DBFILE line to a "
-         "copy of it; a potential of tadah refit or refit --edit also pins "
-         "every weight with its FIXINDEX and FIXWEIGHT lines, the seed of a "
-         "tadah hpo coefficient search, so delete them from the copy for "
-         "the fit to change the weights (the Training page of the "
-         "documentation, Retraining from a potential).";
+         "version has no record): a retrain from one takes a copy of it with "
+         "a DBFILE line added; a potential of tadah refit or refit --edit "
+         "also pins every weight with its FIXINDEX and FIXWEIGHT lines, the "
+         "seed of a tadah hpo coefficient search, and the fit changes the "
+         "weights when both are deleted from the copy (the Training page of "
+         "the documentation, Retraining from a potential).";
 }
 
 void require_training_datasets(const tadah::core::Context &ctx) {

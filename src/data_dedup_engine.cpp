@@ -15,8 +15,6 @@ namespace engines {
 int DataDedupEngine::run(tadah::mlip::Task &task) {
     core::Context taskContext = task.getContext();
 
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataDedupEngine started...");
   std::vector<std::string> outFiles(taskContext.size("OUTFILE"));
   taskContext.get<>("OUTFILE",outFiles);
   bool append = taskContext.get<bool>("APPEND");
@@ -28,7 +26,7 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     throw std::runtime_error(
         "tadah data dedup needs --threshold <Angstrom>: the largest "
         "difference, in each Cartesian component, at which two atom "
-        "positions count as equal (e.g. --threshold 1e-6)");
+        "positions count as equal, such as --threshold 1e-6");
   double threshold = taskContext.get<double>("THRESHOLD");
 
   std::vector<StructureDB> inStdbs(taskContext.size("DBFILE"));
@@ -143,13 +141,12 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
   }
 
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataDedupEngine finished. ", newTotal, " structures in ", outFiles.size(), " files.");
+      "tadah data dedup: ", newTotal, newTotal == 1 ? " structure" : " structures",
+      " in ", outFiles.size(), outFiles.size() == 1 ? " file" : " files");
 
   return EXIT_SUCCESS;
 }
 void DataDedupEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataDedupEngine...");
   core::Context taskContext = task.getContext();
   size_t outFilesSize = taskContext.size("OUTFILE");
   size_t inFilesSize = taskContext.size("DBFILE");

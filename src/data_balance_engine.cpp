@@ -14,13 +14,11 @@ namespace engines {
 int DataBalanceEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataBalanceEngine started...");
 
   std::vector<StructureDB> inStdbs(taskContext.size("DBFILE")); // we have to keep them separate
 
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataBalanceEngine: Reading input files...");
+      "tadah data balance: reading the datasets");
 
   size_t stdbCounter = 0;
   std::vector<std::string> dbfilesPaths(taskContext.size("DBFILE"));
@@ -70,7 +68,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
 
   if (!eshiftMap.empty() && taskContext.contains("ESHIFT")) {
     core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataBalanceEngine: Applying ESHIFT (E -= sum_Z N_Z * eshift[Z])...");
+        "tadah data balance: shifting the energies, E -= sum_Z N_Z eshift[Z]");
     size_t currentIndex = 0;
     for (auto &stdb : inStdbs) {
       for (auto &st : stdb) {
@@ -88,7 +86,7 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
   }
 
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataBalanceEngine: Dumping output....");
+      "tadah data balance: writing the datasets");
   std::vector<std::string> outFiles(taskContext.size("OUTFILE"));
   taskContext.get("OUTFILE", outFiles);
   bool append = taskContext.get<bool>("APPEND");
@@ -106,14 +104,10 @@ int DataBalanceEngine::run(tadah::mlip::Task &task) {
     }
   }
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataBalanceEngine finished.");
 
   return EXIT_SUCCESS;
 }
 void DataBalanceEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataBalanceEngine...");
   core::Context taskContext = task.getContext();
   if (!(taskContext.contains("ESHIFT") && taskContext.size("ESHIFT") > 0))
     throw std::runtime_error(

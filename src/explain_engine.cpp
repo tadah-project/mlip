@@ -344,12 +344,9 @@ int ExplainEngine::run(mlip::Task &task) {
 
 void ExplainEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  if (!context.contains("OPTION")) {
-    throw std::runtime_error("ExplainEngine requires OPTION parameter to be set");
-  }
-  if (context.size("OPTION") != 1) {
-    throw std::runtime_error("ExplainEngine requires exactly one OPTION parameter in a dot-separated format. For example: data.sample.index");
-  }
+  // OPTION holds one value (the blueprint's value_N: a second replaces it).
+  if (!context.contains("OPTION"))
+    throw std::runtime_error("tadah explain needs an OPTION");
 }
 
 } // namespace engines

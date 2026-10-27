@@ -38,7 +38,7 @@ public:
    * provider's own: 500 for a cURL error such as no network), the entry ID
    * and the provider's reason, cut to 300 characters (failed_fetch_message()):
    *
-   *     NomadReader: HTTP 500 for entry 'zyXabc123zyXabc123zyXab': NomadDataProvider::httpPost cURL error: ...
+   *     NOMAD: HTTP 500 for entry 'zyXabc123zyXabc123zyXab': NOMAD: cURL error: ...
    *
    * The reason is the provider's cURL text or the server's body; the
    * message holds no request URL or header. The previous structure is kept.
@@ -46,7 +46,7 @@ public:
    * An entry that cannot be read is refused naming it, the site of a
    * species Tadah does not know too:
    *
-   *     NomadReader: entry 'zyXabc123zyXabc123zyXab': site 2 has species 'D', which is not an element symbol Tadah knows (H to Og).
+   *     NOMAD entry 'zyXabc123zyXabc123zyXab': site 2 has species 'D', which is not an element symbol Tadah knows (H to Og).
    *
    * and the previous structure is kept.
    *
@@ -75,7 +75,7 @@ private:
    * @brief The structure of the raw JSON response of entry @p entryID: cell
    *        parameters, positions, etc.
    *
-   * Every error names the entry, "NomadReader: entry '<entryID>': <what>":
+   * Every error names the entry, "NOMAD entry '<entryID>': <what>":
    * a missing field, text that is not JSON, and a site whose species is not
    * an element symbol Tadah knows ("site 2 has species 'D', which is not an
    * element symbol Tadah knows (H to Og).").

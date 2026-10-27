@@ -37,7 +37,7 @@ static double deg2rad(double deg) {
 void CastepCellReader::read(const std::string &path) {
   std::ifstream ifs(path);
   if (!ifs.is_open()) {
-    throw std::runtime_error("CastepCellReader: Cannot open file " + path);
+    throw std::runtime_error("the structure file " + path + " cannot be opened");
   }
 
   std::ostringstream buffer;
@@ -48,7 +48,7 @@ void CastepCellReader::read(const std::string &path) {
   try {
     st = parseCellContents(buffer.str());
   } catch (const std::exception &e) {
-    throw std::runtime_error("CastepCellReader: CASTEP cell file " + path +
+    throw std::runtime_error("CASTEP cell file " + path +
                              ": " + e.what());
   }
   st.label = "CASTEP cell file: " + path;

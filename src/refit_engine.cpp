@@ -95,7 +95,8 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
         (basis_user_set ? " (the one-sided knot family)"
                         : " (the REFIT_MODE compact default, a one-sided "
                           "knot family)") +
-        ": use a bump basis (Blip, Blip5) or RHOFORM NONNEG (" +
+        ": RHOFORM MONOTONE fits with a bump basis (Blip, Blip5), and a knot "
+        "basis with RHOFORM NONNEG (" +
         models::monotone_knot_refusal_text() + ").");
   if (form == models::RhoForm::Monotone &&
       !models::rhoform_cutoff_whitelisted(rctype))
@@ -123,9 +124,9 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
           "basis " + basis + ": a knot density with every amplitude >= 0 "
           "is non-increasing and convex (knots <= RCUTMB, non-increasing "
           "cutoff), so a table whose density is concave anywhere in the fit "
-          "window (e.g. near the core) is fitted poorly and the self-test "
-          "can fail. Set REFIT_BASIS Blip5 (a non-negative bump density "
-          "without the convex lock), or use RHOFORM SIGNED.");
+          "window (such as near the core) is fitted poorly and the self-test "
+          "can fail. REFIT_BASIS Blip5 (a non-negative bump density without "
+          "the convex lock) or RHOFORM SIGNED lifts the lock.");
   }
 }
 
@@ -138,7 +139,8 @@ void require_fitter(const Context &c, RefitMode mode, bool has_compact_fitter) {
       std::string("tadah refit: REFIT_MODE compact") +
       (c.has_stored("REFIT_MODE") ? "" : " (the default)") +
       " needs the compact fitter, which this tadah was built without (it "
-      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE dense");
+      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); REFIT_MODE dense fits "
+      "without it");
 }
 
 void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
@@ -307,7 +309,6 @@ RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
 }
 
 void RefitEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(core::LogLevel::INFO, "Validating RefitEngine...");
   const auto c = refit_inputs(task);
   const bool edit = c.contains("EDIT") && c.size("EDIT") > 0;
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
@@ -329,10 +330,9 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   validate_refit_mode_keys(c, task.getKeyProvenance());
   if (!c.contains("EAM") || c.size("EAM") == 0) {
     throw std::runtime_error(
-        "RefitEngine requires an input EAM file: declare `EAM <file>` in the "
-        "config file passed with -c (or use --edit/--retarget to operate on "
-        "existing refit outputs). Supported: single-element setfl "
-        "(eam/alloy or eam/fs).");
+        "tadah refit: no EAM line in the configuration (-c) names the input "
+        "EAM file, a single-element setfl file (eam/alloy or eam/fs); --edit "
+        "and --retarget take the outputs of an earlier refit");
   }
   // The written potential's density component declares its density form,
   // which only the configuration can choose (RHOFORM without blocks, no
@@ -560,26 +560,27 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     // blip bumps and the one-sided quintic knot family.
     if (!components && !basis_blip && !basis_knotfam && !basis_blip5)
       throw std::runtime_error(
-          "tadah refit: REFIT_MODE compact supports REFIT_BASIS Blip, "
-          "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
-          "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
+          "tadah refit: REFIT_MODE compact takes REFIT_BASIS Blip, Blip5, "
+          "Knot3, Knot5 or KnotMix, not " + cfg.basis + "; REFIT_MODE dense "
+          "fits Gaussian, and a configuration without REFIT_BASIS takes the "
+          "default basis of compact mode");
     // (require_fitter refused compact mode without a compact fitter.) The
     // hook fits the table or throws: there is no dense fit to fall back on.
     compact_fit(c, eam, cfg, refit_ptr, st);
     if (!refit_ptr)
       throw std::logic_error(
-          "tadah refit: internal error: the compact fitter returned without "
-          "a fit (RefitEngine::compact_fit fills the fit and its self-test, "
-          "or throws); this is a bug, please report it");
+          "internal error: the compact fitter of tadah refit returned "
+          "without a fit; it fills the fit and its self-test, or throws");
   }
 
   // (a component refit takes its families from its DESCRIPTOR blocks)
   if (!components && !compact && basis_knotfam)
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
-        "compact on an HPO (Ceres) build — the one-sided knot families have "
-        "no dense windowed-LSQ path. Use REFIT_BASIS Blip/Blip5 for dense "
-        "mode.");
+        "compact, which a tadah built with TADAH_ENABLE_NFP and "
+        "TADAH_ENABLE_CERES runs: the one-sided knot families have no dense "
+        "windowed least-squares fit; REFIT_BASIS Blip or Blip5 fits in "
+        "REFIT_MODE dense.");
 
   if (!compact && !basis_blip && !basis_blip5)  // dense + Gaussian: demoted
                                                 // (knot families threw above)
@@ -685,7 +686,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "headroom (reachable rho ~ rhomax). Dense phases / strong "
           "compression beyond the reachability sweep probe the original's "
           "own out-of-table extrapolation — neither the original nor any "
-          "refit is defined there (e.g. Al99 bcc@400 GPa).");
+          "refit is defined there (such as bcc Al99 at 400 GPa).");
   }
 
   // ---- goodness-of-fit (per function) ----
@@ -751,23 +752,23 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           components
             ? std::string("  WARNING: still above tolerance — a component "
                           "fit has the basis its block declares and does not "
-                          "escalate it: give the component more density or "
-                          "embedding functions (CENTRES AUTO <count>, or a "
+                          "escalate it: more density or embedding functions "
+                          "in the component (CENTRES AUTO <count>, or a "
                           "finer explicit grid)") +
-                  (compact ? ", raise REFIT_COMPONENT_ITERATIONS if its "
-                            "centre/scale optimisation stopped before "
-                            "converging"
-                          : ", a larger N2B for the pair function") +
-                  ", or relax REFIT_TOL_* if this regime is irrelevant for "
-                  "your use."
-          : compact ? "  WARNING: still above tolerance — raise "
-                   "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis), "
-                   "or relax REFIT_TOL_* if this regime is irrelevant for "
-                   "your use."
-                 : "  WARNING: still above tolerance after escalation — "
-                   "raise REFIT_MAX_ESCALATIONS, pin a larger "
-                   "N2B/NRHO_BASIS/NF_BASIS, or relax REFIT_TOL_* if this "
-                   "regime is irrelevant for your use.");
+                  (compact ? " or a larger REFIT_COMPONENT_ITERATIONS, when "
+                            "its centre and scale optimisation stopped "
+                            "before converging,"
+                          : " or a larger N2B for the pair function") +
+                  " can lower the error, and a larger REFIT_TOL_* accepts "
+                  "it."
+          : compact ? "  WARNING: still above tolerance — a larger "
+                   "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis) "
+                   "can lower the error, and a larger REFIT_TOL_* accepts "
+                   "it."
+                 : "  WARNING: still above tolerance after escalation — a "
+                   "larger REFIT_MAX_ESCALATIONS, N2B, NRHO_BASIS or "
+                   "NF_BASIS can lower the error, and a larger REFIT_TOL_* "
+                   "accepts it.");
     }
   }
 
@@ -793,9 +794,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   core::Logger::instance().log(core::LogLevel::WARNING,
       "tadah refit: below the inner fit bound r_lo=" +
       core::to_string(refit.r_lo(), 4) + " A the setfl carries the ORIGINAL "
-      "table (offset-matched to the fit at r_lo); the native pot.tadah is "
-      "valid for r >= r_lo only. Lower REFIT_R_LO_FRAC in the config to "
-      "extend the fitted range if your application compresses harder.");
+      "table (offset-matched to the fit at r_lo); the native pot.tadah "
+      "holds for r >= r_lo only, and a smaller REFIT_R_LO_FRAC extends the "
+      "fitted range to shorter distances.");
 
   // ---- comparison dump for the (not shipped) python plotting script ----
   write_compare_dump("refit_compare.dat", eam, refit);

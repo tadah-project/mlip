@@ -16,10 +16,10 @@ constexpr std::size_t kMaxFetchReason = 300;
  * @brief The message of a structure reader whose provider answered a status
  *        other than 200.
  *
- * The message names the reader, the status, what the ID is, the ID and
+ * The message names the database, the status, what the ID is, the ID and
  * the provider's reason, e.g.
  *
- *     CODReader: HTTP 500 for COD ID '1534932': CODDataProvider: cURL error: Could not connect to server
+ *     COD: HTTP 500 for COD ID '1534932': COD: cURL error: Could not connect to server
  *
  * The reason is @p rr's response, as the provider gives it: its own text
  * for a cURL error (status 500, as above), else the server's body. A
@@ -32,7 +32,7 @@ constexpr std::size_t kMaxFetchReason = 300;
  * Used by AflowReader (`AUID`), CODReader (`COD ID`),
  * MaterialsProjectReader (`material`) and NomadReader (`entry`).
  *
- * @param reader  the reader's name, e.g. `CODReader`
+ * @param reader  the database the reader reads, such as `COD`
  * @param id_kind what @p id is, e.g. `COD ID`
  * @param id      the ID the provider was asked for
  * @param rr      the provider's answer

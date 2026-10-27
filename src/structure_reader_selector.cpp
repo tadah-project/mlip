@@ -43,15 +43,36 @@ StructureReaderSelector::getReader(const std::string &pathOrId) {
   }
   else if (format == "NOMAD") {
     return std::make_unique<NomadReader>();
+  } else if (format == "MISSING") {
+    throw std::runtime_error("the structure file " + pathOrId +
+                             " does not exist");
   } else {
     throw std::runtime_error(
-        "StructureReaderSelector::getReader - Unknown format for " + pathOrId);
+        pathOrId + " is neither a structure file tadah reads (CIF, POSCAR or "
+        "CASTEP .cell) nor an online id (mp-..., cod-..., aflow:... or a "
+        "NOMAD entry id)");
   }
 }
 
 bool fileExists(const std::string &path) {
   struct stat buffer;
   return (stat(path.c_str(), &buffer) == 0 && S_ISREG(buffer.st_mode));
+}
+// A path whose name says it is a structure file of a format tadah reads: a
+// .cif or .cell extension, in any letter case, or a file name that begins
+// with POSCAR or CONTCAR.
+bool namesStructureFile(const std::string &path) {
+  const std::size_t slash = path.find_last_of('/');
+  const std::string name =
+      slash == std::string::npos ? path : path.substr(slash + 1);
+  if (name.rfind("POSCAR", 0) == 0 || name.rfind("CONTCAR", 0) == 0)
+    return true;
+  const std::size_t dot = name.find_last_of('.');
+  if (dot == std::string::npos) return false;
+  std::string ext = name.substr(dot + 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return ext == "cif" || ext == "cell";
 }
 bool isSevenDigits(const std::string &s) {
   if (s.size() != 7)
@@ -110,6 +131,14 @@ std::string StructureReaderSelector::guessFormat(const std::string &pathOrId) {
   // NOMAD minimal check
   if (looksLikeNomadId(pathOrId)) {
     return "NOMAD";
+  }
+
+  // A path that names a structure file and at which nothing exists: a
+  // mistyped or missing file, refused as such rather than as a format tadah
+  // does not read.
+  struct stat buffer;
+  if (namesStructureFile(pathOrId) && stat(pathOrId.c_str(), &buffer) != 0) {
+    return "MISSING";
   }
 
   // 3) Fallback: guess-from-server approach

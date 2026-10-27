@@ -150,6 +150,28 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(slurp("c10b.hpotarget") == slurp("c10.hpotarget"));
 }
 
+/* Pins: the starter target file of tadah refit that cannot be opened, or
+ * not written, is refused naming it a target file, the term of the
+ * documentation: "tadah refit: cannot open the target file
+ * no_such_dir/a.hpotarget for writing." and, on /dev/full (which opens and
+ * takes no byte), "tadah refit: cannot write the target file /dev/full.".
+ * Before the fix: both said "the hpotarget file". */
+TEST_CASE_METHOD(PTFixture,
+                 "the writer of the starter target file names a file it "
+                 "cannot open or write a target file",
+                 "[retarget][hpotarget_writer]") {
+  ScopedTempDir tmp;
+  const Context pot = make_knot_pot();
+  CHECK_THROWS_WITH(write_hpotarget("no_such_dir/a.hpotarget", pot, 5.0),
+                    "tadah refit: cannot open the target file "
+                    "no_such_dir/a.hpotarget for writing.");
+  if (fs::exists("/dev/full"))
+    CHECK_THROWS_WITH(write_hpotarget("/dev/full", pot, 5.0),
+                      "tadah refit: cannot write the target file /dev/full.");
+  else
+    WARN("no /dev/full: the refusal of a failed write is not checked");
+}
+
 TEST_CASE_METHOD(PTFixture, "retarget rewrites bounds around the centres",
                  "[retarget]") {
   ScopedTempDir tmp;
@@ -895,6 +917,27 @@ TEST_CASE_METHOD(PTFixture,
     CHECK(retarget("PCT", "SGRID2B=" + ok) == EXIT_SUCCESS);
   }
   CHECK(retarget("SET", "CGRID2B(1)=2.9,3.1") == EXIT_SUCCESS);
+  // the refusals give their examples without "e.g." (before the fix:
+  // "...; e.g. --pct 10 FIXWEIGHT=2)." and "(e.g. --set ...)"), and name
+  // the grammar that of the target file (before the fix of the term: "the
+  // number grammar of the hpotarget file")
+  CHECK_THROWS_WITH(
+      retarget("PCT", "5x"),
+      "tadah refit --retarget: cannot parse --pct token '5x' — expected a "
+      "positive number or KEY=<positive number> in the number grammar of "
+      "the target file ([+-]digits[.digits][e[+-]digits]; such as --pct "
+      "10 FIXWEIGHT=2).");
+  CHECK_THROWS_WITH(
+      retarget("SET", "CGRID2B(1)=5x,3.1"),
+      "tadah refit --retarget: --set token 'CGRID2B(1)=5x,3.1': '5x' is not "
+      "a number in the number grammar of the target file "
+      "([+-]digits[.digits][e[+-]digits]).");
+  CHECK_THROWS_WITH(
+      retarget("SET", "CGRID2B=2.9,3.1"),
+      "tadah refit --retarget: cannot parse --set token 'CGRID2B=2.9,3.1' — "
+      "expected 'KEY(i)=lo,hi', KEY an OPTIM key or component path of the "
+      "file (such as --set 'CGRID2B(3)=2.1,2.4' or "
+      "'EAM.DENSITY.CENTRES(2)=2.4,2.6').");
   // zero and negative percentages stay refused
   CHECK_THROWS_WITH(retarget("PCT", "0"), Catch::Contains("--pct token '0'"));
   CHECK_THROWS_WITH(retarget("PCT", "SGRID2B=-5"),
@@ -1015,20 +1058,29 @@ TEST_CASE_METHOD(PTFixture,
  * make_ream_blip5_pot("SIGNED") potential, which has no EMBF0 line and so
  * reads as ZERO) carries the note, as consecutive lines,
  *   "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no"
- *   "# per-atom energy constant. For absolute reference energies (e.g."
- *   "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an"
+ *   "# per-atom energy constant. For absolute reference energies, such as"
+ *   "# DFT totals, tadah hpo takes --eshift-atom or --eshift-dbatom (an"
  *   "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not"
- *   "# read), or add an ESHIFT line to <config>."
+ *   "# read), or an ESHIFT line in <config>."
  *   "# (Not BIAS true: its intercept columns, one per ATOM species,"
  *   "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM"
  *   "# FIXWEIGHT lines below index.)"
  * and no line advising to add ESHIFT_ATOM or ESHIFT_DBATOM to <config>:
  * <config> is the refit potential plus a DBFILE line, a file with WEIGHTS,
  * whose toggle lines tadah hpo does not read.
+ * The file begins with the lines
+ *   "# Starter target file of tadah hpo, written by tadah refit. It runs
+ *   with:"
+ *   "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>"
+ * and the first note ends "# validation data the loss is measured on (the
+ * Nested Fitting chapter of the documentation)."; no line has "e.g.".
  * Before the fix: the note said "# DFT totals) add ESHIFT_ATOM,
  * ESHIFT_DBATOM or ESHIFT to <config>.", advice that applies no shift (the
  * toggle line is not read, with a WARNING saying so): the sequence is not
- * found. */
+ * found. Before the fix of the voice: "(e.g.\n# DFT totals) give tadah hpo
+ * ...", "... or add an ESHIFT line to <config>.", a file that began "# HPO
+ * starter target written by `tadah refit`. Run:" and "See the Tadah docs
+ * (HPO).". */
 TEST_CASE_METHOD(PTFixture,
                  "write_hpotarget: the EMBF0 ZERO note says how tadah hpo "
                  "derives a per-atom reference energy",
@@ -1038,10 +1090,10 @@ TEST_CASE_METHOD(PTFixture,
   const std::vector<std::string> lines = read_lines("z.hpotarget");
   const std::vector<std::string> note = {
       "# EMBF0 ZERO: F(0) = 0 exactly, so with BIAS false the model has no",
-      "# per-atom energy constant. For absolute reference energies (e.g.",
-      "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an",
+      "# per-atom energy constant. For absolute reference energies, such as",
+      "# DFT totals, tadah hpo takes --eshift-atom or --eshift-dbatom (an",
       "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not",
-      "# read), or add an ESHIFT line to <config>.",
+      "# read), or an ESHIFT line in <config>.",
       "# (Not BIAS true: its intercept columns, one per ATOM species,",
       "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM",
       "# FIXWEIGHT lines below index.)"};
@@ -1051,4 +1103,93 @@ TEST_CASE_METHOD(PTFixture,
   REQUIRE(static_cast<std::size_t>(lines.end() - first) >= note.size());
   CHECK(std::vector<std::string>(first, first + note.size()) == note);
   CHECK(slurp("z.hpotarget").find("add ESHIFT_ATOM") == std::string::npos);
+  const std::vector<std::string> head = {
+      "# Starter target file of tadah hpo, written by tadah refit. It runs "
+      "with:",
+      "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>",
+      "# <config>: the refit potential with a DBFILE line appended naming a",
+      "# training dataset; <val>: a file with DBFILE line(s) naming the",
+      "# validation data the loss is measured on (the Nested Fitting",
+      "# chapter of the documentation)."};
+  REQUIRE(lines.size() >= head.size());
+  CHECK(std::vector<std::string>(lines.begin(), lines.begin() + head.size()) ==
+        head);
+  CHECK(slurp("z.hpotarget").find("e.g.") == std::string::npos);
+}
+
+/* Pins: the warnings of --rcut2b say what the run does, without an
+ * instruction:
+ *  - on a knot channel (CGRID2B, no SGRID2B): "--rcut2b is ignored:
+ *    CGRID2B is a knot channel, and RCUT2B is its largest knot, which the
+ *    CGRID2B boxes move.";
+ *  - on a bump channel whose file has no RCUT2B reference line: "RCUT2B:
+ *    no OPTIM reference line in the file — the declared cutoff
+ *    6.00000000e+00 still binds the bump-support cap; the fit takes RCUT2B
+ *    from the training configuration, which --rcut2b does not change.";
+ *  - on an ACTIVE RCUT2B line: "OPTIM RCUT2B (1): ACTIVE line commented out
+ *    — ... (the bump-support gate keeps every bump inside the cutoff's LOW
+ *    bound); the fit takes RCUT2B from the training configuration, which
+ *    --rcut2b does not change.".
+ * Before the fix: they ended "; move the knots instead.", "; remember to
+ * set RCUT2B in the training config." and ". Set RCUT2B in the training
+ * config.". */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --retarget --rcut2b: the warnings say what the run "
+                 "does",
+                 "[retarget][rcut][messages]") {
+  ScopedTempDir tmp;
+  const auto warnings_of = [](std::vector<std::string> lines) {
+    RetargetOptions o;
+    o.pct = 10.0;
+    o.rcut_override["2B"] = 6.0;
+    return retarget_hpotarget_lines(lines, o).warnings;
+  };
+  const auto has = [](const std::vector<std::string> &w,
+                      const std::string &text) {
+    return std::find(w.begin(), w.end(), text) != w.end();
+  };
+  write_hpotarget("k.hpotarget", make_knot_pot(), 10.0);
+  const auto knot = warnings_of(read_lines("k.hpotarget"));
+  INFO("knot warnings:\n" << [&] {
+    std::string t;
+    for (const auto &w : knot) t += w + "\n";
+    return t;
+  }());
+  CHECK(has(knot, "--rcut2b is ignored: CGRID2B is a knot channel, and "
+                  "RCUT2B is its largest knot, which the CGRID2B boxes "
+                  "move."));
+  write_hpotarget("b.hpotarget", make_blip_pot(), 10.0);
+  std::vector<std::string> blip = read_lines("b.hpotarget");
+  std::vector<std::string> no_reference;
+  for (const auto &l : blip)
+    if (l.find("OPTIM RCUT2B") == std::string::npos) no_reference.push_back(l);
+  REQUIRE(no_reference.size() < blip.size());
+  const auto missing = warnings_of(no_reference);
+  INFO("warnings without a reference line:\n" << [&] {
+    std::string t;
+    for (const auto &w : missing) t += w + "\n";
+    return t;
+  }());
+  CHECK(has(missing, "RCUT2B: no OPTIM reference line in the file — the "
+                     "declared cutoff 6.00000000e+00 still binds the "
+                     "bump-support cap; the fit takes RCUT2B from the "
+                     "training configuration, which --rcut2b does not "
+                     "change."));
+  for (std::size_t i = 0; i < blip.size(); ++i)
+    if (blip[i].rfind("# OPTIM RCUT2B (1)", 0) == 0) {
+      blip.insert(blip.begin() + i + 1, "OPTIM RCUT2B (1) 5.9 6.1");
+      break;
+    }
+  const auto active = warnings_of(blip);
+  INFO("warnings with an ACTIVE line:\n" << [&] {
+    std::string t;
+    for (const auto &w : active) t += w + "\n";
+    return t;
+  }());
+  CHECK(has(active, "OPTIM RCUT2B (1): ACTIVE line commented out — --rcut2b "
+                    "declares a FIXED cutoff, and searching RCUT on a bump "
+                    "channel is a wasted dimension (the bump-support gate "
+                    "keeps every bump inside the cutoff's LOW bound); the "
+                    "fit takes RCUT2B from the training configuration, which "
+                    "--rcut2b does not change."));
 }

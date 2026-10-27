@@ -57,6 +57,11 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
   // CLI dispatcher will have run CoreUserConfigParser on it already
   // and merged the result into taskContext (so RCUTMAX is set).
   tadah::core::Context workCtx = taskContext;
+  // What the input gave, asked before Context::contains() below, which
+  // inserts a key's default.
+  const bool dbfile_given = taskContext.has_stored("DBFILE");
+  const bool cutoff_given =
+      taskContext.has_stored("RCUT2B") || taskContext.has_stored("RCUTMB");
 
   // Collect structures.
   StructureDB stdb;
@@ -81,20 +86,36 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
     }
   }
 
+  // The input is one of -c, --dbfile and --structure (the command line
+  // refuses two of them), so a refusal names only what that input accepts.
   if (stdb.size() == 0) {
+    // (A STRUCTURE value gives a structure, or its reader refuses it.)
+    if (!dbfile_given)
+      throw std::runtime_error(
+          "analysis dataset_stats: no structures loaded: the configuration "
+          "has no DBFILE or STRUCTURE line");
+    std::string files;
+    for (std::size_t i = 0; i < taskContext.size("DBFILE"); ++i)
+      files += (i == 0 ? "" : " ") + taskContext.get<std::string>("DBFILE", i);
     throw std::runtime_error(
-        "analysis dataset_stats: no structures loaded — provide at "
-        "least one DBFILE or STRUCTURE.");
+        "analysis dataset_stats: no structures loaded: the datasets of "
+        "DBFILE (" + files + ") hold no structure");
   }
 
-  // RCUTMAX must already be set by either the user's config or the
-  // postprocessor of CoreUserConfigParser.
-  if (!workCtx.contains("RCUTMAX") || workCtx.get<double>("RCUTMAX") <= 0) {
+  // The cutoff of the statistics is RCUTMAX, the largest RCUT2B or RCUTMB
+  // value, which the parse of a configuration (-c) sets; --dbfile and
+  // --structure give none.
+  if (!cutoff_given)
     throw std::runtime_error(
-        "analysis dataset_stats: RCUTMAX is not set or <= 0. "
-        "Set at least one of RCUT2B / RCUTMB in your config so the "
-        "audit cutoff is well-defined.");
-  }
+        "analysis dataset_stats: no cutoff: the statistics take the largest "
+        "RCUT2B or RCUTMB value of a configuration given with -c as their "
+        "cutoff, and no line gives one (--dbfile and --structure give none)");
+  if (!(workCtx.get<double>("RCUTMAX") > 0))
+    throw std::runtime_error(
+        "analysis dataset_stats: the cutoff of the statistics is the largest "
+        "RCUT2B or RCUTMB value, " +
+        tadah::core::format_roundtrip(workCtx.get<double>("RCUTMAX")) +
+        ", which is not above 0");
 
   // The audit of the data: two atoms at one position are a pair at
   // distance 0 (r_min 0), listed rather than refused.

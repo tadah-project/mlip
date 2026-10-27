@@ -121,7 +121,7 @@ char monoclinic_axis(const gemmi::SpaceGroup &sg) {
   const char *q = sg.qualifier;
   if (*q == '-') ++q;
   if (*q != 'a' && *q != 'b' && *q != 'c')
-    throw std::logic_error("CifReader: monoclinic space group " + sg.xhm() +
+    throw std::logic_error("internal error: monoclinic space group " + sg.xhm() +
                            " has no unique axis in gemmi's table");
   return *q;
 }
@@ -381,7 +381,7 @@ std::string one_line(const std::string &text) {
 void CifReader::read(const std::string &path) {
   std::ifstream ifs(path);
   if (!ifs.is_open()) {
-    throw std::runtime_error("CifReader::read: Cannot open " + path);
+    throw std::runtime_error("the structure file " + path + " cannot be opened");
   }
 
   std::ostringstream buffer;
@@ -538,12 +538,12 @@ void CifReader::parseCif(const std::string &fileContents,
                                const std::string &why) {
     return std::runtime_error(
         source + ": cannot read the " + kind + " symbol '" + symbol + "'" +
-        src.note + ": " + why + "; give " +
+        src.note + ": " + why + "; the reader takes " +
         (kind == "Hall"
-             ? "a Hall symbol in standard form (e.g. '-F 4vw 2vw 3') or "
+             ? "a Hall symbol in standard form (such as '-F 4vw 2vw 3') or "
                "none (the Hall symbol is read before the H-M symbol)"
-             : "it in a standard form (e.g. 'F d -3 m:2', or 'F d -3 m Z' "
-               "for origin choice 2)") +
+             : "the symbol in a standard form (such as 'F d -3 m:2', or "
+               "'F d -3 m Z' for origin choice 2)") +
         ", or the symmetry-operator loop.");
   };
   // The Hall symbol, else the H-M symbol; false when there is neither.
@@ -593,8 +593,8 @@ void CifReader::parseCif(const std::string &fileContents,
     } catch (const std::exception &) {
       throw std::runtime_error(
           source + ": the space-group number '" + as_string(*number_value) +
-          "' is not an integer; give the number (1 to 230), the H-M symbol "
-          "or the symmetry-operator loop.");
+          "' is not an integer; the reader takes the number (1 to 230), the "
+          "H-M symbol or the symmetry-operator loop.");
     }
     const int n = struc.spacegroup_number;
     src.kind = SymmetrySource::Number;
@@ -602,8 +602,8 @@ void CifReader::parseCif(const std::string &fileContents,
     if (n < 1 || n > 230)
       throw std::runtime_error(
           source + ": the space-group number " + std::to_string(n) +
-          " is not one of the 230 space groups (1 to 230); give the H-M "
-          "symbol or the symmetry-operator loop.");
+          " is not one of the 230 space groups (1 to 230); the reader takes "
+          "the H-M symbol or the symmetry-operator loop.");
     // gemmi's own number lookup takes the first tabulated setting,
     // whatever the cell (R -3 m:H for a rhombohedral cell): resolve the
     // number through the H-M symbol of its reference setting, as the
@@ -693,26 +693,28 @@ void CifReader::parseCif(const std::string &fileContents,
                           0});
         if (axes.kind == Axes::Monoclinic)
           advice = monoclinic_fits
-                       ? "give the full H-M symbol of the setting the cell "
-                         "is in (e.g. 'P 1 1 21/m' for unique axis c), or "
-                         "its symmetry-operator loop"
+                       ? "the reader takes the full H-M symbol of the setting "
+                         "the cell is in (such as 'P 1 1 21/m' for unique "
+                         "axis c), or its symmetry-operator loop"
                        : "the cell angles fit no monoclinic setting (two of "
-                         "alpha, beta and gamma are 90): correct the cell";
+                         "alpha, beta and gamma are 90), so the cell does "
+                         "not match the symbol";
         else if (struc.spacegroup == nullptr ||
                  struc.spacegroup->hm[0] != 'R')
           advice = "the cell angles do not fit hexagonal axes (alpha = beta "
-                   "= 90, gamma = 120): correct the cell";
+                   "= 90, gamma = 120), so the cell does not match the "
+                   "symbol";
         else if (axes_from_cell || !other_r_fits)
           advice = std::string(axes_from_cell
                                    ? "the axes are taken from the cell "
                                      "angles, which"
                                    : "the cell angles") +
                    " fit neither hexagonal (alpha = beta = 90, gamma = 120) "
-                   "nor rhombohedral (alpha = beta = gamma) axes: correct "
-                   "the cell";
+                   "nor rhombohedral (alpha = beta = gamma) axes, so the cell "
+                   "does not match the symbol";
         else
-          advice = "give the H-M symbol without its axes (e.g. 'R -3 m', "
-                   "which takes them from the cell), or the "
+          advice = "the reader takes the H-M symbol without its axes (such "
+                   "as 'R -3 m', which takes them from the cell), or the "
                    "symmetry-operator loop";
       }
     }
@@ -726,7 +728,8 @@ void CifReader::parseCif(const std::string &fileContents,
                  "settings; the unit cell is built with space group "
               << struc.spacegroup->xhm()
               << ", its standard setting (origin choice 2 where the group "
-                 "has two): give the H-M symbol if the cell is in another."
+                 "has two); for a cell in another setting the reader takes "
+                 "the H-M symbol."
               << std::endl;
 
   // A partly occupied site (disorder or a vacancy) has no representation in
@@ -749,8 +752,8 @@ void CifReader::parseCif(const std::string &fileContents,
       std::ostringstream msg;
       msg << source << ": site " << label << " has occupancy " << text
           << "; Tadah has no representation for a partly occupied site "
-             "(disorder or a vacancy): give an ordered structure, one atom "
-             "per site.";
+             "(disorder or a vacancy); the reader takes an ordered structure, "
+             "one atom per site.";
       throw std::runtime_error(msg.str());
     }
     if (occ > 1.0 + 1e-6) {

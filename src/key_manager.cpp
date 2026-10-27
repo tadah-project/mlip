@@ -30,52 +30,51 @@ std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
   // Key is missing and we can prompt -> show the 4-option menu
   std::cout << "\nNo key found for " << getServiceFriendlyName(service)
             << " (" << keyName << ").\n"
-            << "To obtain a key, visit the official website for instructions.\n\n";
+            << "The website of the service says how a key is obtained.\n\n";
 
   int choice = promptUserChoice();
   switch (choice) {
-    case 1:  // Store in context file
+    case 1:  // Store in the keys file
     {
-      std::cout << "Please enter the key now (Ctrl+C to cancel):\n> ";
+      std::cout << "The key (Ctrl+C cancels):\n> ";
       std::getline(std::cin, val);
       if (val.empty()) {
-        std::cerr << "No key entered, returning empty.\n";
+        std::cerr << "No key entered; the key stays missing.\n";
         return "";
       }
       bool storeOk = storage->storeKey(keyName, val);
       if (!storeOk) {
-        std::cerr << "Failed to store key in context.\n";
+        std::cerr << "The key cannot be written to " << storage->location()
+                  << "; it is used for this run only.\n";
       } else {
-        std::cout << "[Info] Key stored in context file (~/.context/tadah/keys).\n";
+        std::cout << "The key is stored in " << storage->location() << ".\n";
       }
       return val;
     }
 
     case 2:  // Temporarily set environment var for this run
     {
-      std::cout << "Please enter the key now (Ctrl+C to cancel):\n> ";
+      std::cout << "The key (Ctrl+C cancels):\n> ";
       std::getline(std::cin, val);
       if (val.empty()) {
-        std::cerr << "No key entered, returning empty.\n";
+        std::cerr << "No key entered; the key stays missing.\n";
         return "";
       }
       setEnvCurrentProcess(keyName, val);
-      std::cout << "\n[Info] Key applied to this process only.\n"
-                << "It will not be seen by other programs or future runs.\n";
+      std::cout << "\nThe key is set for this run only; other programs and "
+                   "later runs do not see it.\n";
       return val;
     }
 
     case 3:  // Show instructions for exporting in this shell
     {
-      std::cout << "This option does not store or set the key immediately.\n"
-                << "It only shows how to export the key in your terminal.\n"
-                << "Please copy the example commands below.\n\n";
-      // We can guess a random placeholder or let user type it
-      // For a real flow, you might also prompt for the key
-      std::cout << "Please enter the key (Ctrl+C to cancel):\n> ";
+      std::cout << "This option neither stores nor sets the key: it shows "
+                   "the commands that export it in a shell.\n\n";
+      // The commands are shown with the key itself.
+      std::cout << "The key (Ctrl+C cancels):\n> ";
       std::getline(std::cin, val);
       if (val.empty()) {
-        std::cerr << "No key entered, returning empty.\n";
+        std::cerr << "No key entered; the key stays missing.\n";
         return "";
       }
       showShellExportInstructions(keyName, val);
@@ -83,7 +82,7 @@ std::string KeyManager::getServiceKey(ServiceType service, bool allowPrompt)
     }
 
     default: // 4: Abort
-      std::cerr << "Aborting. Key remains missing.\n";
+      std::cerr << "Aborted; the key stays missing.\n";
       return "";
   }
 }
@@ -111,12 +110,12 @@ std::string KeyManager::getServiceFriendlyName(ServiceType service)
 int KeyManager::promptUserChoice()
 {
   // Four options now
-  std::cout << "Please select an option:\n"
-            << "[1] Store the key in a context file (persistent)\n"
-            << "[2] Temporarily set environment variable for THIS run only\n"
-            << "[3] View instructions for exporting in your shell (useful across multiple runs)\n"
-            << "[4] Abort (do nothing)\n"
-            << "\nEnter choice [1..4]: ";
+  std::cout << "Options:\n"
+            << "[1] store the key in the keys file (kept for later runs)\n"
+            << "[2] set the environment variable for this run only\n"
+            << "[3] show the commands that export it in a shell (for several runs)\n"
+            << "[4] abort (nothing is done)\n"
+            << "\nChoice [1..4]: ";
 
   std::string line;
   std::getline(std::cin, line);
@@ -142,7 +141,8 @@ void KeyManager::setEnvCurrentProcess(const std::string &keyName, const std::str
 #else
   // Unix-like approach
   if (setenv(keyName.c_str(), keyValue.c_str(), 1) != 0) {
-    std::cerr << "Could not set environment variable in this process.\n";
+    std::cerr << "The environment variable " << keyName
+              << " cannot be set in this run.\n";
   }
 #endif
 }
@@ -150,16 +150,16 @@ void KeyManager::setEnvCurrentProcess(const std::string &keyName, const std::str
 void KeyManager::showShellExportInstructions(const std::string &keyName, const std::string &keyValue)
 {
   std::cout << "------------------------------------------------------------\n"
-            << "To export this key for your current TERMINAL session:\n\n"
+            << "The key is exported for this terminal session by:\n\n"
             << "  export " << keyName << "=\"" << keyValue << "\"\n\n"
-            << "After this, any program run in the same terminal will see the key.\n"
+            << "Programs run later in this terminal see it.\n"
             << "------------------------------------------------------------\n"
-            << "To make this permanent for ALL future terminal sessions in bash or zsh,\n"
-            << "add the same line to your ~/.bashrc or ~/.zshrc file:\n\n"
+            << "A line in ~/.bashrc or ~/.zshrc exports it in every shell, "
+               "such as the one this command adds:\n\n"
             << "  echo 'export " << keyName << "=\"" << keyValue << "\"' >> ~/.bashrc\n"
             << "------------------------------------------------------------\n"
-            << "Once added, reload your shell or open a new terminal.\n"
-            << "Then re-run this program, and it will see that environment variable.\n\n";
+            << "A new terminal, or a reload of the shell, reads the line; a "
+               "later run of tadah then sees the variable.\n\n";
 }
 
 } // namespace mlip

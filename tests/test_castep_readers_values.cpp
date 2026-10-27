@@ -1763,7 +1763,7 @@ TEST_CASE("CASTEP readers: a tagged label with an unknown element is refused by 
 }
 
 // Pins: an error of the CASTEP .cell reader names the file, as
-//   CastepCellReader: CASTEP cell file <path>: <what>
+//   CASTEP cell file <path>: <what>
 // for a species label that is no element ('Qq:up', the second atom: exactly
 // "... <path>: CASTEP species label 'Qq:up' does not start with an element
 // symbol"), a file without a positions block and an unknown length unit
@@ -1775,6 +1775,8 @@ TEST_CASE("CASTEP readers: a tagged label with an unknown element is refused by 
 // replaced the reader's cell (4 A) and appended its first atom (3 atoms), so
 // the structure checks of every later refused file failed too, and reading
 // the good file again appended its atoms (5).
+// Before the fix that names the file alone: each message began
+// "CastepCellReader: CASTEP cell file <path>: ": the checks fail.
 TEST_CASE("CASTEP .cell reader: an error names the file, and a refused file "
           "leaves the structure",
           "[castep_readers][cell][species]") {
@@ -1815,7 +1817,7 @@ TEST_CASE("CASTEP .cell reader: an error names the file, and a refused file "
       msg = e.what();
     }
     INFO("message: '" << msg << "'");
-    const std::string head = "CastepCellReader: CASTEP cell file " + tmp.path + ": ";
+    const std::string head = "CASTEP cell file " + tmp.path + ": ";
     CHECK(msg.rfind(head, 0) == 0);
     CHECK_THAT(msg, Catch::Contains(b.what));
     if (b.name == "tmp_castep_rv_source_species.cell") CHECK(msg == head + b.what);

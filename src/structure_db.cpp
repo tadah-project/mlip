@@ -213,8 +213,6 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
   std::string line;
 
   if (!ifs.is_open()) {
-      core::Logger::instance().log(tadah::core::LogLevel::INFO,
-          "StructureDB::find_unique_elements: DBFILE does not exist: " + fn);
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 
@@ -317,11 +315,15 @@ void StructureDB::check_atom_key(tadah::core::Context &context, std::set<tadah::
       ++atoms_it;
     }
     if (error) {
-      throw std::runtime_error("\n"
-          "Mismatch between elements in datasets and ATOM in the context file.\n"
-          "Please either update the ATOM in the context file or remove ATOM\n"
-          "key completely. Tadah! will automatically configure this key.\n"
-          );
+      std::string named, have;
+      for (const auto &a : context("ATOM"))
+        named += (named.empty() ? "" : " ") + a;
+      for (const auto &e : unique_elements)
+        have += (have.empty() ? "" : " ") + e.symbol;
+      throw std::runtime_error(
+          "the ATOM line of the training configuration names " + named +
+          ", and the datasets have " + have + "; an ATOM line that lists "
+          "these elements in this order, or none, is accepted");
     }
   } else {
     for (const auto &s : unique_elements) context.add("ATOM", s.symbol);
@@ -337,18 +339,21 @@ void StructureDB::check_watom_key(tadah::core::Context &context, std::set<tadah:
       tadah::core::is_number(context.get<std::string>("WATOM", 0));
     if (per_species) {
       if (unique_elements.size() != n) {
-        throw std::runtime_error("\n"
-            "Mismatch between elements in datasets and WATOM in the context file.\n"
-            "Please either update the WATOM in the context file or remove WATOM\n"
-            "key completely. In the latter case Tadah! will use default values.\n"
-            );
+        std::string have;
+        for (const auto &e : unique_elements)
+          have += (have.empty() ? "" : " ") + e.symbol;
+        throw std::runtime_error(
+            "WATOM of the training configuration has " + std::to_string(n) +
+            (n == 1 ? " value" : " values") + " for the " +
+            std::to_string(unique_elements.size()) + " elements of the "
+            "datasets (" + have + "); one WATOM value for each element of "
+            "the datasets, or no WATOM line, is accepted");
       }
     } else {
       if (n % 3 != 0) {
-        throw std::runtime_error("\n"
-            "WATOM pair format expects '<sym> <sym> <value>' triples.\n"
-            "Got a number of entries that is not a multiple of three.\n"
-            );
+        throw std::runtime_error(
+            "WATOM in the pair form takes '<symbol> <symbol> <value>' "
+            "triples, and the line has " + std::to_string(n) + " entries");
       }
     }
   } else if (tadah::models::context_reads_watom(context)) {

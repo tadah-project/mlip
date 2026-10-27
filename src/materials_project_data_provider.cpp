@@ -53,7 +53,7 @@ RawResponse MaterialsProjectDataProvider::httpGet(const std::string &url)
 
   CURL* curl = curl_easy_init();
   if (!curl) {
-    throw std::runtime_error("MaterialsProjectDataProvider: cURL init failed.");
+    throw std::runtime_error("Materials Project: cURL does not initialise.");
   }
 
   struct curl_slist* headers = nullptr;
@@ -82,7 +82,7 @@ RawResponse MaterialsProjectDataProvider::httpGet(const std::string &url)
   if (res != CURLE_OK) {
     rr.httpStatus = 500;
     std::ostringstream oss;
-    oss << "MaterialsProjectDataProvider: cURL error: " << curl_easy_strerror(res);
+    oss << "Materials Project: cURL error: " << curl_easy_strerror(res);
     rr.response = oss.str();
   } else {
     rr.response = buffer;

@@ -66,9 +66,8 @@ relax(Structure& st_inout,
      || opts.box_mode == Options::Voigt6
      || opts.box_mode == Options::FixedZ) {
         throw std::logic_error(
-            "NativeRelaxer: requested box_mode not implemented in MVP. "
-            "Aniso/Voigt6 are scheduled with the elastic-constants observable; "
-            "FixedZ with the γ-surface observable.");
+            "internal error: the relaxation takes a fixed or an isotropic box "
+            "only");
     }
 
     /* Baseline cell + positions (used only in Iso mode for affine
@@ -184,8 +183,8 @@ relax(Structure& st_inout,
     };
 
     if (opts.verbose >= 1) {
-        std::cerr << "[NativeRelaxer] iter=0  E=" << E0
-                  << "  fmax=" << fmax_inf(F) << "\n";
+        std::cerr << "relaxation: iteration 0, E=" << E0
+                  << ", fmax=" << fmax_inf(F) << "\n";
     }
 
     /* Iter-0 convergence check. If the initial state is already at
@@ -261,9 +260,9 @@ relax(Structure& st_inout,
             result.final_energy = E0;
             result.scale_factor = scale_total;
             if (opts.verbose >= 1) {
-                std::cerr << "[NativeRelaxer] converged at iter=" << it
-                          << "  E=" << E0 << "  fmax=" << fmax_a
-                          << "  scale=" << scale_total << "\n";
+                std::cerr << "relaxation: converged at iteration " << it
+                          << ", E=" << E0 << ", fmax=" << fmax_a
+                          << ", scale=" << scale_total << "\n";
             }
             return result;
         }
@@ -279,8 +278,9 @@ relax(Structure& st_inout,
                 result.final_energy = E0;
                 result.scale_factor = scale_total;
                 if (opts.verbose >= 1) {
-                    std::cerr << "[NativeRelaxer] etol-converged at iter=" << it
-                              << "  E=" << E0 << "  dE_rel=" << dE_rel << "\n";
+                    std::cerr << "relaxation: converged by the energy "
+                                 "tolerance at iteration " << it
+                              << ", E=" << E0 << ", dE_rel=" << dE_rel << "\n";
                 }
                 return result;
             }
@@ -409,8 +409,9 @@ relax(Structure& st_inout,
 
         if (!accepted) {
             if (opts.verbose >= 1) {
-                std::cerr << "[NativeRelaxer] line-search failed at iter=" << it
-                          << "  step=" << alpha << "  fmax=" << fmax_a << "\n";
+                std::cerr << "relaxation: the line search failed at iteration "
+                          << it << ", step=" << alpha << ", fmax=" << fmax_a
+                          << "\n";
             }
             result.converged = false;
             result.final_energy = E0;
@@ -445,11 +446,11 @@ relax(Structure& st_inout,
         }
 
         if (opts.verbose >= 2) {
-            std::cerr << "[NativeRelaxer] iter=" << it
-                      << "  E=" << E0
-                      << "  fmax=" << fmax_inf(F)
-                      << "  step=" << alpha
-                      << "  scale=" << scale_total << "\n";
+            std::cerr << "relaxation: iteration " << it
+                      << ", E=" << E0
+                      << ", fmax=" << fmax_inf(F)
+                      << ", step=" << alpha
+                      << ", scale=" << scale_total << "\n";
         }
     }
 

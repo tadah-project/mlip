@@ -1,4 +1,5 @@
 #include <tadah/mlip/cell_builder.h>
+#include <tadah/core/number_format.h>
 
 #include <tadah/core/element.h>
 #include <tadah/mlip/atom.h>
@@ -12,7 +13,8 @@ namespace cells {
 Structure bcc(const std::string& species, double a0)
 {
     if (a0 <= 0.0)
-        throw std::invalid_argument("cells::bcc: a0 must be > 0");
+        throw std::invalid_argument("a bcc cell needs a0 > 0, got " +
+                                    tadah::core::format_roundtrip(a0));
 
     Structure st;
     /* Conventional cubic cell: matches LAMMPS `lattice bcc a0`
@@ -30,7 +32,9 @@ Structure bcc(const std::string& species, double a0)
 Structure isolated_atom(const std::string& species, double box_size)
 {
     if (box_size <= 0.0)
-        throw std::invalid_argument("cells::isolated_atom: box_size must be > 0");
+        throw std::invalid_argument(
+            "an isolated-atom cell needs a box size > 0, got " +
+            tadah::core::format_roundtrip(box_size));
 
     Structure st;
     st.cell.load(box_size, 0.0,      0.0,
@@ -48,18 +52,15 @@ Structure isolated_atom(const std::string& species, double box_size)
 
 Structure fcc(const std::string&, double)
 {
+    // PC_OBSERVABLE builds bcc cells only.
     throw std::logic_error(
-        "cells::fcc: not implemented in MVP. "
-        "First observable that needs FCC (e.g. phase_transition_energy) "
-        "must land its consumer before this stub may be filled in.");
+        "internal error: an fcc cell is not built by this version");
 }
 
 Structure hcp(const std::string&, double, double)
 {
     throw std::logic_error(
-        "cells::hcp: not implemented in MVP. "
-        "First observable that needs HCP (e.g. phase_transition_energy) "
-        "must land its consumer before this stub may be filled in.");
+        "internal error: an hcp cell is not built by this version");
 }
 
 }  // namespace cells

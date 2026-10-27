@@ -456,10 +456,10 @@ TEST_CASE("AFLOW reader: the string form is read strictly",
 
 /* Pins: JSON that is not an object, and an empty symbol in a typed species
  * list, are refused with a std::runtime_error saying why:
- *  - "[1]", "\"Ta1\"" and "42" give 'AflowReader: an aflowlib entry is a
+ *  - "[1]", "\"Ta1\"" and "42" give 'AFLOW: an aflowlib entry is a
  *    JSON object, not a JSON array.' (string, number);
  *  - species [""] in the NaCl entry, with the other fields strings and with
- *    them typed, gives "AflowReader: entry 'aflow:0000000000000003':
+ *    them typed, gives "AFLOW entry 'aflow:0000000000000003':
  *    \"species\" must hold element symbols (strings), got \"\" in [\"\"]."
  *    (read before the counts are compared, so the message is about the
  *    symbol, not the number of species).
@@ -468,7 +468,9 @@ TEST_CASE("AFLOW reader: the string form is read strictly",
  * symbol that is not a non-empty string). On v1-dev the three texts threw
  * nlohmann::json::type_error 306 ('cannot use value() with array', ...
  * string, ... number) and species [""] type_error 302 ('type must be
- * string, but is array'), neither a std::runtime_error. */
+ * string, but is array'), neither a std::runtime_error.
+ * Before the fix that names the database: the messages began "AflowReader: ":
+ * the checks fail. */
 TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
           "symbol, are refused",
           "[structure_readers][aflow][aflow_typed]") {
@@ -481,8 +483,8 @@ TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
     CHECK_THROWS_AS(reader.parseAflowJson(t.first), std::runtime_error);
     AflowReader r;
     CHECK_THROWS_WITH(r.parseAflowJson(t.first),
-                      Catch::Contains("AflowReader: an aflowlib entry is a "
-                                      "JSON object, not a JSON " +
+                      Catch::Contains("AFLOW: an aflowlib entry is a JSON "
+                                      "object, not a JSON " +
                                       t.second + "."));
   }
   const Entry nacl = entries()[2];
@@ -495,7 +497,7 @@ TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
     AflowReader r;
     CHECK_THROWS_WITH(
         r.parseAflowJson(json),
-        Catch::Contains("AflowReader: entry '" + nacl.auid + "': \"species\" "
+        Catch::Contains("AFLOW entry '" + nacl.auid + "': \"species\" "
                         "must hold element symbols (strings), got \"\" in "
                         "[\"\"]."));
   }
@@ -505,12 +507,14 @@ TEST_CASE("AFLOW reader: JSON that is not an object, and an empty typed "
 // std::runtime_error naming the entry and the symbol: rock-salt NaCl with
 // its species "D,Na" / ["D","Na"] (deuterium, which Tadah has not) or
 // "Xx,Na" / ["Xx","Na"] throws exactly
-//   AflowReader: entry 'aflow:0000000000000003': species 'D' is not an
+//   AFLOW entry 'aflow:0000000000000003': species 'D' is not an
 //   element symbol Tadah knows (H to Og).
 // and a reader that read bcc Ta before keeps that structure (label and
 // atom).
 // Before the fix: the periodic table's own error escaped, 'Unknown symbol:
 // D' (resp. 'Xx'), naming neither the entry nor the field.
+// Before the fix that names the database: "AflowReader: entry ...": the checks
+// fail.
 TEST_CASE("AFLOW reader: a species Tadah does not know is refused, naming "
           "the entry",
           "[structure_readers][aflow][aflow_typed]") {
@@ -533,7 +537,7 @@ TEST_CASE("AFLOW reader: a species Tadah does not know is refused, naming "
       } catch (const std::runtime_error &e) {
         what = e.what();
       }
-      CHECK(what == "AflowReader: entry '" + nacl.auid + "': species '" +
+      CHECK(what == "AFLOW entry '" + nacl.auid + "': species '" +
                         symbol +
                         "' is not an element symbol Tadah knows (H to Og).");
       check_same(reader.getStructure(), before);

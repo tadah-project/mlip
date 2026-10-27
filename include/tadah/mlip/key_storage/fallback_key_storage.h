@@ -45,6 +45,9 @@ public:
    */
   bool storeKey(const std::string& keyName, const std::string& keyValue) override;
 
+  /** @brief The location of the last storage, which storeKey() writes. */
+  std::string location() const override;
+
 private:
   std::vector<std::unique_ptr<IKeyStorage>> m_storages; 
 };

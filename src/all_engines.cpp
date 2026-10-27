@@ -45,7 +45,6 @@ void registerAllMLIPEngines() {
   EngineFactory::registerEngine("DATA.sample", [](){ return std::make_unique<DataSampleEngine>(); });
   EngineFactory::registerEngine("DATA.balance", [](){ return std::make_unique<DataBalanceEngine>(); });
   
-  // EngineFactory::registerEngine("transform", [](){ return std::make_unique<TransformEngine>(); });
   
   EngineFactory::registerEngine("PROPERTIES.pairwise", [](){ return std::make_unique<PropertiesPairwiseEngine>(); });
   // EngineFactory::registerEngine("PROPERTIES.ecurve", [](){ return std::make_unique<PropertiesEcurveEngine>(); });

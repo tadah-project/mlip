@@ -212,10 +212,10 @@ std::string all_weights_pinned_warning(const tadah::core::Context &ctx,
          "written are the FIXWEIGHT values. tadah refit and refit --edit "
          "write FIXINDEX and FIXWEIGHT for every weight of their potentials, "
          "the seed of a tadah hpo coefficient search, and so does a tadah "
-         "hpo run that pins every weight in its best_pot.tadah: to fit the "
-         "weights to the DBFILE data, delete both lines from the training "
-         "configuration (the Training page of the documentation, Retraining "
-         "from a potential).";
+         "hpo run that pins every weight in its best_pot.tadah: the weights "
+         "are fitted to the DBFILE data when both lines are deleted from the "
+         "training configuration (the Training page of the documentation, "
+         "Retraining from a potential).";
 }
 
 void provision_fixed_weights(M_Tadah_Base &model,

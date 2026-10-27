@@ -123,7 +123,8 @@ void DescriptorsCalc<D2,DM,C2,CM>::common_constructor() {
   }
 
   if (!dsize)
-    throw std::runtime_error("The descriptor size is 0, check your config.");
+    throw std::runtime_error("The descriptor size is 0: the descriptors of "
+                             "the configuration give no feature");
 
   dsize += bias;
 

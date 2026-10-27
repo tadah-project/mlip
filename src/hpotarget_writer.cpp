@@ -207,13 +207,15 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
                              :ream?"EMBF0 ZERO and REFERENCE ZERO":"REFERENCE ZERO";
   std::ofstream os(path);
   if (!os)
-    throw std::runtime_error("tadah refit: cannot open the hpotarget file " +
+    throw std::runtime_error("tadah refit: cannot open the target file " +
                              path + " for writing.");
-  os << "# HPO starter target written by `tadah refit`. Run:\n"
+  os << "# Starter target file of tadah hpo, written by tadah refit. It runs "
+        "with:\n"
      << "#   tadah hpo -c <config> --hpotarget <this file> --validation <val>\n"
      << "# <config>: the refit potential with a DBFILE line appended naming a\n"
      << "# training dataset; <val>: a file with DBFILE line(s) naming the\n"
-     << "# validation data the loss is measured on. See the Tadah docs (HPO).\n";
+     << "# validation data the loss is measured on (the Nested Fitting\n"
+     << "# chapter of the documentation).\n";
   // EMBF0 ZERO (DM_REAM default; an absent key reads as ZERO): F(0) = 0, so
   // with the refit pot's BIAS false the model has no per-atom constant.
   // <config> is the refit potential (it has WEIGHTS), whose ESHIFT_ATOM and
@@ -221,10 +223,10 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   // run's own toggle derives the shift; an ESHIFT line of <config> is read.
   if (zero_reference)
     os << "# " << zero_name << ": F(0) = 0 exactly, so with BIAS false the model has no\n"
-       << "# per-atom energy constant. For absolute reference energies (e.g.\n"
-       << "# DFT totals) give tadah hpo --eshift-atom or --eshift-dbatom (an\n"
+       << "# per-atom energy constant. For absolute reference energies, such as\n"
+       << "# DFT totals, tadah hpo takes --eshift-atom or --eshift-dbatom (an\n"
        << "# ESHIFT_ATOM or ESHIFT_DBATOM line of <config>, a potential, is not\n"
-       << "# read), or add an ESHIFT line to <config>.\n"
+       << "# read), or an ESHIFT line in <config>.\n"
        << "# (Not BIAS true: its intercept columns, one per ATOM species,\n"
        << "# precede the weights that FIXINDEX/FIXWEIGHT and the OPTIM\n"
        << "# FIXWEIGHT lines below index.)\n";
@@ -402,7 +404,7 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   os << "OUTPUT 1\nBOUTPUT 1\n";
   os.close();
   if (!os)
-    throw std::runtime_error("tadah refit: cannot write the hpotarget file " +
+    throw std::runtime_error("tadah refit: cannot write the target file " +
                              path + ".");
 }
 
