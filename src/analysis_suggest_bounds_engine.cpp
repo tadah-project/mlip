@@ -70,8 +70,9 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
   // statistics: the ranges that need them (ρ) are fixed ones, which their
   // rationale says. The neighbour distances are taken up to
   // models::kCutoffSearchReach times the seed's cutoffs (RCUTMAX follows
-  // RCUT2B and RCUTMB), so that the range of a cutoff can end past the
-  // seed's: statistics within the seed's cutoff hold no distance beyond
+  // RCUT2B, RCUTMB and the cutoff radius of each DESCRIPTOR block, which
+  // expand_grids has resolved), so that the range of a cutoff can end past
+  // the seed's: statistics within the seed's cutoff hold no distance beyond
   // it.
   tadah::core::Context statsCtx = workCtx;
   for (const char* key : {"RCUT2B", "RCUTMB"}) {
@@ -83,6 +84,14 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
     for (double v : values)
       statsCtx.add(key, tadah::core::format_roundtrip(v));
   }
+  std::vector<double> radii;
+  for (std::size_t i = 0;; ++i) {
+    const auto radius = statsCtx.stored_value("COMPONENT_RCUTMB", i);
+    if (!radius) break;
+    radii.push_back(models::kCutoffSearchReach *
+                    tadah::core::to_double(*radius));
+  }
+  if (!radii.empty()) statsCtx.set_component_cutoffs(radii);
   tadah::core::Logger::instance().log(
       tadah::core::LogLevel::INFO,
       "analysis suggest_bounds: the neighbour statistics reach " +

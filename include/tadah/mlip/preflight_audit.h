@@ -131,10 +131,13 @@ AuditReport run_preflight_from_db(
  *  block (cutoffs derived from knots or fixed by bump supports under a
  *  hard cutoff, and radial centres at the origin, excepted). Each
  *  descriptor of a joined line (D2_mJoin, DM_mJoin) is judged by its own
- *  context (joined_descriptors(): its centres, its cutoff, its TYPE line),
- *  as if it were alone; a key in the search space counts for every
- *  descriptor that has it. Always emits at WARN (never FAIL): this is a
- *  configuration smell, not a hard error.
+ *  values of a key (joined_descriptors(): every centre at the origin); a
+ *  key in the search space counts for every descriptor that has it. The
+ *  cutoff of a knot channel, and of a bump channel under a hard cutoff, is
+ *  excepted where tadah hpo derives it from the largest knot or holds the
+ *  bump supports within it: on a line of that descriptor alone, not on a
+ *  joined line, whose cutoffs are fixed values of the search. Always emits
+ *  at WARN (never FAIL): this is a configuration smell, not a hard error.
  *
  *  `optim_keys` is the canonical set of parameter names under HPO
  *  control (the keys of `HPOTargets::optimap`). A descriptor none of

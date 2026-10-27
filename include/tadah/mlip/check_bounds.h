@@ -55,7 +55,10 @@ sample_corners(const std::vector<Bound>& bounds, std::uint64_t seed = 0);
  *  bound's key (arg_pos, or the first entry for a scalar `(1)` bound) set
  *  to the corner value and every other entry kept. Several bounds on one
  *  key each set their own entry. A key the seed does not set takes the
- *  corner value alone. Throws when a bound names an entry past the seed's
+ *  corner value alone. The cutoff of a knot channel (RCUT2B of a D2_Knot5
+ *  line, RCUTMB of a knot DM_REAM line) is then its largest knot
+ *  (models::potedit::derived_knot_rcut), as tadah hpo re-derives it for
+ *  each candidate. Throws when a bound names an entry past the seed's
  *  values (std::runtime_error) or @p corner and @p bounds differ in size
  *  (std::invalid_argument). */
 tadah::core::Context corner_context(const tadah::core::Context& seed,
@@ -63,7 +66,11 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
                                     const std::vector<double>& corner);
 
 /** \brief Run the pre-flight audit at every corner of the bound box (in the
- *  corner_context of each corner), plus the low-bound rules of `seed`
+ *  corner_context of each corner, with the statistics of the dataset taken
+ *  at the largest cutoff of the seed and of every corner), after the
+ *  stated cutoff of a knot channel of `seed` is replaced with its largest
+ *  knot (models::potedit::normalize_knot_rcut, a WARNING, as tadah hpo and
+ *  tadah train replace it), plus the low-bound rules of `seed`
  *  (models::optim_low_bound_rule(key, seed): under RHOFORM NONNEG /
  *  MONOTONE AMPGRIDMB >= 0, WATOM > 0, SGRIDMB > 0 under MONOTONE and, for
  *  the Gaussian basis, under NONNEG; in every form every radial bump width

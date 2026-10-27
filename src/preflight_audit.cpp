@@ -287,9 +287,14 @@ bool centres_at_origin(const tadah::core::Context& seed,
 namespace {
 
 /* The critical-OPTIM audit of @p checks, each descriptor judged by its own
- * context: its values of a key (every centre at the origin), its cutoff
- * and its TYPE line (a knot or bump channel). */
-AuditReport critical_optim_audit(const std::vector<DescriptorCheck>& checks,
+ * values of a key (every centre at the origin, in its own context); the
+ * cutoff of a knot channel, and of a bump channel under a hard cutoff, is
+ * left out where tadah hpo derives it or holds the bump supports within
+ * it, which it does for the TYPE line of @p seed, the whole configuration
+ * (derived_knot_rcut and bump_channel_halfwidth read the line's first
+ * value: a line of one descriptor, not a D2_mJoin or DM_mJoin line). */
+AuditReport critical_optim_audit(const tadah::core::Context& seed,
+                                 const std::vector<DescriptorCheck>& checks,
                                  const std::vector<std::string>& optim_keys) {
   AuditReport report;
   std::unordered_set<std::string> optim_set(optim_keys.begin(),
@@ -315,10 +320,13 @@ AuditReport critical_optim_audit(const std::vector<DescriptorCheck>& checks,
       // Knot channels: RCUT2B/RCUTMB are DERIVED from the largest knot and
       // re-derived on every HPO evaluation — recommending an OPTIM block on
       // them would contradict that contract (the search knob is CGRID*).
+      // tadah hpo derives them for a line of one knot descriptor (the whole
+      // seed): the cutoff of a knot descriptor of a joined line is a fixed
+      // value, and the warning stays.
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::derived_knot_rcut(ctx, "2B")) ||
+           tadah::models::potedit::derived_knot_rcut(seed, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::derived_knot_rcut(ctx, "MB")))
+           tadah::models::potedit::derived_knot_rcut(seed, "MB")))
         continue;
       // Bump channels (D2_Blip/D2_Blip5, DM_REAM bump density) under a HARD
       // cutoff: RCUT is the fitted truncation and every bump support ends at
@@ -329,12 +337,15 @@ AuditReport critical_optim_audit(const std::vector<DescriptorCheck>& checks,
       // bump centres/widths (CGRID*/SGRID*); the per-candidate bump-support
       // gate in tadah hpo is what keeps them consistent with RCUT. Under a
       // SMOOTH cutoff the damping tail depends on RCUT, so the warning stays.
+      // The gate holds the bumps of a line of one bump descriptor (the
+      // whole seed): a bump descriptor of a joined line is not held within
+      // its cutoff, and the warning stays.
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::bump_channel_halfwidth(ctx, "2B") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "2B")) ||
+           tadah::models::potedit::bump_channel_halfwidth(seed, "2B") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::bump_channel_halfwidth(ctx, "MB") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "MB")))
+           tadah::models::potedit::bump_channel_halfwidth(seed, "MB") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
         continue;
 
       // Radial centres at the origin (every CGRID* value 0): the basis is
@@ -372,13 +383,14 @@ AuditReport run_critical_optim_audit_with_metas(
   std::vector<DescriptorCheck> checks;
   for (const auto& [label, meta] : metas)
     checks.push_back(DescriptorCheck{label, meta, seed, {}});
-  return critical_optim_audit(checks, optim_keys);
+  return critical_optim_audit(seed, checks, optim_keys);
 }
 
 AuditReport run_critical_optim_audit(
     const tadah::core::Context&     seed,
     const std::vector<std::string>& optim_keys) {
-  return critical_optim_audit(collect_descriptor_checks(seed), optim_keys);
+  return critical_optim_audit(seed, collect_descriptor_checks(seed),
+                              optim_keys);
 }
 
 void enforce_audit_mode(const AuditReport& report, AuditMode mode) {
