@@ -24,7 +24,7 @@ build_debug:
     - cmake ../.. -DCMAKE_CXX_FLAGS="-g -O1 -Wall -Wpedantic -pedantic-errors -Wextra --coverage" -DTADAH_ENABLE_OPENMP=ON -DBUILD_TESTING=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
     - make -j ${CPU_BUILD}
     - cd ${DEBUG_DIR}
-    - make test
+    - ctest --output-on-failure
     - cd ..; gcovr -e '.*tests.*|external|.*/_deps/.*|.*utils.*|build' -r .
   coverage: /^TOTAL.*\s+(\d+\%)$/
 
