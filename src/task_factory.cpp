@@ -8,6 +8,7 @@
 #include <tadah/core/blueprint_parser.h>
 #include <tadah/core/blueprint_validator.h>
 #include <tadah/core/retired_keys.h>
+#include <tadah/models/descriptors/d_mjoin.h>
 #include <stdexcept>
 #include <algorithm>
 #include <string>
@@ -165,7 +166,11 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   // as ANALYTICS of tadah predict, or a key of their configuration file
   // such as REFIT_MODE of tadah refit) is refused at its line, as a file of
   // this command (CoreUserConfigParser::set_command), and not read from a
-  // potential, with a notice.
+  // potential, with a notice. The command trains from a potential it reads
+  // so (tadah train, tadah hpo, tadah refit, the analysis commands): a key
+  // of the potential's descriptors set on two lines of the potential file
+  // (a line appended to a copy) is refused, naming both, as a potential's
+  // value is changed by editing its line (D_mJoin::check_potential_lines).
   core::Context fileContext;
   std::string configFile;
   std::vector<core::SkippedKeyLine> skipped;
@@ -174,6 +179,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
     core::CoreUserConfigParser parser;
     parser.set_command(taskInput.getTaskName());
     fileContext = parser.parse(configFile, potential_line_not_read, skipped);
+    models::D_mJoin::check_potential_lines(fileContext,
+                                           taskInput.getTaskName());
     baseContext.remove("CONFIG");
   }
 

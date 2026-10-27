@@ -1051,10 +1051,15 @@ TEST_CASE("preflight_audit: critical_optim_audit judges the search of a "
 
 /* Pins: the pre-flight audit fails a descriptor whose cutoff holds no
  * neighbour distance, whichever descriptor it is: D2_Knot5 with RCUT2B 2
- * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL,
- * naming RCUT2B and 2, under AUDIT error.
+ * (knots 1.5 and 2) on bcc Ta distances (r_min 2.25 A) gives one FAIL
+ * under AUDIT error, naming RCUT2B, its value and the element pair of the
+ * line: "RCUT2B = 2 is below the smallest (Ta, Ta) neighbour distance of
+ * the dataset (2.25 Å): the descriptor sums over no neighbour and is 0 for
+ * every atom.".
  * Before the fix: D2_Knot5's cutoff had no check: no FAIL, and tadah
- * train trained a descriptor that is 0 for every structure. */
+ * train trained a descriptor that is 0 for every structure. The whole
+ * text passes as well (a pin of the message; the case checked "RCUT2B = 2
+ * " alone). */
 TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
           "FAIL finding",
           "[preflight_audit][cutoff]") {
@@ -1075,7 +1080,10 @@ TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
     ++n;
     CHECK(m.descriptor_label == "D2_Knot5");
     CHECK(m.param_key == "RCUT2B");
-    CHECK(m.text.find("RCUT2B = 2 ") != std::string::npos);
+    CHECK(m.text ==
+          "RCUT2B = 2 is below the smallest (Ta, Ta) neighbour distance of "
+          "the dataset (2.25 Å): the descriptor sums over no neighbour and "
+          "is 0 for every atom.");
   }
   CHECK(n == 1u);
 }
@@ -1129,4 +1137,353 @@ TEST_CASE("preflight_audit: a finding names the key AUDIT, its level and "
         std::string::npos);
   CHECK(printed.str().find("\n  FAIL DM_mBlipEnv: a failure\n") !=
         std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+//  The element pairs of a descriptor's line: a descriptor sums over the
+//  neighbours of the element pairs its TYPE2B or TYPEMB line names, and the
+//  audit judges it by their distances alone
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Ta-W data (DataStats sorts per_pair by element pair): the (Ta, Ta) pairs
+ * from 2.86 to 3.3 A, the (Ta, W) pairs from 2.4 to 2.6 A and the (W, W)
+ * pairs from 2.5 to 2.7 A. */
+DataStats ta_w_distances() {
+  DataStats d;
+  d.n_atoms = 40;
+  d.n_structures = 4;
+  d.elements = {"Ta", "W"};
+  auto pair = [](const char* a, const char* b, double lo, double hi) {
+    PerPairStats pp;
+    pp.elements = {a, b};
+    pp.n_pairs = 100;
+    pp.r_min = lo;
+    pp.r_max = hi;
+    for (std::size_t i = 0; i < pp.r_percentiles.size(); ++i)
+      pp.r_percentiles[i] = lo + (hi - lo) * static_cast<double>(i) / 10.0;
+    return pp;
+  };
+  d.per_pair = {pair("Ta", "Ta", 2.86, 3.3), pair("Ta", "W", 2.4, 2.6),
+                pair("W", "W", 2.5, 2.7)};
+  return d;
+}
+
+/* TYPE2B D2_Blip 2 2 <pairs> alone, RCUT2B @p rcut, centres 1 and 2,
+ * SGRID2B 1 1, Cut_Cos. */
+Context blip_line(const std::string& pairs, double rcut) {
+  Context c;
+  c.add("INIT2B", "true");
+  c.add("TYPE2B", "D2_Blip 2 2 " + pairs);
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", rcut);
+  c.add("CGRID2B", "1 2");
+  c.add("SGRID2B", "1 1");
+  return c;
+}
+
+}  // namespace
+
+/* Pins: the pre-flight audit judges the cutoff of a descriptor by the
+ * neighbour distances of the element pairs its line names, on Ta-W data
+ * whose (Ta, Ta) pairs start at 2.86 A, (Ta, W) at 2.4 A and (W, W) at
+ * 2.5 A (ta_w_distances()), for D2_Blip 2 2 <pairs> with RCUT2B r:
+ *  - "Ta Ta", r = 2.6: one FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the
+ *    smallest (Ta, Ta) neighbour distance of the dataset (2.86 Å): the
+ *    descriptor sums over no neighbour and is 0 for every atom.";
+ *  - "W W", r = 2.45: one FAIL naming "(W, W)" and 2.5 Å;
+ *  - "Ta Ta W W", r = 2.45: one FAIL naming "(Ta, Ta) or (W, W)" and 2.5 Å;
+ *  - "Mo Mo", r = 5: one FAIL, "RCUT2B = 5: no (Mo, Mo) pair of atoms of the
+ *    dataset lies within it, ...";
+ *  - "Ta Ta W W", r = 2.6, each pair of the line judged on its own: one
+ *    FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta)
+ *    neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair adds
+ *    nothing to the descriptor, which sums over its other element pairs
+ *    alone.";
+ *  - "* *" at 2.45, the pair (*, *) standing for the (Ta, Ta), (Ta, W) and
+ *    (W, W) pairs of the data, each judged on its own, as on "Ta Ta Ta W W
+ *    W": one FAIL, "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest
+ *    (Ta, Ta) neighbour distance of the dataset (2.86 Å) and the smallest
+ *    (W, W) one (2.5 Å): the (Ta, Ta) and (W, W) pairs add nothing to the
+ *    descriptor, which sums over its other element pairs alone.";
+ *  - "Ta *" at 2.6, the (Ta, Ta) and (Ta, W) pairs, as on "Ta Ta Ta W": the
+ *    FAIL of "Ta Ta W W" at 2.6;
+ *  - "W W" at 2.6 and "Ta W" at 2.45: no finding (a pin: no false FAIL, as
+ *    since the check read every element pair).
+ * Before the fix: the check read the smallest neighbour distance of every
+ * element pair of the data, 2.4 A: none of the four FAILs before "Ta Ta W
+ * W" at 2.6 was given, and AUDIT error trained descriptors that are 0 for
+ * every atom.
+ * Before each pair was judged on its own: "Ta Ta W W" at 2.6 gave no
+ * finding, the (W, W) pairs being within 2.6 A, and AUDIT error trained a
+ * descriptor that is 0 for every Ta atom.
+ * Before a pair with * stood for the element pairs of the data it matches:
+ * "* *" at 2.45 and "Ta *" at 2.6 gave no finding, each judged as one pair
+ * by the distances of the pairs it matches together, from 2.4 A, while the
+ * lines that name those pairs failed, "Ta Ta Ta W W W" naming each pair in
+ * its own clause ("... (2.86 Å) and is below the smallest (W, W) neighbour
+ * distance of the dataset (2.5 Å): ..."). */
+TEST_CASE("preflight_audit: a cutoff is judged by the element pairs of its "
+          "descriptor's line",
+          "[preflight_audit][cutoff][line_pairs]") {
+  const DataStats data = ta_w_distances();
+  auto fails = [&](const std::string& pairs, double rcut) {
+    std::vector<std::string> out;
+    for (const auto& m :
+         run_preflight_soft(data, blip_line(pairs, rcut), AuditMode::Error)
+             .messages)
+      if (m.level == AuditMessage::Level::Fail)
+        out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+    return out;
+  };
+  const std::string none =
+      ": the descriptor sums over no neighbour and is 0 for every atom.";
+  CHECK(fails("Ta Ta", 2.6) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta) "
+            "neighbour distance of the dataset (2.86 Å)" + none});
+  CHECK(fails("W W", 2.45) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (W, W) "
+            "neighbour distance of the dataset (2.5 Å)" + none});
+  CHECK(fails("Ta Ta W W", 2.45) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (Ta, Ta) or "
+            "(W, W) neighbour distance of the dataset (2.5 Å)" + none});
+  CHECK(fails("Mo Mo", 5.0) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 5: no (Mo, Mo) pair of atoms of the "
+            "dataset lies within it, so the descriptor sums over no "
+            "neighbour and is 0 for every atom."});
+  CHECK(fails("Ta Ta W W", 2.6) ==
+        std::vector<std::string>{
+            "D2_Blip.RCUT2B: RCUT2B = 2.6 is below the smallest (Ta, Ta) "
+            "neighbour distance of the dataset (2.86 Å): the (Ta, Ta) pair "
+            "adds nothing to the descriptor, which sums over its other "
+            "element pairs alone."});
+  const std::vector<std::string> ta_ta_w_w = {
+      "D2_Blip.RCUT2B: RCUT2B = 2.45 is below the smallest (Ta, Ta) "
+      "neighbour distance of the dataset (2.86 Å) and the smallest (W, W) "
+      "one (2.5 Å): the (Ta, Ta) and (W, W) pairs add nothing to the "
+      "descriptor, which sums over its other element pairs alone."};
+  CHECK(fails("* *", 2.45) == ta_ta_w_w);
+  CHECK(fails("Ta Ta Ta W W W", 2.45) == ta_ta_w_w);
+  CHECK(fails("Ta *", 2.6) == fails("Ta Ta W W", 2.6));
+  CHECK(fails("Ta Ta Ta W", 2.6) == fails("Ta Ta W W", 2.6));
+  CHECK(fails("W W", 2.6).empty());
+  CHECK(fails("Ta W", 2.45).empty());
+}
+
+/* Pins: a Gaussian channel of a many-body density is judged by the
+ * neighbour distances of the element pairs of its descriptor's line: on
+ * the Ta-W data, CGRIDMB 3.1 with SGRIDMB 100 (below 1e-6 farther than
+ * 0.37 A from 3.1 A) under RCUTMB 3.5:
+ *  - DM_EAD 0 1 1 W W: one FAIL, DM_EAD.CGRIDMB, "... below 1e-6 at every
+ *    (W, W) neighbour distance within RCUTMB = 3.5 (2.5 to 2.7 Å) ...";
+ *  - DM_EAD 0 1 1 Ta Ta: no FAIL (the (Ta, Ta) pairs reach 3.3 A);
+ *  - DM_mJoin of the two (CGRIDMB 3.1 3.1, SGRIDMB 100 100, RCUTMB 3.5
+ *    3.5): one FAIL, the W W descriptor's, naming CGRIDMB(2).
+ * Before the fix: the channel was judged by the distances of every element
+ * pair (2.4 to 3.3 A), which hold 3.1 A: no FAIL. */
+TEST_CASE("preflight_audit: a density channel is judged by the element pairs "
+          "of its descriptor's line",
+          "[preflight_audit][density_reach][line_pairs]") {
+  const DataStats data = ta_w_distances();
+  auto ead = [](const std::string& pairs) {
+    Context c;
+    c.add("INITMB", "true");
+    c.add("TYPEMB", "DM_EAD 0 1 1 " + pairs);
+    c.add("RCTYPEMB", "Cut_Cos");
+    c.add("RCUTMB", 3.5);
+    c.add("CGRIDMB", 3.1);
+    c.add("SGRIDMB", 100.0);
+    return c;
+  };
+  auto fails = [&](const Context& seed) {
+    std::vector<std::string> out;
+    for (const auto& m :
+         run_preflight_soft(data, seed, AuditMode::Error).messages)
+      if (m.level == AuditMessage::Level::Fail)
+        out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+    return out;
+  };
+  const auto ww = fails(ead("W W"));
+  REQUIRE(ww.size() == 1u);
+  CHECK(ww[0].rfind("DM_EAD.CGRIDMB: CGRIDMB(1) = 3.1 with SGRIDMB(1) = 100",
+                    0) == 0);
+  CHECK(ww[0].find("is below 1e-6 at every (W, W) neighbour distance within "
+                   "RCUTMB = 3.5 (2.5 to 2.7 Å)") != std::string::npos);
+  CHECK(fails(ead("Ta Ta")).empty());
+
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 W W");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "3.5 3.5");
+  joined.add("CGRIDMB", "3.1 3.1");
+  joined.add("SGRIDMB", "100 100");
+  const auto j = fails(joined);
+  INFO(j.size());
+  REQUIRE(j.size() == 1u);
+  CHECK(j[0].rfind("DM_EAD.CGRIDMB: CGRIDMB(2) = 3.1", 0) == 0);
+  CHECK(j[0].find("(W, W)") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+//  DESCRIPTOR blocks: a block is judged by the element pairs of its PAIRS,
+//  and a descriptor placed among blocks on TYPEMB by those of its own line
+// ---------------------------------------------------------------------------
+
+#include <tadah/core/core_user_config_parser.h>
+#include <tadah/core/periodic_table.h>
+
+namespace {
+
+/* A DESCRIPTOR block "ta" of a DM_Embed descriptor of the element pairs
+ * @p pairs, whose density cutoff has RADIUS @p radius. */
+std::string embed_block(const std::string& pairs, const std::string& radius) {
+  return "DESCRIPTOR ta DM_Embed\n"
+         "  PAIRS " + pairs + "\n"
+         "  DENSITY\n"
+         "    BASIS Blip5\n"
+         "    FORM NONNEG\n"
+         "    CENTRES 1.0 2.5 4.0\n"
+         "    ETA 1.5 1.5 1.5\n"
+         "    AMPLITUDES 0.4 0.2 0.1\n"
+         "    CUTOFF\n"
+         "      TYPE Cut_Poly\n"
+         "      RADIUS " + radius + "\n"
+         "    ENDCUTOFF\n"
+         "  ENDDENSITY\n"
+         "  EMBEDDING\n"
+         "    BASIS Gaussian\n"
+         "    CENTRES 0.0 0.5 1.0 1.5\n"
+         "    WIDTHS 0.5 0.5 0.5 0.5\n"
+         "    REFERENCE ZERO\n"
+         "  ENDEMBEDDING\n"
+         "ENDDESCRIPTOR\n";
+}
+
+/* The configuration of the lines @p text (ATOM Ta W, INITMB true before
+ * them), as a training configuration file gives it. */
+Context embed_seed(const std::string& text) {
+  tadah::core::PeriodicTable::initialize();
+  std::istringstream in("ATOM Ta W\nINIT2B false\nINITMB true\n" + text);
+  return tadah::core::CoreUserConfigParser().parse(in);
+}
+
+/* The FAIL findings of the audit of @p seed on the Ta-W data
+ * (ta_w_distances()), each "<label>.<key>: <text>"; "threw: <what>" alone
+ * when the audit throws. */
+std::vector<std::string> embed_fails(const Context& seed) {
+  std::vector<std::string> out;
+  try {
+    for (const auto& m :
+         run_preflight_soft(ta_w_distances(), seed, AuditMode::Error).messages)
+      if (m.level == AuditMessage::Level::Fail)
+        out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+  } catch (const std::exception& e) {
+    return {std::string("threw: ") + e.what()};
+  }
+  return out;
+}
+
+}  // namespace
+
+/* Pins: a DM_Embed block is judged by the neighbour distances of the
+ * element pairs of its PAIRS on the Ta-W data (ta_w_distances(): (Ta, Ta)
+ * from 2.86 A, (Ta, W) from 2.4 A, (W, W) from 2.5 A), a block alone on
+ * TYPEMB (no TYPEMB line):
+ *  - PAIRS Ta Ta, RADIUS 2.6: one FAIL, "DM_Embed.TA.DENSITY.CUTOFF.RADIUS:
+ *    TA.DENSITY.CUTOFF.RADIUS = 2.6 is below the smallest (Ta, Ta) neighbour
+ *    distance of the dataset (2.86 Å): the descriptor sums over no
+ *    neighbour and is 0 for every atom.";
+ *  - PAIRS W W, RADIUS 2.6: no FAIL.
+ * Before the fix: passes as well (a pin of the judgement of a block by its
+ * PAIRS, which no test on data of several elements covered: judged by every
+ * element pair, PAIRS Ta Ta at 2.6 passed, its radius holding the (Ta, W)
+ * distance of 2.4 A). */
+TEST_CASE("preflight_audit: a DESCRIPTOR block is judged by the element "
+          "pairs of its PAIRS",
+          "[preflight_audit][cutoff][line_pairs][embed]") {
+  CHECK(embed_fails(embed_seed(embed_block("Ta Ta", "2.6"))) ==
+        std::vector<std::string>{
+            "DM_Embed.TA.DENSITY.CUTOFF.RADIUS: TA.DENSITY.CUTOFF.RADIUS = "
+            "2.6 is below the smallest (Ta, Ta) neighbour distance of the "
+            "dataset (2.86 Å): the descriptor sums over no neighbour and is 0 "
+            "for every atom."});
+  CHECK(embed_fails(embed_seed(embed_block("W W", "2.6"))).empty());
+}
+
+/* Pins: a descriptor that TYPEMB places among DESCRIPTOR blocks is judged
+ * by the element pairs of its own line and by its own values (the context
+ * the model builds it from: its TYPEMB line, its RCTYPEMB and RCUTMB value
+ * and its share of the list keys), on the Ta-W data, with the block of
+ * PAIRS W W and RADIUS 2.6 (which passes) and DM_EAD 0 1 1 Ta Ta with
+ * RCUTMB 2.6, CGRIDMB 2.9 and SGRIDMB 1, its TYPEMB lines:
+ *  - "DM_EAD 0 1 1 Ta Ta" then "@ta"; "@ta" then "DM_EAD 0 1 1 Ta Ta";
+ *    "DM_mJoin", "@ta", "DM_EAD 0 1 1 Ta Ta"; and "DM_mJoin", "DM_EAD 0 1 1
+ *    Ta Ta", "@ta": each one FAIL, "DM_EAD.RCUTMB: RCUTMB = 2.6 is below the
+ *    smallest (Ta, Ta) neighbour distance of the dataset (2.86 Å): the
+ *    descriptor sums over no neighbour and is 0 for every atom.";
+ *  - "DM_mJoin", "DM_EAD 0 1 1 Ta Ta", "@ta", "DM_EAD 0 1 1 W W" with RCUTMB
+ *    3.5 2.45 (CGRIDMB 2.9 2.6, SGRIDMB 1 1): one FAIL, the second
+ *    descriptor's own cutoff, "DM_EAD.RCUTMB: RCUTMB = 2.45 is below the
+ *    smallest (W, W) neighbour distance of the dataset (2.5 Å): ...";
+ *  - "DM_EAD 0 1 1 W W" then "@ta" with the block of PAIRS Ta Ta and RADIUS
+ *    2.6: one FAIL, the block's, "DM_Embed.TA.DENSITY.CUTOFF.RADIUS: ...
+ *    below the smallest (Ta, Ta) neighbour distance of the dataset (2.86
+ *    Å): ...".
+ * Before the fix: the element pairs of such a descriptor were read from the
+ * whole TYPEMB key, its @ta and DM_mJoin values among them: the audit threw
+ * ("the element types of a descriptor's line come in pairs, and the line
+ * has 3 of them, Ta Ta @ta", "... 1 Ta Ta", "TYPEMB DM_mJoin takes 3
+ * parameters before its element pairs; parameter 2, the number of CGRIDMB
+ * values, must be a non-negative integer, not \"DM_EAD\": ..."), or judged
+ * the descriptor by pairs that are not elements ("RCUTMB = 2.6: no (1, Ta)
+ * or (Ta, @ta) pair of atoms of the dataset lies within it, ..."); the line
+ * of two DM_EAD descriptors gave no FAIL, each judged by the first RCUTMB
+ * value, 3.5, and by pairs of the whole key. */
+TEST_CASE("preflight_audit: a descriptor placed among DESCRIPTOR blocks is "
+          "judged by the element pairs of its own line",
+          "[preflight_audit][cutoff][line_pairs][embed]") {
+  const std::string keys =
+      "RCTYPEMB Cut_Cos\nRCUTMB 2.6\nCGRIDMB 2.9\nSGRIDMB 1\n";
+  const std::string ta_ta =
+      "DM_EAD.RCUTMB: RCUTMB = 2.6 is below the smallest (Ta, Ta) neighbour "
+      "distance of the dataset (2.86 Å): the descriptor sums over no "
+      "neighbour and is 0 for every atom.";
+  for (const char* lines :
+       {"TYPEMB DM_EAD 0 1 1 Ta Ta\nTYPEMB @ta\n",
+        "TYPEMB @ta\nTYPEMB DM_EAD 0 1 1 Ta Ta\n",
+        "TYPEMB DM_mJoin\nTYPEMB @ta\nTYPEMB DM_EAD 0 1 1 Ta Ta\n",
+        "TYPEMB DM_mJoin\nTYPEMB DM_EAD 0 1 1 Ta Ta\nTYPEMB @ta\n"}) {
+    CAPTURE(lines);
+    CHECK(embed_fails(embed_seed(lines + keys +
+                                 embed_block("W W", "2.6"))) ==
+          std::vector<std::string>{ta_ta});
+  }
+  CHECK(embed_fails(embed_seed(
+            "TYPEMB DM_mJoin\nTYPEMB DM_EAD 0 1 1 Ta Ta\nTYPEMB @ta\n"
+            "TYPEMB DM_EAD 0 1 1 W W\nRCTYPEMB Cut_Cos Cut_Cos\n"
+            "RCUTMB 3.5 2.45\nCGRIDMB 2.9 2.6\nSGRIDMB 1 1\n" +
+            embed_block("W W", "2.6"))) ==
+        std::vector<std::string>{
+            "DM_EAD.RCUTMB: RCUTMB = 2.45 is below the smallest (W, W) "
+            "neighbour distance of the dataset (2.5 Å): the descriptor sums "
+            "over no neighbour and is 0 for every atom."});
+  {
+    const std::vector<std::string> fails = embed_fails(embed_seed(
+        "TYPEMB DM_EAD 0 1 1 W W\nTYPEMB @ta\n" + keys +
+        embed_block("Ta Ta", "2.6")));
+    CHECK(fails ==
+          std::vector<std::string>{
+              "DM_Embed.TA.DENSITY.CUTOFF.RADIUS: TA.DENSITY.CUTOFF.RADIUS = "
+              "2.6 is below the smallest (Ta, Ta) neighbour distance of the "
+              "dataset (2.86 Å): the descriptor sums over no neighbour and is "
+              "0 for every atom."});
+  }
 }

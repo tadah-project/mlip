@@ -75,11 +75,27 @@ struct OptimSuggestion {
  *          descriptor of a joined line, @p seed is its own context
  *          (joined_descriptors()), and the caller numbers its entries as
  *          the whole key does.
+ *  \param pairs       The element pairs of the descriptor's TYPE2B or
+ *                     TYPEMB line (D_Base::get_init_atoms()): a descriptor
+ *                     sums over the neighbours of those pairs, so each
+ *                     range is taken from their statistics
+ *                     (LinePairs::stats()), the suggester called on those
+ *                     of each pair, and the range holds the range of each,
+ *                     or, for a parameter marked
+ *                     models::ParamMeta::reach_each_pair (a cutoff), runs
+ *                     from the largest low end of the pairs' ranges to the
+ *                     largest high end, so that each value in it reaches
+ *                     each pair, as the check of the cutoff judges it (a
+ *                     rationale says which and gives each pair's); a row
+ *                     of data without such a pair names them. Without them
+ *                     (the metadata of no line), from @p data as given.
  */
 std::vector<OptimSuggestion>
 suggest_bounds_for(const tadah::core::stats::DataStats& data,
                    const models::DescriptorMeta&        meta,
-                   const tadah::core::Context&          seed);
+                   const tadah::core::Context&          seed,
+                   const std::optional<models::LinePairs>& pairs =
+                       std::nullopt);
 
 /** \brief One row per key and entry, as tadah hpo takes one OPTIM line
  *  for an entry: the rows of @p rows with the key and entry of an earlier

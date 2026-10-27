@@ -27,10 +27,53 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+namespace {
+
+/* A descriptor of a TYPE2B or TYPEMB line of @p c has its cutoff on the
+ * RCUT2B or RCUTMB line, which D_mJoin::expand_grids reads: a line that
+ * names a descriptor (a value that starts with D2_ or DM_; a DESCRIPTOR
+ * block's ID has its own cutoff) without that key is refused, naming the
+ * line (when the configuration was read from a file), the descriptor and
+ * the key. */
+void require_line_cutoffs(const tadah::core::Context& c) {
+  struct Line {
+    const char* type;
+    const char* rcut;
+    const char* prefix;
+  };
+  for (const Line& l : {Line{"TYPE2B", "RCUT2B", "D2_"},
+                        Line{"TYPEMB", "RCUTMB", "DM_"}}) {
+    if (!c.has_stored(l.type) || c.has_stored(l.rcut)) continue;
+    const std::size_t n = c.size(l.type);
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::string v = c.get<std::string>(l.type, i);
+      if (v.rfind(l.prefix, 0) != 0) continue;
+      // The line that gives value i of the key.
+      std::string on;
+      std::size_t values = 0;
+      for (const auto& line : c.key_lines(l.type)) {
+        values += line.values;
+        if (i < values) {
+          on = " on " + line.where;
+          break;
+        }
+      }
+      throw std::runtime_error("analysis suggest_bounds: " +
+                               std::string(l.type) + on +
+                               " names the descriptor " + v +
+                               ", and the configuration has no " + l.rcut +
+                               " line, which gives its cutoff");
+    }
+  }
+}
+
+}  // namespace
+
 void AnalysisSuggestBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
   // Blueprint validation enforces input-group constraints (`-c | -t`).
-  // Engine-level pre-conditions (e.g. RCUTMAX presence) are checked
-  // inside run() with actionable error messages.
+  // Engine-level pre-conditions (the cutoff of each descriptor line, and a
+  // cutoff of the configuration once the DESCRIPTOR blocks are read) are
+  // checked inside run().
 }
 
 int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
@@ -42,10 +85,28 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         "analysis suggest_bounds: at least one DBFILE must be configured "
         "(via `-c train.tadah`).");
   }
-  if (!workCtx.contains("RCUTMAX") || workCtx.get<double>("RCUTMAX") <= 0) {
+
+  // The cutoff of each descriptor of a TYPE2B or TYPEMB line, which the
+  // expansion of the grids reads.
+  require_line_cutoffs(workCtx);
+
+  // The radial grids as the descriptors read them: a grid generator
+  // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and
+  // tadah hpo expand it, so that the suggestions have one row per value
+  // and read the seed's values as numbers.
+  models::D_mJoin::expand_grids(workCtx);
+
+  // The reach of the statistics follows the largest cutoff of the
+  // configuration, RCUTMAX: its RCUT2B and RCUTMB values and, once
+  // expand_grids has read the DESCRIPTOR blocks, the cutoff radius of each
+  // block, so that a configuration of blocks alone has one.
+  if (!workCtx.contains("RCUTMAX") || !(workCtx.get<double>("RCUTMAX") > 0))
     throw std::runtime_error(
-        "analysis suggest_bounds: RCUTMAX is not set (set RCUT2B / RCUTMB).");
-  }
+        "analysis suggest_bounds: the neighbour statistics reach " +
+        tadah::core::format_roundtrip(models::kCutoffSearchReach) +
+        " times the largest cutoff of the configuration (an RCUT2B or RCUTMB "
+        "value, or the cutoff RADIUS of a DESCRIPTOR block), and the "
+        "configuration gives no cutoff above 0");
 
   // Load DB
   StructureDB stdb;
@@ -59,12 +120,6 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
   if (stdb.size() == 0) {
     throw std::runtime_error("analysis suggest_bounds: no structures loaded");
   }
-
-  // The radial grids as the descriptors read them: a grid generator
-  // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and
-  // tadah hpo expand it, so that the suggestions have one row per value
-  // and read the seed's values as numbers.
-  models::D_mJoin::expand_grids(workCtx);
 
   // Compute dataset stats (DBFILE -> DataStats). No descriptor
   // statistics: the ranges that need them (ρ) are fixed ones, which their
@@ -130,13 +185,19 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
 
   auto run_for = [&](const std::string& type_key) {
     if (!workCtx.contains(type_key)) return;
-    // A joined line (D2_mJoin, DM_mJoin): each descriptor's rows from its
-    // own values (its RCUT value and its share of each list key), each
-    // numbered by the place of its value in the whole key, as an OPTIM line
-    // numbers it (the RCUT row of the k-th descriptor is entry k). A key
-    // the line splits but the descriptor takes no value of has no row.
-    if (is_joined_line(workCtx, type_key)) {
-      for (const auto& jd : joined_descriptors(workCtx, type_key)) {
+    // A joined line (D2_mJoin, DM_mJoin), and the descriptors a TYPEMB key
+    // places among DESCRIPTOR blocks (block_line_descriptors(); the
+    // blocks' rows come below): each descriptor's rows from its own values
+    // (its RCUT value and its share of each list key) and the element
+    // pairs of its own line, each numbered by the place of its value in
+    // the whole key, as an OPTIM line numbers it (the RCUT row of the k-th
+    // descriptor is entry k). A key the line splits but the descriptor
+    // takes no value of has no row.
+    const bool blocks =
+        type_key == "TYPEMB" && !workCtx.blocks("DESCRIPTOR").empty();
+    if (blocks || is_joined_line(workCtx, type_key)) {
+      for (const auto& jd : blocks ? block_line_descriptors(workCtx)
+                                   : joined_descriptors(workCtx, type_key)) {
         std::unique_ptr<models::D_Base> obj(
             tadah::core::factory<models::D_Base>(jd.label));
         auto m = obj->meta();
@@ -150,7 +211,11 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         // The rows name the descriptor as the configuration does (the
         // label of a class's metadata can be the class's: DM_Poly).
         m->label = jd.label;
-        auto sug = suggest_bounds_for(data, *m, jd.context);
+        // Its ranges come from the neighbour distances of the element
+        // pairs its own line names.
+        auto sug = suggest_bounds_for(
+            data, *m, jd.context,
+            models::LinePairs(obj->get_init_atoms(jd.context)));
         sug.erase(std::remove_if(sug.begin(), sug.end(),
                                  [&](const OptimSuggestion& s) {
                                    return jd.first_entries.count(s.key) &&
@@ -200,7 +265,8 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         continue;
       }
       m->label = label;
-      auto sug = suggest_bounds_for(data, *m, workCtx);
+      auto sug = suggest_bounds_for(
+          data, *m, workCtx, models::LinePairs(obj->get_init_atoms(workCtx)));
       all_suggestions.insert(all_suggestions.end(),
                              sug.begin(), sug.end());
     }
@@ -212,7 +278,9 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
     for(const auto &child:models::embed_contexts(workCtx))if(!child.blocks("DESCRIPTOR").empty()) {
       std::unique_ptr<models::DM_Base> descriptor(core::factory<models::DM_Base,const core::Context&>(child.get<std::string>("TYPEMB"),child));
       if(auto meta=descriptor->meta()) {
-        auto suggestions=suggest_bounds_for(data,*meta,workCtx);
+        auto suggestions=suggest_bounds_for(
+            data,*meta,workCtx,
+            models::LinePairs(descriptor->get_init_atoms(child)));
         all_suggestions.insert(all_suggestions.end(),suggestions.begin(),suggestions.end());
       }
     }

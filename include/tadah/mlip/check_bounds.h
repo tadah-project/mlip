@@ -67,7 +67,9 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
 
 /** \brief Run the pre-flight audit at every corner of the bound box (in the
  *  corner_context of each corner, with the statistics of the dataset taken
- *  at the largest cutoff of the seed and of every corner), after the
+ *  at the largest cutoff of the seed and of every corner; each descriptor
+ *  judged by those of the element pairs of its own line, each pair on its
+ *  own, as run_preflight_soft() judges it), after the
  *  stated cutoff of a knot channel of `seed` is replaced with its largest
  *  knot (models::potedit::normalize_knot_rcut, a WARNING, as tadah hpo and
  *  tadah train replace it), plus the low-bound rules of `seed`
