@@ -5,6 +5,7 @@
 #include <tadah/mlip/engines/refit_modes.h>
 #include <tadah/mlip/engines/embed_refit.h>
 #include <tadah/mlip/engines/train_engine.h>
+#include <tadah/mlip/row_weights.h>
 #include <tadah/mlip/training_record.h>
 
 #include <tadah/core/context.h>
@@ -55,6 +56,19 @@ std::string get_str(const Context &c, const std::string &k, const std::string &d
 // crystal_epa now lives in MODELS (eam_lattice.h) so the HPO compact engine
 // can share it.
 using tadah::models::eam_lattice::crystal_epa;
+
+// The keys a refit of an EAM file reads itself, which the rule of a fit
+// (require_no_unused_keys) would take as changing nothing: EMBF0 and
+// RHOFORM (the reference and the form of the density component it
+// writes, from a configuration without DESCRIPTOR blocks); and the WATOM
+// it never reads (the potential it writes has WATOM 1).
+models::InertKeyRules refit_unused_key_rules() {
+  models::InertKeyRules rules;
+  rules.ream_keys = false;
+  rules.watom_never_read =
+      "tadah refit writes WATOM 1 into the potential it fits";
+  return rules;
+}
 
 // Prefix of the missing-RHOFORM message: a refit configuration without
 // DESCRIPTOR blocks, not a potential, declares the density form of the
@@ -306,6 +320,9 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
     (void)read_optim_pct(c);
     return;
   }
+  // A refit of an EAM file is a fit: a retired key or a line that changes
+  // nothing it gives is refused, naming its line (require_no_unused_keys).
+  require_no_unused_keys(c, "tadah refit", refit_unused_key_rules());
   // A refit of an EAM file reads none of the options of --edit and
   // --retarget (--func, --pct, --rcut2b, --rcutmb, ...): one set in its
   // configuration is refused, as each mode refuses the other's.
@@ -343,6 +360,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     return run_refit_retarget(c, task.getKeyProvenance());
   if (c.contains("EDIT") && c.size("EDIT") > 0)
     return run_refit_edit(c, task.getKeyProvenance());
+  require_no_unused_keys(c, "tadah refit", refit_unused_key_rules());
   validate_refit_mode_keys(c, task.getKeyProvenance());
 
   // The training record of pot.tadah: the keys a potential does not use,
