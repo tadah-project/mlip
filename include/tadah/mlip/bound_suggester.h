@@ -96,11 +96,12 @@ void merge_shared_rows(std::vector<OptimSuggestion>& rows);
  *  knot get no OPTIM line: RCUT2B of a D2_Knot5 line alone on the TYPE2B
  *  line of @p seed, and RCUTMB of a knot DM_REAM density alone on its
  *  TYPEMB line (models::potedit::derived_knot_rcut; @p seed is the whole
- *  training configuration). tadah train and tadah hpo take the largest
- *  knot as the cutoff of such a line, and tadah hpo warns that an OPTIM
- *  line of it has no effect; each such row of @p rows gets `none`, its
- *  rationale naming the largest knot. The cutoff of a knot descriptor of a
- *  joined line, which tadah hpo takes as stated, keeps its range. */
+ *  training configuration), and, on a D2_mJoin or DM_mJoin line, the RCUT
+ *  entry of each such descriptor (joined_descriptors(): its own context
+ *  and entry). tadah train and tadah hpo take the largest knot as the
+ *  cutoff of such a descriptor, and tadah hpo warns that an OPTIM line of
+ *  it has no effect; each such row of @p rows gets `none`, its rationale
+ *  naming the largest knot. */
 void leave_out_derived_cutoffs(std::vector<OptimSuggestion>& rows,
                                const tadah::core::Context& seed);
 

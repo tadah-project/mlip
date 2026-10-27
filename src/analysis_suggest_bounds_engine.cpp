@@ -217,9 +217,9 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
       }
     }
 
-  // The cutoff of a D2_Knot5 line or of a knot DM_REAM density alone on
-  // its TYPE line is its largest knot, which tadah hpo derives: no OPTIM
-  // line.
+  // The cutoff of a D2_Knot5 or of a knot DM_REAM density, alone on its
+  // TYPE line or a descriptor of a joined one, is its largest knot, which
+  // tadah hpo derives: no OPTIM line.
   leave_out_derived_cutoffs(all_suggestions, workCtx);
 
   // One row per key and entry: the descriptors of a joined line give a

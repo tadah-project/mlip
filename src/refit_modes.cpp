@@ -197,7 +197,9 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   if (c.has_stored("RHOFORM"))
     models::check_rhoform_precedence(pot, c, in_pot);
   // F2: a hand-tweaked knot pot may carry a stale RCUT — warn + use derived.
-  potedit::normalize_knot_rcut(pot, "tadah refit --edit");
+  // A joined line keeps the cutoffs it states, with which its coefficients
+  // were fitted: an edit of coefficient 0 leaves the potential as it is.
+  potedit::normalize_potential_knot_rcut(pot, "tadah refit --edit");
 
   // NUMERIC shapes only the written file (significant digits; never
   // written into it): the run's own, as for every writer (the input's

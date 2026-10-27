@@ -287,47 +287,72 @@ bool centres_at_origin(const tadah::core::Context& seed,
 
 namespace {
 
-/* The critical-OPTIM audit of @p checks, each descriptor judged by its own
- * values of a key (every centre at the origin, in its own context); the
+/* The search space as the audit reads it: every entry of a named key
+ * (run_critical_optim_audit with key names), or the entries flagged for
+ * each key (with the searched entries, as HPOTargets::optimap's opt). */
+struct SearchSpace {
+  std::unordered_set<std::string> names;
+  const std::map<std::string, std::vector<bool>>* entries = nullptr;
+
+  /* Whether the search holds one of the entries of @p key that the
+   * descriptor @p c has (@p sv): any entry for a line of one descriptor,
+   * its own (SeedView::entry_number) for a descriptor of a joined line. */
+  bool holds(const DescriptorCheck& c, const tadah::models::SeedView& sv,
+             const std::string& key) const {
+    if (entries == nullptr) return names.count(key) > 0;
+    const auto it = entries->find(key);
+    if (it == entries->end()) return false;
+    const std::vector<bool>& flags = it->second;
+    if (c.first_entries.empty())
+      return std::find(flags.begin(), flags.end(), true) != flags.end();
+    for (std::size_t i = 0; i < sv.size(key); ++i) {
+      const std::size_t e = sv.entry_number(key, i) - 1;
+      if (e < flags.size() && flags[e]) return true;
+    }
+    return false;
+  }
+};
+
+/* The critical-OPTIM audit of @p checks against the search @p space, each
+ * descriptor judged by its own values of a key (every centre at the
+ * origin, in its own context) and by its own entries of the search; the
  * cutoff of a knot channel, and of a bump channel under a hard cutoff, is
  * left out where tadah hpo derives it or holds the bump supports within
- * it, which it does for the TYPE line of @p seed, the whole configuration
- * (derived_knot_rcut and bump_channel_halfwidth read the line's first
- * value: a line of one descriptor, not a D2_mJoin or DM_mJoin line). */
-AuditReport critical_optim_audit(const tadah::core::Context& seed,
-                                 const std::vector<DescriptorCheck>& checks,
-                                 const std::vector<std::string>& optim_keys) {
+ * it: on a line of one such descriptor and for such a descriptor of a
+ * joined line (D2_mJoin, DM_mJoin), whose own RCUT entry tadah hpo derives
+ * or holds (derived_knot_rcut and bump_channel_halfwidth on the
+ * descriptor's own context). */
+AuditReport critical_optim_audit(const std::vector<DescriptorCheck>& checks,
+                                 const SearchSpace& space) {
   AuditReport report;
-  std::unordered_set<std::string> optim_set(optim_keys.begin(),
-                                            optim_keys.end());
 
   for (const auto& c : checks) {
     const auto& meta = c.meta;
     const tadah::core::Context& ctx = c.context;
     const tadah::models::SeedView sv(ctx, c.first_entries);
-    // A descriptor with no key in the search space is not searched: its
-    // fixed keys are the seed's choice, and no warning is given about them
-    // (a search of FIXWEIGHT alone, or of another descriptor's keys).
+    // A descriptor with no entry of a key in the search space is not
+    // searched: its fixed keys are the seed's choice, and no warning is
+    // given about them (a search of FIXWEIGHT alone, or of another
+    // descriptor's keys or entries).
     const bool searched =
         std::any_of(meta.params.begin(), meta.params.end(),
                     [&](const tadah::models::ParamMeta& pm) {
-                      return optim_set.count(pm.key) > 0;
+                      return space.holds(c, sv, pm.key);
                     });
     if (!searched) continue;
     for (const auto& pm : meta.params) {
       if (pm.crit != tadah::models::Criticality::Critical) continue;
-      if (!sv.contains(pm.key)) continue;        // not configured
-      if (optim_set.count(pm.key) > 0) continue;   // covered by HPO
+      if (!sv.contains(pm.key)) continue;           // not configured
+      if (space.holds(c, sv, pm.key)) continue;      // covered by HPO
       // Knot channels: RCUT2B/RCUTMB are DERIVED from the largest knot and
       // re-derived on every HPO evaluation — recommending an OPTIM block on
       // them would contradict that contract (the search knob is CGRID*).
-      // tadah hpo derives them for a line of one knot descriptor (the whole
-      // seed): the cutoff of a knot descriptor of a joined line is a fixed
-      // value, and the warning stays.
+      // tadah hpo derives them for a line of one knot descriptor and for
+      // the own RCUT entry of a knot descriptor of a joined line.
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::derived_knot_rcut(seed, "2B")) ||
+           tadah::models::potedit::derived_knot_rcut(ctx, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::derived_knot_rcut(seed, "MB")))
+           tadah::models::potedit::derived_knot_rcut(ctx, "MB")))
         continue;
       // Bump channels (D2_Blip/D2_Blip5, DM_REAM bump density) under a HARD
       // cutoff: RCUT is the fitted truncation and every bump support ends at
@@ -338,15 +363,14 @@ AuditReport critical_optim_audit(const tadah::core::Context& seed,
       // bump centres/widths (CGRID*/SGRID*); the per-candidate bump-support
       // gate in tadah hpo is what keeps them consistent with RCUT. Under a
       // SMOOTH cutoff the damping tail depends on RCUT, so the warning stays.
-      // The gate holds the bumps of a line of one bump descriptor (the
-      // whole seed): a bump descriptor of a joined line is not held within
-      // its cutoff, and the warning stays.
+      // The gate holds the bumps of a line of one bump descriptor and of a
+      // bump descriptor of a joined line, within its own RCUT entry.
       if ((pm.key == "RCUT2B" &&
-           tadah::models::potedit::bump_channel_halfwidth(seed, "2B") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "2B")) ||
+           tadah::models::potedit::bump_channel_halfwidth(ctx, "2B") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "2B")) ||
           (pm.key == "RCUTMB" &&
-           tadah::models::potedit::bump_channel_halfwidth(seed, "MB") &&
-           tadah::models::potedit::channel_cutoff_is_discontinuous(seed, "MB")))
+           tadah::models::potedit::bump_channel_halfwidth(ctx, "MB") &&
+           tadah::models::potedit::channel_cutoff_is_discontinuous(ctx, "MB")))
         continue;
 
       // Radial centres at the origin (every CGRID* value 0): the basis is
@@ -391,14 +415,25 @@ AuditReport run_critical_optim_audit_with_metas(
   std::vector<DescriptorCheck> checks;
   for (const auto& [label, meta] : metas)
     checks.push_back(DescriptorCheck{label, meta, seed, {}});
-  return critical_optim_audit(seed, checks, optim_keys);
+  SearchSpace space;
+  space.names.insert(optim_keys.begin(), optim_keys.end());
+  return critical_optim_audit(checks, space);
 }
 
 AuditReport run_critical_optim_audit(
     const tadah::core::Context&     seed,
     const std::vector<std::string>& optim_keys) {
-  return critical_optim_audit(seed, collect_descriptor_checks(seed),
-                              optim_keys);
+  SearchSpace space;
+  space.names.insert(optim_keys.begin(), optim_keys.end());
+  return critical_optim_audit(collect_descriptor_checks(seed), space);
+}
+
+AuditReport run_critical_optim_audit(
+    const tadah::core::Context& seed,
+    const std::map<std::string, std::vector<bool>>& searched_entries) {
+  SearchSpace space;
+  space.entries = &searched_entries;
+  return critical_optim_audit(collect_descriptor_checks(seed), space);
 }
 
 void enforce_audit_mode(const AuditReport& report, AuditMode mode) {

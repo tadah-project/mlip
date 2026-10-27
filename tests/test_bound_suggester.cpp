@@ -1428,16 +1428,27 @@ TEST_CASE("write_optim_block writes bounds that hold the range",
  * alone on its TYPE2B or TYPEMB line, on two bcc Ta cells, tadah analysis
  * suggest_bounds exits 0, the block says "RCUT2B (1): no OPTIM line" and
  * "RCUTMB (1): no OPTIM line", each comment naming the largest knot ("is
- * its largest knot (5 Å)"), and has no OPTIM RCUT2B or RCUTMB line; on a
- * D2_mJoin line of D2_Knot5 and D2_Blip (RCUT2B 5 5), whose cutoffs tadah
- * hpo takes as stated, the block has an "OPTIM RCUT2B (1)" and an "OPTIM
- * RCUT2B (2)" line.
+ * its largest knot (5 Å)") and the line tadah hpo warns about ("tadah hpo
+ * warns that an OPTIM RCUT2B line has no effect"), and has no OPTIM RCUT2B
+ * or RCUTMB line; on a
+ * D2_mJoin line of D2_Knot5 (knots 3 4 5) and D2_Blip (RCUT2B 5 5), whose
+ * D2_Knot5 cutoff tadah train and tadah hpo derive from its largest knot as
+ * they do on a line of its own, the D2_Knot5's RCUT2B (1) gets the same row
+ * ("RCUT2B (1): no OPTIM line", "the cutoff of a D2_Knot5 descriptor of a
+ * D2_mJoin line is its largest knot (5 Å)", "tadah hpo warns that an OPTIM
+ * RCUT2B (1) line has no effect": the D2_Blip's entry has one) and the
+ * D2_Blip's an "OPTIM RCUT2B (2)" line. Until tadah hpo derived the cutoff
+ * of a knot descriptor of a joined line, the joined line had an "OPTIM
+ * RCUT2B (1)" line too.
  * Before the fix: the knot DM_REAM density got "OPTIM RCUTMB (1) ...", a
  * line that tadah hpo calls a wasted search dimension, and D2_Knot5's
  * RCUT2B no row at all, alone and on the joined line, where tadah hpo
- * warns that it is fixed. */
-TEST_CASE("analysis suggest_bounds gives the cutoff of a knot line alone no "
-          "OPTIM line, and that of a joined one a range",
+ * warns that it is fixed; then the joined line's "OPTIM RCUT2B (1)" line,
+ * which tadah hpo calls a wasted search dimension; then the joined line's
+ * comment said "an OPTIM RCUT2B line has no effect", which the D2_Blip's
+ * OPTIM RCUT2B (2) line below it has. */
+TEST_CASE("analysis suggest_bounds gives the cutoff of a knot descriptor no "
+          "OPTIM line, alone or on a joined line",
           "[bound_suggester][suggest_bounds][knot]") {
   tadah::core::PeriodicTable::initialize();
   SbTempDir tmp;
@@ -1470,6 +1481,10 @@ TEST_CASE("analysis suggest_bounds gives the cutoff of a knot line alone no "
       if (line.find(row) == std::string::npos) continue;
       ++found;
       CHECK(line.find("is its largest knot (5 Å)") != std::string::npos);
+      CHECK(line.find(std::string("tadah hpo warns that an OPTIM ") +
+                      std::string(row).substr(0, 6) +
+                      " line has no effect") !=
+            std::string::npos);
     }
     CHECK(found == 1u);
   }
@@ -1490,6 +1505,16 @@ TEST_CASE("analysis suggest_bounds gives the cutoff of a knot line alone no "
   const SbRun rj = run_suggest_bounds_ctx(j, joined_tmp);
   INFO(rj.what << "\n" << rj.out << "\n" << rj.block);
   CHECK(rj.rc == EXIT_SUCCESS);
-  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (1) ").size() == 1u);
+  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (1) ").empty());
   CHECK(lines_starting(rj.block, "OPTIM RCUT2B (2) ").size() == 1u);
+  std::size_t found = 0;
+  for (const auto &line : lines_starting(rj.block, "# ")) {
+    if (line.find("RCUT2B (1): no OPTIM line") == std::string::npos) continue;
+    ++found;
+    CHECK(line.find("the cutoff of a D2_Knot5 descriptor of a D2_mJoin line "
+                    "is its largest knot (5 Å)") != std::string::npos);
+    CHECK(line.find("tadah hpo warns that an OPTIM RCUT2B (1) line has no "
+                    "effect") != std::string::npos);
+  }
+  CHECK(found == 1u);
 }

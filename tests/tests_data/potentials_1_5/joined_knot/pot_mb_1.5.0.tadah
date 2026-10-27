@@ -1,0 +1,39 @@
+AMPGRIDMB         0.400000000000000022   0.200000000000000011
+ATOM              Ta
+BIAS              false
+CEMBFUNC          0   0.5   1
+CGRID2B           2.5   3   3.5
+CGRIDMB           2.5   3.5   4.59999999999999964   3
+DBFILE            eos8_333.tadahdb
+DIMER             false   0   false
+EMBF0             ZERO
+ESHIFT_ATOM       false
+ESHIFT_DBATOM     false
+EWEIGHT           1
+FORCE             false
+FWEIGHT           1
+INIT2B            true
+INITMB            true
+LAMBDA            0
+LSCALE            1
+MODEL             M_BLR   BF_Linear
+NORM              false
+OALGO             1   1.00000000000000003e-13
+RCTYPE2B          Cut_Cos
+RCTYPEMB          Cut_Cos   Cut_Cos
+RCUT2B            5
+RCUTMB            5   5.20000000000000018
+SGRID2B           2   2   2
+SGRIDMB           1   1
+STRESS            false
+SWEIGHT           1
+TYPE2B            D2_Blip   3   3   Ta   Ta
+TYPEMB            DM_mJoin
+TYPEMB            DM_Blip   0   2   2   Ta   Ta
+TYPEMB            DM_REAM   2   2   0   2   3   0   0   0   Ta   Ta
+UNCERTAINTY       false
+WATOM             1
+WDBFILE_AUTO      0
+WEIGHTS           -0.0200407603482919347   -0.0179614036056280901   -0.000828276408852584569   -0.248681332001088745   -0.0814117939503924692   2.80834588633170623e-06   -5.65785476239200058e-06   2.84973290659747136e-06
+ZERO_COM_FORCE    false
+

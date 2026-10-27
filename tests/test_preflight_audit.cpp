@@ -24,6 +24,7 @@
 #include <tadah/models/eam/pot_curve_edit.h>
 #include <tadah/models/descriptors/param_meta.h>
 
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -959,21 +960,20 @@ Context knot_blip_join_seed(const std::string& rctype) {
 }  // namespace
 
 /* Pins: the critical-OPTIM audit leaves out the cutoff of a knot channel,
- * and that of a bump channel under a hard cutoff, only where tadah hpo
+ * and that of a bump channel under a hard cutoff, wherever tadah hpo
  * derives it from the largest knot or holds the bump supports within it:
- * on a line of that descriptor alone. For a search of CGRID2B:
+ * on a line of that descriptor alone and for that descriptor of a joined
+ * line, whose own RCUT entry tadah hpo derives or holds. For a search of
+ * CGRID2B:
  *  - D2_Knot5 alone (Cut_Dummy) and D2_Blip alone under Cut_Dummy give no
  *    finding, and D2_Blip alone under Cut_Cos gives D2_Blip.RCUT2B;
- *  - D2_mJoin of D2_Knot5 and D2_Blip gives D2_Blip.RCUT2B and
- *    D2_Knot5.RCUT2B under Cut_Cos Cut_Cos and under Cut_Dummy Cut_Dummy:
- *    tadah hpo neither derives the cutoff of a knot channel of a joined
- *    line nor holds its bump supports within the cutoff, so the cutoffs of
- *    a joined line are fixed values of the search.
- * Before the fix: each descriptor of the joined line was judged as if it
- * were alone: Cut_Cos Cut_Cos gave D2_Blip.RCUT2B only, and Cut_Dummy
- * Cut_Dummy no finding. */
+ *  - D2_mJoin of D2_Knot5 and D2_Blip gives what the two give alone:
+ *    D2_Blip.RCUT2B under Cut_Cos Cut_Cos, no finding under Cut_Dummy
+ *    Cut_Dummy.
+ * Before the fix (tadah hpo derived and held neither on a joined line):
+ * the joined line gave D2_Blip.RCUT2B and D2_Knot5.RCUT2B under both. */
 TEST_CASE("preflight_audit: critical_optim_audit leaves out a knot or bump "
-          "cutoff only on a line of that descriptor alone",
+          "cutoff for each descriptor of a joined line as for one alone",
           "[preflight_audit][join][knot]") {
   const std::vector<std::string> space = {"CGRID2B"};
   CHECK(keys_of(run_critical_optim_audit(knot_alone_seed(), space)).empty());
@@ -981,12 +981,72 @@ TEST_CASE("preflight_audit: critical_optim_audit leaves out a knot or bump "
             .empty());
   CHECK(keys_of(run_critical_optim_audit(blip_alone_seed("Cut_Cos"), space)) ==
         std::vector<std::string>{"D2_Blip.RCUT2B"});
-  for (const std::string rctype : {"Cut_Cos Cut_Cos", "Cut_Dummy Cut_Dummy"}) {
-    CAPTURE(rctype);
-    CHECK(keys_of(run_critical_optim_audit(knot_blip_join_seed(rctype),
-                                           space)) ==
-          std::vector<std::string>{"D2_Blip.RCUT2B", "D2_Knot5.RCUT2B"});
-  }
+  CHECK(keys_of(run_critical_optim_audit(knot_blip_join_seed("Cut_Cos Cut_Cos"),
+                                         space)) ==
+        std::vector<std::string>{"D2_Blip.RCUT2B"});
+  CHECK(keys_of(run_critical_optim_audit(
+                    knot_blip_join_seed("Cut_Dummy Cut_Dummy"), space))
+            .empty());
+}
+
+/* Pins: given the searched entries of each key (the overload tadah hpo
+ * calls, with HPOTargets::optimap's opt flags), the audit counts a key as
+ * searched for a descriptor when the search holds one of that
+ * descriptor's own entries of it, and a descriptor as searched when it
+ * holds one of its entries of any key. DM_mJoin of two DM_EAD (centres
+ * 2.5 and 2.9, RCUTMB 5.6 5.6), searched CGRIDMB (1) and SGRIDMB (2):
+ * four findings, RCUTMB(1) and SGRIDMB(1) of the first, RCUTMB(2) and
+ * CGRIDMB(2) of the second; searched SGRIDMB (2) alone: the first is not
+ * searched, two findings, RCUTMB(2) and CGRIDMB(2). A line of one DM_EAD
+ * (centres 2.5 2.9) with CGRIDMB (1) searched: CGRIDMB counts as searched,
+ * two findings, RCUTMB and SGRIDMB(1-2). The key-name overload counts every
+ * entry of a named key: CGRIDMB and SGRIDMB give RCUTMB(1) and RCUTMB(2).
+ * Before the fix: no overload took the searched entries; tadah hpo passed
+ * key names, so OPTIM CGRIDMB (1) counted as a search of the second
+ * descriptor's CGRIDMB too. */
+TEST_CASE("preflight_audit: critical_optim_audit judges the search of a "
+          "joined line by its descriptors' own entries",
+          "[preflight_audit][join]") {
+  Context joined;
+  joined.add("INITMB", "true");
+  joined.add("TYPEMB", "DM_mJoin");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("TYPEMB", "DM_EAD 0 1 1 Ta Ta");
+  joined.add("RCTYPEMB", "Cut_Cos Cut_Cos");
+  joined.add("RCUTMB", "5.6 5.6");
+  joined.add("CGRIDMB", "2.5 2.9");
+  joined.add("SGRIDMB", "1 1");
+  auto entries_of = [](const AuditReport& rep) {
+    std::vector<std::string> out;
+    for (const auto& m : rep.messages)
+      out.push_back(m.text.substr(0, m.text.find(' ')));
+    std::sort(out.begin(), out.end());
+    return out;
+  };
+  const std::map<std::string, std::vector<bool>> both = {
+      {"CGRIDMB", {true, false}}, {"SGRIDMB", {false, true}}};
+  CHECK(entries_of(run_critical_optim_audit(joined, both)) ==
+        std::vector<std::string>{"CGRIDMB(2)", "RCUTMB(1)", "RCUTMB(2)",
+                                 "SGRIDMB(1)"});
+  const std::map<std::string, std::vector<bool>> second = {
+      {"SGRIDMB", {false, true}}};
+  CHECK(entries_of(run_critical_optim_audit(joined, second)) ==
+        std::vector<std::string>{"CGRIDMB(2)", "RCUTMB(2)"});
+  const std::vector<std::string> named = {"CGRIDMB", "SGRIDMB"};
+  CHECK(entries_of(run_critical_optim_audit(joined, named)) ==
+        std::vector<std::string>{"RCUTMB(1)", "RCUTMB(2)"});
+
+  Context lone;
+  lone.add("INITMB", "true");
+  lone.add("TYPEMB", "DM_EAD 0 2 2 Ta Ta");
+  lone.add("RCTYPEMB", "Cut_Cos");
+  lone.add("RCUTMB", 5.6);
+  lone.add("CGRIDMB", "2.5 2.9");
+  lone.add("SGRIDMB", "1 1");
+  const std::map<std::string, std::vector<bool>> first = {
+      {"CGRIDMB", {true, false}}};
+  CHECK(entries_of(run_critical_optim_audit(lone, first)) ==
+        std::vector<std::string>{"RCUTMB(1)", "SGRIDMB(1-2)"});
 }
 
 /* Pins: the pre-flight audit fails a descriptor whose cutoff holds no

@@ -80,8 +80,9 @@ int PredictEngine::run(mlip::Task &task) {
 
   // Knot-family refit pots: RCUT2B/RCUTMB are derived from the largest knot
   // — correct a stale stated value (warns) before the descriptors and the
-  // neighbour list read RCUT*MAX.
-  models::potedit::normalize_knot_rcut(potContext, "tadah predict");
+  // neighbour list read RCUT*MAX. A joined line keeps the cutoffs it
+  // states, with which its coefficients were fitted.
+  models::potedit::normalize_potential_knot_rcut(potContext, "tadah predict");
 
   models::DC_Selector DCS(potContext);
   core::Logger::instance().log(tadah::core::LogLevel::INFO, "Finding nearest neighbours within: " +

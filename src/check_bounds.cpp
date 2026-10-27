@@ -192,14 +192,12 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
   // A knot channel's cutoff is its largest knot: tadah hpo re-derives
   // RCUT2B / RCUTMB from the knots of each candidate
   // (apply_knot_rcut_derivation), so a corner that moves a knot moves the
-  // cutoff with it, and a box on the cutoff itself has no effect there.
-  for (const char* sfx : {"2B", "MB"}) {
-    const auto derived = tadah::models::potedit::derived_knot_rcut(ctx, sfx);
-    if (!derived) continue;
-    const std::string key = std::string("RCUT") + sfx;
-    ctx.remove(key);
-    ctx.add(key, tadah::core::format_roundtrip(*derived));
-  }
+  // cutoff with it, and a box on the cutoff itself has no effect there. On
+  // a D2_mJoin or DM_mJoin line, each knot descriptor's own RCUT value
+  // (normalize_knot_rcut, whose notes a corner does not report: the seed's
+  // are reported once, by check_bounds_at_corners).
+  std::vector<tadah::models::potedit::KnotRcutNote> unreported;
+  tadah::models::potedit::normalize_knot_rcut(ctx, "", unreported);
   return ctx;
 }
 
@@ -279,7 +277,12 @@ CheckBoundsResult check_bounds_at_corners(
   auto form_findings = [&](const std::vector<double>& c) {
     std::vector<std::string> out;
     for (std::size_t j = 0; j < bounds.size(); ++j) {
-      const auto rule = tadah::models::optim_low_bound_rule(bounds[j].key, seed);
+      // the rule of the box's entry: on a D2_mJoin line, that of the
+      // descriptor whose entry it is
+      const auto rule = tadah::models::optim_low_bound_rule(
+          bounds[j].key, seed,
+          bounds[j].arg_pos < 0 ? 0
+                                : static_cast<std::size_t>(bounds[j].arg_pos));
       if (!rule || rule->admits(c[j])) continue;
       std::ostringstream os;
       os << bounds[j].key << "("
