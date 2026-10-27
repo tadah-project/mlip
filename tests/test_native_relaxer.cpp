@@ -16,6 +16,8 @@
 //   3. Aniso / Voigt6 / FixedZ modes are stubs and throw cleanly.
 //   4. The strain force of the result, raw and over 3 V, is that of the
 //      cell the relaxation ends at, also after an accepted last step.
+//   5. The pressure tolerance ptol, not the force tolerance ftol of the
+//      atoms, ends the Iso relaxation of the cell.
 
 #include "catch2/catch.hpp"
 
@@ -389,21 +391,108 @@ TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
     /* MVP smoke: verify the relax loop converges. The relaxer's
      * convergence criterion normalises the strain force by (3·V) so the
      * raw `final_strain_force` may still be O(1) in absolute eV/strain
-     * units while the pressure-like ratio is below ftol. */
+     * units while the pressure-like ratio is below ptol. */
     CHECK(res.converged);
     CHECK(res.n_iter > 1);                /* did make ≥1 successful step */
     CHECK(res.final_fmax_atoms < opts.ftol);
-    /* Pressure-like check: |F_ε|/(3·V) below ftol — same criterion the
-     * relaxer uses internally. */
+    /* Pressure-like check: |F_ε|/(3·V) below ptol — same criterion the
+     * relaxer uses internally (it was ftol, which bounded both). */
     const double V = st.get_volume();
-    CHECK(res.final_strain_force / (3.0 * V) < opts.ftol);
+    CHECK(res.final_strain_force / (3.0 * V) < opts.ptol);
     /* Scale factor should be physically reasonable (not blown up). */
     CHECK(res.scale_factor > 0.5);
     CHECK(res.scale_factor < 2.0);
     /* The normalised strain force is the one of the convergence test. */
     CHECK(res.final_strain_force_norm ==
           Approx(res.final_strain_force / (3.0 * V)).epsilon(1e-12));
-    CHECK(res.final_strain_force_norm < opts.ftol);
+    CHECK(res.final_strain_force_norm < opts.ptol);
+}
+
+/* Pins: the pressure tolerance ptol, and not the force tolerance ftol of
+ * the atoms, ends the Iso relaxation of the cell. From the bcc cell of
+ * a0 = 3.10 (compressed by about 3 %), with ftol 1e3 eV/A, which every
+ * atomic force meets, the relaxation converges with ptol 1e-3 and with
+ * ptol 1e-8 eV/A^3: it moves the cell (scale factor not 1), reports a
+ * final_strain_force_norm below its ptol, and the pressure of the cell it
+ * ends at, |dE/deps| / (3V) by a central difference of the energy in the
+ * isotropic strain (step 1e-5, lists built afresh), is below that ptol
+ * too; the relaxation to 1e-8 ends at another cell, at a pressure below
+ * 1e-8 eV/A^3. The precondition: the start's pressure is above 1e-3.
+ * Before the fix: does not compile (Options has no ptol). ftol bounded
+ * the atomic forces and |dE/deps| / (3V) alike, so with ftol 1e3 the
+ * relaxation stopped at once, at its start (scale factor 1) and at the
+ * start's pressure; a relaxation with ftol 0.1, the force tolerance of
+ * the cohesive-energy observable, stopped at the first cell whose
+ * pressure was below 0.1 eV/A^3 (16 GPa). */
+TEST_CASE("NativeRelaxer Iso: the cell converges to the pressure tolerance, "
+          "whatever the force tolerance of the atoms",
+          "[mlip][native_relaxer][iso][ptol]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    const Structure start = make_bcc_ta_supercell(3.10);
+    /* |dE/deps| / (3V) of the start cell scaled by @p scale, by a central
+     * difference with lists built afresh at the model's cutoff. */
+    auto pressure = [&](double scale) {
+        const double h = 1.0e-5;
+        auto energy = [&](double s) {
+            Structure x = start;
+            for (std::size_t i = 0; i < 3; ++i)
+                for (std::size_t j = 0; j < 3; ++j)
+                    x.cell(i, j) = s * start.cell(i, j);
+            for (std::size_t a = 0; a < x.natoms(); ++a)
+                for (int k = 0; k < 3; ++k)
+                    x.atoms[a].position[k] = s * start.atoms[a].position[k];
+            x.nn.reset();
+            NNFinder().calc(x, rcut);
+            return host.model->epredict(host.dc.calc(x));
+        };
+        Structure end = start;
+        for (std::size_t i = 0; i < 3; ++i)
+            for (std::size_t j = 0; j < 3; ++j)
+                end.cell(i, j) = scale * start.cell(i, j);
+        return std::abs(energy(scale * (1.0 + h)) -
+                        energy(scale * (1.0 - h))) /
+               (2.0 * h) / (3.0 * end.get_volume());
+    };
+    const double p_start = pressure(1.0);
+    INFO(std::setprecision(17) << "pressure at the start " << p_start
+         << " eV/A^3");
+    REQUIRE(p_start > 1.0e-3);
+
+    auto relax_to = [&](double ptol) {
+        NativeRelaxer::Options opts;
+        opts.box_mode  = NativeRelaxer::Options::Iso;
+        opts.pressure  = 0.0;
+        opts.ftol      = 1.0e3;
+        opts.ptol      = ptol;
+        opts.maxiter   = 2000;
+        opts.maxeval   = 20000;
+        Structure st = start;
+        const auto res =
+            NativeRelaxer().relax(st, *host.model, host.dc, host.context, opts);
+        const double p_end = pressure(res.scale_factor);
+        INFO(std::setprecision(17) << "ptol " << ptol << ": converged "
+             << res.converged << ", iterations " << res.n_iter
+             << ", scale " << res.scale_factor << ", final_strain_force_norm "
+             << res.final_strain_force_norm << ", pressure at the end "
+             << p_end);
+        CHECK(res.converged);
+        CHECK(res.scale_factor != 1.0);
+        CHECK(res.final_strain_force_norm < ptol);
+        CHECK(p_end < ptol);
+        return res.scale_factor;
+    };
+    const double loose = relax_to(1.0e-3);
+    const double tight = relax_to(1.0e-8);
+    CHECK(tight != loose);
 }
 
 /* Pins: the strain force a relaxation reports is that of the cell it ends
