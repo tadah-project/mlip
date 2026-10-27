@@ -1293,12 +1293,35 @@ assemble_dphi_train_both_rows_dm_cached(
     return {any_energy, any_force};
 }
 
+namespace detail {
+
+/* The claims (energy rows, force rows) of the D2 arm `d2` and the DM arm
+ * `dm` of a DC_Selector joined, the force rows asked when `force`: the
+ * energy rows when an arm claims them; the force rows when an arm claims
+ * them and every arm that claims the energy rows claims them too. An arm
+ * whose derivatives cover the energy rows only (DM_Blip, DM_EAD, DM_mRLR,
+ * DM_mSQRT) adds nothing to the force rows, so a parameter it claims for
+ * the energy rows has incomplete force rows whatever the other arm adds:
+ * WATOM, which a two-body and a many-body descriptor both read. */
+inline std::pair<bool, bool>
+join_arm_claims(std::pair<bool, bool> d2, std::pair<bool, bool> dm,
+                bool force)
+{
+    const bool energy = d2.first || dm.first;
+    if (!force) return {energy, false};
+    const bool complete = (!d2.first || d2.second) &&
+                          (!dm.first || dm.second);
+    return {energy, complete && (d2.second || dm.second)};
+}
+
+}  // namespace detail
+
 /* DC_Selector-level combined walker. Mirrors the legacy energy + force
  * dispatchers but in one pass: D2 arm contributes via
  * assemble_dphi_train_both_rows_d2, then DM arm contributes via
- * assemble_dphi_train_both_rows_dm. Returns (any_energy, any_force) ORed
- * across both arms — semantically equivalent to running the two legacy
- * dispatchers separately. */
+ * assemble_dphi_train_both_rows_dm. Returns (energy, force), the claims of
+ * the two arms joined by detail::join_arm_claims(): the force rows are
+ * claimed only when no arm that claims the energy rows leaves them out. */
 inline std::pair<bool, bool>
 assemble_dphi_train_both_rows(
     const StructureDB&                stdb,
@@ -1316,32 +1339,23 @@ assemble_dphi_train_both_rows(
             "DC_Selector::init always allocates a D2_Dummy fallback — "
             "this is a sign of an improperly constructed selector.");
 
-    bool any_e = false;
-    bool any_f = false;
-
-    {
-        auto pr = assemble_dphi_train_both_rows_d2(
-            stdb, *dcs.d2b, theta_name, arg_pos,
-            dphi_energy_out, dphi_force_out,
-            n_cols, force_row_start_per_struct);
-        if (pr.first)  any_e = true;
-        if (pr.second) any_f = true;
-    }
-    if (dcs.dmb) {
-        auto pr = assemble_dphi_train_both_rows_dm(
+    const auto d2 = assemble_dphi_train_both_rows_d2(
+        stdb, *dcs.d2b, theta_name, arg_pos,
+        dphi_energy_out, dphi_force_out,
+        n_cols, force_row_start_per_struct);
+    std::pair<bool, bool> dm{false, false};
+    if (dcs.dmb)
+        dm = assemble_dphi_train_both_rows_dm(
             stdb, *dcs.dmb, theta_name, arg_pos,
             dphi_energy_out, dphi_force_out,
             n_cols, force_row_start_per_struct);
-        if (pr.first)  any_e = true;
-        if (pr.second) any_f = true;
-    }
-    return {any_e, any_f};
+    return detail::join_arm_claims(d2, dm, dphi_force_out != nullptr);
 }
 
 /* Cached DC_Selector-level combined walker. Same shape as
- * assemble_dphi_train_both_rows but the DM arm goes through the
- * _cached variant which reads rho_i / F'(rho_i) from the supplied cache
- * instead of recomputing them per θ.
+ * assemble_dphi_train_both_rows, the claims joined alike, but the DM arm
+ * goes through the _cached variant which reads rho_i / F'(rho_i) from the
+ * supplied cache instead of recomputing them per θ.
  *
  * The D2 arm has no analogous cache because its per-pair derivative kernels
  * (calc_dDdtheta, calc_dXijdri_dtheta) are themselves θ-dependent and there
@@ -1370,26 +1384,17 @@ assemble_dphi_train_both_rows_cached(
             "descriptor; DC_Selector::init always allocates a D2_Dummy "
             "fallback — this is a sign of an improperly constructed selector.");
 
-    bool any_e = false;
-    bool any_f = false;
-
-    {
-        auto pr = assemble_dphi_train_both_rows_d2(
-            stdb, *dcs.d2b, theta_name, arg_pos,
-            dphi_energy_out, dphi_force_out,
-            n_cols, force_row_start_per_struct);
-        if (pr.first)  any_e = true;
-        if (pr.second) any_f = true;
-    }
-    if (dcs.dmb && dcs.dmb->rhoi_size() > 0) {
-        auto pr = assemble_dphi_train_both_rows_dm_cached(
+    const auto d2 = assemble_dphi_train_both_rows_d2(
+        stdb, *dcs.d2b, theta_name, arg_pos,
+        dphi_energy_out, dphi_force_out,
+        n_cols, force_row_start_per_struct);
+    std::pair<bool, bool> dm{false, false};
+    if (dcs.dmb && dcs.dmb->rhoi_size() > 0)
+        dm = assemble_dphi_train_both_rows_dm_cached(
             stdb, *dcs.dmb, dm_cache, theta_name, arg_pos,
             dphi_energy_out, dphi_force_out,
             n_cols, force_row_start_per_struct);
-        if (pr.first)  any_e = true;
-        if (pr.second) any_f = true;
-    }
-    return {any_e, any_f};
+    return detail::join_arm_claims(d2, dm, dphi_force_out != nullptr);
 }
 
 }  // namespace mlip
