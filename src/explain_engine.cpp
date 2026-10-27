@@ -228,6 +228,10 @@ std::string explain_key_text(const core::BlueprintKey &key) {
     out += "REPLACED BY: " + key.retired.replacement + "\n";
     out += "CONVERSION: " + key.retired.conversion + "\n";
   }
+  // A deprecated key: why it has no effect, what a potential that has it
+  // does and that a fit refuses it (the text of its parse notice).
+  if (key.isDeprecated())
+    out += "\nDEPRECATED: " + key.deprecated + "\n";
   if (!key.examples.empty()) {
     out += "\nEXAMPLES: \n";
     for (const auto &example : key.examples) {
