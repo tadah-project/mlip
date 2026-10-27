@@ -55,12 +55,15 @@ std::string refusal(const std::string &task, KV kv) {
  * '+' (CLI11 passes '--percent 80,20' as the one word '80,20') is refused
  * by TaskFactory, naming the key, the value, the separator and the values
  * as separate words:
- *   "TaskFactory::createTasksFromInput - Invalid key-value pair: percent ->
- *    80,20 ('80,20' separates values with ',', which is not a value
- *    separator: give them as separate words, 80 20)"
+ *   "--percent 80,20: '80,20' separates values with ',', which is not a
+ *    value separator; the values are separate words: 80 20"
  * likewise '--chunk 10+20' ('+'); an index list keeps its commas
  * ('--index 1,3,5' passes the check). A value that separate words would not
- * make valid either keeps the bare refusal ('--chunk 1.5').
+ * make valid either is refused with the values the option takes ("--chunk
+ * 1.5: --chunk takes <unsigned integer> [<unsigned integer> ...]").
+ * Before the fix that names the option: "TaskFactory::createTasksFromInput
+ * - Invalid key-value pair: percent -> 80,20 (... give them as separate
+ * words, 80 20)" and "... chunk -> 1.5": the checks fail.
  * Before the fix: '80,20' and '10+20' passed the blueprint check (its list
  * patterns took a comma or a '+' between two values) and the split was
  * refused later, when PERCENT was read as integers ('Conversion failed for
@@ -69,48 +72,44 @@ std::string refusal(const std::string &task, KV kv) {
 TEST_CASE("TaskFactory: a comma or '+' between option values is refused, "
           "naming the separator",
           "[task_factory][separators]") {
-  const std::string head =
-      "TaskFactory::createTasksFromInput - Invalid key-value pair: ";
   CHECK(refusal("DATA.split", {{"percent", {"80,20"}}}) ==
-        head + "percent -> 80,20 ('80,20' separates values with ',', which "
-               "is not a value separator: give them as separate words, 80 "
-               "20)");
+        "--percent 80,20: '80,20' separates values with ',', which is not a "
+        "value separator; the values are separate words: 80 20");
   CHECK(refusal("DATA.split", {{"chunk", {"10+20"}}}) ==
-        head + "chunk -> 10+20 ('10+20' separates values with '+', which is "
-               "not a value separator: give them as separate words, 10 20)");
+        "--chunk 10+20: '10+20' separates values with '+', which is not a "
+        "value separator; the values are separate words: 10 20");
   CHECK(refusal("DATA.split", {{"chunk", {"1.5"}}}) ==
-        head + "chunk -> 1.5");
+        "--chunk 1.5: --chunk takes <unsigned integer> [<unsigned integer> "
+        "...]");
   const std::string index = refusal("DATA.print", {{"index", {"1,3,5"}}});
   INFO(index);
-  CHECK(index.find("Invalid key-value pair") == std::string::npos);
+  CHECK(index.rfind("--index 1,3,5", 0) != 0);
 }
 
 /* Pins: an option whose values are names (the blueprint's names keys, such
  * as ATOMPAIR) refuses a word with a comma or a '+' joined to the
  * character before it, naming the separator and the names as separate
  * words: '--atompair Ta,Nb' gives
- *   "TaskFactory::createTasksFromInput - Invalid key-value pair: atompair
- *    -> Ta,Nb ('Ta,Nb' separates values with ',', which is not a value
- *    separator: give them as separate words, Ta Nb)"
+ *   "--atompair Ta,Nb: 'Ta,Nb' separates values with ',', which is not a
+ *    value separator; the values are separate words: Ta Nb"
  * likewise '--atompair Ta+Nb' ('+'); '--atompair Ta Nb' passes the check.
  * Before the fix: 'Ta,Nb' and 'Ta+Nb' were one STRING value each and
  * passed the check ("no exception" here); '--atompair Ta Nb' passes as
- * well (a pin). */
+ * well (a pin).
+ * Before the fix that names the option: "TaskFactory::createTasksFromInput
+ * - Invalid key-value pair: atompair -> Ta,Nb (... give them as separate
+ * words, Ta Nb)": the checks fail. */
 TEST_CASE("TaskFactory: a comma or '+' in a name option is refused, naming "
           "the separator",
           "[task_factory][separators]") {
-  const std::string head =
-      "TaskFactory::createTasksFromInput - Invalid key-value pair: ";
   CHECK(refusal("PROPERTIES.pairwise", {{"atompair", {"Ta,Nb"}}}) ==
-        head + "atompair -> Ta,Nb ('Ta,Nb' separates values with ',', which "
-               "is not a value separator: give them as separate words, Ta "
-               "Nb)");
+        "--atompair Ta,Nb: 'Ta,Nb' separates values with ',', which is not a "
+        "value separator; the values are separate words: Ta Nb");
   CHECK(refusal("PROPERTIES.pairwise", {{"atompair", {"Ta+Nb"}}}) ==
-        head + "atompair -> Ta+Nb ('Ta+Nb' separates values with '+', which "
-               "is not a value separator: give them as separate words, Ta "
-               "Nb)");
+        "--atompair Ta+Nb: 'Ta+Nb' separates values with '+', which is not a "
+        "value separator; the values are separate words: Ta Nb");
   const std::string pair =
       refusal("PROPERTIES.pairwise", {{"atompair", {"Ta", "Nb"}}});
   INFO(pair);
-  CHECK(pair.find("Invalid key-value pair") == std::string::npos);
+  CHECK(pair.rfind("--atompair", 0) != 0);
 }

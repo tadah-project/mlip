@@ -52,9 +52,11 @@ Task task(const std::string &name) { return Task(name, Context()); }
 
 /* Pins: a scheduler holding a task with an engine (TEST.factory.counting,
  * which counts its runs) followed by a task no engine is registered for
- * (TEST.factory.unknown) throws "EngineFactory::create: No engine found for
+ * (TEST.factory.unknown) throws "internal error: no engine runs the task
  * TEST.factory.unknown" from execute() and runs neither task: the counting
- * engine ran 0 times.
+ * engine ran 0 times (TaskFactory refuses an unknown task before).
+ * Before the fix that states it as an internal error: "EngineFactory::create:
+ * No engine found for TEST.factory.unknown".
  * Before the fix: execute() created each engine when it reached the task,
  * so the counting task ran (1 run) and the refusal came after it. */
 TEST_CASE("Scheduler: a task without an engine is refused before any task "
@@ -67,7 +69,7 @@ TEST_CASE("Scheduler: a task without an engine is refused before any task "
   s.addTask(task("TEST.factory.counting"));
   s.addTask(task("TEST.factory.unknown"));
   const std::string what = thrown([&] { s.execute(); });
-  CHECK(what == "EngineFactory::create: No engine found for TEST.factory.unknown");
+  CHECK(what == "internal error: no engine runs the task TEST.factory.unknown");
   CHECK(CountingEngine::runs == 0);
 }
 
@@ -82,7 +84,10 @@ TEST_CASE("Scheduler: a task without an engine is refused before any task "
  * registered after the not-built entry is created, and a not-built entry
  * registered after an engine refuses it.
  * Before the fix: does not compile (EngineFactory has no registerNotBuilt,
- * notBuiltMessage or require). */
+ * notBuiltMessage or require).
+ * Before the fix that states an unknown task as an internal error:
+ * require() of TEST.factory.unknown threw "EngineFactory::create: No engine
+ * found for TEST.factory.unknown". */
 TEST_CASE("EngineFactory: a task registered as not built is refused with its "
           "message",
           "[engine_factory][scheduler]") {
@@ -97,7 +102,7 @@ TEST_CASE("EngineFactory: a task registered as not built is refused with its "
   CHECK(thrown([] { EngineFactory::create("TEST.factory.notbuilt"); }) == msg);
   CHECK(thrown([] { EngineFactory::require("TEST.factory.notbuilt"); }) == msg);
   CHECK(thrown([] { EngineFactory::require("TEST.factory.unknown"); }) ==
-        "EngineFactory::create: No engine found for TEST.factory.unknown");
+        "internal error: no engine runs the task TEST.factory.unknown");
 
   CountingEngine::runs = 0;
   CHECK(thrown([] { EngineFactory::require("TEST.factory.counting"); }).empty());

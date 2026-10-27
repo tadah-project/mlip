@@ -65,27 +65,29 @@ const char *kTasks =
  * std::invalid_argument that names it and lists the task names (those
  * without tasks of their own), and, when the name matches one but for the
  * case of its letters, names that one:
- *   "TaskFactory::createTasksFromInput - unknown task 'DATA.SPLIT': task
- *    names are case-sensitive, did you mean 'DATA.split'? The tasks: ..."
- *   "TaskFactory::createTasksFromInput - unknown task 'bogus'. The tasks:
- *    ..."
+ *   "unknown task 'DATA.SPLIT': task names are matched with case, and the
+ *    task is spelt 'DATA.split'. The tasks: ..."
+ *   "unknown task 'bogus'. The tasks: ..."
  * and the empty name likewise; before any configuration file is read (a
  * CONFIG naming a missing file is not reached).
  * Before the fix: 'DATA.SPLIT', 'train', 'bogus' and '' each died with
  * SIGSEGV (the defaults loop read the blueprint entry of the name without
  * checking that there was one; the test case stops at the first), and
  * 'bogus' with that CONFIG was refused for the file instead
- * ("MLIPUserConfigParser::parse(file): Cannot open file: ..."). */
+ * ("MLIPUserConfigParser::parse(file): Cannot open file: ...").
+ * Before the fix that states the case rule: "TaskFactory::createTasksFromInput
+ * - unknown task 'DATA.SPLIT': task names are case-sensitive, did you mean
+ * 'DATA.split'? ...", the class and a question: the checks fail. */
 TEST_CASE("TaskFactory refuses an unknown task name, naming it and the tasks",
           "[task_factory][task_names]") {
   const std::string head =
-      "invalid_argument: TaskFactory::createTasksFromInput - unknown task ";
+      "invalid_argument: unknown task ";
   CHECK(outcome("DATA.SPLIT", {{"percent", {"80", "20"}}}) ==
-        head + "'DATA.SPLIT': task names are case-sensitive, did you mean "
-               "'DATA.split'? " + kTasks);
+        head + "'DATA.SPLIT': task names are matched with case, and the task "
+               "is spelt 'DATA.split'. " + kTasks);
   CHECK(outcome("train") == head +
-        "'train': task names are case-sensitive, did you mean 'TRAIN'? " +
-        kTasks);
+        "'train': task names are matched with case, and the task is spelt "
+        "'TRAIN'. " + kTasks);
   CHECK(outcome("bogus") == head + "'bogus'. " + kTasks);
   CHECK(outcome("") == head + "''. " + kTasks);
   CHECK(outcome("bogus", {{"config", {"/nonexistent_dir/config.train"}}}) ==
@@ -93,15 +95,15 @@ TEST_CASE("TaskFactory refuses an unknown task name, naming it and the tasks",
 }
 
 /* Pins: a blueprint task name is accepted (DATA.split with its options: one
- * task) and the name of a group of tasks is refused as before, with the
- * runtime_error that names it ("... taskInput.getTaskName() is not a valid
- * task: DATA"). Before the fix: passes as well (a pin of the names the
- * check leaves alone). */
+ * task) and the name of a group of tasks is refused, with the runtime_error
+ * that names it ("DATA is a group of tasks, not a task").
+ * Before the fix: the refusal read "TaskFactory::createTasksFromInput -
+ * taskInput.getTaskName() is not a valid task: DATA", the code that tests
+ * it. */
 TEST_CASE("TaskFactory accepts a task name and refuses a group of tasks as "
           "before",
           "[task_factory][task_names]") {
   CHECK(outcome("DATA.split", {{"percent", {"80", "20"}}}) == "tasks: 1");
   CHECK(outcome("DATA") ==
-        "other: TaskFactory::createTasksFromInput - taskInput.getTaskName() "
-        "is not a valid task: DATA");
+        "other: DATA is a group of tasks, not a task");
 }

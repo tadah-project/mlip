@@ -10,6 +10,7 @@
 
 #include "catch2/catch.hpp"
 
+#include <tadah/core/blueprint_parser.h>
 #include <tadah/core/context.h>
 #include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/key_notice.h>
@@ -225,29 +226,35 @@ TEST_CASE("A potential with a TASK line is refused when it is loaded",
 }
 
 /* Pins: TaskFactory refuses an input with the key "task" (a program's
- * ITaskInput: the command line has no --task) as an unknown key,
- * "TaskFactory::createTasksFromInput - Invalid blueprint key: task", before
+ * ITaskInput: the command line has no --task) as an unknown key, "Invalid
+ * key task (closest key: <the blueprint's closest>)", before
  * it reads the file it names; and a configuration file it cannot open is
  * named in the message of CORE's parser, "Failed to open config file:
  * missing.train".
  * Before the fix: the key named a task file, whose TASK train section
  * TaskFactory made into a TRAIN task (no exception), and a missing -c file
  * gave "MLIPUserConfigParser::parse(file): Cannot open file:
- * missing.train". */
+ * missing.train".
+ * Before the fix that names the key as the parser does: "TaskFactory::
+ * createTasksFromInput - Invalid blueprint key: task": the first two checks
+ * fail. */
 TEST_CASE("TaskFactory: an input with the key task is refused as an unknown "
           "key, and a missing configuration file is named",
           "[task_factory][config][task_line]") {
   ScratchCwd cwd;
   std::ofstream("run.task") << "TASK train\nATOM Ta\n";
+  const std::string unknown =
+      "Invalid key task (closest key: " +
+      tadah::core::BlueprintParser::findClosestKey(
+          "task", tadah::core::BlueprintParser::getKeysMapRef()) +
+      ")";
   CHECK(error_of([] {
           (void)tasks_of(CommandInput("", {{"task", {"run.task"}}}));
-        }) == "TaskFactory::createTasksFromInput - Invalid blueprint key: "
-              "task");
+        }) == unknown);
   CHECK(error_of([] {
           (void)tasks_of(
               CommandInput("TRAIN", {{"task", {"run.task"}}}));
-        }) == "TaskFactory::createTasksFromInput - Invalid blueprint key: "
-              "task");
+        }) == unknown);
   CHECK(error_of([] {
           (void)tasks_of(
               CommandInput("TRAIN", {{"config", {"missing.train"}}}));
