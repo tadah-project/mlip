@@ -123,15 +123,16 @@ void validate_refit_mode_keys(const Context &c,
   if (retarget && c.has_stored("RHOFORM"))
     throw std::runtime_error(
         "tadah refit --retarget: RHOFORM has no effect on --retarget (an "
-        "hpotarget carries no potential); remove it from the configuration, "
-        "and pass --rhoform <SIGNED|NONNEG|MONOTONE> to rewrite the AMPGRIDMB "
-        "boxes for the density form of the potential the file searches "
-        "around.");
+        "hpotarget carries no potential), so a configuration of --retarget "
+        "has no RHOFORM line; --rhoform <SIGNED|NONNEG|MONOTONE> rewrites "
+        "the AMPGRIDMB boxes for the density form of the potential the file "
+        "searches around.");
   if (retarget && c.has_stored("EMBF0"))
     throw std::runtime_error(
         "tadah refit --retarget: EMBF0 has no effect on --retarget (an "
         "hpotarget carries no potential, and its bounds do not depend on the "
-        "embedding reference); remove it from the configuration.");
+        "embedding reference), so a configuration of --retarget has no EMBF0 "
+        "line.");
   if (!retarget && has(c, "IN_PLACE") && c.get<bool>("IN_PLACE"))
     throw std::runtime_error(
         "tadah refit: --in-place requires --retarget <file.hpotarget>.");
@@ -236,8 +237,9 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
              models::embf0_name(view.embf0) +
              (declared
                   ? ""
-                  : " (key absent -> default ZERO; add 'EMBF0 FREE' to the "
-                    "input to keep the raw embedding of a tadah <= 1.5.0 fit)") +
+                  : " (no EMBF0 line: ZERO, the default; an EMBF0 FREE line "
+                    "in the potential keeps the raw embedding of a fit of "
+                    "tadah 1.5.0 or earlier)") +
              (zero ? ": F is the zero-referenced embedding, F(0) = 0"
                    : ": F is the raw embedding of tadah 1.5.0 and earlier") +
              "; the edited potential declares EMBF0 " +
@@ -301,7 +303,7 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
     msg << ")";
     if (exact_output)
       msg << " — the edited potential predicts identically to the input "
-             "until the new coefficient is varied (e.g. by `tadah hpo`).";
+             "until the new coefficient is varied, such as by tadah hpo.";
     else
       msg << ".";
     log_info(msg.str());
@@ -376,7 +378,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
             "tadah refit --retarget: cannot parse --pct token '" + tok +
             "' — expected a positive number or KEY=<positive number> in the "
             "number grammar of the hpotarget file ([+-]digits[.digits]"
-            "[e[+-]digits]; e.g. --pct 10 FIXWEIGHT=2).");
+            "[e[+-]digits]; such as --pct 10 FIXWEIGHT=2).");
       if (eq == std::string::npos) {
         opts.pct = p;
       } else {
@@ -416,7 +418,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
         throw std::runtime_error(
             "tadah refit --retarget: cannot parse --set token '" + tok +
             "' — expected 'KEY(i)=lo,hi', KEY an OPTIM key or component path "
-            "of the file (e.g. --set 'CGRID2B(3)=2.1,2.4' or "
+            "of the file (such as --set 'CGRID2B(3)=2.1,2.4' or "
             "'EAM.DENSITY.CENTRES(2)=2.4,2.6').");
       RetargetOptions::SetOverride s;
       s.key = m[1].str();

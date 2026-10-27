@@ -214,8 +214,8 @@ void prepare_embed_refit(const core::Context &c, const models::EAMSetflIO &eam,
       (models::basis_kind_from_string(cfg.basis) == models::BasisKind::Knot5 ||
        cfg.component->density.basis == models::EmbedBasis::Knot5 ||
        cfg.component->embedding.basis == models::EmbedBasis::Knot5))
-    bad("dense mode retains its knot restriction; use compact mode for knot "
-        "components");
+    bad("REFIT_MODE dense fits no knot component; REFIT_MODE compact fits "
+        "knot components");
 }
 } // namespace engines
 } // namespace mlip

@@ -239,8 +239,8 @@ Structure VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   } else {
     throw std::runtime_error(
       "line 6 holds the atom counts, not the element "
-      "symbols (the VASP 4 layout); add the element-symbol line above the "
-      "counts.");
+      "symbols (the VASP 4 layout); an element-symbol line above the "
+      "counts gives them.");
   }
   if (elemSymbols.size() != speciesCounts.size()) {
     throw std::runtime_error(

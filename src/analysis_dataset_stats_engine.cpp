@@ -83,17 +83,17 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
 
   if (stdb.size() == 0) {
     throw std::runtime_error(
-        "analysis dataset_stats: no structures loaded — provide at "
-        "least one DBFILE or STRUCTURE.");
+        "analysis dataset_stats: no structures loaded; a DBFILE or "
+        "STRUCTURE line in the configuration, --dbfile or --structure gives "
+        "them");
   }
 
   // RCUTMAX must already be set by either the user's config or the
   // postprocessor of CoreUserConfigParser.
   if (!workCtx.contains("RCUTMAX") || workCtx.get<double>("RCUTMAX") <= 0) {
     throw std::runtime_error(
-        "analysis dataset_stats: RCUTMAX is not set or <= 0. "
-        "Set at least one of RCUT2B / RCUTMB in your config so the "
-        "audit cutoff is well-defined.");
+        "analysis dataset_stats: RCUTMAX is not set or <= 0; an RCUT2B or "
+        "RCUTMB line in the configuration (-c) sets it");
   }
 
   // The audit of the data: two atoms at one position are a pair at

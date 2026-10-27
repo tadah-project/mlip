@@ -26,7 +26,7 @@ int DataDedupEngine::run(tadah::mlip::Task &task) {
     throw std::runtime_error(
         "tadah data dedup needs --threshold <Angstrom>: the largest "
         "difference, in each Cartesian component, at which two atom "
-        "positions count as equal (e.g. --threshold 1e-6)");
+        "positions count as equal, such as --threshold 1e-6");
   double threshold = taskContext.get<double>("THRESHOLD");
 
   std::vector<StructureDB> inStdbs(taskContext.size("DBFILE"));

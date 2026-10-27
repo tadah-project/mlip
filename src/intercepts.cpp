@@ -202,18 +202,18 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
 
   if (norm && !bias && (model_bf == "BF_Linear" || model_bf == "Kern_Linear")) {
     throw std::runtime_error(
-        "Configuration: NORM=true with MODEL=" + model_bf +
-        " requires BIAS=true. The weights fitted to the normalised "
+        "NORM true with MODEL " + model_bf +
+        " requires BIAS true: the weights fitted to the normalised "
         "descriptors are converted to weights of the raw descriptors, and "
         "the constant this moves (the descriptor means times the weights) "
         "goes into the intercept columns; without them the potential would "
-        "predict wrong energies (tadah predict and LAMMPS). Set BIAS=true or "
-        "NORM=false.");
+        "predict wrong energies (tadah predict and LAMMPS); BIAS true or "
+        "NORM false is accepted.");
   }
   if (bias && (!ctx.contains("ATOM") || ctx.size("ATOM") == 0)) {
     throw std::runtime_error(
-        "Configuration: BIAS=true requires a non-empty ATOM list "
-        "(BIAS adds one intercept column per species).");
+        "BIAS true requires an ATOM line (BIAS adds one intercept column per "
+        "species)");
   }
   // The fit pins weights of the normalised descriptors, and their
   // conversion to weights of the raw descriptors moves them (a pinned
@@ -223,9 +223,10 @@ void check_bias_constraints(const tadah::core::Context &ctx) {
   if (norm && (ctx.has_stored("FIXINDEX") || ctx.has_stored("FIXWEIGHT"))) {
     throw std::runtime_error(
         "FIXINDEX/FIXWEIGHT is not supported with NORM true: fixed values "
-        "would be interpreted in the normalized feature space (the fit pins "
+        "would be interpreted in the normalised feature space (the fit pins "
         "weights of the normalised descriptors, and their conversion to "
-        "weights of the raw descriptors moves them). Set NORM false.");
+        "weights of the raw descriptors moves them); NORM false is "
+        "accepted.");
   }
 }
 
@@ -271,9 +272,8 @@ void throw_element_not_in_atom(const tadah::core::Element &e,
       "BIAS true: " + where + " has an atom of " + e.symbol +
       ", which has no intercept column: ATOM " + atom_list(ctx) +
       " does not list " + e.symbol +
-      " (BIAS gives one intercept column per ATOM species). Use a "
-      "potential trained with " + e.symbol + ", or leave such structures "
-      "out.");
+      " (BIAS gives one intercept column per ATOM species); such structures "
+      "need a potential trained with " + e.symbol + ".");
 }
 
 void require_intercepts_determined(const StructureDB &stdb,
@@ -411,20 +411,20 @@ void require_intercepts_determined(const StructureDB &stdb,
   // needs BIAS true (check_bias_constraints), and FIXINDEX is refused.
   const bool norm = ctx.contains("NORM") && ctx.get<bool>("NORM");
   const std::string other_compositions =
-      "add structures of other compositions with energies (for example of "
-      "the pure elements, or an isolated atom of each species)";
+      "structures of other compositions with energies (such as of the pure "
+      "elements, or an isolated atom of each species)";
   std::string remedies;
   if (norm) {
-    remedies = "Under NORM true, " + other_compositions +
-               ", or set NORM false and remove a per-species reference "
-               "energy or pin the intercepts instead.";
+    remedies = "Under NORM true, a fit of these data takes " +
+               other_compositions + "; NORM false also accepts a "
+               "per-species reference energy or pinned intercepts.";
   } else {
-    remedies = "Use BIAS false with explicit ESHIFT values (a per-species "
-               "reference energy, such as the isolated atom's) or "
-               "ESHIFT_ATOM (isolated-atom structures in the data), " +
-               other_compositions + ", or pin intercepts with "
-               "FIXINDEX/FIXWEIGHT (the intercepts of " + f.get_label() +
-               " are weights " +
+    remedies = "A fit of these data takes BIAS false with explicit ESHIFT "
+               "values (a per-species reference energy, such as the "
+               "isolated atom's) or ESHIFT_ATOM (isolated-atom structures "
+               "in the data), " + other_compositions + ", or the "
+               "intercepts pinned with FIXINDEX/FIXWEIGHT (the intercepts "
+               "of " + f.get_label() + " are weights " +
                weights_text(ctx, cols, intercept_values(ctx, f, cols)) + ").";
   }
   throw std::runtime_error(

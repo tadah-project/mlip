@@ -76,6 +76,11 @@ std::string PlainTextKeyStorage::getKeysFilePath() const
   return m_configDir + "/keys";
 }
 
+std::string PlainTextKeyStorage::location() const
+{
+  return getKeysFilePath();
+}
+
 std::string PlainTextKeyStorage::readKeyFromFile(const std::string& keyName)
 {
   std::ifstream fileIn(getKeysFilePath());

@@ -540,17 +540,17 @@ int RefitEngine::run(tadah::mlip::Task &task) {
     // blip bumps and the one-sided quintic knot family.
     if (!components && !basis_blip && !basis_knotfam && !basis_blip5)
       throw std::runtime_error(
-          "tadah refit: REFIT_MODE compact supports REFIT_BASIS Blip, "
-          "Blip5, Knot3, Knot5 or KnotMix (got '" + cfg.basis + "'); use "
-          "REFIT_MODE dense for Gaussian, or drop REFIT_BASIS.");
+          "tadah refit: REFIT_MODE compact takes REFIT_BASIS Blip, Blip5, "
+          "Knot3, Knot5 or KnotMix, not " + cfg.basis + "; REFIT_MODE dense "
+          "fits Gaussian, and a configuration without REFIT_BASIS takes the "
+          "default basis of compact mode");
     // (require_fitter refused compact mode without a compact fitter.) The
     // hook fits the table or throws: there is no dense fit to fall back on.
     compact_fit(c, eam, cfg, refit_ptr, st);
     if (!refit_ptr)
       throw std::logic_error(
-          "tadah refit: internal error: the compact fitter returned without "
-          "a fit (RefitEngine::compact_fit fills the fit and its self-test, "
-          "or throws); this is a bug, please report it");
+          "internal error: the compact fitter of tadah refit returned "
+          "without a fit; it fills the fit and its self-test, or throws");
   }
 
   // (a component refit takes its families from its DESCRIPTOR blocks)
@@ -665,7 +665,7 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           "headroom (reachable rho ~ rhomax). Dense phases / strong "
           "compression beyond the reachability sweep probe the original's "
           "own out-of-table extrapolation — neither the original nor any "
-          "refit is defined there (e.g. Al99 bcc@400 GPa).");
+          "refit is defined there (such as bcc Al99 at 400 GPa).");
   }
 
   // ---- goodness-of-fit (per function) ----
@@ -773,9 +773,9 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   core::Logger::instance().log(core::LogLevel::WARNING,
       "tadah refit: below the inner fit bound r_lo=" +
       core::to_string(refit.r_lo(), 4) + " A the setfl carries the ORIGINAL "
-      "table (offset-matched to the fit at r_lo); the native pot.tadah is "
-      "valid for r >= r_lo only. Lower REFIT_R_LO_FRAC in the config to "
-      "extend the fitted range if your application compresses harder.");
+      "table (offset-matched to the fit at r_lo); the native pot.tadah "
+      "holds for r >= r_lo only, and a smaller REFIT_R_LO_FRAC extends the "
+      "fitted range to shorter distances.");
 
   // ---- comparison dump for the (not shipped) python plotting script ----
   write_compare_dump("refit_compare.dat", eam, refit);

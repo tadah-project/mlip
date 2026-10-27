@@ -84,15 +84,15 @@ ColumnLayout DM_Kern_Base::phi_layout(const ColumnLayout &descriptor_layout,
   // the kernel's basis vectors, which are compared with the descriptors.
   if (basis.cols() == 0)
     throw std::runtime_error(
-        "DesignMatrix: kernel " + get_label() + " has no basis vectors "
-        "(SBASIS/BASIS): a non-linear kernel's design-matrix columns are "
-        "its basis vectors.");
+        "kernel " + get_label() + " has no basis vectors (SBASIS, BASIS): "
+        "the design-matrix columns of a non-linear kernel are its basis "
+        "vectors");
   if (basis.rows() != descriptor_layout.total_cols())
     throw std::runtime_error(
-        "DesignMatrix: the basis vectors of kernel " + get_label() +
-        " have " + std::to_string(basis.rows()) + " components but the "
-        "descriptor has " + std::to_string(descriptor_layout.total_cols()) +
-        " (DSIZE): the basis (BASIS) does not belong to these descriptors.");
+        "the basis vectors of kernel " + get_label() + " have " +
+        std::to_string(basis.rows()) + " components, and the descriptors "
+        "have " + std::to_string(descriptor_layout.total_cols()) +
+        " (DSIZE): the basis (BASIS) does not belong to these descriptors");
   ColumnBlock b;
   b.descriptor_label = get_label();
   b.family = "kernel";

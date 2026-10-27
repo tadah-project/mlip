@@ -40,6 +40,9 @@ public:
    */
   bool storeKey(const std::string &keyName,
                 const std::string &keyValue) override;
+
+  /** @brief "the environment of this run". */
+  std::string location() const override;
 };
 
 } // namespace mlip

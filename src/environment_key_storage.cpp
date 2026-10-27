@@ -30,5 +30,10 @@ bool EnvironmentKeyStorage::storeKey(const std::string& keyName, const std::stri
   return false;
 }
 
+std::string EnvironmentKeyStorage::location() const
+{
+  return "the environment of this run";
+}
+
 } // namespace mlip
 } // namespace tadah
