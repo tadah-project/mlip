@@ -46,8 +46,8 @@ const core::BlueprintTask &blueprint_task(const std::string &name) {
   const auto same = std::find_if(names.begin(), names.end(),
       [&](const std::string &n) { return boost::iequals(n, name); });
   if (same != names.end())
-    msg += ": task names are matched with case, and the task is spelt '" +
-           *same + "'.";
+    msg += ": task names are case-sensitive, and '" + *same +
+           "' differs from it only in letter case.";
   else
     msg += ".";
   msg += " The tasks:";

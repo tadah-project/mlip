@@ -81,7 +81,8 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
         (basis_user_set ? " (the one-sided knot family)"
                         : " (the REFIT_MODE compact default, a one-sided "
                           "knot family)") +
-        ": use a bump basis (Blip, Blip5) or RHOFORM NONNEG (" +
+        ": RHOFORM MONOTONE fits with a bump basis (Blip, Blip5), and a knot "
+        "basis with RHOFORM NONNEG (" +
         models::monotone_knot_refusal_text() + ").");
   if (form == models::RhoForm::Monotone &&
       !models::rhoform_cutoff_whitelisted(rctype))
@@ -109,9 +110,9 @@ void check_rhoform_matrix(models::RhoForm form, const std::string &basis,
           "basis " + basis + ": a knot density with every amplitude >= 0 "
           "is non-increasing and convex (knots <= RCUTMB, non-increasing "
           "cutoff), so a table whose density is concave anywhere in the fit "
-          "window (e.g. near the core) is fitted poorly and the self-test "
-          "can fail. Set REFIT_BASIS Blip5 (a non-negative bump density "
-          "without the convex lock), or use RHOFORM SIGNED.");
+          "window (such as near the core) is fitted poorly and the self-test "
+          "can fail. REFIT_BASIS Blip5 (a non-negative bump density without "
+          "the convex lock) or RHOFORM SIGNED lifts the lock.");
   }
 }
 
@@ -124,7 +125,8 @@ void require_fitter(const Context &c, RefitMode mode, bool has_compact_fitter) {
       std::string("tadah refit: REFIT_MODE compact") +
       (c.has_stored("REFIT_MODE") ? "" : " (the default)") +
       " needs the compact fitter, which this tadah was built without (it "
-      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE dense");
+      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); REFIT_MODE dense fits "
+      "without it");
 }
 
 void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {
@@ -557,9 +559,10 @@ int RefitEngine::run(tadah::mlip::Task &task) {
   if (!components && !compact && basis_knotfam)
     throw std::runtime_error(
         "tadah refit: REFIT_BASIS " + cfg.basis + " requires REFIT_MODE "
-        "compact on an HPO (Ceres) build — the one-sided knot families have "
-        "no dense windowed-LSQ path. Use REFIT_BASIS Blip/Blip5 for dense "
-        "mode.");
+        "compact, which a tadah built with TADAH_ENABLE_NFP and "
+        "TADAH_ENABLE_CERES runs: the one-sided knot families have no dense "
+        "windowed least-squares fit; REFIT_BASIS Blip or Blip5 fits in "
+        "REFIT_MODE dense.");
 
   if (!compact && !basis_blip && !basis_blip5)  // dense + Gaussian: demoted
                                                 // (knot families threw above)
@@ -731,23 +734,23 @@ int RefitEngine::run(tadah::mlip::Task &task) {
           components
             ? std::string("  WARNING: still above tolerance — a component "
                           "fit has the basis its block declares and does not "
-                          "escalate it: give the component more density or "
-                          "embedding functions (CENTRES AUTO <count>, or a "
+                          "escalate it: more density or embedding functions "
+                          "in the component (CENTRES AUTO <count>, or a "
                           "finer explicit grid)") +
-                  (compact ? ", raise REFIT_COMPONENT_ITERATIONS if its "
-                            "centre/scale optimisation stopped before "
-                            "converging"
-                          : ", a larger N2B for the pair function") +
-                  ", or relax REFIT_TOL_* if this regime is irrelevant for "
-                  "your use."
-          : compact ? "  WARNING: still above tolerance — raise "
-                   "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis), "
-                   "or relax REFIT_TOL_* if this regime is irrelevant for "
-                   "your use."
-                 : "  WARNING: still above tolerance after escalation — "
-                   "raise REFIT_MAX_ESCALATIONS, pin a larger "
-                   "N2B/NRHO_BASIS/NF_BASIS, or relax REFIT_TOL_* if this "
-                   "regime is irrelevant for your use.");
+                  (compact ? " or a larger REFIT_COMPONENT_ITERATIONS, when "
+                            "its centre and scale optimisation stopped "
+                            "before converging,"
+                          : " or a larger N2B for the pair function") +
+                  " can lower the error, and a larger REFIT_TOL_* accepts "
+                  "it."
+          : compact ? "  WARNING: still above tolerance — a larger "
+                   "REFIT_COMPACT_NMAX or EXPLORE MAX_ADD (a larger basis) "
+                   "can lower the error, and a larger REFIT_TOL_* accepts "
+                   "it."
+                 : "  WARNING: still above tolerance after escalation — a "
+                   "larger REFIT_MAX_ESCALATIONS, N2B, NRHO_BASIS or "
+                   "NF_BASIS can lower the error, and a larger REFIT_TOL_* "
+                   "accepts it.");
     }
   }
 

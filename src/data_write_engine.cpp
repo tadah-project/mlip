@@ -81,12 +81,13 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
 void DataWriteEngine::validate(const tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
   // The formats StructureWriterSelector writes, refused before anything is
-  // read.
+  // read. FORMAT is a command_only key: the command line gives it with -f
+  // (--format), so the refusal names the option.
   if (taskContext.contains("FORMAT")) {
     const std::string format = taskContext.get<std::string>("FORMAT");
     const std::string up = core::to_upper(format);
     if (up != "CASTEP" && up != "LAMMPS" && up != "VASP")
-      throw std::runtime_error("tadah data write: FORMAT " + format +
+      throw std::runtime_error("tadah data write: --format " + format +
                                " is not a format it writes: castep, lammps "
                                "or vasp");
   }

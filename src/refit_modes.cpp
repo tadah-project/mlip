@@ -117,20 +117,20 @@ void validate_refit_mode_keys(const Context &c,
     if (!retarget && has(c, k))
       throw std::runtime_error(std::string("tadah refit: the ") + k +
                                " key requires --retarget <file.hpotarget>.");
-  // An hpotarget carries no potential, so a density-form or embedding key
+  // A target file carries no potential, so a density-form or embedding key
   // in the configuration of --retarget would have no effect (stored values
   // only: EMBF0 has a blueprint default).
   if (retarget && c.has_stored("RHOFORM"))
     throw std::runtime_error(
-        "tadah refit --retarget: RHOFORM has no effect on --retarget (an "
-        "hpotarget carries no potential), so a configuration of --retarget "
+        "tadah refit --retarget: RHOFORM has no effect on --retarget (a "
+        "target file carries no potential), so a configuration of --retarget "
         "has no RHOFORM line; --rhoform <SIGNED|NONNEG|MONOTONE> rewrites "
         "the AMPGRIDMB boxes for the density form of the potential the file "
         "searches around.");
   if (retarget && c.has_stored("EMBF0"))
     throw std::runtime_error(
-        "tadah refit --retarget: EMBF0 has no effect on --retarget (an "
-        "hpotarget carries no potential, and its bounds do not depend on the "
+        "tadah refit --retarget: EMBF0 has no effect on --retarget (a "
+        "target file carries no potential, and its bounds do not depend on the "
         "embedding reference), so a configuration of --retarget has no EMBF0 "
         "line.");
   if (!retarget && has(c, "IN_PLACE") && c.get<bool>("IN_PLACE"))
@@ -377,7 +377,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
         throw std::runtime_error(
             "tadah refit --retarget: cannot parse --pct token '" + tok +
             "' — expected a positive number or KEY=<positive number> in the "
-            "number grammar of the hpotarget file ([+-]digits[.digits]"
+            "number grammar of the target file ([+-]digits[.digits]"
             "[e[+-]digits]; such as --pct 10 FIXWEIGHT=2).");
       if (eq == std::string::npos) {
         opts.pct = p;
@@ -431,7 +431,7 @@ int run_refit_retarget(Context &c, const KeyProvenance *provenance) {
         if (!core::parse_decimal_normal(text, *value))
           throw std::runtime_error(
               "tadah refit --retarget: --set token '" + tok + "': '" + text +
-              "' is not a number in the number grammar of the hpotarget "
+              "' is not a number in the number grammar of the target "
               "file ([+-]digits[.digits][e[+-]digits]).");
       opts.sets.push_back(s);
     }

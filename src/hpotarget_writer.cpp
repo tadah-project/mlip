@@ -207,7 +207,7 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
                              :ream?"EMBF0 ZERO and REFERENCE ZERO":"REFERENCE ZERO";
   std::ofstream os(path);
   if (!os)
-    throw std::runtime_error("tadah refit: cannot open the hpotarget file " +
+    throw std::runtime_error("tadah refit: cannot open the target file " +
                              path + " for writing.");
   os << "# Starter target file of tadah hpo, written by tadah refit. It runs "
         "with:\n"
@@ -404,7 +404,7 @@ void write_hpotarget(const std::string &path, const tadah::core::Context &pot,
   os << "OUTPUT 1\nBOUTPUT 1\n";
   os.close();
   if (!os)
-    throw std::runtime_error("tadah refit: cannot write the hpotarget file " +
+    throw std::runtime_error("tadah refit: cannot write the target file " +
                              path + ".");
 }
 
