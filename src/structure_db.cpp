@@ -3,6 +3,7 @@
 #include <tadah/core/periodic_table.h>
 #include <tadah/core/utils.h>
 #include <tadah/core/logger.h>
+#include <tadah/models/inert_keys.h>
 
 #include <map>
 #include <stdexcept>
@@ -350,7 +351,7 @@ void StructureDB::check_watom_key(tadah::core::Context &context, std::set<tadah:
             );
       }
     }
-  } else {
+  } else if (tadah::models::context_reads_watom(context)) {
     for (const auto &s : unique_elements) context.add("WATOM", s.Z);
   }
 }

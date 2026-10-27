@@ -199,7 +199,12 @@ struct StructureDB {
   /** Check consistency of the ATOM key. */
   static void check_atom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
-  /** Check consistency of the WATOM key. Add if missing*/
+  /** Check consistency of the WATOM key. When it is missing and a
+   *  descriptor of @p context reads WATOM (models::context_reads_watom),
+   *  add WATOM = Z of each element of @p unique_elements; a configuration
+   *  whose descriptors read none (D2_EAM, DM_EAM) is left without one, as a
+   *  WATOM there would change nothing (and a fit refuses one other than 1,
+   *  models::require_no_inert_keys). */
   static void check_watom_key(tadah::core::Context &context, std::set<tadah::core::Element> &unique_elements);
 
   // Methods to enable range-based for loop
