@@ -129,7 +129,18 @@ AuditReport run_preflight_from_db(
  *  of a configured descriptor that has a key in the search space, (b)
  *  present and constant in the seed, and (c) absent from every OPTIM
  *  block (cutoffs derived from knots or fixed by bump supports under a
- *  hard cutoff, and radial centres at the origin, excepted). Always emits
+ *  hard cutoff, and radial centres at the origin, excepted). Each
+ *  descriptor of a joined line (D2_mJoin, DM_mJoin) is judged by its own
+ *  values of a key (joined_descriptors(): every centre at the origin); a
+ *  key in the search space counts as searched whichever of its entries the
+ *  search space holds, for every entry of the key and every descriptor that
+ *  has it. A warning names the descriptor's entries of the key as an OPTIM
+ *  line numbers them ("RCUTMB(2)") and the OPTIM line that would search
+ *  them ("`OPTIM RCUTMB (2)`"). The
+ *  cutoff of a knot channel, and of a bump channel under a hard cutoff, is
+ *  excepted where tadah hpo derives it from the largest knot or holds the
+ *  bump supports within it: on a line of that descriptor alone, not on a
+ *  joined line, whose cutoffs are fixed values of the search. Always emits
  *  at WARN (never FAIL): this is a configuration smell, not a hard error.
  *
  *  `optim_keys` is the canonical set of parameter names under HPO

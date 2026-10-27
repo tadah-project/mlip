@@ -6,9 +6,11 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <tadah/core/context.h>
 #include <tadah/core/logger.h>
+#include <tadah/core/number_format.h>
 #include <tadah/core/registry.h>
 #include <tadah/core/stats/data_stats.h>
 #include <tadah/mlip/bound_suggester.h>
@@ -17,6 +19,7 @@
 #include <tadah/mlip/structure_db.h>
 #include <tadah/models/descriptors/d_base.h>
 #include <tadah/models/descriptors/d_mjoin.h>
+#include <tadah/models/descriptors/density_reach.h>
 #include <tadah/models/descriptors/d2/d2_base.h>
 #include <tadah/models/descriptors/dm/dm_base.h>
 
@@ -65,8 +68,40 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
 
   // Compute dataset stats (DBFILE -> DataStats). No descriptor
   // statistics: the ranges that need them (ρ) are fixed ones, which their
-  // rationale says.
-  auto data = compute_data_stats(stdb, workCtx, /*with_descriptor_stats=*/false);
+  // rationale says. The neighbour distances are taken up to
+  // models::kCutoffSearchReach times the seed's cutoffs (RCUTMAX follows
+  // RCUT2B, RCUTMB and the cutoff radius of each DESCRIPTOR block, which
+  // expand_grids has resolved), so that the range of a cutoff can end past
+  // the seed's: statistics within the seed's cutoff hold no distance beyond
+  // it.
+  tadah::core::Context statsCtx = workCtx;
+  for (const char* key : {"RCUT2B", "RCUTMB"}) {
+    if (!statsCtx.has_stored(key)) continue;
+    std::vector<double> values(statsCtx.size(key));
+    for (std::size_t i = 0; i < values.size(); ++i)
+      values[i] = models::kCutoffSearchReach * statsCtx.get<double>(key, i);
+    statsCtx.remove(key);
+    for (double v : values)
+      statsCtx.add(key, tadah::core::format_roundtrip(v));
+  }
+  std::vector<double> radii;
+  for (std::size_t i = 0;; ++i) {
+    const auto radius = statsCtx.stored_value("COMPONENT_RCUTMB", i);
+    if (!radius) break;
+    radii.push_back(models::kCutoffSearchReach *
+                    tadah::core::to_double(*radius));
+  }
+  if (!radii.empty()) statsCtx.set_component_cutoffs(radii);
+  tadah::core::Logger::instance().log(
+      tadah::core::LogLevel::INFO,
+      "analysis suggest_bounds: the neighbour statistics reach " +
+          tadah::core::format_roundtrip(statsCtx.get<double>("RCUTMAX")) +
+          " Å, " + tadah::core::format_roundtrip(models::kCutoffSearchReach) +
+          " times the largest cutoff of the seed (" +
+          tadah::core::format_roundtrip(workCtx.get<double>("RCUTMAX")) +
+          " Å)");
+  auto data =
+      compute_data_stats(stdb, statsCtx, /*with_descriptor_stats=*/false);
 
   // Output stream — stdout if no OUTFILE, else file.
   std::ofstream ofile;
@@ -112,6 +147,9 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
                   "' has no meta() yet; skipping.");
           continue;
         }
+        // The rows name the descriptor as the configuration does (the
+        // label of a class's metadata can be the class's: DM_Poly).
+        m->label = jd.label;
         auto sug = suggest_bounds_for(data, *m, jd.context);
         sug.erase(std::remove_if(sug.begin(), sug.end(),
                                  [&](const OptimSuggestion& s) {
@@ -161,6 +199,7 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
                 "' has no meta() yet; skipping.");
         continue;
       }
+      m->label = label;
       auto sug = suggest_bounds_for(data, *m, workCtx);
       all_suggestions.insert(all_suggestions.end(),
                              sug.begin(), sug.end());
@@ -177,6 +216,16 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         all_suggestions.insert(all_suggestions.end(),suggestions.begin(),suggestions.end());
       }
     }
+
+  // The cutoff of a D2_Knot5 line or of a knot DM_REAM density alone on
+  // its TYPE line is its largest knot, which tadah hpo derives: no OPTIM
+  // line.
+  leave_out_derived_cutoffs(all_suggestions, workCtx);
+
+  // One row per key and entry: the descriptors of a joined line give a
+  // row each for a key they share (RCUTENV), and tadah hpo takes one OPTIM
+  // line per entry.
+  merge_shared_rows(all_suggestions);
 
   // Always print the human table to stdout for visibility.
   print_suggestions(all_suggestions, std::cout);
