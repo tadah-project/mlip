@@ -267,8 +267,8 @@ TEST_CASE("The C++ API refuses a fit of a configuration with retired keys",
  * with its line ("MBLOCK 64 (line 16)"); require_fit_settings refuses
  * WATOM 2.5 with D2_EAM and DM_EAM ("WATOM 2.5 (line 2)") and takes WATOM
  * 1 with them.
- * Before the fix: the fit ran: MBLOCK and EMBF0 gave a WARNING, RHOFORM
- * and WATOM nothing. */
+ * Before the fix: the fit ran: MBLOCK, EMBF0 and RHOFORM gave a WARNING,
+ * WATOM nothing. */
 TEST_CASE("The C++ API refuses a fit of a configuration with a key that "
           "changes nothing it gives",
           "[inert][fit]") {
