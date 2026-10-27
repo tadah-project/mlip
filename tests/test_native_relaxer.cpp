@@ -14,6 +14,8 @@
 //      relaxer's strain DOF drives the volume back up and final fmax
 //      is below tolerance.
 //   3. Aniso / Voigt6 / FixedZ modes are stubs and throw cleanly.
+//   4. The strain force of the result, raw and over 3 V, is that of the
+//      cell the relaxation ends at, also after an accepted last step.
 
 #include "catch2/catch.hpp"
 
@@ -35,6 +37,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -327,6 +330,99 @@ TEST_CASE("NativeRelaxer Iso mode drives strain force below tolerance",
     /* Scale factor should be physically reasonable (not blown up). */
     CHECK(res.scale_factor > 0.5);
     CHECK(res.scale_factor < 2.0);
+    /* The normalised strain force is the one of the convergence test. */
+    CHECK(res.final_strain_force_norm ==
+          Approx(res.final_strain_force / (3.0 * V)).epsilon(1e-12));
+    CHECK(res.final_strain_force_norm < opts.ftol);
+}
+
+/* Pins: the strain force a relaxation reports is that of the cell it ends
+ * at, also when it stops after an accepted step (at maxiter, or when the
+ * early_reject predicate ends it): final_strain_force is |dE/deps| of the
+ * final cell, by the relaxer's own central difference (the start cell
+ * scaled by scale_factor x (1 +- eps_strain_fd)), and
+ * final_strain_force_norm is that over 3 V of the final cell, the strain
+ * part of the convergence test, in eV/A^3 (a pressure).
+ * Before the fix: final_strain_force was the one measured at the start of
+ * the last iteration, before its step (another cell), and the result had
+ * no normalised strain force. */
+TEST_CASE("NativeRelaxer Iso: the strain force of the result is that of the "
+          "cell the relaxation ends at",
+          "[mlip][native_relaxer][iso][strain_force]")
+{
+    PeriodicTable::initialize();
+
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+
+    NativeRelaxer::Options opts;
+    opts.box_mode  = NativeRelaxer::Options::Iso;
+    opts.pressure  = 0.0;
+    opts.ftol      = 1.0e-6;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+
+    /* |dE/deps| of @p start scaled by @p scale, as the relaxer measures it:
+     * the start cell and positions scaled by scale x (1 +- h), each with a
+     * list built at rcut + skin. */
+    auto strain_force = [&](const Structure& start, double scale) {
+        const double h = opts.eps_strain_fd;
+        auto energy = [&](double s) {
+            Structure x = start;
+            for (std::size_t i = 0; i < 3; ++i)
+                for (std::size_t j = 0; j < 3; ++j)
+                    x.cell(i, j) = s * start.cell(i, j);
+            for (std::size_t a = 0; a < x.natoms(); ++a)
+                for (int k = 0; k < 3; ++k)
+                    x.atoms[a].position[k] = s * start.atoms[a].position[k];
+            x.nn.reset();
+            NNFinder().calc(x, rcut + opts.nn_skin);
+            return host.model->epredict(host.dc.calc(x));
+        };
+        return std::abs((energy(scale * (1.0 + h)) -
+                         energy(scale * (1.0 - h))) / (2.0 * h));
+    };
+
+    auto check_end = [&](const NativeRelaxer::Options& o) {
+        const Structure start = make_bcc_ta_supercell(3.10);
+        Structure st = start;
+        NativeRelaxer relaxer;
+        const auto res =
+            relaxer.relax(st, *host.model, host.dc, host.context, o);
+        INFO("converged=" << res.converged << "  iter=" << res.n_iter
+             << "  early_rejected=" << res.early_rejected
+             << "  scale=" << res.scale_factor);
+        /* Preconditions: the relaxation stopped after accepted steps. */
+        REQUIRE_FALSE(res.converged);
+        REQUIRE(res.scale_factor != 1.0);
+        const double F_end = strain_force(start, res.scale_factor);
+        const double V_end = st.get_volume();
+        INFO(std::setprecision(17) << "final_strain_force "
+             << res.final_strain_force << ", |dE/deps| at the end " << F_end
+             << "; final_strain_force_norm " << res.final_strain_force_norm
+             << ", over 3 V " << F_end / (3.0 * V_end));
+        CHECK(res.final_strain_force == Approx(F_end).epsilon(1e-9));
+        CHECK(res.final_strain_force_norm ==
+              Approx(F_end / (3.0 * V_end)).epsilon(1e-9));
+    };
+
+    SECTION("at maxiter") {
+        NativeRelaxer::Options o = opts;
+        o.maxiter = 3;
+        check_end(o);
+    }
+    SECTION("when the early_reject predicate ends it") {
+        NativeRelaxer::Options o = opts;
+        o.maxiter = 500;
+        o.early_reject = [](const tadah::mlip::EarlyState& s) {
+            return s.iter >= 2;
+        };
+        check_end(o);
+    }
 }
 
 namespace {

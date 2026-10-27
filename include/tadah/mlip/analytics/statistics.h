@@ -15,7 +15,9 @@ class Statistics {
         /** Total sum of squares. */
         static double tot_sum_sq(const vec &obs);
 
-        /** Coefficient of determination. */
+        /** Coefficient of determination, 1 - SS_res / SS_tot; NaN when
+         *  the observations are all equal (or fewer than two): they have
+         *  no spread to measure the residual against. */
         static double r_sq(const vec &obs, const vec &pred);
 
         /** Unbiased sample variance. */
