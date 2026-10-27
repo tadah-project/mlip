@@ -17,8 +17,10 @@
 #include <tadah/core/stats/data_stats.h>
 #include <tadah/core/stats/data_stats_io.h>
 #include <tadah/mlip/data_stats_compute.h>
+#include <tadah/mlip/key_provenance.h>
 #include <tadah/mlip/structure_db.h>
 #include <tadah/mlip/structure_readers/structure_reader_selector.h>
+#include <tadah/models/descriptors/dm/embed_spec.h>
 
 namespace tadah {
 namespace mlip {
@@ -40,32 +42,88 @@ std::optional<double> close_contact(const tadah::core::Context& ctx) {
   return cc;
 }
 
+// The context with the cutoff RADIUS of each DESCRIPTOR block resolved
+// (COMPONENT_RCUTMB, which RCUTMAX follows), as tadah train resolves the
+// blocks of its configuration: a block's RADIUS is a cutoff of the
+// configuration as RCUT2B and RCUTMB are.
+tadah::core::Context with_block_cutoffs(const tadah::core::Context& ctx) {
+  tadah::core::Context resolved = ctx;
+  tadah::models::resolve_embed_blocks(resolved);
+  return resolved;
+}
+
+// The cutoff of the statistics, RCUTMAX of a context whose DESCRIPTOR blocks
+// are resolved: the largest RCUT2B or RCUTMB value or cutoff RADIUS of a
+// DESCRIPTOR block, which the configuration (-c) gives; --dbfile and
+// --structure give none. A context without any of them, or whose largest is
+// not above 0, is refused, before any data are read. (A block's RADIUS is
+// above 0, or the block is refused: a cutoff not above 0 is an RCUT2B or
+// RCUTMB value.)
+double stats_cutoff(const tadah::core::Context& resolved) {
+  if (!resolved.has_stored("RCUT2B") && !resolved.has_stored("RCUTMB") &&
+      !resolved.has_stored("COMPONENT_RCUTMB"))
+    throw std::runtime_error(
+        "analysis dataset_stats: no cutoff: the statistics take the largest "
+        "cutoff of a configuration given with -c (RCUT2B, RCUTMB or the "
+        "cutoff RADIUS of a DESCRIPTOR block), and no line gives one "
+        "(--dbfile and --structure give none)");
+  const double rcut = resolved.get<double>("RCUTMAX");
+  if (!(rcut > 0))
+    throw std::runtime_error(
+        "analysis dataset_stats: the cutoff of the statistics is the largest "
+        "RCUT2B or RCUTMB value, " + tadah::core::format_roundtrip(rcut) +
+        ", which is not above 0");
+  return rcut;
+}
+
+// True when the command line gave `key` (--dbfile: DBFILE, --structure:
+// STRUCTURE), as the task's KeyProvenance records it; false for a task
+// without one (a Context a program builds).
+bool on_command_line(const tadah::mlip::Task& task, const std::string& key) {
+  const KeyProvenance* provenance = task.getKeyProvenance();
+  return provenance != nullptr &&
+         provenance->origin(key).kind == KeyOrigin::Kind::CommandLine;
+}
+
 }  // namespace
 
 void AnalysisDatasetStatsEngine::validate(const tadah::mlip::Task& task) {
-  // Blueprint validation already enforces input-group requirements
-  // (DBFILE | STRUCTURE). CLOSE_CONTACT is checked here, before
-  // anything is read, computed or written.
+  // The command line refuses --dbfile and --structure without -c, and the
+  // two together (the blueprint's cli_needs and cli_excludes). CLOSE_CONTACT
+  // and the cutoff are checked here, before anything is read, computed or
+  // written.
   close_contact(task.getContext());
+  stats_cutoff(with_block_cutoffs(task.getContext()));
 }
 
 int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
   auto& taskContext = task.getContext();
   const std::optional<double> closeContact = close_contact(taskContext);
 
-  // Build a working context. If the user passed `-c train.tadah`, the
-  // CLI dispatcher will have run CoreUserConfigParser on it already
-  // and merged the result into taskContext (so RCUTMAX is set).
-  tadah::core::Context workCtx = taskContext;
-  // What the input gave, asked before Context::contains() below, which
-  // inserts a key's default.
-  const bool dbfile_given = taskContext.has_stored("DBFILE");
-  const bool cutoff_given =
-      taskContext.has_stored("RCUT2B") || taskContext.has_stored("RCUTMB");
+  // The working context: the configuration given with -c, which the
+  // command line has parsed into taskContext, with its DESCRIPTOR blocks
+  // resolved, so that its RCUTMAX, the cutoff of the statistics, holds the
+  // cutoff RADIUS of each block.
+  tadah::core::Context workCtx = with_block_cutoffs(taskContext);
+  stats_cutoff(workCtx);
+
+  // The data: the datasets of --dbfile or the structures of --structure
+  // when the command line gives either, in place of the DBFILE and
+  // STRUCTURE lines of the configuration, which are then not read (the
+  // configuration gives the cutoff); else those lines. A task without a
+  // KeyProvenance reads every DBFILE and STRUCTURE value of its context.
+  const bool from_options = on_command_line(task, "DBFILE") ||
+                            on_command_line(task, "STRUCTURE");
+  const bool read_dbfile =
+      taskContext.has_stored("DBFILE") &&
+      (!from_options || on_command_line(task, "DBFILE"));
+  const bool read_structure =
+      taskContext.has_stored("STRUCTURE") &&
+      (!from_options || on_command_line(task, "STRUCTURE"));
 
   // Collect structures.
   StructureDB stdb;
-  if (taskContext.contains("DBFILE")) {
+  if (read_dbfile) {
     const std::size_t nf = taskContext.size("DBFILE");
     for (std::size_t i = 0; i < nf; ++i) {
       const std::string dbf = taskContext.get<std::string>("DBFILE", i);
@@ -76,7 +134,7 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
           tadah::core::LogLevel::INFO, stdb.summary());
     }
   }
-  if (taskContext.contains("STRUCTURE")) {
+  if (read_structure) {
     const std::size_t ns = taskContext.size("STRUCTURE");
     for (std::size_t i = 0; i < ns; ++i) {
       const std::string s = taskContext.get<std::string>("STRUCTURE", i);
@@ -86,11 +144,9 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
     }
   }
 
-  // The input is one of -c, --dbfile and --structure (the command line
-  // refuses two of them), so a refusal names only what that input accepts.
   if (stdb.size() == 0) {
     // (A STRUCTURE value gives a structure, or its reader refuses it.)
-    if (!dbfile_given)
+    if (!read_dbfile)
       throw std::runtime_error(
           "analysis dataset_stats: no structures loaded: the configuration "
           "has no DBFILE or STRUCTURE line");
@@ -101,21 +157,6 @@ int AnalysisDatasetStatsEngine::run(tadah::mlip::Task& task) {
         "analysis dataset_stats: no structures loaded: the datasets of "
         "DBFILE (" + files + ") hold no structure");
   }
-
-  // The cutoff of the statistics is RCUTMAX, the largest RCUT2B or RCUTMB
-  // value, which the parse of a configuration (-c) sets; --dbfile and
-  // --structure give none.
-  if (!cutoff_given)
-    throw std::runtime_error(
-        "analysis dataset_stats: no cutoff: the statistics take the largest "
-        "RCUT2B or RCUTMB value of a configuration given with -c as their "
-        "cutoff, and no line gives one (--dbfile and --structure give none)");
-  if (!(workCtx.get<double>("RCUTMAX") > 0))
-    throw std::runtime_error(
-        "analysis dataset_stats: the cutoff of the statistics is the largest "
-        "RCUT2B or RCUTMB value, " +
-        tadah::core::format_roundtrip(workCtx.get<double>("RCUTMAX")) +
-        ", which is not above 0");
 
   // The audit of the data: two atoms at one position are a pair at
   // distance 0 (r_min 0), listed rather than refused.
