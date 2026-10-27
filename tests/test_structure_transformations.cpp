@@ -5,7 +5,11 @@
 #include <tadah/mlip/structure_properties.h>
 #include <tadah/mlip/atom.h>
 #include <tadah/core/periodic_table.h>
+#include <tadah/mlip/detail/nn_guard.h>
+#include <tadah/mlip/nn_finder.h>
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 #include <iostream>
@@ -417,6 +421,11 @@ TEST_CASE("StructureTransformation addAtom()", "[transform]")
     }
 }
 
+// Pins: removeAtom with an index past the last atom (999 of 2) throws
+// std::out_of_range naming the index and the number of atoms, and removes
+// nothing.
+// Before the fix: it wrote a WARNING to standard error and returned, as if
+// it had removed the atom (a no-op the caller could not see).
 TEST_CASE("StructureTransformation removeAtom()", "[transform]")
 {
     Structure st = makeSimpleStructure();
@@ -427,20 +436,37 @@ TEST_CASE("StructureTransformation removeAtom()", "[transform]")
         REQUIRE(st.natoms() == 1);
     }
 
-    SECTION("Invalid index => no throw, prints warning") {
-        REQUIRE_NOTHROW(StructureTransformation::removeAtom(st, 999));
+    SECTION("Invalid index => std::out_of_range, nothing removed") {
+        REQUIRE_THROWS_AS(StructureTransformation::removeAtom(st, 999),
+                          std::out_of_range);
+        REQUIRE_THROWS_WITH(StructureTransformation::removeAtom(st, 999),
+                            Catch::Contains("999") && Catch::Contains("2 atoms"));
         REQUIRE(st.natoms() == 2);
     }
 }
 
+// Pins: shakeAtoms with an amplitude that is not a finite number > 0 (0,
+// -0.5, NaN, infinity) throws std::invalid_argument naming the amplitude,
+// and moves no atom.
+// Before the fix: 0 and -0.5 wrote a WARNING to standard error and moved
+// nothing (no throw); NaN and infinity passed the check and moved every
+// atom to a position that is not a finite number.
 TEST_CASE("StructureTransformation shakeAtoms()", "[transform]")
 {
     Structure st = makeSimpleStructure();
 
-    SECTION("Non-positive maxDisplacement => no action") {
-        StructureTransformation::shakeAtoms(st, 0.0);
-        REQUIRE(st.atoms[0].position[0] == Approx(0.0));
-        REQUIRE(st.atoms[1].position[0] == Approx(1.0));
+    SECTION("An amplitude that is not a finite number > 0 => std::invalid_argument") {
+        for (const double a : {0.0, -0.5, std::numeric_limits<double>::quiet_NaN(),
+                               std::numeric_limits<double>::infinity()}) {
+            INFO("maxDisplacement " << a);
+            REQUIRE_THROWS_AS(StructureTransformation::shakeAtoms(st, a),
+                              std::invalid_argument);
+            REQUIRE_THROWS_WITH(StructureTransformation::shakeAtoms(st, a),
+                                Catch::Contains("maxDisplacement"));
+            CHECK(st.atoms[0].position[0] == 0.0);
+            CHECK(st.atoms[1].position[0] == 1.0);
+            CHECK(st.atoms[1].position[2] == 1.0);
+        }
     }
 
     SECTION("Positive displacement => positions change randomly") {
@@ -654,5 +680,74 @@ TEST_CASE("StructureTransformation::center() now calls either getCentreOfMass or
         REQUIRE(hePos[0] == Approx(0.2).margin(0.1));
         REQUIRE(hePos[1] == Approx(0.2).margin(0.1));
         REQUIRE(hePos[2] == Approx(0.2).margin(0.1));
+    }
+}
+
+// Pins: every StructureTransformation that moves an atom or the cell, or
+// changes the number of atoms, clears the structure's neighbour list
+// (st.nn, which NNFinder built for the geometry before it): scale,
+// rescaleLength, scaleToVolume, scaleVolumeToDensity, rotate, shear,
+// replicate, shift, mirrorOrigin, mirrorPlane, mirrorHkl, center,
+// remapToCell, addAtom, removeAtom and shakeAtoms. A consumer of the list
+// then refuses the structure ("has no neighbour list"; detail::
+// require_nn_cutoff) instead of reading pairs of the old geometry: after
+// removeAtom, indices past the atom count.
+// Before the fix: only replicate cleared it; after each of the others st.nn
+// was the list of the old geometry (removeAtom: a list of 3 atoms on a
+// structure of 2).
+TEST_CASE("StructureTransformation: every mutator clears the neighbour list",
+          "[transform][nn]")
+{
+    PeriodicTable::initialize();
+    using Op = std::function<void(Structure &)>;
+    const Vec3d v(0.3, -0.2, 0.1);
+    Matrix3d R;  // a rotation by 90 degrees about z
+    R.set_zero();
+    R(0, 1) = -1.0; R(1, 0) = 1.0; R(2, 2) = 1.0;
+    Matrix3d S = Matrix3d::Identity();  // a shear
+    S(0, 1) = 0.1;
+    const std::vector<std::pair<std::string, Op>> ops = {
+        {"scale", [](Structure &s) { StructureTransformation::scale(s, 1.1); }},
+        {"rescaleLength",
+         [](Structure &s) { StructureTransformation::rescaleLength(s, 1.1); }},
+        {"scaleToVolume",
+         [](Structure &s) { StructureTransformation::scaleToVolume(s, 20.0); }},
+        {"scaleVolumeToDensity",
+         [](Structure &s) {
+           StructureTransformation::scaleVolumeToDensity(s, 0.5);
+         }},
+        {"rotate", [&](Structure &s) { StructureTransformation::rotate(s, R); }},
+        {"shear", [&](Structure &s) { StructureTransformation::shear(s, S); }},
+        {"replicate",
+         [](Structure &s) { StructureTransformation::replicate(s, 2, 1, 1); }},
+        {"shift", [&](Structure &s) { StructureTransformation::shift(s, v); }},
+        {"mirrorOrigin",
+         [](Structure &s) { StructureTransformation::mirrorOrigin(s); }},
+        {"mirrorPlane",
+         [&](Structure &s) { StructureTransformation::mirrorPlane(s, v); }},
+        {"mirrorHkl",
+         [](Structure &s) { StructureTransformation::mirrorHkl(s, 1, 1, 0); }},
+        {"center", [](Structure &s) { StructureTransformation::center(s); }},
+        {"remapToCell",
+         [](Structure &s) { StructureTransformation::remapToCell(s); }},
+        {"addAtom",
+         [](Structure &s) {
+           StructureTransformation::addAtom(
+               s, Atom(PeriodicTable::find_by_symbol("H"), 0, 0, 0), false,
+               Vec3d(1.5, 0.2, 0.4), 0.0);
+         }},
+        {"removeAtom",
+         [](Structure &s) { StructureTransformation::removeAtom(s, 0); }},
+        {"shakeAtoms",
+         [](Structure &s) { StructureTransformation::shakeAtoms(s, 0.05); }}};
+    for (const auto &op : ops) {
+        INFO(op.first);
+        Structure st = makeTrioStructure();
+        NNFinder().calc(st, 2.5);
+        REQUIRE(st.nn != nullptr);
+        op.second(st);
+        CHECK(st.nn == nullptr);
+        CHECK_THROWS_WITH(tadah::mlip::detail::require_nn_cutoff(st, 2.5, "test"),
+                          Catch::Contains("has no neighbour list"));
     }
 }
