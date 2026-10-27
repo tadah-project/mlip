@@ -1579,17 +1579,21 @@ SbRun suggest_blip_line(const std::string &pairs, const SbTempDir &tmp) {
  * range from the median of the distances to their 99th percentile, widened
  * to hold the seed's 5):
  *  - "W W": "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00", its comment
- *    naming the W-W neighbour distances and no Ta-Ta;
- *  - "Ta Ta": "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00", naming Ta-Ta;
+ *    naming the (W, W) neighbour distances and no (Ta, Ta);
+ *  - "Ta Ta": "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00", naming (Ta,
+ *    Ta);
  *  - "Ta Ta W W": the range that holds the range of each pair, "OPTIM
  *    RCUT2B (1) 2.500000e+00 5.000000e+00", its comment naming both;
  *  - "Mo Mo", which the data do not have: no OPTIM RCUT2B line, its
  *    comment "no OPTIM line: no (Mo, Mo) pair of atoms of the data lies
  *    within the reach of the neighbour statistics ...".
+ * A pair is named as the checks and the row without an OPTIM line name it.
  * Before the fix: every range came from the first element pair of the
  * data, Ta-Ta: "W W" and "Mo Mo" got "OPTIM RCUT2B (1) 2.860000e+00
  * 5.000000e+00", their comments naming the Ta-Ta distances, and so did
- * "Ta Ta W W". */
+ * "Ta Ta W W".
+ * Before the fix of the notation: the comments named "the W-W neighbour
+ * distances" and "the Ta-Ta neighbour distances". */
 TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
           "element pairs of the descriptor's line",
           "[bound_suggester][suggest_bounds][line_pairs]") {
@@ -1602,8 +1606,8 @@ TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
           std::vector<std::string>{
               "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00"});
     const std::string why = comment_before(r.block, "OPTIM RCUT2B");
-    CHECK(why.find("W-W neighbour distances") != std::string::npos);
-    CHECK(why.find("Ta-Ta") == std::string::npos);
+    CHECK(why.find("(W, W) neighbour distances") != std::string::npos);
+    CHECK(why.find("(Ta, Ta)") == std::string::npos);
   }
   {
     SbTempDir tmp;
@@ -1614,7 +1618,7 @@ TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
           std::vector<std::string>{
               "OPTIM RCUT2B (1) 2.860000e+00 5.000000e+00"});
     CHECK(comment_before(r.block, "OPTIM RCUT2B")
-              .find("Ta-Ta neighbour distances") != std::string::npos);
+              .find("(Ta, Ta) neighbour distances") != std::string::npos);
   }
   {
     SbTempDir tmp;
@@ -1625,8 +1629,8 @@ TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
           std::vector<std::string>{
               "OPTIM RCUT2B (1) 2.500000e+00 5.000000e+00"});
     const std::string why = comment_before(r.block, "OPTIM RCUT2B");
-    CHECK(why.find("Ta-Ta neighbour distances") != std::string::npos);
-    CHECK(why.find("W-W neighbour distances") != std::string::npos);
+    CHECK(why.find("(Ta, Ta) neighbour distances") != std::string::npos);
+    CHECK(why.find("(W, W) neighbour distances") != std::string::npos);
   }
   {
     SbTempDir tmp;
@@ -1643,12 +1647,14 @@ TEST_CASE("analysis suggest_bounds takes the range of a cutoff from the "
 /* Pins: each descriptor of a joined line gets the suggestions of the
  * element pairs of its own line: for TYPEMB DM_mJoin of DM_EAD 0 1 1 Ta Ta
  * and DM_EAD 0 1 1 W W (RCUTMB 5 5, CGRIDMB 0 0, SGRIDMB 1 1) on the Ta-W
- * data, the cutoff of the first, "OPTIM RCUTMB (1)", starts at the Ta-Ta
- * distance, 2.86 A, and that of the second, "OPTIM RCUTMB (2)", at the W-W
- * distance, 2.5 A, each comment naming its own pair.
+ * data, the cutoff of the first, "OPTIM RCUTMB (1)", starts at the (Ta,
+ * Ta) distance, 2.86 A, and that of the second, "OPTIM RCUTMB (2)", at the
+ * (W, W) distance, 2.5 A, each comment naming its own pair ("(Ta, Ta)
+ * neighbour distances", "(W, W) neighbour distances").
  * Before the fix: both came from the Ta-Ta distances: "OPTIM RCUTMB (1)
  * 2.860000e+00 5.000000e+00" and "OPTIM RCUTMB (2) 2.860000e+00
- * 5.000000e+00". */
+ * 5.000000e+00".
+ * Before the fix of the notation: the comments said "Ta-Ta" and "W-W". */
 TEST_CASE("analysis suggest_bounds gives each descriptor of a DM_mJoin line "
           "the ranges of its own element pairs",
           "[bound_suggester][suggest_bounds][line_pairs][join]") {
@@ -1672,9 +1678,9 @@ TEST_CASE("analysis suggest_bounds gives each descriptor of a DM_mJoin line "
             "OPTIM RCUTMB (1) 2.860000e+00 5.000000e+00",
             "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00"});
   CHECK(comment_before(r.block, "OPTIM RCUTMB (1)")
-            .find("Ta-Ta neighbour distances") != std::string::npos);
+            .find("(Ta, Ta) neighbour distances") != std::string::npos);
   CHECK(comment_before(r.block, "OPTIM RCUTMB (2)")
-            .find("W-W neighbour distances") != std::string::npos);
+            .find("(W, W) neighbour distances") != std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -1715,7 +1721,7 @@ SbRun suggest_with_block(const std::string &lines, const std::string &keys,
  *    "DM_EAD 0 1 1 W W" then "@ta", "@ta" then "DM_EAD 0 1 1 W W",
  *    "DM_mJoin", "@ta", "DM_EAD 0 1 1 W W", and "DM_mJoin", "DM_EAD 0 1 1 W
  *    W", "@ta": exit 0, "OPTIM RCUTMB (1) 2.500000e+00 5.000000e+00", its
- *    comment naming the W-W neighbour distances;
+ *    comment naming the (W, W) neighbour distances;
  *  - "DM_mJoin", "DM_EAD 0 1 1 Ta Ta", "@ta", "DM_EAD 0 1 1 W W" (RCUTMB 5
  *    5, CGRIDMB 0 0, SGRIDMB 1 1): "OPTIM RCUTMB (1) 2.860000e+00
  *    5.000000e+00" and "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00", each
@@ -1746,7 +1752,7 @@ TEST_CASE("analysis suggest_bounds gives a descriptor placed among "
           std::vector<std::string>{
               "OPTIM RCUTMB (1) 2.500000e+00 5.000000e+00"});
     CHECK(comment_before(r.block, "OPTIM RCUTMB (1)")
-              .find("W-W neighbour distances") != std::string::npos);
+              .find("(W, W) neighbour distances") != std::string::npos);
   }
   {
     SbTempDir tmp;
