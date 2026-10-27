@@ -152,38 +152,41 @@ bool potential_line_not_read(const std::set<std::string> &file_keys,
  *     has WEIGHTS): its EFILTER 5 6 and WDBFILE 1 1 prepared the training
  *     data of the fit that wrote it, not of this run, and are ignored
  *     (tadah keeps such keys in a potential's training record, not as key
- *     lines). Give --efilter or --wdbfile on the command line, or an
- *     EFILTER or WDBFILE line in a configuration file that includes the
- *     potential with CONFIG, to apply one to this run (the Training page of
- *     the documentation, Retraining from a potential).", with "old.tadah,
- *     which the configuration file outer.train includes with CONFIG, is a
- *     potential ... or an EFILTER or WDBFILE line in outer.train, ..." for
- *     an included potential. The run settings
+ *     lines). This run takes its own EFILTER or WDBFILE from --efilter or
+ *     --wdbfile on the command line, or from an EFILTER or WDBFILE line in
+ *     a configuration file that includes the potential with CONFIG (the
+ *     Training page of the documentation, Retraining from a potential).",
+ *     with "old.tadah, which the configuration file outer.train includes
+ *     with CONFIG, is a potential ... or from an EFILTER or WDBFILE line in
+ *     outer.train ..." for an included potential. The run settings
  *     are named in a sentence of their own, "Its VERBOSE 2 and NUMERIC 12 were settings
  *     of the run that wrote it, not of this run, and are ignored too." (or
  *     first: "its OUTFILE old.tadah was a setting of the run that wrote
  *     it, not of this run, and is ignored (tadah keeps ...).");
  *     the advice names every key named, ESHIFT_ATOM, ESHIFT_DBATOM and the
  *     run settings among them, and the options of
- *     those the task has (tadah train has no --numeric: "Give --verbose on
- *     the command line, or a VERBOSE or NUMERIC line in ..."); and, when a
- *     toggle is named and @p config has ESHIFT, its last sentence says
- *     that the ESHIFT overrules the toggles and how to drop it, by where it
- *     came from: "The ESHIFT of the configuration, the energy reference of
- *     the model, overrules ESHIFT_ATOM and ESHIFT_DBATOM: to derive ESHIFT
- *     from the data of this run, delete the ESHIFT line and give the run one
- *     of them" for a line of a file, "The ESHIFT given with --eshift, ...:
- *     to derive ESHIFT from the data of this run, leave out --eshift and
- *     give the run one of them" for the option, and "... leave out
- *     --eshift, delete the ESHIFT line and give the run one of them" when
- *     the option replaced a line of the configuration.
+ *     those the task has (tadah train has no --numeric: "This run takes
+ *     its own VERBOSE or NUMERIC from --verbose on the command line, or
+ *     from a VERBOSE or NUMERIC line in ..."); and, when a toggle is named
+ *     and @p config has ESHIFT, its last sentence says that the ESHIFT
+ *     overrules the toggles and when ESHIFT is derived from the data of
+ *     the run, by where the ESHIFT came from: "The ESHIFT of the
+ *     configuration, the energy reference of the model, overrules
+ *     ESHIFT_ATOM and ESHIFT_DBATOM: ESHIFT is derived from the data of
+ *     this run when the ESHIFT line is deleted and the run is given one of
+ *     them" for a line of a file, "The ESHIFT given with --eshift, ...:
+ *     ESHIFT is derived from the data of this run when --eshift is left
+ *     out and the run is given one of them" for the option, and "... when
+ *     --eshift is left out, the ESHIFT line is deleted and the run is given
+ *     one of them" when the option replaced a line of the configuration.
  *   - Without @p provenance (a context a program built): @p config is taken
  *     as one file; when it has WEIGHTS, the keys potential_line_not_read
  *     selects by its keys that a parse stores -- those of
  *     dataset_preparation_keys() -- are removed from it and
  *     named: "tadah train: the configuration is a potential (it has
- *     WEIGHTS): its ... Give --efilter or --wdbfile on the command line to
- *     apply one to this run (...)". Its run settings (VERBOSE, NUMERIC,
+ *     WEIGHTS): its ... This run takes its own EFILTER or WDBFILE from
+ *     --efilter or --wdbfile on the command line (...)". Its run settings
+ *     (VERBOSE, NUMERIC,
  *     OUTFILE, ...: core::run_setting_keys()) are kept: no parse stores a
  *     potential's, so they are the program's own.
  *  Call it before the record of the run is taken (training_record), so the
@@ -194,11 +197,11 @@ std::string ignore_configuration_potential_lines(
 
 /** The refusal of a run of @p task (as ignore_configuration_potential_lines
  *  takes it: "hpo", "analysis check_bounds") whose configuration has no
- *  @p key, a setting the run needs that names @p what ("the hpotarget
- *  file"); "tadah <task>: no <key>: " begins it. It says where the run's own
- *  goes (tadah analysis check_bounds -c, a program's context for hpo_run;
- *  the command line gives tadah hpo -c an --hpotarget): "name the
- *  hpotarget file with --hpotarget, or with an HPOTARGET line in a
+ *  @p key, a setting the run needs that names @p what ("the target
+ *  file"); "tadah <task>: no <key>: " begins it. It says how the run's own
+ *  is given (tadah analysis check_bounds -c, a program's context for
+ *  hpo_run; the command line gives tadah hpo -c an --hpotarget): "the
+ *  target file is given with --hpotarget, or with an HPOTARGET line in a
  *  configuration file without WEIGHTS." (the option only when the task has
  *  one). Each potential file whose line of @p key its parse did not read
  *  (KeyProvenance::skipped_key_lines of @p provenance; nullptr: a context a

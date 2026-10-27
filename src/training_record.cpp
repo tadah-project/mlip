@@ -241,27 +241,27 @@ bool at_task_default(const TaskKeys &t, const std::string &key,
  * configuration. */
 enum class EshiftSource { None, Line, Option, OptionOverLine };
 
-/* The sentence that says how to derive ESHIFT from the data of the run
+/* The sentence that says when ESHIFT is derived from the data of the run
  * when a potential's toggle is named and the run's configuration has
  * ESHIFT (@p source), by where that ESHIFT came from; "" for none. Begins
  * with a blank, ends without its period. */
 std::string eshift_sentence(EshiftSource source) {
   const std::string overrules =
       ", the energy reference of the model, overrules ESHIFT_ATOM and "
-      "ESHIFT_DBATOM: to derive ESHIFT from the data of this run, ";
+      "ESHIFT_DBATOM: ESHIFT is derived from the data of this run when ";
   switch (source) {
   case EshiftSource::None:
     return "";
   case EshiftSource::Line:
     return " The ESHIFT of the configuration" + overrules +
-           "delete the ESHIFT line and give the run one of them";
+           "the ESHIFT line is deleted and the run is given one of them";
   case EshiftSource::Option:
     return " The ESHIFT given with --eshift" + overrules +
-           "leave out --eshift and give the run one of them";
+           "--eshift is left out and the run is given one of them";
   case EshiftSource::OptionOverLine:
     return " The ESHIFT given with --eshift" + overrules +
-           "leave out --eshift, delete the ESHIFT line and give the run one "
-           "of them";
+           "--eshift is left out, the ESHIFT line is deleted and the run is "
+           "given one of them";
   }
   return "";
 }
@@ -322,9 +322,6 @@ std::string ignored_keys_notice(const std::string &who,
   return s + " (the Training page of the documentation, Retraining from a "
              "potential).";
 }
-
-/* "it" or "one": what a run applies of the @p n keys an advice names. */
-std::string one_of(std::size_t n) { return n == 1 ? "it" : "one"; }
 
 /* Whether @p c is a vowel letter. */
 bool vowel(char c) { return std::string("AEIOU").find(c) != std::string::npos; }
@@ -420,18 +417,19 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
         included ? file + ", which the configuration file " + top +
                        " includes with CONFIG,"
                  : "the configuration file " + top;
+    // "This run takes its own EFILTER or WDBFILE from --efilter or
+    // --wdbfile on the command line, or from an EFILTER or WDBFILE line in
+    // ...": where the run's own values come from.
     const auto advice = [&](const std::vector<std::string> &keys,
                             const std::vector<std::string> &options) {
-      const std::string lines = listed(keys, "or");
-      std::string a = "Give ";
-      if (!options.empty()) a += listed(options, "or") + " on the command line, or ";
-      a += article(keys[0]) + " ";
-      a += lines + " line in " +
-           (included ? top
-                     : "a configuration file that includes the potential "
-                       "with CONFIG");
-      if (!options.empty()) a += ",";
-      return a + " to apply " + one_of(keys.size()) + " to this run";
+      const std::string named = listed(keys, "or");
+      std::string a = "This run takes its own " + named + " from ";
+      if (!options.empty())
+        a += listed(options, "or") + " on the command line, or from ";
+      return a + article(keys[0]) + " " + named + " line in " +
+             (included ? top
+                       : "a configuration file that includes the potential "
+                         "with CONFIG");
     };
     const std::string notice =
         ignored_keys_notice(who, subject, ignored, t, advice, eshift);
@@ -484,9 +482,8 @@ std::string ignore_configuration_potential_lines(
       [](const std::vector<std::string> &names,
          const std::vector<std::string> &options) {
         if (options.empty()) return std::string();
-        return "Give " + listed(options, "or") +
-               " on the command line to apply " + one_of(names.size()) +
-               " to this run";
+        return "This run takes its own " + listed(names, "or") + " from " +
+               listed(options, "or") + " on the command line";
       },
       eshift);
 }
@@ -511,7 +508,8 @@ std::string missing_run_setting(const std::string &task,
       lines[at - sources.begin()].push_back(key_values(line.key, line.values));
     }
   const std::string a_line = article(key) + " " + key + " line";
-  std::string s = "tadah " + task + ": no " + key + ": name " + what + " with ";
+  std::string s =
+      "tadah " + task + ": no " + key + ": " + what + " is given with ";
   const TaskKeys t = task_keys(task);
   const std::string option = option_of(key);
   if (t.options.count(key) && !option.empty()) s += option + ", or with ";
