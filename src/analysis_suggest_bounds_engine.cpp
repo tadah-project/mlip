@@ -130,13 +130,19 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
 
   auto run_for = [&](const std::string& type_key) {
     if (!workCtx.contains(type_key)) return;
-    // A joined line (D2_mJoin, DM_mJoin): each descriptor's rows from its
-    // own values (its RCUT value and its share of each list key), each
-    // numbered by the place of its value in the whole key, as an OPTIM line
-    // numbers it (the RCUT row of the k-th descriptor is entry k). A key
-    // the line splits but the descriptor takes no value of has no row.
-    if (is_joined_line(workCtx, type_key)) {
-      for (const auto& jd : joined_descriptors(workCtx, type_key)) {
+    // A joined line (D2_mJoin, DM_mJoin), and the descriptors a TYPEMB key
+    // places among DESCRIPTOR blocks (block_line_descriptors(); the
+    // blocks' rows come below): each descriptor's rows from its own values
+    // (its RCUT value and its share of each list key) and the element
+    // pairs of its own line, each numbered by the place of its value in
+    // the whole key, as an OPTIM line numbers it (the RCUT row of the k-th
+    // descriptor is entry k). A key the line splits but the descriptor
+    // takes no value of has no row.
+    const bool blocks =
+        type_key == "TYPEMB" && !workCtx.blocks("DESCRIPTOR").empty();
+    if (blocks || is_joined_line(workCtx, type_key)) {
+      for (const auto& jd : blocks ? block_line_descriptors(workCtx)
+                                   : joined_descriptors(workCtx, type_key)) {
         std::unique_ptr<models::D_Base> obj(
             tadah::core::factory<models::D_Base>(jd.label));
         auto m = obj->meta();

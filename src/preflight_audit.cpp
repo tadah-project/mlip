@@ -50,11 +50,14 @@ struct DescriptorCheck {
 };
 
 // Walk seed for TYPE2B / TYPEMB labels and instantiate via the no-arg
-// D_Base factory (the only path that covers both D2_* and DM_*).
-// Returns each descriptor with its meta() and the element pairs of its
-// line (D_Base::get_init_atoms() of the seed) — descriptors that fail
-// to instantiate or whose meta() is nullopt are silently skipped (the
-// audit is best-effort across the configured descriptor set).
+// D_Base factory (the only path that covers both D2_* and DM_*), and the
+// DESCRIPTOR blocks of the seed. Returns each descriptor with its meta()
+// and the element pairs of its line (D_Base::get_init_atoms() of the seed:
+// a TYPE key of one descriptor, the joined lines and the TYPEMB key of
+// blocks being collect_descriptor_checks()'s; a block's PAIRS) —
+// descriptors that fail to instantiate or whose meta() is nullopt are
+// silently skipped (the audit is best-effort across the configured
+// descriptor set).
 std::vector<DescriptorCheck>
 collect_descriptor_metas(const tadah::core::Context& seed) {
   std::vector<DescriptorCheck> out;
@@ -99,14 +102,20 @@ collect_descriptor_metas(const tadah::core::Context& seed) {
 /* The descriptors of the seed as collect_descriptor_metas() finds them,
  * with each descriptor of a joined TYPE2B or TYPEMB line on its own
  * context: a joined line's descriptors share its RCUT values and its list
- * keys, each taking its own (D_mJoin::parse_context()). */
+ * keys, each taking its own (D_mJoin::parse_context()); and so each
+ * descriptor that a TYPEMB key places among DESCRIPTOR blocks
+ * (block_line_descriptors(): the model's context of each), whose element
+ * pairs are those of its own line, not of the whole key. */
 std::vector<DescriptorCheck>
 collect_descriptor_checks(const tadah::core::Context& seed) {
   std::vector<DescriptorCheck> out;
   tadah::core::Context single = seed;
   for (const char* type_key : {"TYPE2B", "TYPEMB"}) {
-    if (!is_joined_line(seed, type_key)) continue;
-    for (auto& jd : joined_descriptors(seed, type_key)) {
+    const bool blocks = std::string(type_key) == "TYPEMB" &&
+                        !seed.blocks("DESCRIPTOR").empty();
+    if (!blocks && !is_joined_line(seed, type_key)) continue;
+    for (auto& jd : blocks ? block_line_descriptors(seed)
+                           : joined_descriptors(seed, type_key)) {
       std::unique_ptr<tadah::models::D_Base> obj(
           tadah::core::factory<tadah::models::D_Base>(jd.label));
       auto m = obj->meta();
@@ -117,6 +126,8 @@ collect_descriptor_checks(const tadah::core::Context& seed) {
                                     std::move(jd.first_entries),
                                     std::move(pairs)});
     }
+    // The blocks of a TYPEMB key stay: collect_descriptor_metas() finds
+    // them without it.
     single.remove(type_key);
   }
   // The descriptors of the other lines, each with the seed as its context.
@@ -281,7 +292,8 @@ AuditReport run_preflight_from_db(
   // every structure"; the blueprint default is 256, which is enough
   // to drive percentile-based health checks without a full-DB NN
   // sweep on large training sets. A negative value (entered manually)
-  // is treated as "use all" for safety.
+  // is treated as "use all" for safety. A FAIL of the sample is judged on
+  // every structure (below).
   std::size_t sample = 256;
   if (seed.contains("AUDIT_SAMPLE")) {
     const int v = seed.get<int>("AUDIT_SAMPLE");
@@ -291,7 +303,23 @@ AuditReport run_preflight_from_db(
   auto data = compute_data_stats(stdb, work,
                                  /*with_descriptor_stats=*/false,
                                  sample);
-  return run_preflight_soft(data, seed, mode);
+  report = run_preflight_soft(data, seed, mode);
+  // A FAIL refuses the run under AUDIT error, and its text speaks of the
+  // dataset ("no (W, W) pair of atoms of the dataset lies within it"): a
+  // FAIL of a sample of the structures, which may leave out the only
+  // structures of a pair, is judged again on every structure.
+  if (report.any_fail() && sample > 0 && sample < stdb.size()) {
+    tadah::core::Logger::instance().log(
+        tadah::core::LogLevel::INFO,
+        "pre-flight audit: the scan of " + std::to_string(sample) +
+            " of the " + std::to_string(stdb.size()) +
+            " structures (AUDIT_SAMPLE " + std::to_string(sample) +
+            ") gave a FAIL finding, which is judged on every structure");
+    data = compute_data_stats(stdb, work, /*with_descriptor_stats=*/false,
+                              /*sample_size=*/0);
+    report = run_preflight_soft(data, seed, mode);
+  }
+  return report;
 }
 
 namespace {

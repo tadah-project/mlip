@@ -18,6 +18,7 @@
 #include <tadah/mlip/engines/train_engine.h>
 #include <tadah/mlip/fit_balance.h>
 #include <tadah/mlip/training_record.h>
+#include <tadah/models/descriptors/d_mjoin.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
@@ -162,6 +163,11 @@ int run_refit_edit(Context &c, const KeyProvenance *provenance) {
   core::CoreUserConfigParser parser;
   std::vector<core::SkippedKeyLine> not_read;
   Context pot = parser.parse(in_pot, potential_line_not_read, not_read);
+  // The edit writes a potential from the input's: a key of its descriptors
+  // set on two lines of the input (a line appended to a copy) is refused,
+  // naming both, as tadah train refuses it (a potential's value is changed
+  // by editing its line).
+  models::D_mJoin::check_potential_lines(pot, "refit");
   // The edit fits nothing: its weights are the input's, edited, so the
   // record of the fit that produced them -- the input's training record
   // and, for a potential an earlier version wrote, the keys of the record

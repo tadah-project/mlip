@@ -2,7 +2,8 @@
 #define TADAH_MLIP_JOINED_DESCRIPTORS_H
 
 // The descriptors of a joined TYPE2B or TYPEMB line (D2_mJoin, DM_mJoin),
-// each with its own context, for the code that reads a descriptor's
+// or of a TYPEMB key that places descriptors among DESCRIPTOR blocks, each
+// with its own context, for the code that reads a descriptor's
 // parameters from a configuration: tadah analysis suggest_bounds and the
 // pre-flight audit (tadah train and tadah hpo with AUDIT, tadah analysis
 // check_bounds).
@@ -56,6 +57,20 @@ bool is_joined_line(const tadah::core::Context &c,
  *  @throws what D_mJoin::parse_context() throws for a line it refuses. */
 std::vector<JoinedDescriptor> joined_descriptors(
     const tadah::core::Context &c, const std::string &type_key);
+
+/** \brief The descriptors of the TYPEMB key of @p c that DESCRIPTOR blocks
+ *  configure, other than the blocks: the descriptors such as DM_EAD that
+ *  the key places among blocks (TYPEMB DM_EAD 0 1 1 Ta Ta then TYPEMB @ta,
+ *  with or without DM_mJoin), in the order of the key, each with its own
+ *  context as the model builds it (models::embed_contexts(): its TYPEMB
+ *  line, its RCTYPEMB and RCUTMB value and its share of each list key) and
+ *  the first entries of the keys they split, as joined_descriptors() gives
+ *  them (a block takes no value of those keys); @c position is the place
+ *  among them. Empty when no DESCRIPTOR block configures @p c, or its
+ *  TYPEMB key places no such descriptor.
+ *  @throws what models::embed_contexts() throws for a key it refuses. */
+std::vector<JoinedDescriptor> block_line_descriptors(
+    const tadah::core::Context &c);
 
 }  // namespace mlip
 }  // namespace tadah
