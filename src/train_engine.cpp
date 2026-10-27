@@ -199,12 +199,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating TrainEngine...");
   const auto &context = task.getContext();
   if (!context.get<bool>("INIT2B") && !context.get<bool>("INITMB")) {
     throw std::runtime_error(
-        "TrainEngine requires INIT2B or/and INITMB parameters to be set");
+        "tadah train: INIT2B and INITMB are both false, so the potential has "
+        "no term; tadah train needs INIT2B true or INITMB true");
   }
 }
 

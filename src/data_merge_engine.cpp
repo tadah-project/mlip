@@ -9,31 +9,20 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+// An error reaches the program, which prints it as every command's.
 int DataMergeEngine::run(tadah::mlip::Task &task) {
-  try {
-    core::Context taskContext = task.getContext();
+  core::Context taskContext = task.getContext();
+  std::string outFile = taskContext.get<std::string>("OUTFILE");
+  StructureDB stdb(taskContext);
+  bool append = taskContext.get<bool>("APPEND");
+  size_t numeric = StructureDB::dataset_digits(taskContext);
+  stdb.dump_to_file(outFile,append, numeric);
 
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        "DataMergeEngine started...");
-
-    std::string outFile = taskContext.get<std::string>("OUTFILE");
-    StructureDB stdb(taskContext);
-    bool append = taskContext.get<bool>("APPEND");
-    size_t numeric = StructureDB::dataset_digits(taskContext);
-    stdb.dump_to_file(outFile,append, numeric);
-
-    core::Logger::instance().log(tadah::core::LogLevel::INFO,
-        stdb.summary());
-
-  } catch (const std::exception &e) {
-    std::cerr << "DataMergeEngine error: " << e.what() << std::endl;
-    return EXIT_FAILURE;
-  }
+  core::Logger::instance().log(tadah::core::LogLevel::INFO,
+      stdb.summary());
   return EXIT_SUCCESS;
 }
 void DataMergeEngine::validate(const tadah::mlip::Task &) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataMergeEngine...");
 }
 
 

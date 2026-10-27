@@ -186,13 +186,16 @@ void PropertiesPairwiseEngine::validate(const tadah::mlip::Task &task) {
   const auto &taskContext = task.getContext();
   require_command_options(taskContext, "PROPERTIES.pairwise");
   if (!taskContext.contains("POTENTIAL")) {
-    throw std::runtime_error("PropertiesPairwiseEngine requires a potential file to be set.");
+    throw std::runtime_error(
+        "tadah properties pairwise needs a potential file (--potential)");
   }
   if (!taskContext.contains("RANGE")) {
-    throw std::runtime_error("PropertiesPairwiseEngine requires a range to be set.");
+    throw std::runtime_error(
+        "tadah properties pairwise needs a range of distances (--range)");
   }
   if (!taskContext.contains("ATOMPAIR")) {
-    throw std::runtime_error("PropertiesPairwiseEngine requires a atom pair to be set.");
+    throw std::runtime_error(
+        "tadah properties pairwise needs a pair of elements (--atompair)");
   }
   if (taskContext.contains("ESHIFT")) {
     std::string pot_file= taskContext.get<std::string>("POTENTIAL");

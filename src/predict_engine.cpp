@@ -300,11 +300,10 @@ int PredictEngine::run(mlip::Task &task) {
 }
 void PredictEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "Validating PredictEngine...");
   require_command_options(context, "PREDICT");
   if (!context.contains("POTENTIAL")) {
-    throw std::runtime_error("PredictEngine requires a potential file to be set.");
+    throw std::runtime_error(
+        "tadah predict needs a potential file (--potential)");
   }
   // require context OUTFILE to be size 1 if no force or stress
   // size 2 if force or stress

@@ -67,19 +67,21 @@ int AnalysisCutoffEngine::run(mlip::Task &task) {
     std::cout << oss.str();
   }
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO, "AnalysisCutoffEngine finished.");
   return EXIT_SUCCESS;
 }
 void AnalysisCutoffEngine::validate(const tadah::mlip::Task &task) {
   const auto &context = task.getContext();
   if (context.contains("OUTFILE") && context.size("OUTFILE")!=1) {
-    throw std::runtime_error("AnalysisCutoffEngine requires either none or a single OUTFILE.");
+    throw std::runtime_error(
+        "tadah analysis cutoff writes one OUTFILE or none");
   }
   if (context.size("TYPE") > 1) {
-    throw std::runtime_error("AnalysisCutoffEngine requires one value for TYPE.");
+    throw std::runtime_error("tadah analysis cutoff takes one TYPE value");
   }
   if (context.size("RANGE") != 3) {
-    throw std::runtime_error("AnalysisCutoffEngine requires three numbers for RANGE.");
+    throw std::runtime_error(
+        "tadah analysis cutoff takes three RANGE values: start, stop and the "
+        "number of points");
   }
 }
 

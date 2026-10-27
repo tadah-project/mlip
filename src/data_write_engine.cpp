@@ -26,8 +26,6 @@ std::vector<size_t> dbfile_indices(const core::Context &taskContext, size_t tota
 int DataWriteEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataWriteEngine started...");
 
   // The 0-based places in stdb of the structures to write: the DBFILE
   // structures INDEX selects (1-based, checked against their number), then
@@ -81,9 +79,17 @@ int DataWriteEngine::run(tadah::mlip::Task &task) {
 }
 
 void DataWriteEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataWriteEngine...");
   core::Context taskContext = task.getContext();
+  // The formats StructureWriterSelector writes, refused before anything is
+  // read.
+  if (taskContext.contains("FORMAT")) {
+    const std::string format = taskContext.get<std::string>("FORMAT");
+    const std::string up = core::to_upper(format);
+    if (up != "CASTEP" && up != "LAMMPS" && up != "VASP")
+      throw std::runtime_error("tadah data write: FORMAT " + format +
+                               " is not a format it writes: castep, lammps "
+                               "or vasp");
+  }
   // if dbfile is provided than we check if number of indices is equal to
   // the number of outfiles
   if(taskContext.contains("DBFILE")) {

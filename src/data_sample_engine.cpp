@@ -20,8 +20,6 @@ namespace engines {
 int DataSampleEngine::run(tadah::mlip::Task &task) {
   core::Context taskContext = task.getContext();
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataSampleEngine started...");
 
   std::string outFile = taskContext.get<std::string>("OUTFILE");
   bool append = taskContext.get<bool>("APPEND");
@@ -57,7 +55,7 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
 
   outStdb.dump_to_file(outFile, append, numeric);
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataSampleEngine finished. Sampled data written to: " + outFile);
+      "tadah data sample: the sampled structures are written to " + outFile);
   core::Logger::instance().log(tadah::core::LogLevel::INFO,
       outStdb.summary());
 
@@ -65,8 +63,6 @@ int DataSampleEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void DataSampleEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "Validating DataSampleEngine...");
   core::Context taskContext = task.getContext();
 
   if (!areDataLoaded) loadInput(taskContext);
@@ -120,15 +116,11 @@ void DataSampleEngine::validate(const tadah::mlip::Task &task) {
 }
 
 void DataSampleEngine::loadInput(const core::Context &taskContext) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Loading input for DataSampleEngine...");
   inStdb.add(taskContext);
   areDataLoaded = true;
 }
 
 void DataSampleEngine::parseIndices(const core::Context &taskContext) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Parsing indices for DataSampleEngine...");
   if (taskContext.contains("INDEX")) {
     std::vector<std::string> indicesStrVec;
     indicesStrVec.resize(taskContext.size("INDEX"));

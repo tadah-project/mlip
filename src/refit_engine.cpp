@@ -293,7 +293,6 @@ RefitEngine::SelfTest RefitEngine::run_self_test(const models::EAMSetflIO &eam,
 }
 
 void RefitEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(core::LogLevel::INFO, "Validating RefitEngine...");
   const auto c = refit_inputs(task);
   const bool edit = c.contains("EDIT") && c.size("EDIT") > 0;
   const bool retarget = c.contains("RETARGET") && c.size("RETARGET") > 0;
@@ -312,10 +311,9 @@ void RefitEngine::validate(const tadah::mlip::Task &task) {
   validate_refit_mode_keys(c, task.getKeyProvenance());
   if (!c.contains("EAM") || c.size("EAM") == 0) {
     throw std::runtime_error(
-        "RefitEngine requires an input EAM file: declare `EAM <file>` in the "
-        "config file passed with -c (or use --edit/--retarget to operate on "
-        "existing refit outputs). Supported: single-element setfl "
-        "(eam/alloy or eam/fs).");
+        "tadah refit: no EAM line in the configuration (-c) names the input "
+        "EAM file, a single-element setfl file (eam/alloy or eam/fs); --edit "
+        "and --retarget take the outputs of an earlier refit");
   }
   // The written potential's density component declares its density form,
   // which only the configuration can choose (RHOFORM without blocks, no
