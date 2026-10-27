@@ -36,6 +36,7 @@
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/models/inert_keys.h>
 
 #include <array>
 #include <cstddef>
@@ -129,11 +130,28 @@ private:
 std::vector<double> dataset_priorities(const core::Context &c,
                                        const StructureDB &stdb);
 
+/** Refuses a fit of @p c whose configuration records a retired key or has
+ *  a line that changes nothing a fit gives (models::inert_key_lines with
+ *  @p rules: a deprecated key, EMBF0 and RHOFORM without a DM_REAM block,
+ *  WATOM other than 1 that no descriptor reads), naming each line and file:
+ *  with retired keys, their refusal (core::retired_keys_refusal, with the
+ *  conversion of each) and then, when there are any, the other lines
+ *  ("The configuration also has a line that changes nothing a fit gives
+ *  ...": models::inert_keys_text); otherwise the refusal of the other
+ *  lines (models::inert_keys_refusal), so one refusal names every line to
+ *  convert or delete. Every fit calls it before it reads anything:
+ *  require_fit_settings (M_BLR and M_KRR train, tadah train), tadah hpo
+ *  when a run starts, and tadah refit (which reads EMBF0 and RHOFORM
+ *  itself: rules.ream_keys false). @p who begins the message.
+ *  @throws std::runtime_error */
+void require_no_unused_keys(const core::Context &c, const std::string &who,
+                            const models::InertKeyRules &rules = {});
+
 /** Refuses the settings of a fit of @p c that a fit cannot take, before
  *  it reads anything else (M_BLR and M_KRR train, tadah train, tadah hpo
  *  when a run starts):
- *   - a retired key the Context records (core::require_no_retired_keys,
- *     with its conversion);
+ *   - a retired key the Context records, or a line that changes nothing a
+ *     fit gives (require_no_unused_keys);
  *   - ESIGMA not a finite number > 0; FSIGMA or SSIGMA whose absolute part
  *     a is not a finite number > 0 or whose relative part b is not a finite
  *     number >= 0; an ENORM other than ATOM or SQRT;

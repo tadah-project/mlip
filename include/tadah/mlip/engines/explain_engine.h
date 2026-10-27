@@ -109,6 +109,8 @@ std::vector<std::string> explain_text_lines(const std::string &text);
  * explain_text_lines renders it, one line each; for a retired key
  * (BlueprintKey::isRetired()) then a blank line and the lines "RETIRED:
  * <reason>", "REPLACED BY: <replacement>" and "CONVERSION: <conversion>";
+ * for a deprecated key (BlueprintKey::isDeprecated()) a blank line and
+ * "DEPRECATED: <deprecated>";
  * then, when it has examples, a blank line, "EXAMPLES: " and each line of
  * each example (an example of several lines is one value per line)
  * indented by two spaces.

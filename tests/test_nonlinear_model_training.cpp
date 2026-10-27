@@ -901,35 +901,31 @@ TEST_CASE("DesignMatrix refuses a descriptor layout that disagrees with "
   }
 }
 
-/* Pins: one Trainer trained, its model reset (reset_trained()) and its
- * descriptors updated in place (DC_Selector::reinit) and trained again,
- * three times, with SGRID2B changed between the fits (2.0, 1.8, 2.2 for
- * every function: new descriptors, so a new basis): every fit has SBASIS
+/* Pins: one Trainer trained, its model reset (reset_trained()) and
+ * trained again, three times on the same descriptors: every fit has SBASIS
  * (5) weights for a kernel (6 for BF_Polynomial2) and equals the reference
  * least-squares solution of its own descriptors and basis to 1e-8
  * relative. (tadah hpo reused one Trainer so, through Trainer::reinit,
- * until it built a Trainer per evaluation; the model and descriptor calls
- * stay public.)
+ * until it built a Trainer per evaluation; reset_trained() stays public.
+ * A model with new descriptor parameters is a new Trainer: the library has
+ * no in-place update of the descriptors.)
  * Before the fix: passes as well (a pin of the EKM fix of 1.6.0, before
  * which the first fit threw (the ColumnLayout check); with that check
  * alone fixed, every kernel's second fit wrote SBASIS 10 for 5 basis
  * vectors: EKM::configure appended the indices of every training to a
  * member it never cleared, and replaced M_KRR's basis by a 10-column one;
  * with Kern_Sigmoid the process aborted ("malloc(): invalid size")). It
- * called Trainer::reinit, which this change removes. */
+ * called Trainer::reinit, which 1.6.0 removes, and changed SGRID2B
+ * between the fits through DC_Selector::reinit, which 1.6.0 removes too. */
 TEST_CASE("Retraining one Trainer's model refits every non-linear model",
           "[nonlinear][train][retrain]") {
   PeriodicTable::initialize();
   for (const ModelSpec &m : nonlinear_models()) {
     DYNAMIC_SECTION(m.name) {
       Trained t(make_context(m));
-      for (const char *sgrid : {"2.0 2.0 2.0", "1.8 1.8 1.8", "2.2 2.2 2.2"}) {
-        INFO("SGRID2B " << sgrid);
-        if (t.tr->model->is_trained()) {
-          set_key(t.tr->context, "SGRID2B", sgrid);
-          t.tr->model->reset_trained();
-          REQUIRE_FALSE(t.tr->DCS.reinit(t.tr->context));  // same size
-        }
+      for (int fit = 1; fit <= 3; ++fit) {
+        INFO("fit " << fit);
+        if (t.tr->model->is_trained()) t.tr->model->reset_trained();
         REQUIRE_NOTHROW(t.train());
         check_fit(t, m);
       }

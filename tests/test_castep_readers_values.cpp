@@ -2175,3 +2175,102 @@ TEST_CASE("CASTEP .castep reader: a file that ends inside a step outside its "
     }
   }
 }
+
+// Pins: the output units of a .castep run (its 'output <quantity> unit :'
+// header lines, which each run prints after its 'type of calculation'
+// line) are those the reader reads -- length A, energy eV, force eV/A,
+// pressure GPa -- or the file is refused, naming the file, the line, the
+// quantity and the unit. Copies of md_stress.castep with, on the header
+// line of the quantity (line 153, 158, 159 or 161):
+//  - 'output length unit : Bohr' (the cells and positions printed in bohr);
+//  - 'output energy unit : Ha';
+//  - 'output force unit : Ha/Bohr' and its forces boxes headed
+//    'Cartesian components (Ha/Bohr)';
+//  - 'output pressure unit : kbar' and its stress boxes headed
+//    'Cartesian components (kbar)'.
+// Each refusal message has the file name, 'line <n>', '<quantity> unit',
+// the unit in quotes and the unit read. combined.castep with 'output energy
+// unit : Ha' in its second run only (line 2331) is refused naming that line:
+// the units are each run's. Unmodified, md_stress.castep and combined.castep
+// read as before (4 and 15 structures).
+// Before the fix: no unit line was read. The bohr and Ha files were stored
+// as if in A and eV (every structure the same as the unmodified file's); the
+// Ha/Bohr file was stored with zero forces and force priority 0, the kbar
+// file with zero stress and stress priority 0, and combined.castep's
+// second run in eV: each parsed without an error.
+TEST_CASE("CASTEP .castep reader: a run whose output units are not A, eV, "
+          "eV/A and GPa is refused, naming the line and the unit",
+          "[castep_readers][castep][units]") {
+  PeriodicTable::initialize();
+  const std::string kMdStress =
+      "./tests_data/valid_castep_castep/md_stress.castep";
+  const std::string kCombined =
+      "./tests_data/valid_castep_castep/combined.castep";
+  struct Unit {
+    std::string quantity;  // as the header line names it
+    std::string unit;      // the unit of the copy
+    std::string read;      // the unit the reader reads
+    std::string box_from, box_to;  // the boxes' header, if they name it
+  };
+  const std::vector<Unit> units = {
+      {"length", "Bohr", "A", "", ""},
+      {"energy", "Ha", "eV", "", ""},
+      {"force", "Ha/Bohr", "eV/A", "Cartesian components (eV/A)",
+       "Cartesian components (Ha/Bohr)"},
+      {"pressure", "kbar", "GPa", "Cartesian components (GPa)",
+       "Cartesian components (kbar)"}};
+  // The index of the header line of `quantity` in `lines`, at or after
+  // `from`: ' output <blanks> <quantity> unit <blanks> : <unit>'.
+  auto header_line = [](const std::vector<std::string> &lines,
+                        const std::string &quantity, size_t from) {
+    for (size_t i = from; i < lines.size(); ++i) {
+      std::istringstream ls(lines[i]);
+      std::string w0, w1, w2;
+      if (ls >> w0 >> w1 >> w2 && w0 == "output" && w1 == quantity &&
+          w2 == "unit")
+        return i;
+    }
+    FAIL("no 'output " << quantity << " unit' line after line " << from);
+    return size_t(0);
+  };
+  {
+    StructureDB db;
+    read_into<CastepCastepReader>(db, kMdStress);
+    CHECK(db.size() == 4);
+    StructureDB c;
+    read_into<CastepCastepReader>(c, kCombined);
+    CHECK(c.size() == 15);
+  }
+  for (const Unit &u : units) {
+    INFO("output " << u.quantity << " unit : " << u.unit);
+    std::vector<std::string> lines = read_lines(kMdStress);
+    const size_t at = header_line(lines, u.quantity, 0);
+    const std::string old = lines[at];
+    lines[at] = old.substr(0, old.find(':') + 1) + " " + u.unit;
+    if (!u.box_from.empty()) lines = substitute(lines, u.box_from, u.box_to);
+    TempFile tmp("tmp_castep_rv_unit_" + u.quantity + ".castep");
+    tmp.write_lines(lines);
+    const std::string what = parse_error<CastepCastepReader>(tmp.path);
+    INFO("error: '" << what << "'");
+    CHECK_THAT(what, Catch::Contains(tmp.basename()));
+    CHECK_THAT(what, Catch::Contains("line " + std::to_string(at + 1) + ":"));
+    CHECK_THAT(what, Catch::Contains(u.quantity + " unit"));
+    CHECK_THAT(what, Catch::Contains("'" + u.unit + "'"));
+    CHECK_THAT(what, Catch::Contains(" " + u.read));
+  }
+  {
+    INFO("combined.castep, energy unit Ha in its second run");
+    std::vector<std::string> lines = read_lines(kCombined);
+    const size_t first = header_line(lines, "energy", 0);
+    const size_t second = header_line(lines, "energy", first + 1);
+    REQUIRE(second + 1 == 2331);
+    lines[second] = lines[second].substr(0, lines[second].find(':') + 1) + " Ha";
+    TempFile tmp("tmp_castep_rv_unit_run2.castep");
+    tmp.write_lines(lines);
+    const std::string what = parse_error<CastepCastepReader>(tmp.path);
+    INFO("error: '" << what << "'");
+    CHECK_THAT(what, Catch::Contains(tmp.basename() + ": line 2331:"));
+    CHECK_THAT(what, Catch::Contains("energy unit"));
+    CHECK_THAT(what, Catch::Contains("'Ha'"));
+  }
+}

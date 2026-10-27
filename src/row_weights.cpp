@@ -9,6 +9,7 @@
 #include <tadah/models/zero_rows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -229,8 +230,26 @@ double RowWeights::stress_factor(std::size_t s, int x, int y) const {
 // The settings of a fit
 // ---------------------------------------------------------------------------
 
+void require_no_unused_keys(const core::Context &c, const std::string &who,
+                            const models::InertKeyRules &rules) {
+  const std::vector<core::RetiredKeyLine> retired = c.retired_keys();
+  const std::vector<models::InertKeyLine> inert =
+      models::inert_key_lines(c, rules);
+  if (!retired.empty()) {
+    std::string message = core::retired_keys_refusal(retired, who, &c);
+    if (!inert.empty()) {
+      std::string also = models::inert_keys_text(inert, true);
+      also[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(also[0])));
+      message += " " + also;
+    }
+    throw std::runtime_error(message);
+  }
+  if (!inert.empty())
+    throw std::runtime_error(models::inert_keys_refusal(inert, who));
+}
+
 void require_fit_settings(const core::Context &c, const std::string &who) {
-  core::require_no_retired_keys(c, who);
+  require_no_unused_keys(c, who);
   const std::string tail = "; no coefficients were fitted.";
   auto finite = [](double v) { return detail::is_finite_bits(v); };
 

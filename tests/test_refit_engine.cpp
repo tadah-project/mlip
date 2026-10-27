@@ -2121,6 +2121,63 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(tadah::models::embed_specs(pot).at(0).cutoff == "Cut_Poly");
 }
 
+/* Pins: a refit of an EAM file is a fit: its configuration (parsed from
+ * config.refit, a dense Blip refit) with a retired key (EWEIGHT 1), a
+ * deprecated key (MBLOCK 64) or a WATOM other than 1 (WATOM 2: the
+ * potential a refit writes has WATOM 1) is refused by validate() and run()
+ * before the table is read, naming the key and "line 5 of config.refit",
+ * and writes no pot.tadah; with WATOM 1, EMBF0 FREE or RHOFORM SIGNED
+ * (keys the refit reads) validate() passes.
+ * Before the fix: each refit ran and wrote pot.tadah: EWEIGHT and MBLOCK
+ * with a notice, WATOM 2 without one (the potential had WATOM 1). */
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine refuses a retired key, a deprecated key and a "
+                 "WATOM it never reads, naming the line",
+                 "[refit][engine][inert]") {
+  ScopedTempDir tmp;
+  write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+  auto config = [](const std::string &line) {
+    std::ofstream("config.refit")
+        << "EAM synth_fcc.eam.alloy\nREFIT_MODE dense\nREFIT_BASIS Blip\n"
+           "REFIT_MAX_ESCALATIONS 1\n"
+        << line << "\n"
+        << (line.rfind("RHOFORM", 0) == 0 ? "" : "RHOFORM SIGNED\n");
+    std::ostringstream quiet;
+    std::streambuf *old = std::cerr.rdbuf(quiet.rdbuf());
+    Context c = tadah::core::CoreUserConfigParser().parse("config.refit");
+    std::cerr.rdbuf(old);
+    return c;
+  };
+  for (const std::string line : {"EWEIGHT 1", "MBLOCK 64", "WATOM 2"}) {
+    INFO(line);
+    Task task("refit", config(line));
+    RefitEngine engine;
+    std::string what;
+    try {
+      engine.validate(task);
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    INFO("validate: " << what);
+    CHECK_THAT(what, Catch::Contains("tadah refit: ") &&
+                         Catch::Contains(line + " (line 5 of config.refit"));
+    std::string run_what;
+    try {
+      engine.run(task);
+    } catch (const std::exception &e) {
+      run_what = e.what();
+    }
+    CHECK(run_what == what);
+    CHECK_FALSE(fs::exists("pot.tadah"));
+    fs::remove("pot.tadah");
+  }
+  for (const std::string line : {"WATOM 1", "EMBF0 FREE", "RHOFORM SIGNED"}) {
+    INFO(line);
+    Task task("refit", config(line));
+    CHECK_NOTHROW(RefitEngine().validate(task));
+  }
+}
+
 /* Pins: the log lines and refusals of tadah refit state what each setting
  * changes, without an instruction or "e.g.":
  *  - a dense refit logs "tadah refit: below the inner fit bound r_lo=...
