@@ -1019,3 +1019,54 @@ TEST_CASE("preflight_audit: a cutoff that holds no neighbour distance is a "
   }
   CHECK(n == 1u);
 }
+
+#include <tadah/core/logger.h>
+#include <iostream>
+
+/* Pins: the log line of a finding (AuditReport::log, at WARNING) reads
+ * "AUDIT finding WARN D2_Blip.RCUT2B: <text>", "AUDIT finding FAIL
+ * DM_mBlipEnv: <text>" for a check of the whole descriptor; the report
+ * (AuditReport::print) lists "  WARN D2_Blip.RCUT2B: <text>": the key AUDIT
+ * that runs the audit, the level and the parameter, without the name of
+ * the code that wrote them.
+ * Before the fix: "preflight_audit: [WARN] D2_Blip.RCUT2B — <text>" and
+ * "  [WARN] D2_Blip.RCUT2B — <text>". */
+TEST_CASE("preflight_audit: a finding names the key AUDIT, its level and "
+          "its parameter",
+          "[preflight_audit]") {
+  AuditReport rep;
+  AuditMessage w;
+  w.level = AuditMessage::Level::Warn;
+  w.descriptor_label = "D2_Blip";
+  w.param_key = "RCUT2B";
+  w.text = "a warning";
+  rep.messages.push_back(w);
+  AuditMessage f;
+  f.level = AuditMessage::Level::Fail;
+  f.descriptor_label = "DM_mBlipEnv";
+  f.text = "a failure";
+  rep.messages.push_back(f);
+
+  auto &logger = tadah::core::Logger::instance();
+  const auto level = logger.getLogLevel();
+  logger.setLogLevel(tadah::core::LogLevel::WARNING);
+  std::ostringstream logged;
+  std::streambuf *old = std::cout.rdbuf(logged.rdbuf());
+  rep.log();
+  std::cout.rdbuf(old);
+  logger.setLogLevel(level);
+  INFO("log:\n" << logged.str());
+  CHECK(logged.str().find("WARNING: AUDIT finding WARN D2_Blip.RCUT2B: a "
+                          "warning\n") != std::string::npos);
+  CHECK(logged.str().find("WARNING: AUDIT finding FAIL DM_mBlipEnv: a "
+                          "failure\n") != std::string::npos);
+  CHECK(logged.str().find("preflight_audit") == std::string::npos);
+
+  std::ostringstream printed;
+  rep.print(printed);
+  INFO("report:\n" << printed.str());
+  CHECK(printed.str().find("\n  WARN D2_Blip.RCUT2B: a warning\n") !=
+        std::string::npos);
+  CHECK(printed.str().find("\n  FAIL DM_mBlipEnv: a failure\n") !=
+        std::string::npos);
+}
