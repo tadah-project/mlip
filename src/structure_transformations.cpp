@@ -148,9 +148,8 @@ void StructureTransformation::replicate(Structure &st, int nx, int ny, int nz)
 {
   if (nx < 1 || ny < 1 || nz < 1) {
     throw std::invalid_argument(
-      "StructureTransformation::replicate: every factor must be >= 1, got " +
-      std::to_string(nx) + " " + std::to_string(ny) + " " +
-      std::to_string(nz) + ".");
+      "a supercell needs every factor >= 1, got " + std::to_string(nx) + " " +
+      std::to_string(ny) + " " + std::to_string(nz));
   }
 
   size_t origNatoms = st.atoms.size();
@@ -251,7 +250,9 @@ void StructureTransformation::mirrorHkl(Structure &st, int h, int k, int l)
   tadah::core::Vec3d g = (double)h*b1 + (double)k*b2 + (double)l*b3;
   double normG = g.norm();
   if (normG < 1e-14) {
-    throw std::runtime_error("Plane normal is near zero. Check cell or (h,k,l).");
+    throw std::runtime_error(
+        "the plane (" + std::to_string(h) + " " + std::to_string(k) + " " +
+        std::to_string(l) + ") of this cell has a normal of length near 0");
   }
   tadah::core::Vec3d n = g / normG;
 

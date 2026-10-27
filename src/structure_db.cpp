@@ -212,8 +212,6 @@ std::set<tadah::core::Element> StructureDB::find_unique_elements(const std::stri
   std::string line;
 
   if (!ifs.is_open()) {
-      core::Logger::instance().log(tadah::core::LogLevel::INFO,
-          "StructureDB::find_unique_elements: DBFILE does not exist: " + fn);
     throw std::runtime_error("DBFILE does not exist: "+fn);
   }
 

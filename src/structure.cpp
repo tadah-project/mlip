@@ -490,7 +490,7 @@ void require_regular_cell(const Structure &st) {
   if (!std::isfinite(det) ||
       !(std::fabs(det) > 1e-12 * a0.norm() * a1.norm() * a2.norm()))
     throw std::invalid_argument(
-        "Structure::is_the_same: structure '" + st.label + "' (" +
+        "structure '" + st.label + "' (" +
         std::to_string(st.natoms()) +
         " atoms) has a singular cell (zero, non-finite or coplanar lattice "
         "vectors); its positions cannot be compared through the cell");
@@ -524,9 +524,9 @@ ComparisonCell comparison_cell(const Structure &st) {
   }
   if (!(count <= 1e6))
     throw std::invalid_argument(
-        "Structure::is_the_same: the cell of structure '" + st.label +
-        "' is too skewed to compare positions through it (write it with a "
-        "reduced basis)");
+        "the cell of structure '" + st.label +
+        "' is too skewed to compare positions through it; the same lattice "
+        "written with a reduced basis is not");
   c.shortest = L;
   for (long a = -N[0]; a <= N[0]; ++a)
     for (long b = -N[1]; b <= N[1]; ++b)
@@ -575,7 +575,7 @@ void require_unambiguous_threshold(const Structure &st, const ComparisonCell &c,
   const double limit = c.shortest / (2.0 * std::sqrt(3.0));
   if (!(thr < limit)) {
     std::ostringstream oss;
-    oss << "Structure::is_the_same: the threshold " << thr
+    oss << "the threshold " << thr
         << " A is too large for structure '" << st.label
         << "': it must be below lambda / (2 sqrt 3) = " << limit
         << " A, lambda = " << c.shortest
@@ -605,8 +605,8 @@ bool Structure::is_the_same(const Structure& st, double thr) const {
   require_regular_cell(*this);
   require_regular_cell(st);
   if (!(thr >= 0.0) || !std::isfinite(thr))
-    throw std::invalid_argument("Structure::is_the_same: the threshold must be a "
-                                "finite number of at least 0");
+    throw std::invalid_argument("the threshold must be a finite number of at "
+                                "least 0");
   const ComparisonCell ca = comparison_cell(*this), cb = comparison_cell(st);
   require_unambiguous_threshold(*this, ca, thr);
   require_unambiguous_threshold(st, cb, thr);
