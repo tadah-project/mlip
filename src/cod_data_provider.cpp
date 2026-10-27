@@ -31,7 +31,7 @@ RawResponse CODDataProvider::QueryByFormula(const std::string &formula)
   // COD has no trivial single-endpoint for formula queries.
   RawResponse result;
   result.httpStatus = 501; // 'Not Implemented'
-  result.response = "CODDataProvider does not support formula-based queries yet.";
+  result.response = "COD: formula queries are not supported.";
   return result;
 }
 
@@ -43,7 +43,7 @@ RawResponse CODDataProvider::fetchFromURL(const std::string &url)
 
   CURL* curlHandle = curl_easy_init();
   if (!curlHandle) {
-    throw std::runtime_error("CODDataProvider: Failed to initialize libcurl.");
+    throw std::runtime_error("COD: cURL does not initialise.");
   }
 
   // Prepare string buffer for the response
@@ -64,7 +64,7 @@ RawResponse CODDataProvider::fetchFromURL(const std::string &url)
   if (curlRes != CURLE_OK) {
     rr.httpStatus = 500; // Internal error
     std::ostringstream oss;
-    oss << "CODDataProvider: cURL error: " << curl_easy_strerror(curlRes);
+    oss << "COD: cURL error: " << curl_easy_strerror(curlRes);
     rr.response = oss.str();
   } else {
     rr.response = buffer;

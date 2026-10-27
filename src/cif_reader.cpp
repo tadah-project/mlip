@@ -121,7 +121,7 @@ char monoclinic_axis(const gemmi::SpaceGroup &sg) {
   const char *q = sg.qualifier;
   if (*q == '-') ++q;
   if (*q != 'a' && *q != 'b' && *q != 'c')
-    throw std::logic_error("CifReader: monoclinic space group " + sg.xhm() +
+    throw std::logic_error("internal error: monoclinic space group " + sg.xhm() +
                            " has no unique axis in gemmi's table");
   return *q;
 }
@@ -381,7 +381,7 @@ std::string one_line(const std::string &text) {
 void CifReader::read(const std::string &path) {
   std::ifstream ifs(path);
   if (!ifs.is_open()) {
-    throw std::runtime_error("CifReader::read: Cannot open " + path);
+    throw std::runtime_error("the structure file " + path + " cannot be opened");
   }
 
   std::ostringstream buffer;

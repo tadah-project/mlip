@@ -17,7 +17,8 @@ MaterialsProjectReader::MaterialsProjectReader(
   : m_dataProvider(std::move(provider)) {
   if (!m_dataProvider)
     throw std::invalid_argument(
-        "MaterialsProjectReader: the data provider is null.");
+        "internal error: the Materials Project reader has no data "
+        "provider");
 }
 
 void MaterialsProjectReader::read(const std::string &mpID) {
@@ -31,7 +32,7 @@ Structure MaterialsProjectReader::getStructure() const {
 void MaterialsProjectReader::fetchAndParseMP(const std::string &mpID) {
   RawResponse rr = m_dataProvider->QueryByID(mpID);
   if (rr.httpStatus != 200)
-    throw std::runtime_error(failed_fetch_message("MaterialsProjectReader",
+    throw std::runtime_error(failed_fetch_message("Materials Project",
                                                   "material", mpID, rr));
   // The structure replaces the previous one only when the material is read.
   m_structure = parseMpJson(rr.response, mpID);
@@ -43,13 +44,13 @@ void MaterialsProjectReader::fetchAndParseMP(const std::string &mpID) {
 // "structure" sub-field is a JSON representation of a Pymatgen structure
 // that includes a "lattice.matrix" and a "sites" list. Lattice vectors
 // and atomic positions are returned in a Structure. Every error names the
-// material, "MaterialsProjectReader: material '<mpID>': <what>", the JSON
+// material, "Materials Project material '<mpID>': <what>", the JSON
 // library's own errors included.
 Structure MaterialsProjectReader::parseMpJson(const std::string &jsonContent,
                                               const std::string &mpID) {
   using json = nlohmann::json;
   auto fail = [&mpID](const std::string &what) {
-    return std::runtime_error("MaterialsProjectReader: material '" + mpID +
+    return std::runtime_error("Materials Project material '" + mpID +
                               "': " + what);
   };
   Structure result;

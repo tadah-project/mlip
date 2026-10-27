@@ -45,7 +45,9 @@ StructureReaderSelector::getReader(const std::string &pathOrId) {
     return std::make_unique<NomadReader>();
   } else {
     throw std::runtime_error(
-        "StructureReaderSelector::getReader - Unknown format for " + pathOrId);
+        pathOrId + " is neither a structure file tadah reads (CIF, POSCAR or "
+        "CASTEP .cell) nor an online id (mp-..., cod-..., aflow:... or a "
+        "NOMAD entry id)");
   }
 }
 
