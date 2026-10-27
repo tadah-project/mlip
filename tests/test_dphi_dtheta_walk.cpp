@@ -17,13 +17,16 @@
 
 #include <tadah/core/context.h>
 #include <tadah/core/core_types.h>
+#include <tadah/core/core_user_config_parser.h>
 #include <tadah/core/element.h>
 #include <tadah/core/periodic_table.h>
 #include <tadah/mlip/analytics/dphi_dtheta_walk.h>
 #include <tadah/mlip/atom.h>
+#include <tadah/mlip/memory/mlip_workspace_manager.h>
 #include <tadah/mlip/nn_finder.h>
 #include <tadah/mlip/structure.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/mlip/trainer.h>
 #include <tadah/models/cutoffs.h>
 #include <tadah/models/descriptors/d2/d2_bp.h>
 #include <tadah/models/descriptors/dm/dm_ead.h>
@@ -32,6 +35,8 @@
 
 #include <cmath>
 #include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -2486,5 +2491,122 @@ TEST_CASE("cached DM walker (DM_mBlip CEMBFUNC[1]) matches non-cached combined "
              << " ref=" << ref_force[i]
              << " cached=" << cached_force[i]);
         REQUIRE(ref_force[i] == cached_force[i]);
+    }
+}
+
+// ============================================================================
+// Combined walker of a DC_Selector with a two-body and a many-body
+// descriptor: the claims of the two joined.
+// ============================================================================
+
+namespace {
+
+/* A two-atom bcc Ta cell (a = 3.3 A), the second atom moved off its site,
+ * with its neighbour list to 5 A: pairs at many distances inside the
+ * cutoffs of 4.5 A below. */
+StructureDB two_atom_ta_cell()
+{
+    Structure st;
+    st.cell.load(3.3, 0.0, 0.0, 0.0, 3.3, 0.0, 0.0, 0.0, 3.3);
+    st.add_atom(Atom(Element("Ta"), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+    st.add_atom(Atom(Element("Ta"), 1.72, 1.61, 1.66, 0.0, 0.0, 0.0));
+    NNFinder().calc(st, 5.0);
+    StructureDB db;
+    db.add(st);
+    return db;
+}
+
+/* The claims (energy rows, force rows) of the descriptors of the
+ * training configuration with TYPE2B D2_BP and the many-body descriptor
+ * `typemb` (with its `lines`) for `key` (index 1) on two_atom_ta_cell(),
+ * the force rows asked when `force`: by the combined walker, and by the
+ * combined walker with the rho cache. */
+struct JoinedClaims {
+    std::pair<bool, bool> plain, cached;
+};
+JoinedClaims joined_claims(const std::string& typemb,
+                           const std::string& lines,
+                           const std::string& key, bool force)
+{
+    std::istringstream in(
+        "ATOM Ta\nWATOM 1.0\nMODEL M_BLR BF_Linear\nVERBOSE 0\n"
+        "INIT2B true\nTYPE2B D2_BP 2 2 Ta Ta\nCGRID2B 1.0 2.0\n"
+        "SGRID2B 1.0 1.2\nRCTYPE2B Cut_Cos\nRCUT2B 4.5\n"
+        "INITMB true\nTYPEMB " + typemb + "\n" + lines +
+        "RCTYPEMB Cut_Cos\nRCUTMB 4.5\n");
+    Context c = tadah::core::CoreUserConfigParser().parse(in);
+    tadah::mlip::memory::MLIPWorkspaceManager ws;
+    tadah::mlip::Trainer trainer(c, ws);
+    const StructureDB db = two_atom_ta_cell();
+    const std::size_t n_cols = trainer.DCS.descriptor_size();
+    std::vector<double> energy(n_cols, 0.0);
+    std::vector<double> rows(3 * db(0).natoms() * n_cols, 0.0);
+    double* force_rows = force ? rows.data() : nullptr;
+    JoinedClaims out;
+    out.plain = tadah::mlip::assemble_dphi_train_both_rows(
+        db, trainer.DCS, key, 1, energy.data(), force_rows, n_cols, {0});
+    tadah::mlip::DMRhoCache cache;
+    tadah::mlip::build_dm_rho_cache(db, *trainer.DCS.dmb, cache, n_cols);
+    energy.assign(n_cols, 0.0);
+    rows.assign(rows.size(), 0.0);
+    out.cached = tadah::mlip::assemble_dphi_train_both_rows_cached(
+        db, trainer.DCS, cache, key, 1, energy.data(), force_rows, n_cols,
+        {0});
+    return out;
+}
+
+}  // namespace
+
+/* Pins: the combined walker of a two-body and a many-body descriptor, with
+ * and without the rho cache, claims the force rows of a parameter only when
+ * every descriptor that claims its energy rows claims its force rows too:
+ *   - WATOM, which D2_BP and DM_Blip both read, D2_BP differentiating it in
+ *     the energy and the force rows and DM_Blip in the energy rows only:
+ *     (energy, force) = (true, false), the force rows asked or not;
+ *   - CGRID2B, of D2_BP alone: (true, true); CGRIDMB, of DM_Blip alone:
+ *     (true, false);
+ *   - WATOM with DM_mBlip, which differentiates it in the force rows too:
+ *     (true, true).
+ * Before the fix: D2_BP + DM_Blip claimed WATOM for the force rows,
+ * (true, true): the claims of the two descriptors were joined by an OR, so
+ * the force rows of the D2_BP part hid the missing DM_Blip part, and the
+ * analytical gradient of tadah hpo took the result as the derivative of
+ * the force rows. */
+TEST_CASE("combined walker: a parameter of a two-body and a many-body "
+          "descriptor has its force rows claimed only when each descriptor "
+          "that claims its energy rows claims them",
+          "[dphi_dtheta_walk][combined][cached][watom][force]")
+{
+    PeriodicTable::initialize();
+    using Claims = std::pair<bool, bool>;
+    const std::string blip = "DM_Blip 0 2 2 Ta Ta";
+    const std::string blip_grid = "CGRIDMB 2.0 3.0\nSGRIDMB 1.0 1.0\n";
+    const std::string mblip = "DM_mBlip 0 1 1 2 2 Ta Ta";
+    const std::string mblip_grid =
+        "CGRIDMB 0.0\nSGRIDMB 0.2\nCEMBFUNC 1.0 2.0\nSEMBFUNC 1.0 1.0\n";
+    struct Case {
+        const char* name;
+        std::string typemb, lines, key;
+        bool force;
+        Claims expected;
+    };
+    const std::vector<Case> cases = {
+        {"D2_BP + DM_Blip, WATOM, force rows", blip, blip_grid, "WATOM",
+         true, {true, false}},
+        {"D2_BP + DM_Blip, WATOM, energy rows", blip, blip_grid, "WATOM",
+         false, {true, false}},
+        {"D2_BP + DM_Blip, CGRID2B, force rows", blip, blip_grid, "CGRID2B",
+         true, {true, true}},
+        {"D2_BP + DM_Blip, CGRIDMB, force rows", blip, blip_grid, "CGRIDMB",
+         true, {true, false}},
+        {"D2_BP + DM_mBlip, WATOM, force rows", mblip, mblip_grid, "WATOM",
+         true, {true, true}},
+    };
+    for (const Case& c : cases) {
+        INFO(c.name);
+        const JoinedClaims got =
+            joined_claims(c.typemb, c.lines, c.key, c.force);
+        CHECK(got.plain == c.expected);
+        CHECK(got.cached == c.expected);
     }
 }
