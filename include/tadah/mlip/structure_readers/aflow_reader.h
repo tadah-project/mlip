@@ -58,7 +58,7 @@ public:
    * @throws std::runtime_error naming the entry's auid and the field (only
    *         the field when "auid" itself is not a string) for: an entry
    *         without geometry, species, composition or positions_fractional;
-   *         a species that is not an element symbol Tadah knows ("AflowReader:
+   *         a species that is not an element symbol Tadah knows ("AFLOW
    *         entry '<auid>': species 'D' is not an element symbol Tadah knows
    *         (H to Og)."); a field in neither form; a geometry of other than six numbers; a
    *         site of other than three numbers; a composition count that is

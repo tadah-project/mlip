@@ -174,29 +174,37 @@ int AnalysisDescriptorEngine::run(mlip::Task &task) {
   delete modelp;
   delete fb;
 
-  core::Logger::instance().log(tadah::core::LogLevel::INFO, "AnalysisDescriptorEngine finished.");
   return EXIT_SUCCESS;
 }
 void AnalysisDescriptorEngine::validate(const tadah::mlip::Task &task) {
+  // The command line refuses most of these first (the values an option
+  // takes, the options it needs and excludes); validate() checks them for
+  // a Task a C++ program builds too.
   const auto &context = task.getContext();
   require_command_options(context, "ANALYSIS.descriptor");
   if (!context.contains("POTENTIAL")) {
-    throw std::runtime_error("AnalysisDescriptorEngine requires a potential file to be set.");
+    throw std::runtime_error(
+        "tadah analysis descriptor needs a potential file (--potential)");
   }
   if (context.contains("INDEX")) {
     if (context.size("DBFILE")!=1) {
-      throw std::runtime_error("AnalysisDescriptorEngine requires a single DBFILE when using INDEX.");
+      throw std::runtime_error(
+          "tadah analysis descriptor takes one DBFILE with INDEX");
     }
     if (context.contains("STRUCTURE")) {
-      throw std::runtime_error("AnalysisDescriptorEngine INDEX and STRUCTURE cannot be used together.");
+      throw std::runtime_error(
+          "tadah analysis descriptor takes INDEX or STRUCTURE, not both");
     }
   }
   if (context.get<bool>("MERGE") && context.size("OUTFILE") != 1) {
-    throw std::runtime_error("AnalysisDescriptorEngine requires a single OUTFILE when using MERGE.");
+    throw std::runtime_error(
+        "tadah analysis descriptor writes one OUTFILE with MERGE");
   }
   if (!context.get<bool>("MERGE")) {
     if (context.size("OUTFILE") != context.size("DBFILE")) {
-      throw std::runtime_error("AnalysisDescriptorEngine requires the same number of OUTFILE and DBFILE.");
+      throw std::runtime_error(
+          "tadah analysis descriptor writes one OUTFILE for each DBFILE "
+          "without MERGE");
     }
   }
 }

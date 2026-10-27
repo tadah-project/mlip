@@ -404,12 +404,12 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
  * DBFILE line (no potential tadah writes one; its training record, the
  * comment block above its key lines, lists the datasets its weights were
  * fitted to in a '# DBFILE' line when there were any: a refit has none,
- * and a potential of an earlier version has no record): to train from
- * one, add a DBFILE line to a copy of it; a potential of tadah refit or
- * refit --edit also pins every weight with its FIXINDEX and FIXWEIGHT
- * lines, ..., so delete them from the copy for the fit to change the
- * weights (the Training page of the documentation, Retraining from a
- * potential).",
+ * and a potential of an earlier version has no record): a retrain from
+ * one takes a copy of it with a DBFILE line added; a potential of tadah
+ * refit or refit --edit also pins every weight with its FIXINDEX and
+ * FIXWEIGHT lines, ..., and the fit changes the weights when both are
+ * deleted from the copy (the Training page of the documentation,
+ * Retraining from a potential).",
  * after its own reason: no FIXINDEX or
  * FIXWEIGHT ("the model weights cannot be determined"; a potential used as
  * the -c configuration as it is gets this one), FIXINDEX 2 of 5 weights
@@ -421,6 +421,9 @@ TEST_CASE("provision_fixed_weights writes no SIGMA of the configuration",
  * Before the advice named the pins: it ended "add a
  * DBFILE line to a copy of it (the Training page ...)." -- a refit
  * potential so retrained fitted nothing: these checks fail.
+ * Before the fix of its wording: "... to train from one, add a DBFILE line
+ * to a copy of it; ..., so delete them from the copy for the fit to change
+ * the weights ...", instructions to the reader.
  * Before the training record: the advice
  * began "A potential records no DBFILE (no potential tadah writes has
  * one): to train from one, ...", and the case was named "..., says that a
@@ -438,12 +441,12 @@ TEST_CASE("classify_weight_source: a refusal without a training DBFILE says "
       "training record, the comment block above its key lines, lists the "
       "datasets its weights were fitted to in a '# DBFILE' line when there "
       "were any: a refit has none, and a potential of an earlier version "
-      "has no record): to train from one, add a DBFILE line to a copy of "
-      "it; a potential of tadah refit or refit --edit also pins every "
-      "weight with its FIXINDEX and FIXWEIGHT lines, the seed of a tadah "
-      "hpo coefficient search, so delete them from the copy for the fit to "
-      "change the weights (the Training page of the documentation, "
-      "Retraining from a potential).";
+      "has no record): a retrain from one takes a copy of it with a DBFILE "
+      "line added; a potential of tadah refit or refit --edit also pins "
+      "every weight with its FIXINDEX and FIXWEIGHT lines, the seed of a "
+      "tadah hpo coefficient search, and the fit changes the weights when "
+      "both are deleted from the copy (the Training page of the "
+      "documentation, Retraining from a potential).";
   SECTION("no FIXINDEX or FIXWEIGHT") {
     CHECK_THROWS_WITH(classify_weight_source(ctx_with(false, "", {}), kNCols),
                       Catch::Contains("the model weights cannot be "

@@ -903,7 +903,7 @@ TEST_CASE("VASP POSCAR reader: a line-6 token that is no element is refused, "
 }
 
 /* Pins: an error of the POSCAR reader names the file, as
- *   VaspPoscarReader: POSCAR file <path>: <what>
+ *   POSCAR file <path>: <what>
  * for a line-6 token that is no element ('Xx': exactly "... <path>: 'Xx'
  * on line 6 is not an element symbol (or a VASP POTCAR name such as Ti_pv
  * or Si/b0d4a2)."), a scaling factor 0, an atom count 'two' on line 7
@@ -915,7 +915,9 @@ TEST_CASE("VASP POSCAR reader: a line-6 token that is no element is refused, "
  * "VaspPoscarReader::read: " and named no file, and the count was refused
  * by std::stoi ('stoi', a std::invalid_argument, which ends the case); the
  * file refused on line 6 had already replaced the reader's cell (4 A), so
- * every later cell check failed too. */
+ * every later cell check failed too.
+ * Before the fix that names the file alone: each message began
+ * "VaspPoscarReader: POSCAR file <path>: ": the checks fail. */
 TEST_CASE("VASP POSCAR reader: an error names the file, and a refused file "
           "leaves the structure",
           "[vasp][poscar][species]") {
@@ -954,7 +956,7 @@ TEST_CASE("VASP POSCAR reader: an error names the file, and a refused file "
     const auto msg = runtime_error_of([&] { reader->read(path); });
     REQUIRE(msg);
     INFO("message: " << *msg);
-    const std::string head = "VaspPoscarReader: POSCAR file " + path + ": ";
+    const std::string head = "POSCAR file " + path + ": ";
     CHECK(msg->rfind(head, 0) == 0);
     CHECK_THAT(*msg, Contains(b.what));
     if (b.name == "POSCAR_Xx") CHECK(*msg == head + b.what);

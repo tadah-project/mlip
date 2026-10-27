@@ -12,7 +12,7 @@ CODReader::CODReader()
 CODReader::CODReader(std::unique_ptr<IMaterialsDataProvider> provider)
   : m_dataProvider(std::move(provider)) {
   if (!m_dataProvider)
-    throw std::invalid_argument("CODReader: the data provider is null.");
+    throw std::invalid_argument("internal error: the COD reader has no data provider");
 }
 
 bool CODReader::isHttpUrl(const std::string &path) const {
@@ -46,7 +46,7 @@ std::string CODReader::fetchCifById(const std::string &codID) const {
   RawResponse rr = m_dataProvider->QueryByID(codID);
   if (rr.httpStatus != 200)
     throw std::runtime_error(
-        failed_fetch_message("CODReader", "COD ID", codID, rr));
+        failed_fetch_message("COD", "COD ID", codID, rr));
   return rr.response; // The raw CIF text
 }
 
@@ -56,7 +56,7 @@ void CODReader::read(const std::string &path) {
   if (isHttpUrl(path)) {
     codID = extractCodIdFromUrl(path);
     if (codID.empty()) {
-      throw std::runtime_error("CODReader::read - Cannot parse COD ID from URL: " + path);
+      throw std::runtime_error("COD: the COD ID cannot be read from the URL " + path);
     }
   } else {
     if(path.rfind("cod-", 0) == 0) {

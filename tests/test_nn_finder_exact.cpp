@@ -819,6 +819,12 @@ TEST_CASE("NNFinder exact: the image cap refuses R/a=10.5 and builds R/a=9.5",
     }
     INFO("message: " << msg);
     CHECK(contains(msg, "image cells"));
+    // The refusal gives its example without "e.g." (before the fix: "Such
+    // a cell is degenerate, e.g. the result of ...").
+    const std::string tail = "). Such a cell is degenerate, such as the "
+                             "result of an unbounded relaxation step";
+    CHECK(msg.size() > tail.size());
+    CHECK(msg.compare(msg.size() - tail.size(), tail.size(), tail) == 0);
   }
   SECTION("cube a = R/9.5 needs 21^3 image cells and is exact") {
     const double a = R / 9.5;

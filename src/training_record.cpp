@@ -241,27 +241,27 @@ bool at_task_default(const TaskKeys &t, const std::string &key,
  * configuration. */
 enum class EshiftSource { None, Line, Option, OptionOverLine };
 
-/* The sentence that says how to derive ESHIFT from the data of the run
+/* The sentence that says when ESHIFT is derived from the data of the run
  * when a potential's toggle is named and the run's configuration has
  * ESHIFT (@p source), by where that ESHIFT came from; "" for none. Begins
  * with a blank, ends without its period. */
 std::string eshift_sentence(EshiftSource source) {
   const std::string overrules =
       ", the energy reference of the model, overrules ESHIFT_ATOM and "
-      "ESHIFT_DBATOM: to derive ESHIFT from the data of this run, ";
+      "ESHIFT_DBATOM: ESHIFT is derived from the data of this run when ";
   switch (source) {
   case EshiftSource::None:
     return "";
   case EshiftSource::Line:
     return " The ESHIFT of the configuration" + overrules +
-           "delete the ESHIFT line and give the run one of them";
+           "the ESHIFT line is deleted and the run is given one of them";
   case EshiftSource::Option:
     return " The ESHIFT given with --eshift" + overrules +
-           "leave out --eshift and give the run one of them";
+           "--eshift is left out and the run is given one of them";
   case EshiftSource::OptionOverLine:
     return " The ESHIFT given with --eshift" + overrules +
-           "leave out --eshift, delete the ESHIFT line and give the run one "
-           "of them";
+           "--eshift is left out, the ESHIFT line is deleted and the run is "
+           "given one of them";
   }
   return "";
 }
@@ -269,8 +269,9 @@ std::string eshift_sentence(EshiftSource source) {
 /* The sentences of the notice for the keys @p ignored (in the order of
  * keys_not_read_from_a_potential(), none at its default) of the potential
  * @p subject ("the configuration file pot.train"); @p advice(keys,
- * options) says where the run's own go (keys: the named keys; options:
- * the options the task @p t has of them), "" for none; @p eshift: where the
+ * optioned, options) says where the run's own go (keys: the named keys;
+ * optioned: those of them the task @p t has an option of; options: those
+ * options, in the same order), "" for none; @p eshift: where the
  * ESHIFT of the run's configuration came from, which overrules a toggle
  * the run gives. Two kinds of key, each a sentence: the keys that prepared
  * the training data, and the run settings; the first ends with the note on
@@ -282,12 +283,14 @@ std::string ignored_keys_notice(const std::string &who,
                                 const TaskKeys &t, Advice advice,
                                 EshiftSource eshift) {
   const std::vector<std::string> &data = dataset_preparation_keys();
-  std::vector<std::string> prepared, settings, keys, options;
+  std::vector<std::string> prepared, settings, keys, optioned, options;
   bool toggle_named = false;
   for (const IgnoredKey &k : ignored) {
     keys.push_back(k.key);
-    if (t.options.count(k.key) && !option_of(k.key).empty())
+    if (t.options.count(k.key) && !option_of(k.key).empty()) {
+      optioned.push_back(k.key);
       options.push_back(option_of(k.key));
+    }
     if (std::find(data.begin(), data.end(), k.key) != data.end()) {
       prepared.push_back(key_values(k.key, k.values));
       if (k.key == "ESHIFT_ATOM" || k.key == "ESHIFT_DBATOM")
@@ -312,7 +315,7 @@ std::string ignored_keys_notice(const std::string &who,
   for (std::size_t i = 0; i < sentences.size(); ++i)
     s += i == 0 ? "its " + sentences[i] + " " + kRecordNote + "."
                 : " Its " + sentences[i] + " too.";
-  const std::string where = advice(keys, options);
+  const std::string where = advice(keys, optioned, options);
   if (!where.empty()) s += " " + where;
   if (toggle_named && eshift != EshiftSource::None) {
     if (!where.empty()) s += ".";
@@ -322,9 +325,6 @@ std::string ignored_keys_notice(const std::string &who,
   return s + " (the Training page of the documentation, Retraining from a "
              "potential).";
 }
-
-/* "it" or "one": what a run applies of the @p n keys an advice names. */
-std::string one_of(std::size_t n) { return n == 1 ? "it" : "one"; }
 
 /* Whether @p c is a vowel letter. */
 bool vowel(char c) { return std::string("AEIOU").find(c) != std::string::npos; }
@@ -420,18 +420,31 @@ std::string skipped_lines_notice(const KeyProvenance &provenance,
         included ? file + ", which the configuration file " + top +
                        " includes with CONFIG,"
                  : "the configuration file " + top;
+    // Where the run's own values come from. Every key has an option: "This
+    // run takes its own EFILTER or WDBFILE from --efilter or --wdbfile on
+    // the command line, or from an EFILTER or WDBFILE line in ...". Some
+    // have: the line first, for every key, then the keys that have an
+    // option with their options, "This run takes its own VERBOSE or
+    // NUMERIC from a VERBOSE or NUMERIC line in ..., or VERBOSE from
+    // --verbose on the command line" (an option is never offered for a key
+    // it does not set).
     const auto advice = [&](const std::vector<std::string> &keys,
+                            const std::vector<std::string> &optioned,
                             const std::vector<std::string> &options) {
-      const std::string lines = listed(keys, "or");
-      std::string a = "Give ";
-      if (!options.empty()) a += listed(options, "or") + " on the command line, or ";
-      a += article(keys[0]) + " ";
-      a += lines + " line in " +
-           (included ? top
-                     : "a configuration file that includes the potential "
-                       "with CONFIG");
-      if (!options.empty()) a += ",";
-      return a + " to apply " + one_of(keys.size()) + " to this run";
+      const std::string named = listed(keys, "or");
+      const std::string line =
+          article(keys[0]) + " " + named + " line in " +
+          (included ? top
+                    : "a configuration file that includes the potential "
+                      "with CONFIG");
+      const std::string head = "This run takes its own " + named + " from ";
+      if (options.empty()) return head + line;
+      const std::string command_line =
+          listed(options, "or") + " on the command line";
+      if (optioned.size() == keys.size())
+        return head + command_line + ", or from " + line;
+      return head + line + ", or " + listed(optioned, "or") + " from " +
+             command_line;
     };
     const std::string notice =
         ignored_keys_notice(who, subject, ignored, t, advice, eshift);
@@ -481,12 +494,14 @@ std::string ignore_configuration_potential_lines(
   if (ignored.empty()) return "";
   return ignored_keys_notice(
       who, "the configuration", ignored, t,
-      [](const std::vector<std::string> &names,
+      // The keys that have an option, with their options (a key without
+      // one has no command-line source to name).
+      [](const std::vector<std::string> &,
+         const std::vector<std::string> &optioned,
          const std::vector<std::string> &options) {
         if (options.empty()) return std::string();
-        return "Give " + listed(options, "or") +
-               " on the command line to apply " + one_of(names.size()) +
-               " to this run";
+        return "This run takes its own " + listed(optioned, "or") +
+               " from " + listed(options, "or") + " on the command line";
       },
       eshift);
 }
@@ -511,7 +526,8 @@ std::string missing_run_setting(const std::string &task,
       lines[at - sources.begin()].push_back(key_values(line.key, line.values));
     }
   const std::string a_line = article(key) + " " + key + " line";
-  std::string s = "tadah " + task + ": no " + key + ": name " + what + " with ";
+  std::string s =
+      "tadah " + task + ": no " + key + ": " + what + " is given with ";
   const TaskKeys t = task_keys(task);
   const std::string option = option_of(key);
   if (t.options.count(key) && !option.empty()) s += option + ", or with ";
@@ -618,8 +634,8 @@ TrainingRecord read_training_record(const std::string &path) {
         throw std::runtime_error(
             path + ": line " + std::to_string(n) + " ends a training "
             "record " + end_quoted + " that no opening line " + open_quoted +
-            " opens: restore the opening line before the record, or delete "
-            "the end line.");
+            " opens: a file with the opening line before the record, or "
+            "without the end line, is accepted.");
       continue;
     }
     if (line == kTrainingRecordEnd) {
@@ -629,8 +645,9 @@ TrainingRecord read_training_record(const std::string &path) {
     if (line == kTrainingRecordOpen)
       throw std::runtime_error(
           unclosed(opened_at) + " before line " + std::to_string(n) +
-          ", which opens another: restore the end line after the record, "
-          "before line " + std::to_string(n) + ", or delete the record.");
+          ", which opens another: a file with the end line after the "
+          "record, before line " + std::to_string(n) + ", or without the "
+          "record, is accepted.");
     const std::size_t first = line.find_first_not_of(" \t");
     if (first == std::string::npos) continue;  // a blank line
     if (line[first] != '#') {
@@ -649,15 +666,15 @@ TrainingRecord read_training_record(const std::string &path) {
       if (closed_at == 0)
         throw std::runtime_error(
             unclosed(opened_at) + " before line " + std::to_string(n) +
-            ", the first line after it that is not a comment: restore the "
-            "end line after the record, before line " + std::to_string(n) +
-            ", or delete the record.");
+            ", the first line after it that is not a comment: a file with "
+            "the end line after the record, before line " +
+            std::to_string(n) + ", or without the record, is accepted.");
       throw std::runtime_error(
           path + ": line " + std::to_string(n) + ", inside the training "
           "record that line " + std::to_string(opened_at) + " opens and "
           "line " + std::to_string(closed_at) + " ends, is not a comment: "
-          "every reader of the potential reads it as a key. Begin it with "
-          "'#' if it belongs to the record, or move it after the end line.");
+          "every reader of the potential reads it as a key. A line of the "
+          "record begins with '#', and a key line comes after the end line.");
     }
     std::string text = line.substr(first + 1);
     if (!text.empty() && text[0] == ' ') text.erase(0, 1);
@@ -665,8 +682,8 @@ TrainingRecord read_training_record(const std::string &path) {
   }
   if (opened_at != 0)
     throw std::runtime_error(unclosed(opened_at) +
-                             ": restore the end line after the record, or "
-                             "delete the record.");
+                             ": a file with the end line after the record, "
+                             "or without the record, is accepted.");
   return record;
 }
 

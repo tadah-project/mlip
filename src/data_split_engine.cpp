@@ -11,8 +11,6 @@ namespace mlip {
 namespace engines {
 
 int DataSplitEngine::run(tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-      "DataSplitEngine started...");
 
   core::Context taskContext = task.getContext();
   std::vector<std::string> outFiles(taskContext.size("OUTFILE"));
@@ -58,8 +56,6 @@ int DataSplitEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void DataSplitEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating DataSplitEngine...");
   core::Context taskContext = task.getContext();
   size_t outFilesSize = taskContext.size("OUTFILE");
   if (!areDataLoaded) loadInput(taskContext);
@@ -96,8 +92,6 @@ void DataSplitEngine::validate(const tadah::mlip::Task &task) {
 }
 
 void DataSplitEngine::loadInput(const core::Context &taskContext) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Loading input for DataSplitEngine...");
   inStdb.add(taskContext);
   areDataLoaded = true;
 }

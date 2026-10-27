@@ -42,12 +42,12 @@ const core::BlueprintTask &blueprint_task(const std::string &name) {
   }
   std::sort(names.begin(), names.end());
 
-  std::string msg =
-      "TaskFactory::createTasksFromInput - unknown task '" + name + "'";
+  std::string msg = "unknown task '" + name + "'";
   const auto same = std::find_if(names.begin(), names.end(),
       [&](const std::string &n) { return boost::iequals(n, name); });
   if (same != names.end())
-    msg += ": task names are case-sensitive, did you mean '" + *same + "'?";
+    msg += ": task names are case-sensitive, and '" + *same +
+           "' differs from it only in letter case.";
   else
     msg += ".";
   msg += " The tasks:";
@@ -88,12 +88,10 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       keyInfo = &bpMap.at(core::to_upper(key));
       valid_schema = core::CoreUserConfigParser::validateWithBlueprint(key, values, *keyInfo);
     } catch (const std::out_of_range &e) {
-      // suggest closest key match then throw
-      const std::string closestKey = core::BlueprintParser::findClosestKey(key, bpMap);
-      core::Logger::instance().log(core::LogLevel::ERROR,
-          "TaskFactory::createTasksFromInput - Invalid key: " + key +
-          ". Closest match: " + closestKey);
-      throw std::runtime_error("TaskFactory::createTasksFromInput - Invalid blueprint key: " + key);
+      // The parser's form of an unknown key, with the closest key.
+      throw std::runtime_error(
+          "Invalid key " + key + " (closest key: " +
+          core::BlueprintParser::findClosestKey(key, bpMap) + ")");
     }
     // An option the task retires (tadah data balance --rescale), whatever
     // the key of that name is to the other commands: why, what replaces it
@@ -118,13 +116,20 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
       std::string respaced;
       const std::string seps = core::CoreUserConfigParser::misusedSeparators(
           text, *keyInfo, respaced);
-      throw std::runtime_error(
-          "TaskFactory::createTasksFromInput - Invalid key-value pair: " + key +
-          " -> " + text +
-          (seps.empty() ? std::string()
-                        : " ('" + text + "' separates values with " + seps +
-                              ", which is not a value separator: give them "
-                              "as separate words, " + respaced + ")"));
+      // The option as it is given ("--percent"), else the key.
+      const std::string name = keyInfo->cli_long_flag.empty()
+                                   ? core::to_upper(key)
+                                   : keyInfo->cli_long_flag;
+      if (!seps.empty())
+        throw std::runtime_error(
+            name + " " + text + ": '" + text + "' separates values with " +
+            seps + ", which is not a value separator; the values are "
+            "separate words: " + respaced);
+      std::string forms;
+      for (std::size_t i = 0; i < keyInfo->value_format.size(); ++i)
+        forms += (i == 0 ? "" : " or ") + keyInfo->value_format[i];
+      throw std::runtime_error(name + " " + text + ": " + name + " takes " +
+                               forms);
     }
   }
 
@@ -144,8 +149,8 @@ std::vector<Task> TaskFactory::createTasksFromInput(const ITaskInput &taskInput)
   (void)blueprint_task(taskInput.getTaskName());
   for (const auto &kv : tadah::core::BlueprintParser::getTasksMapRef()) {
     if (kv.first.find(taskInput.getTaskName() + ".") == 0) {
-      throw std::runtime_error("TaskFactory::createTasksFromInput - "
-          "taskInput.getTaskName() is not a valid task: " + taskInput.getTaskName());
+      throw std::runtime_error(taskInput.getTaskName() +
+                               " is a group of tasks, not a task");
     }
   }
 

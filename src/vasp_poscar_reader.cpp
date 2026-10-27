@@ -33,7 +33,7 @@ static std::string_view count_digits(const std::string &token) {
 void VaspPoscarReader::read(const std::string &path) {
   std::ifstream ifs(path);
   if (!ifs.is_open()) {
-    throw std::runtime_error("VaspPoscarReader::read: Cannot open " + path);
+    throw std::runtime_error("the structure file " + path + " cannot be opened");
   }
 
   std::vector<std::string> lines;
@@ -54,7 +54,7 @@ void VaspPoscarReader::read(const std::string &path) {
     }
     st = parsePoscar(lines);
   } catch (const std::exception &e) {
-    throw std::runtime_error("VaspPoscarReader: POSCAR file " + path + ": " +
+    throw std::runtime_error("POSCAR file " + path + ": " +
                              e.what());
   }
   st.label = "POSCAR file: " + path;
@@ -239,8 +239,8 @@ Structure VaspPoscarReader::parsePoscar(const std::vector<std::string> &lines) {
   } else {
     throw std::runtime_error(
       "line 6 holds the atom counts, not the element "
-      "symbols (the VASP 4 layout); add the element-symbol line above the "
-      "counts.");
+      "symbols (the VASP 4 layout); an element-symbol line above the "
+      "counts gives them.");
   }
   if (elemSymbols.size() != speciesCounts.size()) {
     throw std::runtime_error(

@@ -15,7 +15,7 @@ NomadReader::NomadReader()
 NomadReader::NomadReader(std::unique_ptr<IMaterialsDataProvider> provider)
   : m_dataProvider(std::move(provider)) {
   if (!m_dataProvider)
-    throw std::invalid_argument("NomadReader: the data provider is null.");
+    throw std::invalid_argument("internal error: the NOMAD reader has no data provider");
 }
 
 void NomadReader::read(const std::string &entryID) {
@@ -30,7 +30,7 @@ void NomadReader::fetchAndParseNomad(const std::string &entryID) {
   RawResponse rr = m_dataProvider->QueryByID(entryID);
   if (rr.httpStatus != 200)
     throw std::runtime_error(
-        failed_fetch_message("NomadReader", "entry", entryID, rr));
+        failed_fetch_message("NOMAD", "entry", entryID, rr));
   // The structure replaces the previous one only when the entry is read.
   m_structure = parseNomadJson(rr.response, entryID);
 }
@@ -38,7 +38,7 @@ void NomadReader::fetchAndParseNomad(const std::string &entryID) {
 /**
  * @brief parseNomadJson() extracts lattice vectors, site positions, etc.
  *
- * Every error names the entry: "NomadReader: entry '<entryID>': <what>",
+ * Every error names the entry: "NOMAD entry '<entryID>': <what>",
  * the JSON library's own errors (text that is not JSON, a value of another
  * type) included.
  */
@@ -46,7 +46,7 @@ Structure NomadReader::parseNomadJson(const std::string &jsonContent,
                                       const std::string &entryID) {
   using json = nlohmann::json;
   auto fail = [&entryID](const std::string &what) {
-    return std::runtime_error("NomadReader: entry '" + entryID + "': " + what);
+    return std::runtime_error("NOMAD entry '" + entryID + "': " + what);
   };
   Structure st;
   try {

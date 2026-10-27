@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -166,6 +167,75 @@ TEST_CASE("NativeRelaxer Aniso/Voigt6/FixedZ throw not_implemented",
         CHECK_THROWS_AS(relaxer.relax(st, *host.model, host.dc, host.context, opts),
                         std::logic_error);
     }
+    /* The refusal is an internal error without plans (PC_OBSERVABLE
+     * relaxes a fixed or an isotropic box only). Before the fix:
+     * "NativeRelaxer: requested box_mode not implemented in MVP.
+     * Aniso/Voigt6 are scheduled with ...". */
+    {
+        NativeRelaxer::Options opts;
+        opts.box_mode = NativeRelaxer::Options::Voigt6;
+        CHECK_THROWS_WITH(relaxer.relax(st, *host.model, host.dc, host.context, opts),
+                          "internal error: the relaxation takes a fixed or "
+                          "an isotropic box only");
+    }
+}
+
+/* Pins: the verbose lines of a relaxation name the relaxation, not the
+ * class: with verbose 2, the Iso relaxation of the compressed bcc cell
+ * writes "relaxation: iteration 0, E=..., fmax=..." first, then lines
+ * "relaxation: iteration <i>, E=..., fmax=..., step=..., scale=..." and
+ * ends with "relaxation: converged at iteration <i>, E=..., fmax=...,
+ * scale=..."; every line begins "relaxation: ".
+ * Before the fix: "[NativeRelaxer] iter=0  E=...  fmax=...",
+ * "[NativeRelaxer] converged at iter=...". */
+TEST_CASE("NativeRelaxer: the verbose lines name the relaxation",
+          "[mlip][native_relaxer][messages]")
+{
+    PeriodicTable::initialize();
+    MLIPWorkspaceManager ws;
+    const double rcut = 4.5;
+    Context ctx = make_ta_context(rcut, {2.5, 3.5}, {2.0, 3.0});
+    Trainer host(ctx, ws);
+    auto train_db = make_ta_train_db(rcut);
+    host.train(train_db);
+    auto st = make_bcc_ta_supercell(3.10);
+    NativeRelaxer::Options opts;
+    opts.box_mode = NativeRelaxer::Options::Iso;
+    opts.ftol     = 1.0e-3;
+    opts.maxiter  = 500;
+    opts.verbose  = 2;
+    opts.init_step = 1.0e-3;
+    opts.max_step  = 0.05;
+    std::ostringstream err;
+    std::streambuf *old = std::cerr.rdbuf(err.rdbuf());
+    NativeRelaxer::Result res;
+    try {
+        res = NativeRelaxer().relax(st, *host.model, host.dc, host.context, opts);
+    } catch (...) {
+        std::cerr.rdbuf(old);
+        throw;
+    }
+    std::cerr.rdbuf(old);
+    const std::string text = err.str();
+    INFO(text);
+    REQUIRE(res.converged);
+    std::istringstream in(text);
+    std::string line, first, last;
+    std::size_t n = 0, other = 0;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        if (line.rfind("relaxation: ", 0) != 0) ++other;
+        if (n == 0) first = line;
+        last = line;
+        ++n;
+    }
+    CHECK(n >= 3);
+    CHECK(other == 0);
+    CHECK(first.rfind("relaxation: iteration 0, E=", 0) == 0);
+    CHECK(text.find("relaxation: iteration 1, E=") != std::string::npos);
+    CHECK(last.rfind("relaxation: converged at iteration ", 0) == 0);
+    CHECK(last.find(", scale=") != std::string::npos);
+    CHECK(text.find("NativeRelaxer") == std::string::npos);
 }
 
 TEST_CASE("NativeRelaxer Fixed mode on perfect BCC converges at iter 0",

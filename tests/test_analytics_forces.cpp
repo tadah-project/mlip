@@ -138,8 +138,9 @@ std::string refusal_of(Metric &&metric, const StructureDB &truth,
 }
 
 void check_names(const std::string &msg, std::size_t k,
-                 const std::string &label) {
+                 const std::string &label, const std::string &head) {
   INFO("message: " << msg);
+  CHECK(msg.rfind(head, 0) == 0);
   CHECK(names_structure(msg, k));
   if (!label.empty()) CHECK_THAT(msg, Catch::Matchers::Contains(label));
   CHECK_THAT(msg, Catch::Matchers::Contains("forces"));
@@ -150,7 +151,7 @@ void check_names(const std::string &msg, std::size_t k,
  * end without a crash before the fix, then those that dereferenced an
  * empty vector (a SIGSEGV before the fix, which ended the process). */
 template <class Metric>
-void refusal_sections(Metric metric) {
+void refusal_sections(Metric metric, const std::string &head) {
   const StructureDB truth = reference();
 
   SECTION("structure 2 with more predicted atoms than the reference is "
@@ -158,24 +159,24 @@ void refusal_sections(Metric metric) {
     StructureDB pred = prediction_with_forces();
     pred(1).atoms.resize(3);
     pred(1).atoms[2].force = Vec3d(0.0, 0.0, 0.0);
-    check_names(refusal_of(metric, truth, pred), 2, kLabel2);
+    check_names(refusal_of(metric, truth, pred), 2, kLabel2, head);
   }
   SECTION("structure 2 with fewer predicted atoms than the reference is "
           "refused") {
     StructureDB pred = prediction_with_forces();
     pred(1).atoms.resize(1);
-    check_names(refusal_of(metric, truth, pred), 2, kLabel2);
+    check_names(refusal_of(metric, truth, pred), 2, kLabel2, head);
   }
   SECTION("an unlabelled structure without forces is refused by its index") {
     StructureDB unlabelled = truth;
     unlabelled(1).label.clear();
     StructureDB pred = prediction_with_forces();
     std::vector<tadah::mlip::Atom>().swap(pred(1).atoms);
-    check_names(refusal_of(metric, unlabelled, pred), 2, "");
+    check_names(refusal_of(metric, unlabelled, pred), 2, "", head);
   }
   SECTION("a prediction without forces is refused at structure 1") {
     const StructureDB pred = prediction_without_forces();
-    check_names(refusal_of(metric, truth, pred), 1, kLabel1);
+    check_names(refusal_of(metric, truth, pred), 1, kLabel1, head);
   }
 }
 
@@ -209,8 +210,12 @@ void check_partials(
 } // namespace
 
 // Pins: calc_f_mae refuses a prediction whose structure has no forces or
-// another atom count, naming the 1-based structure index, the reference
-// label and "forces"; a complete prediction gives MAE 0.1.
+// another atom count, naming the metric ("the force MAE: "), the 1-based
+// structure index, the reference label and "forces"; a complete
+// prediction gives MAE 0.1 (calc_f_rmse: "the force RMSE: ", calc_f_r_sq:
+// "the force R^2: ").
+// Before the fix that names the metric: the messages began
+// "Analytics::calc_f_mae: ", the function: the prefix checks fail.
 // Before the fix the refusal sections failed (no throw, or a SIGSEGV on
 // the empty atoms of the last two sections); removing the
 // require_predicted_forces call from calc_f_mae makes them fail again.
@@ -224,9 +229,11 @@ TEST_CASE("Analytics::calc_f_mae refuses a prediction without matching "
     REQUIRE(v.size() == 1);
     CHECK(v[0] == Approx(kMae).epsilon(kRel));
   }
-  refusal_sections([](const StructureDB &t, const StructureDB &p) {
-    (void)Analytics(t, p).calc_f_mae();
-  });
+  refusal_sections(
+      [](const StructureDB &t, const StructureDB &p) {
+        (void)Analytics(t, p).calc_f_mae();
+      },
+      "the force MAE: ");
 }
 
 // Pins: as calc_f_mae, for calc_f_rmse (what HPO's fill_validation calls
@@ -244,9 +251,11 @@ TEST_CASE("Analytics::calc_f_rmse refuses a prediction without matching "
     REQUIRE(v.size() == 1);
     CHECK(v[0] == Approx(kRmse).epsilon(kRel));
   }
-  refusal_sections([](const StructureDB &t, const StructureDB &p) {
-    (void)Analytics(t, p).calc_f_rmse();
-  });
+  refusal_sections(
+      [](const StructureDB &t, const StructureDB &p) {
+        (void)Analytics(t, p).calc_f_rmse();
+      },
+      "the force RMSE: ");
 }
 
 // Pins: as calc_f_mae, for calc_f_r_sq; a complete prediction gives
@@ -264,9 +273,11 @@ TEST_CASE("Analytics::calc_f_r_sq refuses a prediction without matching "
     REQUIRE(v.size() == 1);
     CHECK(v[0] == Approx(kRsq).epsilon(kRel));
   }
-  refusal_sections([](const StructureDB &t, const StructureDB &p) {
-    (void)Analytics(t, p).calc_f_r_sq();
-  });
+  refusal_sections(
+      [](const StructureDB &t, const StructureDB &p) {
+        (void)Analytics(t, p).calc_f_r_sq();
+      },
+      "the force R^2: ");
 }
 
 // Pins: as calc_f_mae, for analytics_grad::frmse_per_dataset (the
@@ -275,6 +286,9 @@ TEST_CASE("Analytics::calc_f_r_sq refuses a prediction without matching "
 // Before the fix the refusal sections failed (no throw, or a SIGSEGV);
 // removing the require_predicted_forces call from frmse_per_dataset makes
 // them fail again.
+// The refusal names the metric, "the gradient of the force RMSE: structure
+// ...". Before the fix that names the metric: it began "analytics_grad::frmse:
+// ", the function: the prefix checks fail.
 TEST_CASE("analytics_grad::frmse_per_dataset refuses a prediction without "
           "matching forces",
           "[analytics][analytics_forces][pc_dataset]") {
@@ -294,11 +308,13 @@ TEST_CASE("analytics_grad::frmse_per_dataset refuses a prediction without "
         });
     check_partials(got, calls);
   }
-  refusal_sections([](const StructureDB &t, const StructureDB &p) {
-    analytics_grad::frmse_per_dataset(
-        t, p, 1.0,
-        [](std::size_t, std::size_t, PredCellKind, std::size_t, double) {});
-  });
+  refusal_sections(
+      [](const StructureDB &t, const StructureDB &p) {
+        analytics_grad::frmse_per_dataset(
+            t, p, 1.0,
+            [](std::size_t, std::size_t, PredCellKind, std::size_t, double) {});
+      },
+      "the gradient of the force RMSE: ");
 }
 
 // Pins: the averaging wrapper analytics_grad::frmse refuses the same
@@ -307,6 +323,9 @@ TEST_CASE("analytics_grad::frmse_per_dataset refuses a prediction without "
 // Before the fix the refusal sections failed (no throw, or a SIGSEGV);
 // removing the require_predicted_forces call from frmse_per_dataset, or a
 // frmse that bypasses frmse_per_dataset, makes them fail again.
+// The refusal names the metric, "the gradient of the force RMSE: structure
+// ...". Before the fix that names the metric: it began "analytics_grad::frmse:
+// ", the function: the prefix checks fail.
 TEST_CASE("analytics_grad::frmse refuses a prediction without matching "
           "forces",
           "[analytics][analytics_forces][pc_dataset]") {
@@ -324,8 +343,10 @@ TEST_CASE("analytics_grad::frmse refuses a prediction without matching "
                           });
     check_partials(got, calls);
   }
-  refusal_sections([](const StructureDB &t, const StructureDB &p) {
-    analytics_grad::frmse(
-        t, p, 1.0, [](std::size_t, PredCellKind, std::size_t, double) {});
-  });
+  refusal_sections(
+      [](const StructureDB &t, const StructureDB &p) {
+        analytics_grad::frmse(
+            t, p, 1.0, [](std::size_t, PredCellKind, std::size_t, double) {});
+      },
+      "the gradient of the force RMSE: ");
 }

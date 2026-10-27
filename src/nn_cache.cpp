@@ -1,4 +1,5 @@
 #include <tadah/mlip/nn_cache.h>
+#include <tadah/core/number_format.h>
 #include <tadah/mlip/detail/cell_geometry.h>
 #include <tadah/mlip/nn_finder.h>
 
@@ -46,10 +47,10 @@ bool is_fresh(Structure& st, const State& s)
     const double rc_exact = R - s.skin;
     if (!(rc_exact > 0.0))
         throw std::logic_error(
-            "nn_cache::is_fresh: the cached neighbour list was built with "
-            "cutoff " + std::to_string(R) + " A, which does not exceed the "
-            "skin " + std::to_string(s.skin) + " A; build it with NNFinder at "
-            "cutoff = rcut + skin");
+            "internal error: the cached neighbour list was built with "
+            "cutoff " + tadah::core::format_roundtrip(R) + " A, which does "
+            "not exceed the skin " + tadah::core::format_roundtrip(s.skin) +
+            " A; a cached list is built at the cutoff plus the skin");
     const double rc = rc_exact + 4.0 * detail::kUnitRoundoff * R;
 
     /* Geometry of the current cell. A cell NNFinder would refuse is

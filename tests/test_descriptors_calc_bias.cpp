@@ -552,6 +552,8 @@ TEST_CASE("DescriptorsCalc BIAS true with one species: the layout is "
 // the structure is computed (no intercept needed).
 // Before the fix: every call computed descriptors (one shared intercept,
 // 1.0 for the W atom too): no exception.
+// Before the fix that states the remedy: it read "Use a potential trained
+// with W, or leave such structures out.".
 TEST_CASE("DescriptorsCalc BIAS true refuses an atom of an element not in "
           "ATOM, naming it",
           "[descriptors_calc][bias]") {
@@ -568,6 +570,8 @@ TEST_CASE("DescriptorsCalc BIAS true refuses an atom of an element not in "
   INFO(m);
   CHECK(m.find("W") != std::string::npos);
   CHECK(m.find("ATOM Nb Ta") != std::string::npos);
+  CHECK(m.find("; such structures need a potential trained with W.") !=
+        std::string::npos);
   StructureDB db;
   db.add(bcc_cell(std::vector<std::string>(16, "Ta"), 4));
   db.add(st);
@@ -933,7 +937,8 @@ TEST_CASE("FIXINDEX/FIXWEIGHT with NORM true is refused when a model is "
       INFO(m);
       CHECK(m.find("FIXINDEX/FIXWEIGHT is not supported with NORM true") !=
             std::string::npos);
-      CHECK(m.find("Set NORM false") != std::string::npos);
+      CHECK(m.find("; NORM false is accepted.") != std::string::npos);
+      CHECK(m.find("Set NORM false") == std::string::npos);
     }
   }
 }
@@ -950,6 +955,9 @@ TEST_CASE("FIXINDEX/FIXWEIGHT with NORM true is refused when a model is "
 // Before the fix: every refusal said "Use BIAS false (ESHIFT_ATOM,
 // ESHIFT_DBATOM or ESHIFT remove a per-species reference energy), ... or
 // pin intercepts with FIXINDEX/FIXWEIGHT", under NORM true too.
+// Before the fix that states the remedies (the checks below): they read
+// "Use BIAS false with explicit ESHIFT values ...", "add structures of other
+// compositions ..." and "or pin intercepts with FIXINDEX/FIXWEIGHT".
 TEST_CASE("The composition refusal names only the remedies the "
           "configuration can take",
           "[descriptors_calc][bias][composition]") {
@@ -963,10 +971,11 @@ TEST_CASE("The composition refusal names only the remedies the "
     INFO(m);
     CHECK(m.find("cannot determine") != std::string::npos);
     CHECK(m.find("ESHIFT_DBATOM") == std::string::npos);
-    CHECK(m.find("Use BIAS false with explicit ESHIFT values") !=
+    CHECK(m.find(" BIAS false with explicit ESHIFT values") !=
           std::string::npos);
+    CHECK(m.find("Use BIAS false") == std::string::npos);
     CHECK(m.find("ESHIFT_ATOM") != std::string::npos);
-    CHECK(m.find("pin intercepts with FIXINDEX/FIXWEIGHT") !=
+    CHECK(m.find("intercepts pinned with FIXINDEX/FIXWEIGHT") !=
           std::string::npos);
   }
   SECTION("NORM true") {
@@ -979,8 +988,9 @@ TEST_CASE("The composition refusal names only the remedies the "
     CHECK(m.find("FIXINDEX") == std::string::npos);
     CHECK(m.find("BIAS false") == std::string::npos);
     CHECK(m.find("ESHIFT_DBATOM") == std::string::npos);
-    CHECK(m.find("add structures of other compositions with energies") !=
+    CHECK(m.find("structures of other compositions with energies") !=
           std::string::npos);
+    CHECK(m.find("add structures") == std::string::npos);
     CHECK(m.find("NORM false") != std::string::npos);
   }
 }
@@ -1923,4 +1933,29 @@ TEST_CASE("fitted_intercept_columns gives the intercept columns a fit fits",
   krr2.add("MODEL", 2);
   krr2.add("SBASIS", 5);
   CHECK(cols(krr2).empty());
+}
+
+/* Pins: a configuration whose descriptors give no feature (INIT2B true
+ * with D2_Dummy, INITMB false, BIAS false) is refused with "The descriptor
+ * size is 0: the descriptors of the configuration give no feature" (the
+ * first words are those tadah hpo quotes at startup).
+ * Before the fix: "The descriptor size is 0, check your config.". */
+TEST_CASE("DescriptorsCalc: descriptors without a feature are refused, "
+          "saying so",
+          "[descriptors_calc][messages]") {
+  tadah::core::PeriodicTable::initialize();
+  Context c = make_context({"Ta"}, false);
+  c.remove("TYPE2B");
+  for (const char *v : {"D2_Dummy", "Ta", "Ta"}) c.add("TYPE2B", v);
+  c.remove("CGRID2B");
+  c.remove("SGRID2B");
+  std::string what = "no exception";
+  try {
+    DC_Selector dcs(c);
+    DescriptorsCalc<> dc(c, *dcs.d2b, *dcs.dmb, *dcs.c2b, *dcs.cmb);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  CHECK(what == "The descriptor size is 0: the descriptors of the "
+                "configuration give no feature");
 }

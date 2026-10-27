@@ -40,7 +40,7 @@ public:
    * ID and the provider's reason, cut to 300 characters
    * (failed_fetch_message()):
    *
-   *     MaterialsProjectReader: HTTP 500 for material 'mp-149': MaterialsProjectDataProvider: cURL error: ...
+   *     Materials Project: HTTP 500 for material 'mp-149': Materials Project: cURL error: ...
    *
    * The reason is the provider's cURL text or the server's body; the
    * message holds no request URL, no header and not the API key (the
@@ -50,7 +50,7 @@ public:
    * A material that cannot be read is refused naming it, the site of an
    * element Tadah does not know too:
    *
-   *     MaterialsProjectReader: material 'mp-149': site 2 has element 'Xx', which is not an element symbol Tadah knows (H to Og).
+   *     Materials Project material 'mp-149': site 2 has element 'Xx', which is not an element symbol Tadah knows (H to Og).
    *
    * and the previous structure is kept.
    */
@@ -76,7 +76,7 @@ private:
    * @brief The structure of material @p mpID's MP JSON: the lattice matrix
    *        and the atomic positions.
    *
-   * Every error names the material, "MaterialsProjectReader: material
+   * Every error names the material, "Materials Project material
    * '<mpID>': <what>": a missing field, text that is not JSON, and a site
    * whose element is not an element symbol Tadah knows ("site 2 has element
    * 'Xx', which is not an element symbol Tadah knows (H to Og).").

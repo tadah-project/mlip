@@ -131,10 +131,11 @@ WeightSource classify_weight_source(const tadah::core::Context &ctx,
  *  are the FIXWEIGHT values. tadah refit and refit --edit write FIXINDEX
  *  and FIXWEIGHT for every weight of their potentials, the seed of a tadah
  *  hpo coefficient search, and so does a tadah hpo run that pins every
- *  weight in its best_pot.tadah: to fit the weights to the DBFILE data,
- *  delete both lines from the training configuration (the Training page
- *  of the documentation, Retraining from a potential)."; "" without
- *  FIXINDEX and FIXWEIGHT or when a weight is left to fit. A warning, not a
+ *  weight in its best_pot.tadah: the weights are fitted to the DBFILE
+ *  data when both lines are deleted from the training configuration (the
+ *  Training page of the documentation, Retraining from a potential)."; ""
+ *  without FIXINDEX and FIXWEIGHT or when a weight is left to fit. A
+ *  warning, not a
  *  refusal: such a training can be deliberate. TrainEngine::run logs it
  *  before any dataset is read; tadah hpo pins every weight on purpose (its
  *  coefficient search) and does not. Throws what model_weight_count() and

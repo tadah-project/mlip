@@ -43,13 +43,14 @@ void hint_embf0_reference(const Trainer &tr,
   tadah::core::Logger::instance().log(
       tadah::core::LogLevel::WARNING,
       std::string("HINT: ")+(tr.context.blocks("DESCRIPTOR").empty()?"EMBF0 ZERO":"REFERENCE ZERO")+" fixes the "+tr.DCS.dmb->label()+" isolated-atom energy at 0 and the "
-      "model has no other per-atom constant (BIAS false, no ESHIFT). If the "
-      "reference energies are absolute (e.g. DFT totals), set ESHIFT or give "
-      "the run ESHIFT_ATOM or ESHIFT_DBATOM (--eshift-atom, --eshift-dbatom: "
-      "a potential's own line of them is not read), all compatible with "
-      "EAMFAST, or BIAS true (disables EAMFAST; its intercept columns, one "
-      "per ATOM species, precede the descriptor weights, so "
-      "FIXINDEX/FIXWEIGHT indices shift).");
+      "model has no other per-atom constant (BIAS false, no ESHIFT). For "
+      "absolute reference energies, such as DFT totals, ESHIFT, or "
+      "ESHIFT_ATOM or ESHIFT_DBATOM for the run (--eshift-atom, "
+      "--eshift-dbatom: a potential's own line of them is not read), gives "
+      "that constant, all compatible with EAMFAST. BIAS true also adds a "
+      "per-atom constant, but its intercept columns, one per ATOM species, "
+      "precede the descriptor weights (FIXINDEX/FIXWEIGHT indices shift) "
+      "and it disables EAMFAST.");
 }
 }  // namespace
 
@@ -199,12 +200,11 @@ int TrainEngine::run(tadah::mlip::Task &task) {
   return EXIT_SUCCESS;
 }
 void TrainEngine::validate(const tadah::mlip::Task &task) {
-  core::Logger::instance().log(tadah::core::LogLevel::INFO,
-                             "Validating TrainEngine...");
   const auto &context = task.getContext();
   if (!context.get<bool>("INIT2B") && !context.get<bool>("INITMB")) {
     throw std::runtime_error(
-        "TrainEngine requires INIT2B or/and INITMB parameters to be set");
+        "tadah train: INIT2B and INITMB are both false, so the potential has "
+        "no term; tadah train needs INIT2B true or INITMB true");
   }
 }
 

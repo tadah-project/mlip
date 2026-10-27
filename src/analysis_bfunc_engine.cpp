@@ -231,23 +231,29 @@ int AnalysisBfuncEngine::run(mlip::Task &task) {
   } else {
     std::cout << oss.str();
   }
-  core::Logger::instance().log(tadah::core::LogLevel::INFO, "AnalysisBfuncEngine finished.");
   return EXIT_SUCCESS;
 }
 void AnalysisBfuncEngine::validate(const tadah::mlip::Task &task) {
+  // The command line refuses most of these first (the values an option
+  // takes, the options it needs and excludes); validate() checks them for
+  // a Task a C++ program builds too.
   const auto &context = task.getContext();
   // CONFIG key triggers nested parsing (POTENTIAL does not) such that CONFIG disappears from the context therefore we do not check either.
   // if (!context.contains("POTENTIAL") && !context.contains("CONFIG")) {
-  //   throw std::runtime_error("AnalysisBfuncEngine requires POTENTIAL or CONFIG.");
+  //   (a refusal of a run without POTENTIAL or CONFIG)
   // }
   if (context.contains("OUTFILE") && context.size("OUTFILE")!=1) {
-    throw std::runtime_error("AnalysisBfuncEngine requires either none or a single OUTFILE.");
+    throw std::runtime_error(
+        "tadah analysis bfunc writes one OUTFILE or none");
   }
   if (context.size("TYPE") > 2) {
-    throw std::runtime_error("AnalysisBfuncEngine requires either one or two values for TYPE.");
+    throw std::runtime_error(
+        "tadah analysis bfunc takes one or two TYPE values");
   }
   if (context.size("RANGE") != 3) {
-    throw std::runtime_error("AnalysisBfuncEngine requires three numbers for RANGE.");
+    throw std::runtime_error(
+        "tadah analysis bfunc takes three RANGE values: start, stop and the "
+        "number of points");
   }
 }
 
