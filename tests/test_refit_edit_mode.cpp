@@ -1660,3 +1660,54 @@ TEST_CASE_METHOD(PTFixture,
     CHECK_FALSE(fs::exists("k.tadah"));
   }
 }
+
+/* Pins: refit --edit of a copy of a potential with a line of a key of its
+ * descriptors appended is refused before anything is written, naming both
+ * lines and the command: copy.tadah, the knot potential (make_knot_pot(),
+ * written by dumpPotFile) with "RCUT2B 6" appended, gives "Key RCUT2B is
+ * set on line <a> of copy.tadah and on line <b> of copy.tadah, lines of one
+ * potential (a file with WEIGHTS): tadah refit reads a key of a potential's
+ * descriptors from the line the potential has for it, and a potential's
+ * value is changed by editing its line in a copy of the potential (the
+ * Training page of the documentation, Retraining from a potential)", and
+ * out.tadah is not written; the potential itself, in.tadah, is edited.
+ * Before the fix: refit --edit edited the copy without a word about its
+ * second RCUT2B line and wrote out.tadah. */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit refuses a copy of a potential with a line of "
+                 "a key of its descriptors appended",
+                 "[refit][edit][potential_lines]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  std::ofstream("copy.tadah") << slurp_file("in.tadah") << "RCUT2B 6\n";
+  std::vector<std::size_t> at;
+  {
+    std::ifstream in("copy.tadah");
+    std::size_t n = 0;
+    for (std::string l; std::getline(in, l);) {
+      ++n;
+      std::istringstream ls(l);
+      std::string k;
+      if (ls >> k && k == "RCUT2B") at.push_back(n);
+    }
+  }
+  REQUIRE(at.size() == 2u);
+  std::string what;
+  try {
+    Task task("refit", edit_of("copy.tadah", "out.tadah"));
+    RefitEngine().run(task);
+  } catch (const std::exception &e) {
+    what = e.what();
+  }
+  CHECK(what == "Key RCUT2B is set on line " + std::to_string(at[0]) +
+                    " of copy.tadah and on line " + std::to_string(at[1]) +
+                    " of copy.tadah, lines of one potential (a file with "
+                    "WEIGHTS): tadah refit reads a key of a potential's "
+                    "descriptors from the line the potential has for it, and "
+                    "a potential's value is changed by editing its line in a "
+                    "copy of the potential (the Training page of the "
+                    "documentation, Retraining from a potential)");
+  CHECK_FALSE(fs::exists("out.tadah"));
+  run_edit_capturing(edit_of("in.tadah", "in_out.tadah"));
+  CHECK(fs::exists("in_out.tadah"));
+}

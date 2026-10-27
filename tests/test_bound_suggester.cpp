@@ -1676,3 +1676,90 @@ TEST_CASE("analysis suggest_bounds gives each descriptor of a DM_mJoin line "
   CHECK(comment_before(r.block, "OPTIM RCUTMB (2)")
             .find("W-W neighbour distances") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+//  A descriptor placed among DESCRIPTOR blocks on TYPEMB: its ranges come
+//  from the element pairs of its own line
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* A DESCRIPTOR block "ta" of a DM_Embed descriptor of the element pairs Ta
+ * Ta, its density cutoff RADIUS 5. */
+const char *kTaBlock =
+    "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS Blip5\n"
+    "FORM NONNEG\nCENTRES 1.0 2.5 4.0\nETA 1.5 1.5 1.5\n"
+    "AMPLITUDES 0.4 0.2 0.1\nCUTOFF\nTYPE Cut_Poly\nRADIUS 5.0\n"
+    "ENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+    "CENTRES 0.0 0.5 1.0 1.5\nWIDTHS 0.5 0.5 0.5 0.5\nREFERENCE ZERO\n"
+    "ENDEMBEDDING\nENDDESCRIPTOR\n";
+
+/* `tadah analysis suggest_bounds` of the TYPEMB lines @p lines and the keys
+ * @p keys with the block kTaBlock, on ta_w_dataset(). */
+SbRun suggest_with_block(const std::string &lines, const std::string &keys,
+                         const SbTempDir &tmp) {
+  std::istringstream text("DBFILE " + ta_w_dataset(tmp) +
+                          "\nATOM Ta W\nINIT2B false\nINITMB true\n" + lines +
+                          keys + kTaBlock);
+  const Context c = tadah::core::CoreUserConfigParser().parse(text);
+  return run_suggest_bounds_ctx(c, tmp);
+}
+
+}  // namespace
+
+/* Pins: a descriptor that TYPEMB places among DESCRIPTOR blocks gets the
+ * ranges of the element pairs of its own line, from its own values, on the
+ * Ta-W data (ta_w_dataset(): (W, W) at 2.5 A, (Ta, Ta) at 2.86 A) with the
+ * block of PAIRS Ta Ta (kTaBlock):
+ *  - DM_EAD 0 1 1 W W (RCUTMB 5, CGRIDMB 0, SGRIDMB 1) with the TYPEMB lines
+ *    "DM_EAD 0 1 1 W W" then "@ta", "@ta" then "DM_EAD 0 1 1 W W",
+ *    "DM_mJoin", "@ta", "DM_EAD 0 1 1 W W", and "DM_mJoin", "DM_EAD 0 1 1 W
+ *    W", "@ta": exit 0, "OPTIM RCUTMB (1) 2.500000e+00 5.000000e+00", its
+ *    comment naming the W-W neighbour distances;
+ *  - "DM_mJoin", "DM_EAD 0 1 1 Ta Ta", "@ta", "DM_EAD 0 1 1 W W" (RCUTMB 5
+ *    5, CGRIDMB 0 0, SGRIDMB 1 1): "OPTIM RCUTMB (1) 2.860000e+00
+ *    5.000000e+00" and "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00", each
+ *    descriptor its own entry, as tadah hpo numbers it.
+ * Before the fix: the element pairs of such a descriptor were read from the
+ * whole TYPEMB key: the run threw ("the element types of a descriptor's
+ * line come in pairs, and the line has 3 of them, W W @ta", "... 1 W W",
+ * "TYPEMB DM_mJoin takes 3 parameters before its element pairs; ..."), gave
+ * no OPTIM RCUTMB line ("no OPTIM line: no (1, W) or (W, @ta) pair of atoms
+ * of the data ..."), or gave the line of two descriptors one RCUTMB row,
+ * the second DM_EAD left out as a label seen once. */
+TEST_CASE("analysis suggest_bounds gives a descriptor placed among "
+          "DESCRIPTOR blocks the ranges of its own element pairs",
+          "[bound_suggester][suggest_bounds][line_pairs][embed]") {
+  const std::string keys =
+      "RCTYPEMB Cut_Cos\nRCUTMB 5\nCGRIDMB 0\nSGRIDMB 1\n";
+  for (const char *lines :
+       {"TYPEMB DM_EAD 0 1 1 W W\nTYPEMB @ta\n",
+        "TYPEMB @ta\nTYPEMB DM_EAD 0 1 1 W W\n",
+        "TYPEMB DM_mJoin\nTYPEMB @ta\nTYPEMB DM_EAD 0 1 1 W W\n",
+        "TYPEMB DM_mJoin\nTYPEMB DM_EAD 0 1 1 W W\nTYPEMB @ta\n"}) {
+    SbTempDir tmp;
+    const SbRun r = suggest_with_block(lines, keys, tmp);
+    CAPTURE(lines);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUTMB") ==
+          std::vector<std::string>{
+              "OPTIM RCUTMB (1) 2.500000e+00 5.000000e+00"});
+    CHECK(comment_before(r.block, "OPTIM RCUTMB (1)")
+              .find("W-W neighbour distances") != std::string::npos);
+  }
+  {
+    SbTempDir tmp;
+    const SbRun r = suggest_with_block(
+        "TYPEMB DM_mJoin\nTYPEMB DM_EAD 0 1 1 Ta Ta\nTYPEMB @ta\n"
+        "TYPEMB DM_EAD 0 1 1 W W\n",
+        "RCTYPEMB Cut_Cos Cut_Cos\nRCUTMB 5 5\nCGRIDMB 0 0\nSGRIDMB 1 1\n",
+        tmp);
+    INFO(r.what << "\n" << r.out << "\n" << r.block);
+    CHECK(r.rc == EXIT_SUCCESS);
+    CHECK(lines_starting(r.block, "OPTIM RCUTMB") ==
+          std::vector<std::string>{
+              "OPTIM RCUTMB (1) 2.860000e+00 5.000000e+00",
+              "OPTIM RCUTMB (2) 2.500000e+00 5.000000e+00"});
+  }
+}

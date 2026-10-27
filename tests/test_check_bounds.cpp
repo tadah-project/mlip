@@ -875,3 +875,161 @@ TEST_CASE("check_bounds: a corner is judged by the element pairs of the "
     CHECK(res.n_corners_failing == 0);
   }
 }
+
+// ---------------------------------------------------------------------------
+//  A descriptor placed among DESCRIPTOR blocks on TYPEMB is judged at each
+//  corner by the element pairs of its own line
+// ---------------------------------------------------------------------------
+
+#include <tadah/core/core_user_config_parser.h>
+
+namespace {
+
+/* DM_EAD 0 1 1 <pairs> (RCUTMB 5, CGRIDMB 2.9, SGRIDMB 1) on the TYPEMB
+ * line "DM_EAD 0 1 1 <pairs>" then "@ta", the block "ta" of a DM_Embed
+ * descriptor of PAIRS W W (RADIUS 5). */
+Context embed_mixed_seed(const std::string &pairs) {
+  tadah::core::PeriodicTable::initialize();
+  std::istringstream text(
+      "ATOM Ta W\nWATOM 73 74\nINIT2B false\nINITMB true\n"
+      "TYPEMB DM_EAD 0 1 1 " + pairs + "\nTYPEMB @ta\n"
+      "RCTYPEMB Cut_Cos\nRCUTMB 5\nCGRIDMB 2.9\nSGRIDMB 1\nVERBOSE 0\n"
+      "DESCRIPTOR ta DM_Embed\nPAIRS W W\nDENSITY\nBASIS Blip5\n"
+      "FORM NONNEG\nCENTRES 1.0 2.5 4.0\nETA 1.5 1.5 1.5\n"
+      "AMPLITUDES 0.4 0.2 0.1\nCUTOFF\nTYPE Cut_Poly\nRADIUS 5.0\n"
+      "ENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+      "CENTRES 0.0 0.5 1.0 1.5\nWIDTHS 0.5 0.5 0.5 0.5\nREFERENCE ZERO\n"
+      "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  return tadah::core::CoreUserConfigParser().parse(text);
+}
+
+}  // namespace
+
+/* Pins: a box RCUTMB 2.6 to 5 on the Ta-W data (ta_w_db()) for the seed of
+ * a DM_EAD descriptor placed before a DESCRIPTOR block on TYPEMB
+ * (embed_mixed_seed()): for DM_EAD 0 1 1 Ta Ta the corner at 2.6, below
+ * the (Ta, Ta) distance of 2.86 A, fails (1 of 2 corners); for DM_EAD 0 1
+ * 1 W W no corner fails.
+ * Before the fix: the element pairs of the descriptor were read from the
+ * whole TYPEMB key, @ta among them: check_bounds_at_corners threw ("the
+ * element types of a descriptor's line come in pairs, and the line has 3
+ * of them, Ta Ta @ta"). */
+TEST_CASE("check_bounds: a descriptor placed among DESCRIPTOR blocks is "
+          "judged by the element pairs of its own line",
+          "[check_bounds][cutoff][line_pairs][embed]") {
+  const std::vector<Bound> b = {box("RCUTMB", -1, 2.6, 5.0)};
+  auto failing = [&](const std::string &pairs) -> std::string {
+    tadah::mlip::StructureDB stdb = ta_w_db();
+    try {
+      const auto res = run_corners(stdb, embed_mixed_seed(pairs), b);
+      std::string out = std::to_string(res.n_corners_failing) + " of " +
+                        std::to_string(res.n_corners);
+      for (std::size_t ci : res.failing_corner_indices)
+        out += ", at " + std::to_string(sample_corners(b)[ci][0]);
+      return out;
+    } catch (const std::exception &e) {
+      return std::string("threw: ") + e.what();
+    }
+  };
+  CHECK(failing("Ta Ta") == "1 of 2, at " + std::to_string(2.6));
+  CHECK(failing("W W") == "0 of 2");
+}
+
+// ---------------------------------------------------------------------------
+//  A FAIL of the sampled scan of the pre-flight audit is judged on every
+//  structure
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* Four 20 A cells: structure @p w a W2 dimer (W-W 2.5 A), the others a Ta2
+ * dimer (Ta-Ta 2.86 A); with @p w out of range (4), each cell holds a Ta2
+ * dimer and one W atom more than 15 A from both, so that the data have no
+ * (W, W) pair within 5 A. */
+tadah::mlip::StructureDB ta_cells_one_w(std::size_t w) {
+  tadah::core::PeriodicTable::initialize();
+  const auto ta = tadah::core::PeriodicTable::find_by_symbol("Ta");
+  const auto wel = tadah::core::PeriodicTable::find_by_symbol("W");
+  tadah::mlip::StructureDB stdb;
+  for (std::size_t i = 0; i < 4; ++i) {
+    tadah::mlip::Structure st;
+    st.label = "cell-" + std::to_string(i);
+    st.energy = -20.0;
+    st.cell.load(40.0, 0.0, 0.0, 0.0, 40.0, 0.0, 0.0, 0.0, 40.0);
+    if (i == w) {
+      st.add_atom(tadah::mlip::Atom(wel, 0.0, 0.0, 0.0));
+      st.add_atom(tadah::mlip::Atom(wel, 2.5, 0.0, 0.0));
+    } else {
+      st.add_atom(tadah::mlip::Atom(ta, 0.0, 0.0, 0.0));
+      st.add_atom(tadah::mlip::Atom(ta, 2.86, 0.0, 0.0));
+      if (w >= 4) st.add_atom(tadah::mlip::Atom(wel, 10.0, 10.0, 10.0));
+    }
+    stdb.add(st);
+  }
+  return stdb;
+}
+
+/* TYPE2B D2_mJoin of D2_Blip 2 2 Ta Ta and D2_Blip 2 2 W W (RCUT2B 5 5),
+ * AUDIT_SAMPLE 3: the audit's statistics from 3 of the 4 structures. */
+Context ta_w_joined_sampled_seed() {
+  Context c;
+  c.add("ATOM", "Ta W");
+  c.add("WATOM", "73 74");
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_mJoin");
+  c.add("TYPE2B", "D2_Blip 2 2 Ta Ta");
+  c.add("TYPE2B", "D2_Blip 2 2 W W");
+  c.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  c.add("RCUT2B", "5 5");
+  c.add("CGRID2B", "1 2 1 2");
+  c.add("SGRID2B", "1 1 1 1");
+  c.add("AUDIT_SAMPLE", 3);
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+/* The FAIL findings of run_preflight_from_db on @p stdb and @p seed under
+ * AUDIT error, each "<label>.<key>: <text>". */
+std::vector<std::string> from_db_fails(tadah::mlip::StructureDB &stdb,
+                                       const Context &seed) {
+  std::vector<std::string> out;
+  for (const auto &m : tadah::mlip::run_preflight_from_db(
+                           stdb, seed, tadah::mlip::AuditMode::Error)
+                           .messages)
+    if (m.level == tadah::mlip::AuditMessage::Level::Fail)
+      out.push_back(m.descriptor_label + "." + m.param_key + ": " + m.text);
+  return out;
+}
+
+}  // namespace
+
+/* Pins: run_preflight_from_db with AUDIT_SAMPLE 3 of four structures, the
+ * W2 dimer in one of them (ta_cells_one_w(w)), the D2_Blip W W descriptor
+ * of a D2_mJoin line with RCUT2B 5 (ta_w_joined_sampled_seed()): for every
+ * place of the dimer, w = 0 to 3, no FAIL, the sample holding the dimer or
+ * not; and data with no (W, W) pair within 5 A (ta_cells_one_w(4)) still
+ * fail, "D2_Blip.RCUT2B: RCUT2B = 5: no (W, W) pair of atoms of the dataset
+ * lies within it, so the descriptor sums over no neighbour and is 0 for
+ * every atom." (a pin: as before the fix).
+ * Before the fix: the descriptor was judged by the statistics of the
+ * sampled structures alone: the place of the dimer that the sample left
+ * out gave that FAIL, which says the dataset has no (W, W) pair when it has
+ * one. */
+TEST_CASE("preflight_audit: a FAIL of the sampled scan is judged on every "
+          "structure",
+          "[preflight_audit][check_bounds][line_pairs][sample]") {
+  const std::string none =
+      "D2_Blip.RCUT2B: RCUT2B = 5: no (W, W) pair of atoms of the dataset "
+      "lies within it, so the descriptor sums over no neighbour and is 0 for "
+      "every atom.";
+  for (std::size_t w = 0; w < 4; ++w) {
+    CAPTURE(w);
+    tadah::mlip::StructureDB stdb = ta_cells_one_w(w);
+    CHECK(from_db_fails(stdb, ta_w_joined_sampled_seed()) ==
+          std::vector<std::string>{});
+  }
+  tadah::mlip::StructureDB stdb = ta_cells_one_w(4);
+  CHECK(from_db_fails(stdb, ta_w_joined_sampled_seed()) ==
+        std::vector<std::string>{none});
+}
