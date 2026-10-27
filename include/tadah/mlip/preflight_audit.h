@@ -132,7 +132,11 @@ AuditReport run_preflight_from_db(
  *  hard cutoff, and radial centres at the origin, excepted). Each
  *  descriptor of a joined line (D2_mJoin, DM_mJoin) is judged by its own
  *  values of a key (joined_descriptors(): every centre at the origin); a
- *  key in the search space counts for every descriptor that has it. The
+ *  key in the search space counts as searched whichever of its entries the
+ *  search space holds, for every entry of the key and every descriptor that
+ *  has it. A warning names the descriptor's entries of the key as an OPTIM
+ *  line numbers them ("RCUTMB(2)") and the OPTIM line that would search
+ *  them ("`OPTIM RCUTMB (2)`"). The
  *  cutoff of a knot channel, and of a bump channel under a hard cutoff, is
  *  excepted where tadah hpo derives it from the largest knot or holds the
  *  bump supports within it: on a line of that descriptor alone, not on a

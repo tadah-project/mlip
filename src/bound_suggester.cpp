@@ -12,6 +12,7 @@
 #include <utility>
 
 #include <tadah/core/number_format.h>
+#include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
 namespace mlip {
@@ -246,6 +247,29 @@ void merge_shared_rows(std::vector<OptimSuggestion>& rows) {
     f.rationale = why;
   }
   rows = std::move(out);
+}
+
+void leave_out_derived_cutoffs(std::vector<OptimSuggestion>& rows,
+                               const tadah::core::Context& seed) {
+  for (const char* sfx : {"2B", "MB"}) {
+    const auto knot = models::potedit::derived_knot_rcut(seed, sfx);
+    if (!knot) continue;
+    const std::string key = std::string("RCUT") + sfx;
+    const std::string line = std::string(sfx) == "2B"
+                                 ? "a D2_Knot5 line alone on TYPE2B"
+                                 : "a knot DM_REAM density alone on TYPEMB";
+    std::ostringstream value;
+    value << *knot;
+    for (auto& r : rows) {
+      if (r.key != key) continue;
+      r.none = true;
+      r.fixed = false;
+      r.rationale = "the cutoff of " + line + " is its largest knot (" +
+                    value.str() + " Å), which tadah train and tadah hpo "
+                    "derive: tadah hpo warns that an OPTIM " + key +
+                    " line has no effect";
+    }
+  }
 }
 
 void print_suggestions(const std::vector<OptimSuggestion>& sug,

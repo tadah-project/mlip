@@ -356,17 +356,24 @@ AuditReport critical_optim_audit(const tadah::core::Context& seed,
       if (pm.key.rfind("CGRID", 0) == 0 && centres_at_origin(ctx, pm.key))
         continue;
 
+      // The descriptor's entries of the key, as an OPTIM line numbers them
+      // (SeedView::entry_number: those of a joined line's descriptor follow
+      // the entries of the descriptors before it): "(2)", "(1-7)".
+      const std::size_t n = sv.size(pm.key);
+      const std::size_t first = sv.entry_number(pm.key, 0);
+      const std::size_t last = sv.entry_number(pm.key, n > 0 ? n - 1 : 0);
+      const std::string entries =
+          first == last ? std::to_string(first)
+                        : std::to_string(first) + "-" + std::to_string(last);
       AuditMessage msg;
       msg.descriptor_label = c.label;
       msg.param_key        = pm.key;
       msg.text =
-          "Critical hyperparameter is fixed in the seed config and is "
-          "not in any OPTIM block. If the seed value misses the "
-          "neighbour distances of the training data (e.g. a cutoff or "
-          "radial grid that does not overlap the neighbour shells), the "
-          "descriptor block can collapse silently. "
-          "Consider adding `OPTIM " + pm.key + " (...) <lo> <hi>` "
-          "from `tadah analysis suggest_bounds`.";
+          pm.key + "(" + entries + ") is a critical parameter that the seed "
+          "fixes and no OPTIM line searches: a seed value that misses the "
+          "neighbour distances of the training data can make the descriptor "
+          "0 for every atom. `tadah analysis suggest_bounds` suggests a "
+          "range for an `OPTIM " + pm.key + " (" + entries + ")` line.";
       msg.level = AuditMessage::Level::Warn;
       report.messages.push_back(std::move(msg));
     }

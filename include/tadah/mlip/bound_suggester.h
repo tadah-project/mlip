@@ -92,6 +92,18 @@ suggest_bounds_for(const tadah::core::stats::DataStats& data,
  *  (arg_pos -1) is entry 1 of the key. */
 void merge_shared_rows(std::vector<OptimSuggestion>& rows);
 
+/** \brief The rows of a cutoff that tadah hpo derives from the largest
+ *  knot get no OPTIM line: RCUT2B of a D2_Knot5 line alone on the TYPE2B
+ *  line of @p seed, and RCUTMB of a knot DM_REAM density alone on its
+ *  TYPEMB line (models::potedit::derived_knot_rcut; @p seed is the whole
+ *  training configuration). tadah train and tadah hpo take the largest
+ *  knot as the cutoff of such a line, and tadah hpo warns that an OPTIM
+ *  line of it has no effect; each such row of @p rows gets `none`, its
+ *  rationale naming the largest knot. The cutoff of a knot descriptor of a
+ *  joined line, which tadah hpo takes as stated, keeps its range. */
+void leave_out_derived_cutoffs(std::vector<OptimSuggestion>& rows,
+                               const tadah::core::Context& seed);
+
 /** \brief Pretty-print suggestions as a human table: one row per
  *  suggestion, named "descriptor.key(i)" with i the entry as an OPTIM line
  *  numbers it (from 1), with its rationale (the form and the data, "fixed
