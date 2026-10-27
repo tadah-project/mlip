@@ -1421,3 +1421,75 @@ TEST_CASE("write_optim_block writes bounds that hold the range",
     CHECK(hi < r.hi + 1e-6 * std::fabs(r.hi));
   }
 }
+
+/* Pins: the cutoff that tadah hpo derives from the largest knot gets a row
+ * without an OPTIM line, naming the largest knot: for D2_Knot5 (knots 3 4
+ * 5, RCUT2B 5) and a knot DM_REAM density (knots 3 4 5, RCUTMB 5), each
+ * alone on its TYPE2B or TYPEMB line, on two bcc Ta cells, tadah analysis
+ * suggest_bounds exits 0, the block says "RCUT2B (1): no OPTIM line" and
+ * "RCUTMB (1): no OPTIM line", each comment naming the largest knot ("is
+ * its largest knot (5 Å)"), and has no OPTIM RCUT2B or RCUTMB line; on a
+ * D2_mJoin line of D2_Knot5 and D2_Blip (RCUT2B 5 5), whose cutoffs tadah
+ * hpo takes as stated, the block has an "OPTIM RCUT2B (1)" and an "OPTIM
+ * RCUT2B (2)" line.
+ * Before the fix: the knot DM_REAM density got "OPTIM RCUTMB (1) ...", a
+ * line that tadah hpo calls a wasted search dimension, and D2_Knot5's
+ * RCUT2B no row at all, alone and on the joined line, where tadah hpo
+ * warns that it is fixed. */
+TEST_CASE("analysis suggest_bounds gives the cutoff of a knot line alone no "
+          "OPTIM line, and that of a joined one a range",
+          "[bound_suggester][suggest_bounds][knot]") {
+  tadah::core::PeriodicTable::initialize();
+  SbTempDir tmp;
+  Context c;
+  c.add("DBFILE", bcc_ta_dataset(tmp));
+  c.add("INIT2B", "true");
+  c.add("INITMB", "true");
+  c.add("TYPE2B", "D2_Knot5 3 0 Ta Ta");
+  c.add("RCTYPE2B", "Cut_Dummy");
+  c.add("RCUT2B", 5.0);
+  c.add("CGRID2B", "3 4 5");
+  c.add("TYPEMB", "DM_REAM 2 3 0 3 3 0 0 0 Ta Ta");
+  c.add("RCTYPEMB", "Cut_Dummy");
+  c.add("RCUTMB", 5.0);
+  c.add("CGRIDMB", "3 4 5");
+  c.add("AMPGRIDMB", "0.3 0.2 0.1");
+  c.add("CEMBFUNC", "0 1 2");
+  c.add("RHOFORM", "SIGNED");
+  c.add("EMBF0", "FREE");
+  const SbRun r = run_suggest_bounds_ctx(c, tmp);
+  INFO(r.what << "\n" << r.out << "\n" << r.block);
+  CHECK(r.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(r.block, "OPTIM RCUT2B").empty());
+  CHECK(lines_starting(r.block, "OPTIM RCUTMB").empty());
+  for (const char *row : {"RCUT2B (1): no OPTIM line",
+                          "RCUTMB (1): no OPTIM line"}) {
+    CAPTURE(row);
+    std::size_t found = 0;
+    for (const auto &line : lines_starting(r.block, "# ")) {
+      if (line.find(row) == std::string::npos) continue;
+      ++found;
+      CHECK(line.find("is its largest knot (5 Å)") != std::string::npos);
+    }
+    CHECK(found == 1u);
+  }
+
+  SbTempDir joined_tmp;
+  Context j;
+  j.add("DBFILE", bcc_ta_dataset(joined_tmp));
+  j.add("INIT2B", "true");
+  j.add("INITMB", "false");
+  j.add("TYPE2B", "D2_mJoin");
+  j.add("TYPE2B", "D2_Knot5 3 3 Ta Ta");
+  j.add("TYPE2B", "D2_Blip 3 3 Ta Ta");
+  j.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  j.add("RCUT2B", "5.0 5.0");
+  j.add("CGRID2B", "3 4 5 2.5 3.0 3.5");
+  j.add("KDEG2B", "5 5 5");
+  j.add("SGRID2B", "1 1 1");
+  const SbRun rj = run_suggest_bounds_ctx(j, joined_tmp);
+  INFO(rj.what << "\n" << rj.out << "\n" << rj.block);
+  CHECK(rj.rc == EXIT_SUCCESS);
+  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (1) ").size() == 1u);
+  CHECK(lines_starting(rj.block, "OPTIM RCUT2B (2) ").size() == 1u);
+}
