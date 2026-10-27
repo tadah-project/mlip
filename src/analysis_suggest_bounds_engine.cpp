@@ -29,8 +29,8 @@ namespace engines {
 
 void AnalysisSuggestBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
   // Blueprint validation enforces input-group constraints (`-c | -t`).
-  // Engine-level pre-conditions (e.g. RCUTMAX presence) are checked
-  // inside run() with actionable error messages.
+  // Engine-level pre-conditions (a cutoff of the configuration) are checked
+  // inside run(), once the DESCRIPTOR blocks are read.
 }
 
 int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
@@ -42,10 +42,24 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         "analysis suggest_bounds: at least one DBFILE must be configured "
         "(via `-c train.tadah`).");
   }
-  if (!workCtx.contains("RCUTMAX") || workCtx.get<double>("RCUTMAX") <= 0) {
+
+  // The radial grids as the descriptors read them: a grid generator
+  // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and
+  // tadah hpo expand it, so that the suggestions have one row per value
+  // and read the seed's values as numbers.
+  models::D_mJoin::expand_grids(workCtx);
+
+  // The reach of the statistics follows the largest cutoff of the
+  // configuration, RCUTMAX: its RCUT2B and RCUTMB values and, once
+  // expand_grids has read the DESCRIPTOR blocks, the cutoff radius of each
+  // block, so that a configuration of blocks alone has one.
+  if (!workCtx.contains("RCUTMAX") || !(workCtx.get<double>("RCUTMAX") > 0))
     throw std::runtime_error(
-        "analysis suggest_bounds: RCUTMAX is not set (set RCUT2B / RCUTMB).");
-  }
+        "analysis suggest_bounds: the neighbour statistics reach " +
+        tadah::core::format_roundtrip(models::kCutoffSearchReach) +
+        " times the largest cutoff of the configuration (an RCUT2B or RCUTMB "
+        "value, or the cutoff RADIUS of a DESCRIPTOR block), and the "
+        "configuration gives no cutoff above 0");
 
   // Load DB
   StructureDB stdb;
@@ -59,12 +73,6 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
   if (stdb.size() == 0) {
     throw std::runtime_error("analysis suggest_bounds: no structures loaded");
   }
-
-  // The radial grids as the descriptors read them: a grid generator
-  // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and
-  // tadah hpo expand it, so that the suggestions have one row per value
-  // and read the seed's values as numbers.
-  models::D_mJoin::expand_grids(workCtx);
 
   // Compute dataset stats (DBFILE -> DataStats). No descriptor
   // statistics: the ranges that need them (ρ) are fixed ones, which their
