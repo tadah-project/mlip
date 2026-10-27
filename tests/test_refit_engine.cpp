@@ -47,15 +47,16 @@ struct PTFixture { PTFixture() { tadah::core::PeriodicTable::initialize(); } };
 // phi(r)=3(1-r/rcut)^3 (stored as z2r=phi*r), F(rho)=-2*sqrt(rho)+0.05*rho
 // (+ F_shift: a constant that moves the table's F(0) off zero; rho_fn and
 // phi_fn, when given, replace the density and the pair function).
-// rhomax is generous so the crystal stays in range even under compression.
+// rhomax (60 by default) is generous so the crystal stays in range even
+// under compression.
 void write_synth_eam(const std::string &path, const std::string &lat,
                      double a0, int nr = 400, int nrho = 400,
                      double F_shift = 0.0,
                      const std::function<double(double)> &rho_fn = nullptr,
-                     const std::function<double(double)> &phi_fn = nullptr) {
+                     const std::function<double(double)> &phi_fn = nullptr,
+                     double rhomax = 60.0) {
   const double rcut = 5.0;
   const double dr = rcut / (nr - 1);
-  const double rhomax = 60.0;
   const double drho = rhomax / (nrho - 1);
   std::ofstream os(path);
   os << "# synthetic single-element EAM (refit integration test)\n"
@@ -600,9 +601,12 @@ protected:
 /* Pins: RefitEngine::compact_fit returns nothing -- the compact fitter fits
  * the table or throws -- and run() has no dense fallback: a hook that
  * returns without a fit (CompactFitterWithoutFit) makes run() of REFIT_MODE
- * compact throw std::logic_error "tadah refit: internal error: the compact
- * fitter returned without a fit (RefitEngine::compact_fit fills the fit
- * and its self-test, or throws); this is a bug, please report it", with the
+ * compact throw std::logic_error "internal error: the compact fitter of
+ * tadah refit returned without a fit; it fills the fit and its self-test,
+ * or throws" (before the fix of its text: "tadah refit: internal error:
+ * the compact fitter returned without a fit (RefitEngine::compact_fit
+ * fills the fit and its self-test, or throws); this is a bug, please
+ * report it"), with the
  * explicit REFIT_BASIS Blip5 and with the defaulted basis (Knot5), writes
  * no pot.tadah and logs no "falls back" WARNING.
  * Before the fix: the hook returned bool, and a false return ("the fitter
@@ -642,9 +646,8 @@ TEST_CASE_METHOD(PTFixture,
     INFO("log:\n" << captured.str());
     CHECK(logic_error);
     CHECK(what ==
-          "tadah refit: internal error: the compact fitter returned without "
-          "a fit (RefitEngine::compact_fit fills the fit and its self-test, "
-          "or throws); this is a bug, please report it");
+          "internal error: the compact fitter of tadah refit returned "
+          "without a fit; it fills the fit and its self-test, or throws");
     CHECK_FALSE(fs::exists("pot.tadah"));
     CHECK(captured.str().find("falls back") == std::string::npos);
   }
@@ -2046,4 +2049,88 @@ TEST_CASE_METHOD(PTFixture,
   const Context pot = tadah::core::CoreUserConfigParser().parse("pot.tadah");
   CHECK(pot.get<std::string>("RCTYPE2B") == "Cut_Poly");
   CHECK(tadah::models::embed_specs(pot).at(0).cutoff == "Cut_Poly");
+}
+
+/* Pins: the log lines and refusals of tadah refit state what each setting
+ * changes, without an instruction or "e.g.":
+ *  - a dense refit logs "tadah refit: below the inner fit bound r_lo=...
+ *    A the setfl carries the ORIGINAL table (offset-matched to the fit at
+ *    r_lo); the native pot.tadah holds for r >= r_lo only, and a smaller
+ *    REFIT_R_LO_FRAC extends the fitted range to shorter distances." (it
+ *    ended "... is valid for r >= r_lo only. Lower REFIT_R_LO_FRAC in the
+ *    config to extend the fitted range if your application compresses
+ *    harder.");
+ *  - a table whose rhomax (1.5 here) the compressed crystal reaches logs
+ *    "... neither the original nor any refit is defined there (such as
+ *    bcc Al99 at 400 GPa)." (it ended "(e.g. Al99 bcc@400 GPa).");
+ *  - REFIT_MODE compact (with a compact fitter) refuses REFIT_BASIS
+ *    Gaussian with "tadah refit: REFIT_MODE compact takes REFIT_BASIS Blip,
+ *    Blip5, Knot3, Knot5 or KnotMix, not Gaussian; REFIT_MODE dense fits
+ *    Gaussian, and a configuration without REFIT_BASIS takes the default
+ *    basis of compact mode" (it ended "; use REFIT_MODE dense for
+ *    Gaussian, or drop REFIT_BASIS.");
+ *  - a dense component refit with a Knot5 pair basis is refused with
+ *    "tadah refit: REFIT_MODE dense fits no knot component; REFIT_MODE
+ *    compact fits knot components" (it read "tadah refit: dense mode
+ *    retains its knot restriction; use compact mode for knot
+ *    components"). */
+TEST_CASE_METHOD(PTFixture,
+                 "RefitEngine: the log lines and refusals state what a "
+                 "setting changes",
+                 "[refit][engine][messages]") {
+  SECTION("r_lo and the rhomax headroom") {
+    ScopedTempDir tmp;
+    write_synth_eam("small_rhomax.eam", "fcc", 3.6, 400, 400, 0.0, nullptr,
+                    nullptr, 1.5);
+    Context c = dense_refit_context("small_rhomax.eam");
+    c.remove("REFIT_TOL_AMBIENT");
+    c.remove("REFIT_TOL_COMPRESSED");
+    c.add("REFIT_TOL_AMBIENT", 1000.0);
+    c.add("REFIT_TOL_COMPRESSED", 1000.0);
+    const RefitOutputs out = run_refit(c);
+    INFO("log:\n" << out.log);
+    CHECK(out.log.find(" A the setfl carries the ORIGINAL table "
+                       "(offset-matched to the fit at r_lo); the native "
+                       "pot.tadah holds for r >= r_lo only, and a smaller "
+                       "REFIT_R_LO_FRAC extends the fitted range to shorter "
+                       "distances.\n") != std::string::npos);
+    CHECK(out.log.find("neither the original nor any refit is defined there "
+                       "(such as bcc Al99 at 400 GPa).\n") !=
+          std::string::npos);
+    CHECK(out.log.find("e.g.") == std::string::npos);
+  }
+  SECTION("REFIT_MODE compact refuses REFIT_BASIS Gaussian") {
+    ScopedTempDir tmp;
+    write_synth_eam("synth_fcc.eam.alloy", "fcc", 3.6);
+    Context c = compact_refit_context("synth_fcc.eam.alloy");
+    c.remove("REFIT_BASIS");
+    c.add("REFIT_BASIS", std::string("Gaussian"));
+    Task task("refit", c);
+    std::string what = "no exception";
+    try {
+      CompactFitterWithoutFit().run(task);
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    CHECK(what ==
+          "tadah refit: REFIT_MODE compact takes REFIT_BASIS Blip, Blip5, "
+          "Knot3, Knot5 or KnotMix, not Gaussian; REFIT_MODE dense fits "
+          "Gaussian, and a configuration without REFIT_BASIS takes the "
+          "default basis of compact mode");
+  }
+  SECTION("a dense component refit refuses a knot pair basis") {
+    ScopedTempDir tmp;
+    write_synth_eam("source.eam", "bcc", 3.2);
+    const Context c = component_refit_config("REFIT_PAIR_BASIS Knot5\n");
+    Task task = config_file_task(c);
+    std::string what = "no exception";
+    try {
+      RefitEngine().validate(task);
+      RefitEngine().run(task);
+    } catch (const std::exception &e) {
+      what = e.what();
+    }
+    CHECK(what == "tadah refit: REFIT_MODE dense fits no knot component; "
+                  "REFIT_MODE compact fits knot components");
+  }
 }

@@ -209,6 +209,32 @@ Context edit_of(const std::string &in, const std::string &out) {
 
 }  // namespace
 
+/* Pins: the INFO line of an --add whose output reads back exactly gives
+ * its example without "e.g.": "tadah refit --edit: added a basis function
+ * to phi at 3.6 (coefficient 0, ...) — the edited potential predicts
+ * identically to the input until the new coefficient is varied, such as by
+ * tadah hpo.".
+ * Before the fix: "... is varied (e.g. by `tadah hpo`).". */
+TEST_CASE_METHOD(PTFixture,
+                 "refit --edit --add: the INFO line gives its example "
+                 "without e.g.",
+                 "[refit][edit][messages]") {
+  ScopedTempDir tmp;
+  TrainEngine::dumpPotFile("in.tadah", make_knot_pot());
+  Context c;
+  c.add("EDIT", std::string("in.tadah"));
+  c.add("FUNC", std::string("phi"));
+  c.add("ADD", 3.6);
+  const std::string log = run_edit_capturing(c);
+  INFO(log);
+  CHECK(log.find("tadah refit --edit: added a basis function to phi at 3.6 "
+                 "(coefficient 0, degree ") != std::string::npos);
+  CHECK(log.find(") — the edited potential predicts identically to the "
+                 "input until the new coefficient is varied, such as by "
+                 "tadah hpo.\n") != std::string::npos);
+  CHECK(log.find("e.g.") == std::string::npos);
+}
+
 TEST_CASE_METHOD(PTFixture,
                  "refit --edit --add: file round-trip with identical curves",
                  "[refit][edit][integration]") {
@@ -384,8 +410,12 @@ TEST_CASE_METHOD(PTFixture, "refit --edit --remove: end-to-end",
                       .parse("in.tadah")
                       .has_stored("EMBF0"));
     const std::string log = run_edit_capturing(c);
-    CHECK(log.find("EMBF0 ZERO (key absent -> default ZERO") !=
-          std::string::npos);
+    // the notice of the default says what keeps the raw embedding (before
+    // the fix: "(key absent -> default ZERO; add 'EMBF0 FREE' to the input
+    // to keep the raw embedding of a tadah <= 1.5.0 fit)")
+    CHECK(log.find("EMBF0 ZERO (no EMBF0 line: ZERO, the default; an EMBF0 "
+                   "FREE line in the potential keeps the raw embedding of a "
+                   "fit of tadah 1.5.0 or earlier)") != std::string::npos);
     CHECK(log.find("widened to the F domain") != std::string::npos);
     const Context out =
         tadah::core::CoreUserConfigParser().parse("pot_edited.tadah");
@@ -804,6 +834,23 @@ TEST_CASE_METHOD(PTFixture,
           ctx({{"RETARGET", "b"}, {"RHOFORM", "NONNEG"}})),
       Catch::Contains("RHOFORM has no effect on --retarget") &&
           Catch::Contains("--rhoform"));
+  // what the refusals say is a statement (before the fix: "...; remove it
+  // from the configuration, and pass --rhoform ..." and "...; remove it
+  // from the configuration.")
+  CHECK_THROWS_WITH(
+      validate_refit_mode_keys(
+          ctx({{"RETARGET", "b"}, {"RHOFORM", "NONNEG"}})),
+      "tadah refit --retarget: RHOFORM has no effect on --retarget (an "
+      "hpotarget carries no potential), so a configuration of --retarget "
+      "has no RHOFORM line; --rhoform <SIGNED|NONNEG|MONOTONE> rewrites the "
+      "AMPGRIDMB boxes for the density form of the potential the file "
+      "searches around.");
+  CHECK_THROWS_WITH(
+      validate_refit_mode_keys(ctx({{"RETARGET", "b"}, {"EMBF0", "FREE"}})),
+      "tadah refit --retarget: EMBF0 has no effect on --retarget (an "
+      "hpotarget carries no potential, and its bounds do not depend on the "
+      "embedding reference), so a configuration of --retarget has no EMBF0 "
+      "line.");
   REQUIRE_THROWS_WITH(
       validate_refit_mode_keys(ctx({{"RETARGET", "b"}, {"EMBF0", "FREE"}})),
       Catch::Contains("EMBF0 has no effect on --retarget"));
