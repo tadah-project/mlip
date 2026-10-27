@@ -27,10 +27,53 @@ namespace tadah {
 namespace mlip {
 namespace engines {
 
+namespace {
+
+/* A descriptor of a TYPE2B or TYPEMB line of @p c has its cutoff on the
+ * RCUT2B or RCUTMB line, which D_mJoin::expand_grids reads: a line that
+ * names a descriptor (a value that starts with D2_ or DM_; a DESCRIPTOR
+ * block's ID has its own cutoff) without that key is refused, naming the
+ * line (when the configuration was read from a file), the descriptor and
+ * the key. */
+void require_line_cutoffs(const tadah::core::Context& c) {
+  struct Line {
+    const char* type;
+    const char* rcut;
+    const char* prefix;
+  };
+  for (const Line& l : {Line{"TYPE2B", "RCUT2B", "D2_"},
+                        Line{"TYPEMB", "RCUTMB", "DM_"}}) {
+    if (!c.has_stored(l.type) || c.has_stored(l.rcut)) continue;
+    const std::size_t n = c.size(l.type);
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::string v = c.get<std::string>(l.type, i);
+      if (v.rfind(l.prefix, 0) != 0) continue;
+      // The line that gives value i of the key.
+      std::string on;
+      std::size_t values = 0;
+      for (const auto& line : c.key_lines(l.type)) {
+        values += line.values;
+        if (i < values) {
+          on = " on " + line.where;
+          break;
+        }
+      }
+      throw std::runtime_error("analysis suggest_bounds: " +
+                               std::string(l.type) + on +
+                               " names the descriptor " + v +
+                               ", and the configuration has no " + l.rcut +
+                               " line, which gives its cutoff");
+    }
+  }
+}
+
+}  // namespace
+
 void AnalysisSuggestBoundsEngine::validate(const tadah::mlip::Task& /*task*/) {
   // Blueprint validation enforces input-group constraints (`-c | -t`).
-  // Engine-level pre-conditions (a cutoff of the configuration) are checked
-  // inside run(), once the DESCRIPTOR blocks are read.
+  // Engine-level pre-conditions (the cutoff of each descriptor line, and a
+  // cutoff of the configuration once the DESCRIPTOR blocks are read) are
+  // checked inside run().
 }
 
 int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
@@ -42,6 +85,10 @@ int AnalysisSuggestBoundsEngine::run(tadah::mlip::Task& task) {
         "analysis suggest_bounds: at least one DBFILE must be configured "
         "(via `-c train.tadah`).");
   }
+
+  // The cutoff of each descriptor of a TYPE2B or TYPEMB line, which the
+  // expansion of the grids reads.
+  require_line_cutoffs(workCtx);
 
   // The radial grids as the descriptors read them: a grid generator
   // ("CGRID2B LIN 7 0.1 3.0") expanded into its values, as tadah train and

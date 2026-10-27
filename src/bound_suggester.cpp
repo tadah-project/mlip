@@ -97,11 +97,15 @@ void refuse_zero_width(OptimSuggestion &s) {
 
 /* The suggestion of entry @p ap of @p pm on the statistics @p line of the
  * element pairs of a descriptor's line: the suggester's on the statistics of
- * each pair (one per_pair entry), the range that holds the range of each
- * (no row when no pair gives one). Without a pair, the suggester's on
- * @p line (no row, naming the pairs of the line). The rationale gives each
- * pair's once (none when the suggester gives none); a range is fixed when
- * every pair's is. */
+ * each pair (one per_pair entry), combined (no row when no pair gives one):
+ * for a parameter marked ParamMeta::reach_each_pair (a cutoff, which its
+ * check judges at each pair), the range from the largest low end of the
+ * pairs' ranges to the largest high end, so that each value in it reaches
+ * each pair; for any other, the range that holds the range of each. Without
+ * a pair, the suggester's on @p line (no row, naming the pairs of the line).
+ * The rationale gives each pair's once (none when the suggester gives none)
+ * after the rule that combines them; a range is fixed when every pair's
+ * is. */
 models::BoundSuggestion suggest_over_pairs(
     const models::ParamMeta &pm, const tadah::core::stats::DataStats &line,
     const models::SeedView &sv, int ap) {
@@ -126,14 +130,20 @@ models::BoundSuggestion suggest_over_pairs(
     if (b.none) continue;
     const double l = std::min(b.first, b.second);
     const double h = std::max(b.first, b.second);
-    lo = ranged ? std::min(lo, l) : l;
+    lo = !ranged ? l : pm.reach_each_pair ? std::max(lo, l) : std::min(lo, l);
     hi = ranged ? std::max(hi, h) : h;
     fixed = fixed && b.fixed;
     ranged = true;
   }
   if (why.size() > 1)
-    joined = "the range that holds the range of each element pair of the "
-             "descriptor's line: " + joined;
+    joined = (pm.reach_each_pair
+                  ? "the range from the largest low end to the largest high "
+                    "end of the ranges of the element pairs of the "
+                    "descriptor's line, so that each value in it reaches each "
+                    "pair: "
+                  : "the range that holds the range of each element pair of "
+                    "the descriptor's line: ") +
+             joined;
   if (!ranged) return models::BoundSuggestion::no_row(joined);
   models::BoundSuggestion out(lo, hi, joined);
   out.fixed = fixed;
