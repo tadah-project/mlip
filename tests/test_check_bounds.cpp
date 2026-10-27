@@ -269,6 +269,38 @@ TEST_CASE("check_bounds: a radial bump width box needs lo > 0 in every form",
   }
 }
 
+/* Pins: on a D2_mJoin of D2_BP 2 2 (SGRID2B entries 1-2) and D2_Blip 2 2
+ * (entries 3-4), a width box of the D2_BP below 0, SGRID2B (1) -0.5 1.0,
+ * fails no corner, as on a D2_BP alone (a Gaussian width has no rule), and
+ * a box of the D2_Blip from 0, SGRID2B (4) 0 2, fails its corner at 0
+ * (models::optim_low_bound_rule of the box's entry, the rule tadah hpo
+ * refuses such a box by).
+ * Before the fix: the D2_BP's box failed its corner at -0.5 by the
+ * D2_Blip's rule, which held every SGRID2B entry of the line. */
+TEST_CASE("check_bounds: a width box of a D2_BP of a D2_mJoin with a D2_Blip "
+          "is held as on a D2_BP alone",
+          "[check_bounds][bump_width][join]") {
+  tadah::core::PeriodicTable::initialize();
+  tadah::mlip::StructureDB stdb;
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("WATOM", 73);
+  c.add("INIT2B", "true");
+  c.add("INITMB", "false");
+  c.add("TYPE2B", "D2_mJoin D2_BP 2 2 Ta Ta D2_Blip 2 2 Ta Ta");
+  c.add("CGRID2B", "0 0 4.0 3.0");
+  c.add("SGRID2B", "0.5 1.0 2.0 1.0");
+  c.add("RCTYPE2B", "Cut_Cos Cut_Cos");
+  c.add("RCUT2B", "5.0 5.0");
+  c.add("VERBOSE", 0);
+  const auto bp = run_corners(stdb, c, {box("SGRID2B", 0, -0.5, 1.0)});
+  CHECK(bp.n_corners == 2);
+  CHECK(bp.n_corners_failing == 0);
+  const auto blip = run_corners(stdb, c, {box("SGRID2B", 3, 0.0, 2.0)});
+  CHECK(blip.n_corners == 2);
+  CHECK(blip.n_corners_failing == 1);
+}
+
 TEST_CASE("check_bounds: a corner of a vector key changes only its own entry",
           "[check_bounds]") {
   // The corner context took (arg_pos + 1) copies of the corner value for
@@ -733,4 +765,38 @@ TEST_CASE("check_bounds: the cutoff of a knot channel follows the largest "
   CHECK(res.n_corners == 2);
   REQUIRE(res.n_corners_failing == 1);
   CHECK(sample_corners(b)[res.failing_corner_indices[0]][0] == 2.2);
+}
+
+/* Pins: the cutoff of a knot descriptor of a joined line follows the
+ * largest knot of each corner, as tadah hpo re-derives it for each
+ * candidate, and the other descriptor's cutoff stays: for TYPE2B D2_mJoin
+ * of D2_Knot5 (knots 1.5, 2 and 4.5 A) and D2_Blip (centre 3, width 2),
+ * RCUT2B 4.5 5, and a box CGRID2B (3) 2.2 to 4.8, the corner at 2.2 has
+ * RCUT2B 2.2 5 and the corner at 4.8 RCUT2B 4.8 5.
+ * Before the fix: every corner kept RCUT2B 4.5 5 (the derivation read the
+ * line's first value, D2_mJoin). */
+TEST_CASE("check_bounds: the cutoff of a knot descriptor of a joined line "
+          "follows its largest knot of each corner",
+          "[check_bounds][knot][join]") {
+  tadah::core::PeriodicTable::initialize();
+  Context seed;
+  seed.add("ATOM", "Ta");
+  seed.add("WATOM", 73);
+  seed.add("INIT2B", "true");
+  seed.add("INITMB", "false");
+  seed.add("TYPE2B", "D2_mJoin D2_Knot5 3 3 Ta Ta D2_Blip 1 1 Ta Ta");
+  seed.add("CGRID2B", "1.5 2.0 4.5 3.0");
+  seed.add("KDEG2B", "5 5 5");
+  seed.add("SGRID2B", "2");
+  seed.add("RCTYPE2B", "Cut_Dummy Cut_Dummy");
+  seed.add("RCUT2B", "4.5 5.0");
+  seed.add("VERBOSE", 0);
+  const std::vector<Bound> b = {box("CGRID2B", 2, 2.2, 4.8)};
+  for (const double corner : {2.2, 4.8}) {
+    CAPTURE(corner);
+    const Context c = tadah::mlip::corner_context(seed, b, {corner});
+    REQUIRE(c.size("RCUT2B") == 2u);
+    CHECK(c.get<double>("RCUT2B", 0) == corner);
+    CHECK(c.get<double>("RCUT2B", 1) == 5.0);
+  }
 }

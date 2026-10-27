@@ -25,6 +25,7 @@
 // scan that already happens for stats.
 
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -131,27 +132,40 @@ AuditReport run_preflight_from_db(
  *  block (cutoffs derived from knots or fixed by bump supports under a
  *  hard cutoff, and radial centres at the origin, excepted). Each
  *  descriptor of a joined line (D2_mJoin, DM_mJoin) is judged by its own
- *  values of a key (joined_descriptors(): every centre at the origin); a
- *  key in the search space counts as searched whichever of its entries the
- *  search space holds, for every entry of the key and every descriptor that
- *  has it. A warning names the descriptor's entries of the key as an OPTIM
- *  line numbers them ("RCUTMB(2)") and the OPTIM line that would search
- *  them ("`OPTIM RCUTMB (2)`"). The
- *  cutoff of a knot channel, and of a bump channel under a hard cutoff, is
- *  excepted where tadah hpo derives it from the largest knot or holds the
- *  bump supports within it: on a line of that descriptor alone, not on a
- *  joined line, whose cutoffs are fixed values of the search. Always emits
- *  at WARN (never FAIL): this is a configuration smell, not a hard error.
+ *  values of a key (joined_descriptors(): every centre at the origin). A
+ *  warning names the descriptor's entries of the key as an OPTIM line
+ *  numbers them ("RCUTMB(2)") and the OPTIM line that would search them
+ *  ("`OPTIM RCUTMB (2)`"). The cutoff of a knot channel, and of a bump
+ *  channel under a hard cutoff, is excepted where tadah hpo derives it
+ *  from the largest knot or holds the bump supports within it: on a line
+ *  of one such descriptor and for such a descriptor of a joined line,
+ *  whose own RCUT entry tadah hpo derives or holds. Always emits at WARN
+ *  (never FAIL): this is a configuration smell, not a hard error.
  *
- *  `optim_keys` is the canonical set of parameter names under HPO
- *  control (the keys of `HPOTargets::optimap`). A descriptor none of
- *  whose keys is among them is not searched, and its fixed keys are not
- *  flagged: an empty set, or a search of FIXWEIGHT alone, gives an empty
- *  report. `tadah hpo` runs it under AUDIT warn and error only.
+ *  `optim_keys` is a set of parameter names under HPO control, each
+ *  counted as searched in every entry, for every descriptor that has it.
+ *  A descriptor none of whose keys is among them is not searched, and its
+ *  fixed keys are not flagged: an empty set, or a search of FIXWEIGHT
+ *  alone, gives an empty report.
  */
 AuditReport run_critical_optim_audit(
     const tadah::core::Context& seed,
     const std::vector<std::string>& optim_keys = {});
+
+/** \brief run_critical_optim_audit() given the searched entries of each
+ *  key: `searched_entries[key][i]` is true when the search space holds
+ *  entry i (0-based) of the key, as `HPOTargets::optimap`'s `opt` flags it
+ *  (`tadah hpo` calls this form under AUDIT warn and error). A key counts
+ *  as searched for a descriptor when the search holds one of that
+ *  descriptor's own entries of it (any entry, for a line of one
+ *  descriptor), and a descriptor as searched when the search holds one of
+ *  its entries of any of its keys: on a joined line, `OPTIM CGRIDMB (1)`
+ *  searches the CGRIDMB of the descriptor whose entry 1 is, not that of
+ *  another descriptor of the line.
+ */
+AuditReport run_critical_optim_audit(
+    const tadah::core::Context& seed,
+    const std::map<std::string, std::vector<bool>>& searched_entries);
 
 /** \brief If `mode == Error` and `report.any_fail()`, throw a
  *  `std::runtime_error` whose message lists every FAIL finding. Else

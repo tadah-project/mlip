@@ -1,4 +1,5 @@
 #include <tadah/mlip/bound_suggester.h>
+#include <tadah/mlip/joined_descriptors.h>
 #include <tadah/mlip/stream_format_guard.h>
 
 #include <algorithm>
@@ -251,24 +252,59 @@ void merge_shared_rows(std::vector<OptimSuggestion>& rows) {
 
 void leave_out_derived_cutoffs(std::vector<OptimSuggestion>& rows,
                                const tadah::core::Context& seed) {
-  for (const char* sfx : {"2B", "MB"}) {
-    const auto knot = models::potedit::derived_knot_rcut(seed, sfx);
-    if (!knot) continue;
-    const std::string key = std::string("RCUT") + sfx;
-    const std::string line = std::string(sfx) == "2B"
-                                 ? "a D2_Knot5 line alone on TYPE2B"
-                                 : "a knot DM_REAM density alone on TYPEMB";
+  // The row of entry `entry` of `key` gets none, its rationale naming the
+  // largest knot `knot` of the channel `what` and the OPTIM line tadah hpo
+  // warns about: of the entry on a joined line (`joined`), whose other
+  // entries hold the cutoffs of other descriptors, "OPTIM RCUT2B (1)".
+  auto leave_out = [&](const std::string& key, std::size_t entry,
+                       bool joined, const std::string& what, double knot) {
     std::ostringstream value;
-    value << *knot;
+    value << knot;
+    const std::string optim =
+        joined ? key + " (" + std::to_string(entry + 1) + ")" : key;
     for (auto& r : rows) {
-      if (r.key != key) continue;
+      if (r.key != key ||
+          static_cast<std::size_t>(std::max(0, r.arg_pos)) != entry)
+        continue;
       r.none = true;
       r.fixed = false;
-      r.rationale = "the cutoff of " + line + " is its largest knot (" +
+      r.rationale = "the cutoff of " + what + " is its largest knot (" +
                     value.str() + " Å), which tadah train and tadah hpo "
-                    "derive: tadah hpo warns that an OPTIM " + key +
+                    "derive: tadah hpo warns that an OPTIM " + optim +
                     " line has no effect";
     }
+  };
+  for (const char* sfx : {"2B", "MB"}) {
+    const std::string key = std::string("RCUT") + sfx;
+    const std::string type_key = std::string("TYPE") + sfx;
+    if (is_joined_line(seed, type_key)) {
+      // each knot descriptor of the line: its own RCUT entry
+      std::vector<JoinedDescriptor> parts;
+      try {
+        parts = joined_descriptors(seed, type_key);
+      } catch (const std::exception&) {
+        continue;  // a line D_mJoin refuses: its own error elsewhere
+      }
+      const std::string line = seed.get<std::string>(type_key, 0);
+      for (const auto& jd : parts) {
+        const auto knot = models::potedit::derived_knot_rcut(jd.context, sfx);
+        const auto first = jd.first_entries.find(key);
+        if (!knot || first == jd.first_entries.end()) continue;
+        leave_out(key, first->second, true,
+                  std::string(sfx) == "2B"
+                      ? "a D2_Knot5 descriptor of a " + line + " line"
+                      : "a knot DM_REAM density of a " + line + " line",
+                  *knot);
+      }
+      continue;
+    }
+    const auto knot = models::potedit::derived_knot_rcut(seed, sfx);
+    if (!knot) continue;
+    leave_out(key, 0, false,
+              std::string(sfx) == "2B"
+                  ? "a D2_Knot5 line alone on TYPE2B"
+                  : "a knot DM_REAM density alone on TYPEMB",
+              *knot);
   }
 }
 
