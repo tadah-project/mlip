@@ -133,13 +133,13 @@ const std::string kNaclEntry =
  * AFLOWDataProvider::entry_url_from_aflux with a std::runtime_error saying
  * why:
  *   "{}", "[]" and "not json" (no array, or an empty one):
- *     'AFLOWDataProvider: the AFLUX answer is not a non-empty JSON array.'
+ *     'AFLOW: the AFLUX answer is not a non-empty JSON array.'
  *   [3], [{"x":1}] and [{"aurl":3}] (no "aurl" string in the first entry):
- *     'AFLOWDataProvider: the first entry of the AFLUX answer has no "aurl"
+ *     'AFLOW: the first entry of the AFLUX answer has no "aurl"
  *     string.'
  *   [{"aurl":"nocolon"}], [{"aurl":":AFLOWDATA/x"}] and
  *   [{"aurl":"aflowlib.duke.edu:"}] (no server or no path):
- *     "AFLOWDataProvider: aurl '<aurl>' in the AFLUX answer is not
+ *     "AFLOW: aurl '<aurl>' in the AFLUX answer is not
  *     server:PATH."
  * Before the fix: this already holds on this branch, where
  * entry_url_from_aflux was added. On v1-dev the checks were inline in
@@ -148,15 +148,16 @@ const std::string kNaclEntry =
  * empty.", [3] and [{"x":1}] 404 "AFLOWDataProvider: 'aurl' field not found
  * in JSON.", [{"aurl":3}] threw nlohmann::json::type_error 302 out of
  * QueryByID, and an aurl without a colon was requested as it stood, with
- * "?format=json" appended. */
+ * "?format=json" appended.
+ * Before the fix that names the database: each message began
+ * "AFLOWDataProvider: ": the checks fail. */
 TEST_CASE("AFLOW provider: an AFLUX answer that gives no entry URL is "
           "refused, saying why",
           "[aflow][data_providers]") {
   const std::string not_array =
-      "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON array.";
+      "AFLOW: the AFLUX answer is not a non-empty JSON array.";
   const std::string no_aurl =
-      "AFLOWDataProvider: the first entry of the AFLUX answer has no "
-      "\"aurl\" string.";
+      "AFLOW: the first entry of the AFLUX answer has no \"aurl\" string.";
   const std::vector<std::pair<std::string, std::string>> bad = {
       {"{}", not_array},
       {"[]", not_array},
@@ -165,14 +166,12 @@ TEST_CASE("AFLOW provider: an AFLUX answer that gives no entry URL is "
       {R"([{"x":1}])", no_aurl},
       {R"([{"aurl":3}])", no_aurl},
       {R"([{"aurl":"nocolon"}])",
-       "AFLOWDataProvider: aurl 'nocolon' in the AFLUX answer is not "
-       "server:PATH."},
+       "AFLOW: aurl 'nocolon' in the AFLUX answer is not server:PATH."},
       {R"([{"aurl":":AFLOWDATA/x"}])",
-       "AFLOWDataProvider: aurl ':AFLOWDATA/x' in the AFLUX answer is not "
-       "server:PATH."},
+       "AFLOW: aurl ':AFLOWDATA/x' in the AFLUX answer is not server:PATH."},
       {R"([{"aurl":"aflowlib.duke.edu:"}])",
-       "AFLOWDataProvider: aurl 'aflowlib.duke.edu:' in the AFLUX answer is "
-       "not server:PATH."},
+       "AFLOW: aurl 'aflowlib.duke.edu:' in the AFLUX answer is not "
+       "server:PATH."},
   };
   for (const auto &b : bad) {
     INFO("AFLUX answer: " << b.first);
@@ -188,8 +187,8 @@ TEST_CASE("AFLOW provider: an AFLUX answer that gives no entry URL is "
  * provider's reason (its RawResponse::response), so that the user sees why
  * the entry could not be fetched. For "aflow:0000000000000009" and the
  * answers
- *   404 "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON array."
- *   500 "AFLOWDataProvider: cURL error: Could not resolve hostname"
+ *   404 "AFLOW: the AFLUX answer is not a non-empty JSON array."
+ *   500 "AFLOW: cURL error: Could not resolve hostname"
  * the message holds "HTTP 404" (or "HTTP 500"), the AUID and the reason
  * word for word. The provider is asked once, for that AUID.
  * Before the fix: AflowReader cannot be built on a provider (it makes its
@@ -203,9 +202,8 @@ TEST_CASE("AFLOW reader: a failed query gives the AUID and the provider's "
   CHECK(takes_provider<AflowReader>);
   const std::string auid = "aflow:0000000000000009";
   const std::vector<RawResponse> answers = {
-      {404, "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON "
-            "array."},
-      {500, "AFLOWDataProvider: cURL error: Could not resolve hostname"},
+      {404, "AFLOW: the AFLUX answer is not a non-empty JSON array."},
+      {500, "AFLOW: cURL error: Could not resolve hostname"},
   };
   for (const RawResponse &answer : answers) {
     INFO("HTTP " << answer.httpStatus << ": " << answer.response);
@@ -268,8 +266,7 @@ TEST_CASE("AFLOW reader: the entry a provider returns is read",
   const std::string missing = "aflow:000000000000000a";
   const auto script = script_of(
       {{200, kNaclEntry},
-       {404, "AFLOWDataProvider: the AFLUX answer is not a non-empty JSON "
-             "array."}});
+       {404, "AFLOW: the AFLUX answer is not a non-empty JSON array."}});
   const std::vector<Outcome> got =
       read_through<AflowReader>(script, {kNaclAuid, missing});
   REQUIRE(got.size() == 2);
@@ -295,12 +292,16 @@ TEST_CASE("AFLOW reader: the entry a provider returns is read",
 
 /* Pins: an AflowReader built on a null provider is refused at once
  * (std::invalid_argument naming the provider), not when it reads.
- * Before the fix: AflowReader had no constructor taking a provider. */
+ * Before the fix: AflowReader had no constructor taking a provider.
+ * Pins (the message): "internal error: the AFLOW reader has no data
+ * provider". Before the fix that names the database: "AflowReader: the data
+ * provider is null.": the check fails. */
 TEST_CASE("AFLOW reader: a null provider is refused",
           "[structure_readers][aflow]") {
   CHECK(takes_provider<AflowReader>);
   if constexpr (takes_provider<AflowReader>) {
     CHECK_THROWS_AS(AflowReader(ProviderPtr{}), std::invalid_argument);
-    CHECK_THROWS_WITH(AflowReader(ProviderPtr{}), Catch::Contains("provider is null"));
+    CHECK_THROWS_WITH(AflowReader(ProviderPtr{}),
+                      "internal error: the AFLOW reader has no data provider");
   }
 }
