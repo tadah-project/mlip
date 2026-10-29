@@ -1,7 +1,5 @@
-[![pipeline](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/v1-dev/pipeline.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/v1-dev)
-[![coverage](https://git.ecdf.ed.ac.uk/tadah/mlip/badges/v1-dev/coverage.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/commits/v1-dev)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://git.ecdf.ed.ac.uk/tadah/mlip/-/tags)
+[![version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/tadah-project/mlip/tags)
 
 # MLIP (engine library)
 
@@ -32,13 +30,13 @@ toolchain. Implements the engines that back every `tadah` subcommand:
 MLIP (the engine library) is an internal module of the Tadah!
 MLIP toolchain. It is fetched automatically (via CMake `FetchContent`)
 by the umbrella project
-[Tadah!MLIP](https://git.ecdf.ed.ac.uk/tadah/tadah.mlip), which links
+[Tadah!MLIP](https://github.com/tadah-project/tadah.mlip), which links
 this library and provides the `tadah` CLI binary plus documentation.
 End users install the umbrella project — see the
 [installation guide](https://tadah.readthedocs.io/v1-dev/installation.html).
 
 This repository is broken out separately so the hyperparameter
-optimisation engine [HPO](https://git.ecdf.ed.ac.uk/tadah/hpo)
+optimisation engine [HPO](https://github.com/tadah-project/hpo)
 can link the same training/prediction code path that the CLI does.
 
 ## Contributing
@@ -53,7 +51,7 @@ GPL-3.0; see [LICENSE](LICENSE).
 
 ## Reporting issues
 
-Bugs and feature requests:
-[MLIP engine issues](https://git.ecdf.ed.ac.uk/tadah/mlip/-/issues).
-For end-user questions please use the umbrella project
-[Tadah!MLIP](https://git.ecdf.ed.ac.uk/tadah/tadah.mlip).
+This repository is a component of Tadah! and has no issue tracker of
+its own. Bugs, feature requests and questions go to the tracker of
+the umbrella project,
+[Tadah!MLIP](https://github.com/tadah-project/tadah.mlip/issues).
