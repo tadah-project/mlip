@@ -56,3 +56,10 @@ tadah_add_header_check(tadah.mlip)
 # initials, 5 decision notes, 6 workspace notes and .gitignore's entry for
 # an AI tool's state directory.
 tadah_add_text_check(tadah.mlip)
+
+# tadah.mlip_git_base (label cmake): the top-level CMakeLists.txt carries
+# cmake-tools' TADAH_GIT_BASE block and fetches every Tadah! repository as
+# ${TADAH_GIT_BASE}/<repository>.git (testing/tadah_git_base_check.cmake).
+# Before the fix: fails (no block; the repositories named by the address of
+# the development host).
+tadah_add_git_base_check(tadah.mlip)
