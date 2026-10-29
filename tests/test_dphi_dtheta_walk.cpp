@@ -2518,9 +2518,10 @@ StructureDB two_atom_ta_cell()
 
 /* The claims (energy rows, force rows) of the descriptors of the
  * training configuration with TYPE2B D2_BP and the many-body descriptor
- * `typemb` (with its `lines`) for `key` (index 1) on two_atom_ta_cell(),
- * the force rows asked when `force`: by the combined walker, and by the
- * combined walker with the rho cache. */
+ * `typemb` (with its `lines`, and RCTYPEMB Cut_Cos, RCUTMB 4.5; an empty
+ * `typemb`: `lines` are the whole many-body term) for `key` (index 1) on
+ * two_atom_ta_cell(), the force rows asked when `force`: by the combined
+ * walker, and by the combined walker with the rho cache. */
 struct JoinedClaims {
     std::pair<bool, bool> plain, cached;
 };
@@ -2532,8 +2533,10 @@ JoinedClaims joined_claims(const std::string& typemb,
         "ATOM Ta\nWATOM 1.0\nMODEL M_BLR BF_Linear\nVERBOSE 0\n"
         "INIT2B true\nTYPE2B D2_BP 2 2 Ta Ta\nCGRID2B 1.0 2.0\n"
         "SGRID2B 1.0 1.2\nRCTYPE2B Cut_Cos\nRCUT2B 4.5\n"
-        "INITMB true\nTYPEMB " + typemb + "\n" + lines +
-        "RCTYPEMB Cut_Cos\nRCUTMB 4.5\n");
+        "INITMB true\n" +
+        (typemb.empty() ? lines
+                        : "TYPEMB " + typemb + "\n" + lines +
+                              "RCTYPEMB Cut_Cos\nRCUTMB 4.5\n"));
     Context c = tadah::core::CoreUserConfigParser().parse(in);
     tadah::mlip::memory::MLIPWorkspaceManager ws;
     tadah::mlip::Trainer trainer(c, ws);
@@ -2558,23 +2561,29 @@ JoinedClaims joined_claims(const std::string& typemb,
 }  // namespace
 
 /* Pins: the combined walker of a two-body and a many-body descriptor, with
- * and without the rho cache, claims the force rows of a parameter only when
- * every descriptor that claims its energy rows claims its force rows too:
+ * and without the rho cache, claims the rows of a parameter only when every
+ * descriptor that depends on it or claims its energy rows claims them too:
  *   - WATOM, which D2_BP and DM_Blip both read, D2_BP differentiating it in
  *     the energy and the force rows and DM_Blip in the energy rows only:
  *     (energy, force) = (true, false), the force rows asked or not;
  *   - CGRID2B, of D2_BP alone: (true, true); CGRIDMB, of DM_Blip alone:
  *     (true, false);
  *   - WATOM with DM_mBlip, which differentiates it in the force rows too:
- *     (true, true).
+ *     (true, true);
+ *   - WATOM with DM_REAM, DM_PS_SQ, a DESCRIPTOR block (DM_Embed) or
+ *     DM_mJoin (DM_Blip and DM_REAM joined), each of which reads WATOM and
+ *     has no derivative with respect to it: (false, false); CGRID2B beside
+ *     DM_REAM: (true, true).
  * Before the fix: D2_BP + DM_Blip claimed WATOM for the force rows,
  * (true, true): the claims of the two descriptors were joined by an OR, so
  * the force rows of the D2_BP part hid the missing DM_Blip part, and the
  * analytical gradient of tadah hpo took the result as the derivative of
- * the force rows. */
+ * the force rows. The same OR claimed WATOM beside DM_REAM, DM_PS_SQ, the
+ * block and DM_mJoin, (true, true), rows without the part of the
+ * many-body descriptor: those cases failed. */
 TEST_CASE("combined walker: a parameter of a two-body and a many-body "
-          "descriptor has its force rows claimed only when each descriptor "
-          "that claims its energy rows claims them",
+          "descriptor has its rows claimed only when each descriptor that "
+          "depends on it or claims its energy rows claims them",
           "[dphi_dtheta_walk][combined][cached][watom][force]")
 {
     PeriodicTable::initialize();
@@ -2584,6 +2593,24 @@ TEST_CASE("combined walker: a parameter of a two-body and a many-body "
     const std::string mblip = "DM_mBlip 0 1 1 2 2 Ta Ta";
     const std::string mblip_grid =
         "CGRIDMB 0.0\nSGRIDMB 0.2\nCEMBFUNC 1.0 2.0\nSEMBFUNC 1.0 1.0\n";
+    const std::string ream = "DM_REAM 3 3 3 3 5 5 0 0 Ta Ta";
+    const std::string ream_grid =
+        "CGRIDMB 2.8 3.6 4.4\nSGRIDMB 3.0 3.0 3.0\nAMPGRIDMB 0.5 0.3 0.1\n"
+        "CEMBFUNC -0.2 0.3 0.8 1.3 1.8\nSEMBFUNC 2.0 2.0 2.0 2.0 2.0\n"
+        "RHOFORM SIGNED\n";
+    const std::string embed =
+        "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS Blip5\n"
+        "FORM SIGNED\nCENTRES 2.8 3.6 4.4\nETA 3 3 3\n"
+        "AMPLITUDES 0.5 0.3 0.1\nCUTOFF\nTYPE Cut_Cos\nRADIUS 4.5\n"
+        "ENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+        "CENTRES 0 0.5 1\nETA 2 2 2\nREFERENCE ZERO\nENDEMBEDDING\n"
+        "ENDDESCRIPTOR\n";
+    const std::string mjoin =
+        "TYPEMB DM_mJoin\nTYPEMB DM_Blip 0 2 2 Ta Ta\nTYPEMB " + ream +
+        "\nRCTYPEMB Cut_Cos Cut_Cos\nRCUTMB 4.5 4.5\n"
+        "CGRIDMB 2.0 3.0 2.8 3.6 4.4\nSGRIDMB 1.0 1.0 3.0 3.0 3.0\n"
+        "AMPGRIDMB 0.5 0.3 0.1\nCEMBFUNC -0.2 0.3 0.8 1.3 1.8\n"
+        "SEMBFUNC 2.0 2.0 2.0 2.0 2.0\nRHOFORM SIGNED\n";
     struct Case {
         const char* name;
         std::string typemb, lines, key;
@@ -2601,6 +2628,18 @@ TEST_CASE("combined walker: a parameter of a two-body and a many-body "
          true, {true, false}},
         {"D2_BP + DM_mBlip, WATOM, force rows", mblip, mblip_grid, "WATOM",
          true, {true, true}},
+        {"D2_BP + DM_REAM, WATOM, force rows", ream, ream_grid, "WATOM",
+         true, {false, false}},
+        {"D2_BP + DM_REAM, WATOM, energy rows", ream, ream_grid, "WATOM",
+         false, {false, false}},
+        {"D2_BP + DM_REAM, CGRID2B, force rows", ream, ream_grid, "CGRID2B",
+         true, {true, true}},
+        {"D2_BP + DM_PS_SQ, WATOM, force rows", "DM_PS_SQ 1 2 2 Ta Ta",
+         blip_grid, "WATOM", true, {false, false}},
+        {"D2_BP + a DESCRIPTOR block, WATOM, force rows", "", embed, "WATOM",
+         true, {false, false}},
+        {"D2_BP + DM_mJoin of DM_Blip and DM_REAM, WATOM, force rows", "",
+         mjoin, "WATOM", true, {false, false}},
     };
     for (const Case& c : cases) {
         INFO(c.name);
