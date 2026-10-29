@@ -1296,22 +1296,61 @@ assemble_dphi_train_both_rows_dm_cached(
 namespace detail {
 
 /* The claims (energy rows, force rows) of the D2 arm `d2` and the DM arm
- * `dm` of a DC_Selector joined, the force rows asked when `force`: the
- * energy rows when an arm claims them; the force rows when an arm claims
- * them and every arm that claims the energy rows claims them too. An arm
- * whose derivatives cover the energy rows only (DM_Blip, DM_EAD, DM_mRLR,
- * DM_mSQRT) adds nothing to the force rows, so a parameter it claims for
- * the energy rows has incomplete force rows whatever the other arm adds:
- * WATOM, which a two-body and a many-body descriptor both read. */
+ * `dm` of a DC_Selector joined, the force rows asked when `force`;
+ * `d2_depends` and `dm_depends` tell whether the values of each arm depend
+ * on the parameter (D_Base::depends_on, whatever the atoms). An arm takes
+ * part when it depends on the parameter or claims its energy rows, and the
+ * rows are claimed when an arm claims them and every arm that takes part
+ * claims them too. So a parameter that both arms read (WATOM) has its rows
+ * claimed only where both differentiate it: an arm that depends on it
+ * without a closed form for it (DM_REAM, the DM_Poly descriptors, a
+ * DESCRIPTOR block, DM_mJoin, D2_mJoin) leaves every row unclaimed, and one whose derivatives cover the
+ * energy rows only (DM_Blip, DM_EAD, DM_mRLR, DM_mSQRT) the force rows,
+ * whatever the other arm claims. An arm with a closed form claims the
+ * parameter for every pair of atoms within its cutoff; where the
+ * structures hold no such pair, its part of the rows is 0, the rows the
+ * walker wrote are right although unclaimed, and the analytical gradient
+ * of tadah hpo takes them when the descriptors claim the parameter on
+ * pairs of atoms the structures need not hold (HPO claims_differentiate,
+ * probe_pairs). */
 inline std::pair<bool, bool>
-join_arm_claims(std::pair<bool, bool> d2, std::pair<bool, bool> dm,
-                bool force)
+join_arm_claims(std::pair<bool, bool> d2, bool d2_depends,
+                std::pair<bool, bool> dm, bool dm_depends, bool force)
 {
-    const bool energy = d2.first || dm.first;
+    const bool d2_part = d2_depends || d2.first;
+    const bool dm_part = dm_depends || dm.first;
+    const bool energy = (d2.first || dm.first) && (!d2_part || d2.first) &&
+                        (!dm_part || dm.first);
     if (!force) return {energy, false};
-    const bool complete = (!d2.first || d2.second) &&
-                          (!dm.first || dm.second);
-    return {energy, complete && (d2.second || dm.second)};
+    const bool force_rows = (d2.second || dm.second) &&
+                            (!d2_part || d2.second) &&
+                            (!dm_part || dm.second);
+    return {energy, force_rows};
+}
+
+/* Whether the values of the D2 arm and of the DM arm of `dcs` depend on
+ * (theta_name, arg_pos) (D_Base::depends_on): no DM arm, or one without a
+ * density (DM_Dummy), depends on nothing. */
+inline std::pair<bool, bool>
+arms_depend_on(const tadah::models::DC_Selector& dcs,
+               const std::string& theta_name, int arg_pos)
+{
+    const bool d2 = dcs.d2b && dcs.d2b->depends_on(theta_name, arg_pos);
+    const bool dm = dcs.dmb && dcs.dmb->rhoi_size() > 0 &&
+                    dcs.dmb->depends_on(theta_name, arg_pos);
+    return {d2, dm};
+}
+
+/* The claims of the arms of `dcs`, `d2` and `dm`, joined for (theta_name,
+ * arg_pos) by join_arm_claims(). */
+inline std::pair<bool, bool>
+join_selector_claims(const tadah::models::DC_Selector& dcs,
+                     const std::string& theta_name, int arg_pos,
+                     std::pair<bool, bool> d2, std::pair<bool, bool> dm,
+                     bool force)
+{
+    const auto depends = arms_depend_on(dcs, theta_name, arg_pos);
+    return join_arm_claims(d2, depends.first, dm, depends.second, force);
 }
 
 }  // namespace detail
@@ -1320,8 +1359,10 @@ join_arm_claims(std::pair<bool, bool> d2, std::pair<bool, bool> dm,
  * dispatchers but in one pass: D2 arm contributes via
  * assemble_dphi_train_both_rows_d2, then DM arm contributes via
  * assemble_dphi_train_both_rows_dm. Returns (energy, force), the claims of
- * the two arms joined by detail::join_arm_claims(): the force rows are
- * claimed only when no arm that claims the energy rows leaves them out. */
+ * the two arms joined by detail::join_arm_claims(): rows are claimed only
+ * when every arm that depends on the parameter (D_Base::depends_on) or
+ * claims its energy rows claims them, so the rows of one arm never stand
+ * for those of an arm without a closed form for the parameter. */
 inline std::pair<bool, bool>
 assemble_dphi_train_both_rows(
     const StructureDB&                stdb,
@@ -1349,7 +1390,8 @@ assemble_dphi_train_both_rows(
             stdb, *dcs.dmb, theta_name, arg_pos,
             dphi_energy_out, dphi_force_out,
             n_cols, force_row_start_per_struct);
-    return detail::join_arm_claims(d2, dm, dphi_force_out != nullptr);
+    return detail::join_selector_claims(dcs, theta_name, arg_pos, d2, dm,
+                                        dphi_force_out != nullptr);
 }
 
 /* Cached DC_Selector-level combined walker. Same shape as
@@ -1394,7 +1436,8 @@ assemble_dphi_train_both_rows_cached(
             stdb, *dcs.dmb, dm_cache, theta_name, arg_pos,
             dphi_energy_out, dphi_force_out,
             n_cols, force_row_start_per_struct);
-    return detail::join_arm_claims(d2, dm, dphi_force_out != nullptr);
+    return detail::join_selector_claims(dcs, theta_name, arg_pos, d2, dm,
+                                        dphi_force_out != nullptr);
 }
 
 }  // namespace mlip
