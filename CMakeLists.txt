@@ -43,6 +43,24 @@ endif()
 
 # 2. Bring in the shared compile/link options
 include(FetchContent)
+# >>> TADAH_GIT_BASE (the same block in every Tadah! repository's
+#     CMakeLists.txt, compared by cmake-tools' tadah_add_git_base_check)
+# Base address of the Tadah! git repositories that FetchContent clones
+# (<base>/<repository>.git): -DTADAH_GIT_BASE=<address>, else the
+# environment variable TADAH_GIT_BASE when it is set and not empty, else
+# the public repositories. A trailing '/' is dropped.
+if(NOT DEFINED TADAH_GIT_BASE)
+  if(NOT "$ENV{TADAH_GIT_BASE}" STREQUAL "")
+    set(_tadah_git_base "$ENV{TADAH_GIT_BASE}")
+  else()
+    set(_tadah_git_base "https://github.com/tadah-project")
+  endif()
+  set(TADAH_GIT_BASE "${_tadah_git_base}" CACHE STRING
+      "Base address of the Tadah! git repositories (<base>/<repository>.git)")
+  unset(_tadah_git_base)
+endif()
+string(REGEX REPLACE "/+$" "" TADAH_GIT_BASE "${TADAH_GIT_BASE}")
+# <<< TADAH_GIT_BASE
 # Developer build (-DTADAH_DEVELOP=ON): use a local cmake-tools checkout
 # rather than fetching it. Skipped when the source dir is already pinned
 # (e.g. -DFETCHCONTENT_SOURCE_DIR_TADAH_CMAKE=...).
@@ -64,7 +82,7 @@ endif()
 if(NOT TARGET tadah::compile_options)
   FetchContent_Declare (
     tadah_cmake
-    GIT_REPOSITORY  https://git.ecdf.ed.ac.uk/tadah/cmake-tools.git
+    GIT_REPOSITORY  ${TADAH_GIT_BASE}/cmake-tools.git
     GIT_TAG         v1-dev
   )
   FetchContent_MakeAvailable(tadah_cmake)   # defines tadah::compile_options
@@ -87,7 +105,7 @@ message(STATUS "${TADAH}.MLIP Using TADAH_GIT_BRANCH:  ${TADAH_GIT_BRANCH}.")
 #4. Fetch Tadah! modules
 FetchContent_Declare(
     Tadah.MODELS
-    GIT_REPOSITORY https://git.ecdf.ed.ac.uk/tadah/models.git
+    GIT_REPOSITORY ${TADAH_GIT_BASE}/models.git
     GIT_TAG ${TADAH_GIT_BRANCH}
 )
 FetchContent_MakeAvailable(Tadah.MODELS)
