@@ -21,16 +21,23 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <set>
+#include <sstream>
 #include <string>
+#include <unistd.h>
 
 using tadah::mlip::Bound;
 using tadah::mlip::parse_hpo_target_bounds;
 using tadah::mlip::sample_corners;
 
+/* A file of its own for each call, in each process: test cases run as
+ * processes of their own at once (CTest), and std::rand() draws the same
+ * numbers in each of them. */
 static std::string write_tmp(const std::string& body) {
-  std::string path = "/tmp/test_check_bounds_" +
-                     std::to_string(std::rand()) + ".tadah";
+  static int counter = 0;
+  std::string path = "/tmp/test_check_bounds_" + std::to_string(::getpid()) +
+                     "_" + std::to_string(counter++) + ".tadah";
   std::ofstream f(path);
   f << body;
   f.close();
@@ -606,6 +613,7 @@ TEST_CASE("check_bounds: AUDIT error accepts the Ta seed whose Gaussian "
 //  tadah analysis check_bounds reads a grid generator as the grid it makes
 // ---------------------------------------------------------------------------
 
+#include <tadah/core/logger.h>
 #include <tadah/mlip/engines/analysis_check_bounds_engine.h>
 #include <tadah/mlip/task.h>
 
@@ -663,14 +671,16 @@ TEST_CASE("check_bounds: a grid generator is read as the grid it makes",
   CHECK(rc == EXIT_SUCCESS);
 }
 
-/* Pins: a box whose high bound is not above its low bound is refused as
- * tadah hpo refuses it ("Highbound must be greater than lowbound"): the
- * parse of "OPTIM SGRIDMB (1) 0.2 0.2" (zero width) and of "OPTIM RCUT2B
- * (1) 6 4" throws std::runtime_error naming the line number, the line and
- * that its high bound is not above its low bound; "OPTIM RCUT2B (1) 4 6"
- * is read.
- * Before the fix: both were read as boxes (a corner of a box of zero width
- * is its only value): check_bounds passed a box tadah hpo refuses. */
+/* Pins: a box whose high bound is not above its low bound is refused with
+ * tadah hpo's reason, "<high> H is not greater than <low> L": the parse of
+ * "OPTIM SGRIDMB (1) 0.2 0.2" (zero width) and of "OPTIM RCUT2B (1) 6 4"
+ * throws std::runtime_error naming the line number, the line and that
+ * reason; "OPTIM RCUT2B (1) 4 6" is read. (The expected reason was check_
+ * bounds' own, "the high bound H is not above the low bound L", until the
+ * OPTIM lines were read with tadah hpo's reader.)
+ * Before the fix: check_bounds gave its own reason, "... the high bound 0.2
+ * is not above the low bound 0.2; tadah hpo refuses such a box", without
+ * tadah hpo's "is not greater than <low>". */
 TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
           "its low bound",
           "[check_bounds]") {
@@ -688,7 +698,7 @@ TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
     INFO(what);
     CHECK(what.find("line 2") != std::string::npos);
     CHECK(what.find(line) != std::string::npos);
-    CHECK(what.find("not above") != std::string::npos);
+    CHECK(what.find("is not greater than <low>") != std::string::npos);
   }
   const auto path = write_tmp("OPTIM RCUT2B (1) 4 6\n");
   CHECK(parse_hpo_target_bounds(path).size() == 1u);
@@ -1079,4 +1089,270 @@ TEST_CASE("check_bounds and the audit judge each element pair of a "
     tadah::mlip::StructureDB stdb = ta_w_db();
     CHECK(from_db_fails(stdb, ta_w_blip_seed("Ta Ta W W")).empty());
   }
+}
+
+// ---------------------------------------------------------------------------
+//  tadah analysis check_bounds reads the OPTIM lines as tadah hpo reads them
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/* What `tadah analysis check_bounds` (AnalysisCheckBoundsEngine) does with
+ * the target file @p target on the two bcc Ta cells of bcc_ta_cell(): its
+ * exit code (-1 when it throws), what it throws and its log (INFO and
+ * above). */
+struct CbRun {
+  int rc = -1;
+  std::string error;
+  std::string log;
+};
+
+CbRun run_check_bounds(Context c, const std::string &target) {
+  namespace fs = std::filesystem;
+  static int counter = 0;
+  const fs::path dir = fs::temp_directory_path() /
+                       ("tadah_cb_reader_" + std::to_string(::getpid()) +
+                        "_" + std::to_string(counter++));
+  fs::create_directories(dir);
+  tadah::mlip::StructureDB db;
+  db.add(bcc_ta_cell("bcc-Ta-1", false));
+  db.add(bcc_ta_cell("bcc-Ta-2", false));
+  const std::string dbfile = (dir / "bcc.tadahdb").string();
+  db.dump_to_file(dbfile, /*append=*/false, 18);
+  const std::string hpo = (dir / "t.hpo").string();
+  std::ofstream(hpo) << target;
+  c.add("DBFILE", dbfile);
+  c.add("HPOTARGET", hpo);
+  tadah::mlip::Task task("analysis", c);
+  CbRun out;
+  auto &log = tadah::core::Logger::instance();
+  const auto old_level = log.getLogLevel();
+  log.setLogLevel(tadah::core::LogLevel::INFO);
+  std::ostringstream captured;
+  std::streambuf *old_buf = std::cout.rdbuf(captured.rdbuf());
+  try {
+    tadah::mlip::engines::AnalysisCheckBoundsEngine engine;
+    engine.validate(task);
+    out.rc = engine.run(task);
+  } catch (const std::exception &e) {
+    out.error = e.what();
+  }
+  std::cout.rdbuf(old_buf);
+  log.setLogLevel(old_level);
+  out.log = captured.str();
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  // the file's path in a message is the run's own: written as t.hpo
+  for (auto p = out.error.find(hpo); p != std::string::npos;
+       p = out.error.find(hpo))
+    out.error.replace(p, hpo.size(), "t.hpo");
+  return out;
+}
+
+/* DM_Blip 0 4 4 Ta Ta, CGRIDMB 3 3.5 4 4.5, SGRIDMB 1 1 1 1, RCUTMB 5:
+ * every corner of a box around its values passes on bcc Ta. */
+Context dm_blip_seed() {
+  tadah::core::PeriodicTable::initialize();
+  Context c;
+  c.add("ATOM", "Ta");
+  c.add("INIT2B", "false");
+  c.add("INITMB", "true");
+  c.add("TYPEMB", "DM_Blip 0 4 4 Ta Ta");
+  c.add("CGRIDMB", "3.0 3.5 4.0 4.5");
+  c.add("SGRIDMB", "1.0 1.0 1.0 1.0");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.0);
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+/* The "parsed N bound entries" count of a run's log, -1 without one. */
+int parsed_entries(const CbRun &r) {
+  const std::string tag = "analysis check_bounds: parsed ";
+  const auto p = r.log.find(tag);
+  if (p == std::string::npos) return -1;
+  return std::stoi(r.log.substr(p + tag.size()));
+}
+
+}  // namespace
+
+/* Pins: tadah analysis check_bounds audits every value an OPTIM index
+ * list selects, as tadah hpo searches them, on the DM_Blip seed
+ * dm_blip_seed() (four CGRIDMB values; five for (1-3,5)): (1,3) gives 2
+ * bound entries ("parsed 2 bound entries"), (1-3,5) 4, (1-4:2) 2 and
+ * ( 2 ) 1, each run exiting 0.
+ * Before the fix: the index text was read with std::stoi of its body or of
+ * the two sides of its first '-': (1,3) gave 1 entry (value 3 left out),
+ * (1-3,5) 3 (value 5 left out), (1-4:2) 4 (the stride ignored), and ( 2 )
+ * was refused, "check_bounds: malformed OPTIM line 1 in t.hpo — missing
+ * <lo> <hi>". */
+TEST_CASE("check_bounds: audits every value an index list selects",
+          "[check_bounds][optim_reader]") {
+  struct Row { std::string line; int entries; bool five; };
+  for (const Row &row : std::vector<Row>{
+           {"OPTIM CGRIDMB (1,3) 2.9 4.1", 2, false},
+           {"OPTIM CGRIDMB (1-3,5) 2.9 4.1", 4, true},
+           {"OPTIM CGRIDMB (1-4:2) 2.9 4.1", 2, false},
+           {"OPTIM CGRIDMB ( 2 ) 3.4 3.6", 1, false}}) {
+    CAPTURE(row.line);
+    Context seed = dm_blip_seed();
+    if (row.five) {
+      seed.remove("TYPEMB");
+      seed.add("TYPEMB", "DM_Blip 0 5 5 Ta Ta");
+      seed.remove("CGRIDMB");
+      seed.add("CGRIDMB", "3.0 3.5 4.0 4.2 4.5");
+      seed.remove("SGRIDMB");
+      seed.add("SGRIDMB", "1.0 1.0 1.0 1.0 1.0");
+    }
+    const CbRun r = run_check_bounds(seed, row.line + "\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == row.entries);
+  }
+}
+
+/* Pins: the boxes of an AUTO line are audited, those tadah hpo derives:
+ * OPTIM CGRIDMB (1-4) AUTO FRAC 0.02 gives 4 bound entries, each corner
+ * passing (exit 0); OPTIM CGRIDMB (4) AUTO FRAC 9 the box [4.5 - 40.5,
+ * 4.5 + 40.5], whose low corner fails the audit (exit 1, the WARNING
+ * "check_bounds: first-failing corner"). A continued line is joined
+ * (OPTIM CGRIDMB (2) 3.4 \ + 3.6: 1 entry, exit 0).
+ * Before the fix: each line was refused, "check_bounds: malformed OPTIM
+ * line 1 in t.hpo — missing <lo> <hi>" (AUTO, or the backslash, read as a
+ * bound), and nothing was audited. */
+TEST_CASE("check_bounds: audits the boxes of an AUTO line and joins a "
+          "continued line",
+          "[check_bounds][optim_reader]") {
+  {
+    const CbRun r =
+        run_check_bounds(dm_blip_seed(), "OPTIM CGRIDMB (1-4) AUTO FRAC 0.02\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == 4);
+    CHECK(r.rc == EXIT_SUCCESS);
+  }
+  {
+    const CbRun r =
+        run_check_bounds(dm_blip_seed(), "OPTIM CGRIDMB (4) AUTO FRAC 9\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == 1);
+    CHECK(r.rc == EXIT_FAILURE);
+    CHECK(r.log.find("check_bounds: first-failing corner") !=
+          std::string::npos);
+  }
+  {
+    const CbRun r = run_check_bounds(dm_blip_seed(),
+                                     "OPTIM CGRIDMB (2) 3.4 \\\n  3.6\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == 1);
+    CHECK(r.rc == EXIT_SUCCESS);
+  }
+}
+
+/* Pins: OPTIM FIXWEIGHT (5) names coefficient 5, the FIXWEIGHT value its
+ * FIXINDEX entry pairs with (FIXINDEX 5, FIXWEIGHT 0.3: the first value):
+ * 1 bound entry, exit 0.
+ * Before the fix: the index was read as the position of a FIXWEIGHT value,
+ * and the corner refused it: "check_bounds: OPTIM FIXWEIGHT (5): the seed
+ * configuration has 1 value(s) for FIXWEIGHT". */
+TEST_CASE("check_bounds: reads FIXWEIGHT coefficients through FIXINDEX",
+          "[check_bounds][optim_reader]") {
+  Context seed = dm_blip_seed();
+  seed.add("FIXINDEX", "5");
+  seed.add("FIXWEIGHT", "0.3");
+  const CbRun r = run_check_bounds(seed, "OPTIM FIXWEIGHT (5) 0 1\n");
+  INFO(r.error << r.log);
+  CHECK(r.error.empty());
+  CHECK(parsed_entries(r) == 1);
+  CHECK(r.rc == EXIT_SUCCESS);
+}
+
+namespace {
+
+/* One DM_Embed component, ta (PAIRS Ta Ta: Blip5 density centres 1, 2.5,
+ * 4, Cut_Poly RADIUS @p radius), and nothing else on TYPEMB. */
+Context embed_only_seed(const std::string &radius) {
+  tadah::core::PeriodicTable::initialize();
+  std::istringstream text(
+      "ATOM Ta\nWATOM 73\nINIT2B false\nINITMB true\nVERBOSE 0\n"
+      "DESCRIPTOR ta DM_Embed\nPAIRS Ta Ta\nDENSITY\nBASIS Blip5\n"
+      "FORM NONNEG\nCENTRES 1.0 2.5 4.0\nETA 1.5 1.5 1.5\n"
+      "AMPLITUDES 0.4 0.2 0.1\nCUTOFF\nTYPE Cut_Poly\nRADIUS " + radius +
+      "\nENDCUTOFF\nENDDENSITY\nEMBEDDING\nBASIS Gaussian\n"
+      "CENTRES 0.0 0.5 1.0 1.5\nWIDTHS 0.5 0.5 0.5 0.5\nREFERENCE ZERO\n"
+      "ENDEMBEDDING\nENDDESCRIPTOR\n");
+  return tadah::core::CoreUserConfigParser().parse(text);
+}
+
+}  // namespace
+
+/* Pins: a DM_Embed component path is audited, its corner written into the
+ * component as tadah hpo writes a candidate: OPTIM ta.DENSITY.CENTRES (2)
+ * 2.4 2.6 gives 1 entry, exit 0. A box on the component's RADIUS from 2.6,
+ * below every Ta-Ta distance of bcc Ta (2.86 A), to 5 (seed RADIUS 2.6)
+ * fails at its low corner only: the statistics are taken at the largest
+ * RADIUS of the box (exit 1, the first-failing corner named), the high
+ * corner holding the neighbours of the data.
+ * Before the fix: the path was read as a key of the seed, which stores
+ * none: the box on CENTRES (2) was refused, "check_bounds: OPTIM
+ * ta.DENSITY.CENTRES (2): the seed configuration has 0 value(s) for
+ * ta.DENSITY.CENTRES", and the box on RADIUS (1) added to the corner's
+ * context as a key, which the context refuses ("Key not allowed:
+ * TA.DENSITY.CUTOFF.RADIUS"). */
+TEST_CASE("check_bounds: audits a DM_Embed component path",
+          "[check_bounds][optim_reader][embed]") {
+  {
+    const CbRun r = run_check_bounds(embed_only_seed("5.0"),
+                                     "OPTIM ta.DENSITY.CENTRES (2) 2.4 2.6\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == 1);
+    CHECK(r.rc == EXIT_SUCCESS);
+  }
+  {
+    const CbRun r = run_check_bounds(
+        embed_only_seed("2.6"), "OPTIM TA.DENSITY.CUTOFF.RADIUS (1) 2.6 5\n");
+    INFO(r.error << r.log);
+    CHECK(r.error.empty());
+    CHECK(parsed_entries(r) == 1);
+    CHECK(r.rc == EXIT_FAILURE);
+    CHECK(r.log.find("check_bounds: 1/2 corners produced FAIL findings") !=
+          std::string::npos);
+  }
+}
+
+/* Pins: an OPTIM line tadah hpo refuses is refused with tadah hpo's reason,
+ * framed with the command, the line and the file, and the line: "OPTIM
+ * CGRIDMB (2) 3.4 3.6 x" throws "tadah analysis check_bounds: line 1 of
+ * t.hpo: OPTIM CGRIDMB: unexpected token(s) '3.4 3.6 x' -- the grammar is
+ * ...\nLine: OPTIM CGRIDMB (2) 3.4 3.6 x"; "OPTIM CGRIDMB (5) 1 2" on the
+ * four values names their count; "OPTIM CGRIDMB (0) 1 2" the first index.
+ * Before the fix: the first was audited as the box [3.4, 3.6] (exit 0, the
+ * token x not read), the second refused at its corner ("the seed
+ * configuration has 4 value(s) for CGRIDMB") and the third audited as the
+ * first value. */
+TEST_CASE("check_bounds: refuses an OPTIM line tadah hpo refuses, with its "
+          "message",
+          "[check_bounds][optim_reader]") {
+  const std::string grammar =
+      " -- the grammar is OPTIM <KEY> (indices) <low> <high> [LIN | LOG | "
+      "ASINH <c>] or OPTIM <KEY> (indices) AUTO [RATIO <f> | FRAC <p>] "
+      "[FLOOR <a>] [GROUP_FLOOR <r>] [LIN | LOG | ASINH <c>]";
+  CHECK(run_check_bounds(dm_blip_seed(), "OPTIM CGRIDMB (2) 3.4 3.6 x\n")
+            .error ==
+        "tadah analysis check_bounds: line 1 of t.hpo: OPTIM CGRIDMB: "
+        "unexpected token(s) '3.4 3.6 x'" + grammar +
+        "\nLine: OPTIM CGRIDMB (2) 3.4 3.6 x");
+  CHECK(run_check_bounds(dm_blip_seed(),
+                         "# a comment\nOPTIM CGRIDMB (5) 1 2  # past\n")
+            .error ==
+        "tadah analysis check_bounds: line 2 of t.hpo: OPTIM CGRIDMB (5): "
+        "CGRIDMB has 4 values in the training configuration, so the indices "
+        "of OPTIM CGRIDMB run from 1 to 4\nLine: OPTIM CGRIDMB (5) 1 2");
+  CHECK(run_check_bounds(dm_blip_seed(), "OPTIM CGRIDMB (0) 1 2\n").error ==
+        "tadah analysis check_bounds: line 1 of t.hpo: OPTIM CGRIDMB: bad "
+        "index list (0): OPTIM indices start at 1\nLine: OPTIM CGRIDMB (0) "
+        "1 2");
 }
