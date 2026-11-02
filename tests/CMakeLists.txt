@@ -17,6 +17,21 @@ endif()
 include(Catch)
 catch_discover_tests(test_mlip)
 
+# test_hpotarget_syntax.cpp and test_hpotarget_optim.cpp test for the
+# headers of the OPTIM reader with __has_include, and hold one failing case
+# without them. A compiler's dependency file lists no header __has_include
+# looked for and did not find, so the sources depend on the headers through
+# a glob each build checks (CONFIGURE_DEPENDS: a header that appears or goes
+# configures again): they are compiled again when the headers appear,
+# change or go.
+file(GLOB _mlip_optim_reader_headers CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/tadah/mlip/hpotarget_syntax.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/tadah/mlip/hpotarget_optim.h)
+set_property(SOURCE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_hpotarget_syntax.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_hpotarget_optim.cpp
+    APPEND PROPERTY OBJECT_DEPENDS ${_mlip_optim_reader_headers})
+
 # The memory of the balance table of a fit: an executable of its own, as
 # it replaces the global operator new to count and refuse allocations.
 add_executable(test_mlip_fit_balance_memory

@@ -1,6 +1,7 @@
 #include <tadah/mlip/engines/refit_keys.h>
 
 #include <tadah/core/number_format.h>
+#include <tadah/mlip/hpotarget_syntax.h>
 #include <tadah/models/descriptors/basis_kind.h>
 #include <tadah/models/descriptors/dm/embf0.h>
 
@@ -46,18 +47,6 @@ std::optional<std::string> single(const Context &c, const std::string &key) {
   return c.stored_value(key, 0);
 }
 
-// " (too small: ...)" for a token in the number grammar whose magnitude is
-// below the smallest normal double (parse_decimal_finite takes it as the
-// subnormal or 0 it underflows to, parse_decimal_normal refuses it), as
-// tadah hpo's number_underflow_note says it.
-std::string too_small_note(const std::string &tok) {
-  double v = 0.0;
-  if (!core::parse_decimal_finite(tok, v) || core::parse_decimal_normal(tok, v))
-    return "";
-  return " (too small: its magnitude is below the smallest normal double, "
-         "2.2250738585072014e-308)";
-}
-
 // TenthToOne: REFIT_REACH_SMIN. Its compressed lattice a = smin * a0 sets
 // the neighbour lists of the self-test and the E-V scans, whose length grows
 // as smin^-3 (a/a0 0.01 took a minute, 1e-6 did not finish), and the
@@ -93,7 +82,7 @@ double real_token(const std::string &key, const std::string &tok, Range r) {
   if (number && in_range(v, r)) return v;
   throw std::runtime_error(kWho + key + " must be " + range_text(r) +
                            ", got '" + tok + "'" +
-                           (number ? std::string() : too_small_note(tok)));
+                           (number ? std::string() : number_underflow_note(tok)));
 }
 
 // A real key: absent -> nullopt.
