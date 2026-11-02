@@ -90,8 +90,8 @@ bool refit_key_configured(const tadah::core::Context &c,
  *  stage blocks, which neither REFIT_MODE reads: the migration text of
  *  check_refit_mode_keys (in either mode) and of the compact fitter's
  *  parser (HPO's RefitParser::parse):
- *    "tadah refit: a top-level OPTIMIZER block is no longer supported. The
- *     stage pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, ... The
+ *    "tadah refit: a top-level OPTIMIZER block is refused: the stages of
+ *     tadah refit are the blocks INIT, EXPLORE, REFINE and FUSE, ... the
  *     Refitting page of the documentation has examples (Stage blocks)." */
 std::string top_level_optimizer_refusal();
 

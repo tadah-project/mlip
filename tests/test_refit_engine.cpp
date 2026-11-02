@@ -238,13 +238,16 @@ Context compact_refit_context(const std::string &eam_file,
 
 // The refusal of REFIT_MODE compact by this engine, which has no compact
 // fitter (HPO's engine has it); `defaulted`: the configuration has no
-// REFIT_MODE key.
+// REFIT_MODE key. It names what a build has in the words of the refusal of
+// tadah hpo without the Nested Fitting Procedure (it said "which this
+// tadah was built without (it needs TADAH_ENABLE_NFP and
+// TADAH_ENABLE_CERES)").
 std::string no_compact_fitter(bool defaulted = false) {
   return std::string("tadah refit: REFIT_MODE compact") +
          (defaulted ? " (the default)" : "") +
-         " needs the compact fitter, which this tadah was built without (it "
-         "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); REFIT_MODE dense "
-         "fits without it";
+         " needs the compact fitter, which this build of tadah does not have "
+         "(a build with -DTADAH_ENABLE_NFP=ON and -DTADAH_ENABLE_CERES=ON has "
+         "it); REFIT_MODE dense fits without it";
 }
 
 // The mode rule's refusal of `what` (a key, "the <KEY> block" or
@@ -1127,17 +1130,20 @@ const std::vector<std::pair<std::string, std::string>> kCompactBlocks = {
 // migration text of the compact fitter's parser (HPO's RefitParser::parse,
 // whose own test pins it), to which REFIT_MODE dense adds its last sentence.
 const std::string kTopLevelOptimizer =
-    "tadah refit: a top-level OPTIMIZER block is no longer supported. The "
-    "stage pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
-    "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
-    "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO in "
-    "EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; JOINT -> "
-    "FUSE. The Refitting page of the documentation has examples (Stage "
-    "blocks).";
+    "tadah refit: a top-level OPTIMIZER block is refused: the stages of tadah "
+    "refit are the blocks INIT, EXPLORE, REFINE and FUSE, and an OPTIMIZER "
+    "block sits inside EXPLORE, REFINE or FUSE. The GLOBAL, POLISH and JOINT "
+    "stages of a top-level OPTIMIZER block correspond to the OPTIMIZER block "
+    "inside EXPLORE (its global ALGO with an INNER local search, rung 0), to "
+    "REFINE and to FUSE; the Refitting page of the documentation has "
+    "examples (Stage blocks).";
+// It said "In the grammar of the top-level OPTIMIZER block, GLOBAL is the
+// global ALGO of the OPTIMIZER block of EXPLORE ..., POLISH is REFINE and
+// JOINT is FUSE", which did not name GLOBAL, POLISH and JOINT as stages.
 const std::string kTopLevelOptimizerDense =
     kTopLevelOptimizer +
-    " Under REFIT_MODE dense, which reads no stage block, remove the "
-    "OPTIMIZER block.";
+    " REFIT_MODE dense reads no stage block, and takes no OPTIMIZER block at "
+    "all.";
 
 // The keys only REFIT_MODE dense reads, each with a valid value.
 const std::vector<std::pair<std::string, std::string>> kDenseOnlyKeys = {
@@ -1563,9 +1569,9 @@ TEST_CASE_METHOD(PTFixture,
    * refuses REFIT_MODE compact, written or the default, in validate() and
    * in run() before it reads the EAM file, in every RHOFORM and with the
    * default or a chosen basis: "tadah refit: REFIT_MODE compact (the
-   * default) needs the compact fitter, which this tadah was built without
-   * (it needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); set REFIT_MODE
-   * dense"; it writes nothing (no pot.tadah, refit.eam or refit_opt.log).
+   * default) needs the compact fitter, which this build of tadah does not
+   * have (...); REFIT_MODE dense fits without it" (no_compact_fitter);
+   * it writes nothing (no pot.tadah, refit.eam or refit_opt.log).
    * Before the fix: validate() accepted it, and run() fitted the table in
    * dense mode after "WARNING: tadah refit: REFIT_MODE compact requires
    * the HPO build (Ceres); falling back to dense fitting." (a defaulted

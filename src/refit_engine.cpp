@@ -138,9 +138,9 @@ void require_fitter(const Context &c, RefitMode mode, bool has_compact_fitter) {
   throw std::runtime_error(
       std::string("tadah refit: REFIT_MODE compact") +
       (c.has_stored("REFIT_MODE") ? "" : " (the default)") +
-      " needs the compact fitter, which this tadah was built without (it "
-      "needs TADAH_ENABLE_NFP and TADAH_ENABLE_CERES); REFIT_MODE dense fits "
-      "without it");
+      " needs the compact fitter, which this build of tadah does not have "
+      "(a build with -DTADAH_ENABLE_NFP=ON and -DTADAH_ENABLE_CERES=ON has "
+      "it); REFIT_MODE dense fits without it");
 }
 
 void apply_level(const std::string &level, int &n2b, int &nrho, int &nF) {

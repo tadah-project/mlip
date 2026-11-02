@@ -301,13 +301,13 @@ RefitMode read_refit_mode(const Context &c) {
 
 std::string top_level_optimizer_refusal() {
   return kWho +
-         "a top-level OPTIMIZER block is no longer supported. The stage "
-         "pipeline is now INIT -> EXPLORE -> REFINE -> FUSE, each its own "
-         "block, with the OPTIMIZER block NESTED inside EXPLORE/REFINE/FUSE. "
-         "Migration: GLOBAL folded into EXPLORE rung 0 (set its global ALGO "
-         "in EXPLORE's OPTIMIZER, with an INNER local); POLISH -> REFINE; "
-         "JOINT -> FUSE. The Refitting page of the documentation has "
-         "examples (Stage blocks).";
+         "a top-level OPTIMIZER block is refused: the stages of tadah refit "
+         "are the blocks INIT, EXPLORE, REFINE and FUSE, and an OPTIMIZER "
+         "block sits inside EXPLORE, REFINE or FUSE. The GLOBAL, POLISH and "
+         "JOINT stages of a top-level OPTIMIZER block correspond to the "
+         "OPTIMIZER block inside EXPLORE (its global ALGO with an INNER local "
+         "search, rung 0), to REFINE and to FUSE; the Refitting page of the "
+         "documentation has examples (Stage blocks).";
 }
 
 bool read_refit_curve_objective(const Context &c) {
@@ -328,8 +328,8 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
     throw std::runtime_error(
         top_level_optimizer_refusal() +
         (mode == RefitMode::Dense
-             ? " Under REFIT_MODE dense, which reads no stage block, remove "
-               "the OPTIMIZER block."
+             ? " REFIT_MODE dense reads no stage block, and takes no "
+               "OPTIMIZER block at all."
              : ""));
   const RefitMode other =
       mode == RefitMode::Dense ? RefitMode::Compact : RefitMode::Dense;

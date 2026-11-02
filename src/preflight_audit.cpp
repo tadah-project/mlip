@@ -495,8 +495,11 @@ AuditReport run_critical_optim_audit(
 void enforce_audit_mode(const AuditReport& report, AuditMode mode) {
   if (mode != AuditMode::Error) return;
   if (!report.any_fail())       return;
-  std::string out =
-      "preflight_audit: AUDIT=error and one or more FAIL findings:";
+  std::size_t n_fail = 0;
+  for (const auto& m : report.messages)
+    if (m.level == AuditMessage::Level::Fail) ++n_fail;
+  std::string out = "AUDIT error: " + std::to_string(n_fail) +
+                    " FAIL finding(s) stop the run:";
   for (const auto& m : report.messages) {
     if (m.level != AuditMessage::Level::Fail) continue;
     out += "\n  - " + m.descriptor_label;

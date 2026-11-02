@@ -58,7 +58,7 @@ inline std::string intercept_basis_vectors_text(std::size_t n0) {
  *  with a non-linear kernel, or implementation 2 with any kernel), n0 + 1
  *  (the n0 intercept vectors and one drawn from the @p what, e.g. "training
  *  AEDs"): "" when SBASIS @p s has them, else why not ("SBASIS 2: the fit
- *  needs at least 3 basis vectors (...). Set SBASIS to 3 or more.").
+ *  needs at least 3 basis vectors (...); SBASIS 3 or more gives them.").
  *  Basis::check_sbasis and, before training, checked_sbasis
  *  (weight_provisioning.h) refuse it. */
 inline std::string sbasis_lower_bound_problem(std::size_t s, std::size_t n0,
@@ -67,7 +67,7 @@ inline std::string sbasis_lower_bound_problem(std::size_t s, std::size_t n0,
   return "SBASIS " + std::to_string(s) + ": the fit needs "
          "at least " + std::to_string(n0 + 1) + " basis vectors (" +
          intercept_basis_vectors_text(n0) + ", the others are drawn from the " +
-         what + "). Set SBASIS to " + std::to_string(n0 + 1) + " or more.";
+         what + "); SBASIS " + std::to_string(n0 + 1) + " or more gives them.";
 }
 
 /** \brief The basis vectors of an M_KRR fit that draws them.

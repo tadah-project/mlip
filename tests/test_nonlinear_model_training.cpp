@@ -1070,7 +1070,8 @@ TEST_CASE("The intercept columns of each non-linear function are left out "
  * 0.01 trains M_KRR Kern_RBF, which has no intercept column, to the ridge
  * solution penalising every column (1e-8 relative); it still refuses M_KRR
  * Kern_Quadratic, whose column 0 is an intercept, with the message saying
- * so ("does not support intercept exclusion", "1 intercept column").
+ * so ("OALGO 3 (SVD with a uniform ridge) penalises every coefficient
+ * alike", "1 intercept column").
  * Before the fix: both threw the ColumnLayout check, so the Kern_RBF fit
  * and the Kern_Quadratic message CHECKs failed. (Without it, OALGO 3
  * refused every model with BIAS true, ATOM and LAMBDA != 0.) */
@@ -1108,7 +1109,9 @@ TEST_CASE("OALGO 3 with BIAS true trains a kernel without intercept columns "
       msg = e.what();
     }
     INFO("message: " << msg);
-    CHECK(msg.find("does not support intercept exclusion") != std::string::npos);
+    /* It said "does not support intercept exclusion". */
+    CHECK(msg.find("OALGO 3 (SVD with a uniform ridge) penalises every "
+                   "coefficient alike") != std::string::npos);
     CHECK(msg.find("1 intercept column") != std::string::npos);
   }
 }

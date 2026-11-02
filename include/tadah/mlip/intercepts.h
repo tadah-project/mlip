@@ -126,9 +126,9 @@ fitted_intercept_columns(const tadah::core::Context &ctx,
 /** \brief Refuses OALGO 3 with a LAMBDA other than 0 when the fit of
  *  @p ctx has an intercept column it fits, before any fit, with the fit's
  *  message (models::LinearRegressor::require_oalgo3_intercepts: OALGO 3
- *  penalises every weight alike, and a ridge penalty leaves the intercept
- *  columns out; LAMBDA -1, the evidence approximation, needs BIAS false or
- *  every intercept weight pinned).
+ *  penalises every coefficient alike, and the ridge of OALGO 1, 2 and 4
+ *  leaves the intercept columns unpenalised; LAMBDA -1, the evidence
+ *  approximation, needs BIAS false or every intercept coefficient fixed).
  *
  *  The intercept columns are counted as the fit has them: those of the
  *  fit's function (for a model whose basis its fit draws, a kernel's of
