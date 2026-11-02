@@ -465,7 +465,37 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
           (avail.empty() ? std::string("none") : avail) + ".");
     }
   }
+  // A --set whose KEY(i) has no rewritten line is refused: a kept line of
+  // the key that selects the index, or whose index list is not read (it
+  // may be meant to), is named; otherwise the file has no such line.
+  auto refuse_set = [&](const RetargetOptions::SetOverride &s) {
+    const std::string what =
+        "--set " + s.key + "(" + std::to_string(s.index) + "): ";
+    for (const auto &k : classified.kept) {
+      if (k.key != s.key) continue;
+      const bool selects = std::find(k.indices.begin(), k.indices.end(),
+                                     s.index) != k.indices.end();
+      if (!selects && !k.indices.empty()) continue;
+      throw std::runtime_error(
+          what + "line " + std::to_string(k.line) + " ('" + k.text + "'), " +
+          (selects ? "which selects " + s.key + " (" +
+                         std::to_string(s.index) + ")"
+                   : "an OPTIM " + s.key +
+                         " line tadah hpo refuses, whose indices are not "
+                         "read") +
+          ", is kept as written: --set applies to the lines OPTIM <KEY> "
+          "(<index>) <low> <high>.");
+    }
+    std::map<std::string, std::size_t> count;
+    for (const auto &ol : ols) ++count[ol.key];
+    std::string avail;
+    for (const auto &[key, n] : count)
+      avail += "\n  " + key + " (1-" + std::to_string(n) + ")";
+    throw std::runtime_error(what + "no such OPTIM line in the file." +
+                             (avail.empty() ? "" : " Available:" + avail));
+  };
   if (ols.empty()) {
+    if (!opts.sets.empty()) refuse_set(opts.sets.front());
     // An OPTIM line kept as written is named by its WARNING above.
     if (!classified.kept.empty()) return rep;
     rep.warnings.push_back("no OPTIM lines found — nothing to rewrite.");
@@ -820,32 +850,7 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
         break;
       }
     }
-    if (!found) {
-      // A kept line of the key that selects the index, or whose index list
-      // tadah hpo refuses (it may be meant to).
-      for (const auto &k : classified.kept) {
-        if (k.key != s.key) continue;
-        const bool selects = std::find(k.indices.begin(), k.indices.end(),
-                                       s.index) != k.indices.end();
-        if (!selects && !k.indices.empty()) continue;
-        throw std::runtime_error(
-            "--set " + s.key + "(" + std::to_string(s.index) + "): line " +
-            std::to_string(k.line) + " ('" + k.text + "'), " +
-            (selects ? "which selects " + s.key + " (" +
-                           std::to_string(s.index) + ")"
-                     : "an OPTIM " + s.key +
-                           " line whose indices tadah hpo refuses") +
-            ", is kept as written: --set applies to the lines OPTIM <KEY> "
-            "(<index>) <low> <high>.");
-      }
-      std::string avail;
-      for (const auto &[key, group] : groups) {
-        avail += "\n  " + key + " (1-" + std::to_string(group.size()) + ")";
-      }
-      throw std::runtime_error(
-          "--set " + s.key + "(" + std::to_string(s.index) +
-          "): no such OPTIM line in the file. Available:" + avail);
-    }
+    if (!found) refuse_set(s);
   }
 
   // A --set on a bump channel always wins, but warn when the chosen box
