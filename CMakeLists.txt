@@ -5,7 +5,7 @@ project(Tadah.MLIP LANGUAGES CXX)
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   message(FATAL_ERROR
     "In-source builds are not allowed.\n"
-    "Create a separate build directory and run CMake from there.")
+    "CMake must run in a separate build directory, outside the source directory.")
 endif()
 
 # 1. Global settings
@@ -225,12 +225,12 @@ if (NOT TADAH_BUILD_DOCS_ONLY)
 
   if(NOT CURL_FOUND)
     message(FATAL_ERROR
-      "\nCould not find libcurl. Please install the development files.\n"
-      "On Ubuntu/Debian-based systems, try:\n"
+      "\nCould not find libcurl. The build needs its development files.\n"
+      "On Ubuntu/Debian-based systems they are installed with:\n"
       "  sudo apt-get install libcurl4-openssl-dev\n"
-      "On Fedora/Red Hat, try:\n"
+      "On Fedora/Red Hat they are installed with:\n"
       "  sudo dnf install libcurl-devel\n"
-      "Or specify CURL_INCLUDE_DIR/CURL_LIBRARY manually.\n"
+      "CURL_INCLUDE_DIR and CURL_LIBRARY can also be set by hand.\n"
     )
   endif()
 
