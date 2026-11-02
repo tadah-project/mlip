@@ -1,9 +1,10 @@
 // Catch2 v2 unit tests for the check_bounds dry-run.
 //
 // Verifies:
-//   * parse_hpo_target_bounds extracts (key, lo, hi) from
-//     `OPTIM <KEY> (1) lo hi` (scalar) and `OPTIM <KEY> (1-N) lo hi`
-//     (vector) lines, and skips comments / blank lines.
+//   * parse_hpo_target_bounds reads the OPTIM lines as tadah hpo reads them
+//     against a seed configuration: (key, slot, lo, hi) of each value
+//     `OPTIM <KEY> (1) lo hi` and `OPTIM <KEY> (1-N) lo hi` select, and
+//     skips comments, blank lines and the other lines.
 //   * sample_corners returns 2^k for k <= 12 with each corner having
 //     either lo or hi at every dimension.
 //   * sample_corners' Latin-hypercube branch returns ⌈k log₂ k⌉
@@ -17,6 +18,8 @@
 #include "catch2/catch.hpp"
 
 #include <tadah/mlip/check_bounds.h>
+#include <tadah/core/context.h>
+#include <tadah/core/periodic_table.h>
 
 #include <cmath>
 #include <cstdio>
@@ -31,6 +34,35 @@ using tadah::mlip::Bound;
 using tadah::mlip::parse_hpo_target_bounds;
 using tadah::mlip::sample_corners;
 
+/* The seed the parse tests read their OPTIM lines against: D2_Blip 4 4 Ta
+ * Ta (CGRID2B 2 3 4 5, SGRID2B 1 1 1 1, RCUT2B 5.5) and DM_Blip 0 4 4 Ta Ta
+ * (CGRIDMB 3 3.5 4 4.5, SGRIDMB 1 1 1 1, RCUTMB 5). */
+static tadah::core::Context parse_seed() {
+  tadah::core::PeriodicTable::initialize();
+  tadah::core::Context c;
+  c.add("ATOM", "Ta");
+  c.add("INIT2B", "true");
+  c.add("INITMB", "true");
+  c.add("TYPE2B", "D2_Blip 4 4 Ta Ta");
+  c.add("CGRID2B", "2.0 3.0 4.0 5.0");
+  c.add("SGRID2B", "1.0 1.0 1.0 1.0");
+  c.add("RCTYPE2B", "Cut_Cos");
+  c.add("RCUT2B", 5.5);
+  c.add("TYPEMB", "DM_Blip 0 4 4 Ta Ta");
+  c.add("CGRIDMB", "3.0 3.5 4.0 4.5");
+  c.add("SGRIDMB", "1.0 1.0 1.0 1.0");
+  c.add("RCTYPEMB", "Cut_Cos");
+  c.add("RCUTMB", 5.0);
+  c.add("VERBOSE", 0);
+  return c;
+}
+
+/* parse_hpo_target_bounds of @p path against parse_seed(). */
+static std::vector<Bound> parse_bounds(const std::string& path) {
+  tadah::core::Context seed = parse_seed();
+  return parse_hpo_target_bounds(path, seed);
+}
+
 /* A file of its own for each call, in each process: test cases run as
  * processes of their own at once (CTest), and std::rand() draws the same
  * numbers in each of them. */
@@ -44,6 +76,11 @@ static std::string write_tmp(const std::string& body) {
   return path;
 }
 
+/* Pins: an OPTIM line of one index gives one bound, the slot of its value
+ * (arg_pos 0 for (1): the first value), its index as written and its line;
+ * the lines of a block are not OPTIM lines. (arg_pos was -1, "scalar", for
+ * (1) until the OPTIM lines were read with tadah hpo's reader, which gives
+ * every value its slot.) */
 TEST_CASE("check_bounds: parse scalar OPTIM lines", "[check_bounds]") {
   const std::string body =
       "# header comment\n"
@@ -54,28 +91,39 @@ TEST_CASE("check_bounds: parse scalar OPTIM lines", "[check_bounds]") {
       "OPTIM RCUT2B (1) 3.0 6.0\n"
       "OPTIM CGRIDMB (1) 2.0 4.0\n";
   auto path = write_tmp(body);
-  auto bounds = parse_hpo_target_bounds(path);
+  auto bounds = parse_bounds(path);
   std::remove(path.c_str());
 
   REQUIRE(bounds.size() == 2);
   REQUIRE(bounds[0].key == "RCUT2B");
-  REQUIRE(bounds[0].arg_pos == -1);
+  REQUIRE(bounds[0].arg_pos == 0);
+  REQUIRE(bounds[0].index == 1);
+  REQUIRE(bounds[0].line == 6);
   REQUIRE(bounds[0].lo == Approx(3.0));
   REQUIRE(bounds[0].hi == Approx(6.0));
 
   REQUIRE(bounds[1].key == "CGRIDMB");
-  REQUIRE(bounds[1].arg_pos == -1);
+  REQUIRE(bounds[1].arg_pos == 0);
+  REQUIRE(bounds[1].line == 7);
 }
 
+/* Pins: an index list gives one bound per value it selects, at the value's
+ * slot: (1-4) arg_pos 0..3, (1,3) arg_pos 0 and 2 with indices 1 and 3. */
 TEST_CASE("check_bounds: parse vector OPTIM lines", "[check_bounds]") {
   const std::string body =
       "OPTIM CGRID2B (1-4) 0.0 6.0\n"
-      "OPTIM SGRID2B (1-3) 0.1 5.0\n";
+      "OPTIM SGRID2B (1-3) 0.1 5.0\n"
+      "OPTIM CGRIDMB (1,3) 2.5 4.5\n";
   auto path = write_tmp(body);
-  auto bounds = parse_hpo_target_bounds(path);
+  auto bounds = parse_bounds(path);
   std::remove(path.c_str());
+  REQUIRE(bounds.size() == 4 + 3 + 2);
+  CHECK(bounds[7].key == "CGRIDMB");
+  CHECK(bounds[7].arg_pos == 0);
+  CHECK(bounds[7].index == 1);
+  CHECK(bounds[8].arg_pos == 2);
+  CHECK(bounds[8].index == 3);
 
-  REQUIRE(bounds.size() == 4 + 3);
   // CGRID2B occupies arg_pos 0..3
   for (int i = 0; i < 4; ++i) {
     REQUIRE(bounds[i].key == "CGRID2B");
@@ -93,7 +141,7 @@ TEST_CASE("check_bounds: parse vector OPTIM lines", "[check_bounds]") {
 TEST_CASE("check_bounds: parse rejects malformed OPTIM lines", "[check_bounds]") {
   const std::string body = "OPTIM RCUT2B (1)\n";   // missing lo hi
   auto path = write_tmp(body);
-  REQUIRE_THROWS_AS(parse_hpo_target_bounds(path), std::runtime_error);
+  REQUIRE_THROWS_AS(parse_bounds(path), std::runtime_error);
   std::remove(path.c_str());
 }
 
@@ -690,7 +738,7 @@ TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
     const auto path = write_tmp("OPTIM RCUTMB (1) 4 6\n" + line + "\n");
     std::string what;
     try {
-      parse_hpo_target_bounds(path);
+      parse_bounds(path);
     } catch (const std::runtime_error& e) {
       what = e.what();
     }
@@ -701,7 +749,7 @@ TEST_CASE("check_bounds: parse refuses a box whose high bound is not above "
     CHECK(what.find("is not greater than <low>") != std::string::npos);
   }
   const auto path = write_tmp("OPTIM RCUT2B (1) 4 6\n");
-  CHECK(parse_hpo_target_bounds(path).size() == 1u);
+  CHECK(parse_bounds(path).size() == 1u);
   std::remove(path.c_str());
 }
 

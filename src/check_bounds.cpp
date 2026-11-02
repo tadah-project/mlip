@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -15,105 +16,50 @@
 #include <tadah/core/logger.h>
 #include <tadah/core/number_format.h>
 #include <tadah/mlip/data_stats_compute.h>
+#include <tadah/mlip/hpotarget_optim.h>
 #include <tadah/mlip/preflight_audit.h>
 #include <tadah/mlip/structure_db.h>
+#include <tadah/models/descriptors/dm/embed_spec.h>
 #include <tadah/models/descriptors/dm/rhoform.h>
 #include <tadah/models/eam/pot_curve_edit.h>
 
 namespace tadah {
 namespace mlip {
 
-namespace {
-
-// Parse `(N)` or `(lo-hi)` index spec. Returns the inclusive range.
-// `(1)` means scalar — represented as (-1, -1). `(1-4)` means vector
-// entries with arg_pos 0..3 (1-based indexing in the file).
-std::pair<int, int> parse_index_spec(const std::string& s) {
-  // Expect one of: "(N)", "(lo-hi)", or no parens (scalar).
-  if (s.empty()) return {-1, -1};
-  std::string body = s;
-  if (body.front() == '(') body.erase(0, 1);
-  if (!body.empty() && body.back() == ')') body.pop_back();
-  if (body.empty()) return {-1, -1};
-  auto dash = body.find('-');
-  if (dash == std::string::npos) {
-    // Single index N (1-based) -> arg_pos = N-1.
-    int n = std::stoi(body);
-    if (n == 1) return {-1, -1};   // (1) is the scalar case
-    return {n - 1, n - 1};
-  }
-  int lo = std::stoi(body.substr(0, dash));
-  int hi = std::stoi(body.substr(dash + 1));
-  return {lo - 1, hi - 1};
-}
-
-}  // namespace
-
-std::vector<Bound> parse_hpo_target_bounds(const std::string& path) {
+std::vector<Bound> parse_hpo_target_bounds(const std::string& path,
+                                           tadah::core::Context& seed) {
   std::ifstream in(path);
   if (!in) {
     throw std::runtime_error(
         "check_bounds: cannot open HPOTARGET file '" + path + "'");
   }
-  std::vector<Bound> out;
-  std::string line;
-  std::size_t lineno = 0;
-  while (std::getline(in, line)) {
-    ++lineno;
-    // Strip leading whitespace and comments.
-    std::size_t p = line.find_first_not_of(" \t");
-    if (p == std::string::npos) continue;
-    if (line[p] == '#') continue;
-    if (line.compare(p, 5, "OPTIM") != 0) continue;
-    // Require a whitespace separator after `OPTIM` so the parser
-    // doesn't false-match `OPTIMIZER` / `OPTIMIZER_ENDOPTIMIZER`.
-    if (p + 5 >= line.size()) continue;
-    const char next = line[p + 5];
-    if (next != ' ' && next != '\t') continue;
-    std::istringstream iss(line.substr(p + 5));
-    std::string key, idx;
-    if (!(iss >> key)) continue;
-    if (!(iss >> idx)) {
-      throw std::runtime_error(
-          "check_bounds: malformed OPTIM line " + std::to_string(lineno) +
-          " in " + path + " — missing index spec");
-    }
-    double lo = 0, hi = 0;
-    if (!(iss >> lo >> hi)) {
-      throw std::runtime_error(
-          "check_bounds: malformed OPTIM line " + std::to_string(lineno) +
-          " in " + path + " — missing <lo> <hi>");
-    }
-    // tadah hpo refuses a box whose high bound is not above its low bound
-    // (a box of zero width included): so is it here, as its corners would
-    // pass the audit at one value.
-    if (!(lo < hi)) {
-      std::ostringstream os;
-      os << "check_bounds: line " << lineno << " of " << path << ", '"
-         << line.substr(p) << "': the high bound " << hi
-         << " is not above the low bound " << lo
-         << "; tadah hpo refuses such a box";
-      throw std::runtime_error(os.str());
-    }
-    auto range = parse_index_spec(idx);
-    if (range.first < 0 && range.second < 0) {
-      Bound b;
-      b.key = key;
-      b.arg_pos = -1;
-      b.lo = lo;
-      b.hi = hi;
-      out.push_back(std::move(b));
-    } else {
-      for (int i = range.first; i <= range.second; ++i) {
-        Bound b;
-        b.key = key;
-        b.arg_pos = i;
-        b.lo = lo;
-        b.hi = hi;
-        out.push_back(std::move(b));
-      }
-    }
+  // The configuration as tadah hpo prepares it, and its OPTIM lines as
+  // tadah hpo reads them: every value an index list selects, the box tadah
+  // hpo derives for an AUTO line, a DM_Embed component path, a FIXWEIGHT
+  // coefficient through FIXINDEX, and each line tadah hpo refuses refused
+  // with its reason.
+  const OptimSeed optim_seed =
+      prepare_optim_seed(seed, "tadah analysis check_bounds");
+  std::vector<OptimTargetLine> lines;
+  try {
+    lines = read_optim_lines(in, seed, optim_seed);
+  } catch (const TargetLineError& e) {
+    throw std::runtime_error("tadah analysis check_bounds: line " +
+                             std::to_string(e.line) + " of " + path + ": " +
+                             e.what() + "\nLine: " + e.text);
   }
+  std::vector<Bound> out;
+  for (const OptimTargetLine& l : lines)
+    for (const OptimBox& box : l.optim.boxes) {
+      Bound b;
+      b.key = l.optim.key;
+      b.arg_pos = static_cast<int>(box.slot);
+      b.lo = box.lo;
+      b.hi = box.hi;
+      b.index = box.index;
+      b.line = l.optim.line;
+      out.push_back(std::move(b));
+    }
   return out;
 }
 
@@ -167,11 +113,27 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
         "check_bounds: a corner has " + std::to_string(corner.size()) +
         " values for " + std::to_string(bounds.size()) + " bounds");
   tadah::core::Context ctx = seed;
+  // The values of the DM_Embed component paths the bounds name, written
+  // into their components once every bound is applied.
+  std::map<std::string, std::vector<double>> named;
   for (std::size_t j = 0; j < bounds.size(); ++j) {
     const Bound& b = bounds[j];
-    // OPTIM KEY (i) sets entry i of the key; (1) (arg_pos -1) is entry 1.
+    // OPTIM KEY (i) sets entry i of the key; arg_pos -1 is entry 1.
     const std::size_t entry =
         b.arg_pos < 0 ? 0 : static_cast<std::size_t>(b.arg_pos);
+    if (b.key.find('.') != std::string::npos) {
+      auto it = named.find(b.key);
+      if (it == named.end())
+        it = named.emplace(b.key, tadah::models::embed_binding(ctx, b.key)
+                                      .values).first;
+      if (entry >= it->second.size())
+        throw std::runtime_error(
+            "check_bounds: OPTIM " + b.key + " (" +
+            std::to_string(entry + 1) + "): the seed configuration has " +
+            std::to_string(it->second.size()) + " value(s) for " + b.key);
+      it->second[entry] = corner[j];
+      continue;
+    }
     std::vector<std::string> tokens;
     for (std::size_t n = 0;; ++n) {
       const auto t = ctx.stored_value(b.key, n);
@@ -198,6 +160,8 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
   // are reported once, by check_bounds_at_corners).
   std::vector<tadah::models::potedit::KnotRcutNote> unreported;
   tadah::models::potedit::normalize_knot_rcut(ctx, "", unreported);
+  // The DM_Embed component paths, as tadah hpo writes a candidate's.
+  if (!named.empty()) tadah::models::write_embed_coordinates(ctx, named);
   return ctx;
 }
 
@@ -242,10 +206,26 @@ CheckBoundsResult check_bounds_at_corners(
   };
   widen(reach2b, seed, "RCUT2B");
   widen(reachmb, seed, "RCUTMB");
+  // The RADIUS of the density of a DM_Embed component a box searches
+  // (<ID>.DENSITY.CUTOFF.RADIUS): its largest value in the seed and in
+  // every corner's context, which the statistics take as well (the
+  // component's cutoff, which RCUTMAX follows).
+  std::map<std::string, double> reach_radius;
+  for (const Bound& b : bounds) {
+    const std::string suffix = ".DENSITY.CUTOFF.RADIUS";
+    if (b.key.size() > suffix.size() &&
+        b.key.compare(b.key.size() - suffix.size(), suffix.size(),
+                      suffix) == 0)
+      reach_radius.emplace(
+          b.key, tadah::models::embed_binding(seed, b.key).values.at(0));
+  }
   for (const auto& c : corners) {
     const tadah::core::Context corner_ctx = corner_context(seed, bounds, c);
     widen(reach2b, corner_ctx, "RCUT2B");
     widen(reachmb, corner_ctx, "RCUTMB");
+    for (auto& [path, reach] : reach_radius)
+      reach = std::max(
+          reach, tadah::models::embed_binding(corner_ctx, path).values.at(0));
   }
   tadah::core::Context stats_ctx = seed;
   auto set_reach = [&stats_ctx](const char* key,
@@ -257,6 +237,11 @@ CheckBoundsResult check_bounds_at_corners(
   };
   set_reach("RCUT2B", reach2b);
   set_reach("RCUTMB", reachmb);
+  if (!reach_radius.empty()) {
+    std::map<std::string, std::vector<double>> radius;
+    for (const auto& [path, reach] : reach_radius) radius[path] = {reach};
+    tadah::models::write_embed_coordinates(stats_ctx, radius);
+  }
   // Statistics that cannot be computed (two atoms at one position, a cell
   // too small for the cutoff, ...) stop the audit: audited against empty
   // statistics every corner would pass.
@@ -286,7 +271,11 @@ CheckBoundsResult check_bounds_at_corners(
       if (!rule || rule->admits(c[j])) continue;
       std::ostringstream os;
       os << bounds[j].key << "("
-         << (bounds[j].arg_pos < 0 ? 1 : bounds[j].arg_pos + 1) << ") = "
+         << (bounds[j].index > 0 ? bounds[j].index
+             : bounds[j].arg_pos < 0
+                 ? std::size_t{1}
+                 : static_cast<std::size_t>(bounds[j].arg_pos) + 1)
+         << ") = "
          << c[j] << ": " << rule->by << " requires " << rule->requirement
          << " (tadah hpo refuses this OPTIM box)";
       out.push_back(os.str());

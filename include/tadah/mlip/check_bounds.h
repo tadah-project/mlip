@@ -3,8 +3,10 @@
 
 // `tadah analysis check_bounds`. CI-friendly dry-run.
 //
-// Reads an HPOTARGET file's `OPTIM <KEY> (range) <lo> <hi>` lines,
-// builds a bound box, samples corners (full 2^k for k ≤ 12, otherwise
+// Reads the OPTIM lines of an HPOTARGET file as tadah hpo reads them
+// (MLIP's OPTIM reader, hpotarget_optim.h: index lists, AUTO boxes, DM_Embed
+// component paths, FIXWEIGHT coefficients), builds a bound box per selected
+// value, samples corners (full 2^k for k ≤ 12, otherwise
 // `min(2^k, ⌈k·log₂(k)⌉)` Latin-hypercube samples), and runs the
 // pre-flight audit at each corner. A corner value below the low
 // bound the seed's density form or a radial bump channel allows
@@ -23,23 +25,34 @@ namespace mlip {
 
 class StructureDB;
 
-/** \brief One bound entry from the HPOTARGET file. Each entry covers
- *  one (key, arg_pos) tuple with explicit `(lo, hi)`. Vector entries
- *  expanded — `OPTIM CGRID2B (1-4) 0 5` becomes 4 separate Bound
- *  rows with arg_pos 0..3. */
+/** \brief One bound entry from the HPOTARGET file: the box of one value
+ *  an OPTIM line selects. `OPTIM CGRID2B (1-4) 0 5` gives 4 Bound rows,
+ *  arg_pos 0..3; an AUTO line the box tadah hpo derives for each value. */
 struct Bound {
-  std::string key{};
-  int         arg_pos{-1};   // -1 scalar; 0..n-1 vector
+  std::string key{};         // upper-cased; a DM_Embed component path too
+  /** The 0-based position of the value among the key's tokens; -1 (a
+   *  bound made by hand) is position 0. */
+  int         arg_pos{-1};
   double      lo{0.0};
   double      hi{0.0};
+  std::size_t index{0};      // the OPTIM index as written (FIXWEIGHT: the coefficient)
+  std::size_t line{0};       // the last physical line of its OPTIM line
 };
 
-/** \brief Parse an HPOTARGET file for `OPTIM <KEY> (range) <lo> <hi>`
- *  rows. Tolerant — unrecognised lines are skipped. Throws on any
- *  malformed `OPTIM` line (e.g. missing range or bounds), and on one whose
- *  high bound is not above its low bound (a box of zero width included),
- *  which tadah hpo refuses, naming the line. */
-std::vector<Bound> parse_hpo_target_bounds(const std::string& path);
+/** \brief The boxes of the OPTIM lines of the HPOTARGET file @p path, one
+ *  per value each line selects, read as tadah hpo reads them against the
+ *  training configuration @p seed (read_optim_lines): @p seed is prepared
+ *  first as tadah hpo prepares its configuration (prepare_optim_seed: the
+ *  radial grids expanded, the values of a potential its descriptors do not
+ *  read left out, a DM_REAM configuration refused without RHOFORM), and a
+ *  key of a line inserts its blueprint default into it. Every logical line
+ *  whose key is OPTIM is read, inside a block too; other lines are not.
+ *  Throws std::runtime_error "check_bounds: cannot open HPOTARGET file
+ *  '<path>'", and, for a line tadah hpo refuses, "tadah analysis
+ *  check_bounds: line <N> of <path>: <tadah hpo's reason>\nLine: <the
+ *  line>". */
+std::vector<Bound> parse_hpo_target_bounds(const std::string& path,
+                                           tadah::core::Context& seed);
 
 /** \brief Sample corner combinations of `bounds`. For `bounds.size() <= 12`
  *  returns the full `2^k` corner set. For larger problems returns a
@@ -52,10 +65,12 @@ sample_corners(const std::vector<Bound>& bounds, std::uint64_t seed = 0);
 
 /** \brief The context a corner is audited in, the one tadah hpo evaluates
  *  (update_candidate_context): a copy of @p seed with entry i of each
- *  bound's key (arg_pos, or the first entry for a scalar `(1)` bound) set
- *  to the corner value and every other entry kept. Several bounds on one
- *  key each set their own entry. A key the seed does not set takes the
- *  corner value alone. The cutoff of a knot channel (RCUT2B of a D2_Knot5
+ *  bound's key (arg_pos, or the first entry for arg_pos -1) set to the
+ *  corner value and every other entry kept. Several bounds on one key each
+ *  set their own entry. A key the seed does not set takes the corner value
+ *  alone. A DM_Embed component path (a key holding '.') sets the value of
+ *  its component (models::write_embed_coordinates, as tadah hpo writes a
+ *  candidate). The cutoff of a knot channel (RCUT2B of a D2_Knot5
  *  line, RCUTMB of a knot DM_REAM line) is then its largest knot
  *  (models::potedit::derived_knot_rcut), as tadah hpo re-derives it for
  *  each candidate. Throws when a bound names an entry past the seed's
@@ -67,7 +82,8 @@ tadah::core::Context corner_context(const tadah::core::Context& seed,
 
 /** \brief Run the pre-flight audit at every corner of the bound box (in the
  *  corner_context of each corner, with the statistics of the dataset taken
- *  at the largest cutoff of the seed and of every corner; each descriptor
+ *  at the largest cutoff of the seed and of every corner, the RADIUS of a
+ *  DM_Embed component's density included; each descriptor
  *  judged by those of the element pairs of its own line, each pair on its
  *  own, as run_preflight_soft() judges it), after the
  *  stated cutoff of a knot channel of `seed` is replaced with its largest
