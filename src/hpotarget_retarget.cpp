@@ -44,6 +44,9 @@ struct OptimLine {
 
 // A commented OPTIM line: its indent, its comment prefix and its text.
 const std::regex kCommentedOptimRe(R"(^(\s*)(#\s*)(OPTIM\s.*)$)");
+// The text of a commented line that is a search parameter, not prose: the
+// word OPTIM, a key and the opening parenthesis of its indices.
+const std::regex kCommentedOptimShapeRe(R"(^OPTIM\s+[^\s(]+\s*\()");
 const std::regex kHeaderPctRe(R"(Bounds are \+-([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)%)");
 const std::regex kGroupHeaderRe(
     R"(^(#\s*)([A-Za-z0-9_.]+)(\s+\(\+-)([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(%.*)$)");
@@ -89,8 +92,8 @@ std::string join_reasons(const std::vector<std::string> &r) {
 }
 
 // An OPTIM line --retarget keeps as written: the physical line (1-based)
-// and its text, and the key and indices it selects where its syntax reads
-// (empty key: unknown).
+// and its text, its key (upper-cased) and the indices it selects where its
+// index list reads (empty: refused).
 struct KeptLine {
   std::size_t line = 0;
   std::string text;
@@ -98,13 +101,35 @@ struct KeptLine {
   std::vector<std::size_t> indices;
 };
 
+// The key and the indices of a kept OPTIM line whose syntax tadah hpo
+// refuses, @p rest its text after the word OPTIM: the key is its first word
+// up to a parenthesis it holds (OPTIM CGRID2B(3) 1 2 is a line of
+// CGRID2B), the indices those of its index list, which read before its box
+// does. The line's WARNING gives tadah hpo's reason; these name the line to
+// --pct and --set.
+void read_kept_selector(const std::string &rest, KeptLine &k) {
+  std::istringstream in(rest);
+  std::string word;
+  if (!(in >> word)) return;
+  const auto paren = word.find('(');
+  k.key = tadah::core::to_upper(word.substr(0, paren));
+  if (paren != std::string::npos) return;
+  try {
+    k.indices = read_optim_selector(in, k.key).indices;
+  } catch (const std::exception &) {
+    // the index list is refused: the line selects no index of k.key
+  }
+}
+
 // The OPTIM lines of `lines`: those --retarget rewrites, the lines
 // `OPTIM <KEY> (<index>) <low> <high>` (active or commented: one physical
 // line that tadah hpo's syntax reads, an explicit box, one index, no shape
 // tag), and those it keeps as written, each with its WARNING. An active
 // line is a logical line of the file whose key is OPTIM, as tadah hpo reads
-// it; a commented one a physical line `# OPTIM ...` whose text (cut at the
-// next '#') the syntax reads, a comment it refuses being prose.
+// it; a commented one a physical line `# OPTIM <KEY> (...` (its text cut at
+// the next '#'), another comment that starts with OPTIM being prose. A
+// commented line is read as the active one would be, a line the syntax
+// refuses kept with tadah hpo's reason.
 struct Classified {
   std::vector<OptimLine> rewritten;
   std::vector<KeptLine> kept;
@@ -139,6 +164,35 @@ Classified classify_optim_lines(const std::vector<std::string> &lines) {
            "') is kept as written: " + kForm + ", and this line " +
            join_reasons(reasons) + ".";
   };
+  // The text of a line after its first word (OPTIM).
+  auto after_optim = [](const std::string &text) {
+    std::istringstream in(text);
+    std::string word;
+    in >> word;
+    std::string rest;
+    std::getline(in, rest, '\0');
+    return rest;
+  };
+  // The syntax of an OPTIM line, @p rest its text after the word OPTIM, as
+  // tadah hpo reads it; a line it refuses is none, with tadah hpo's reason
+  // in @p reasons. @p kept takes the key and indices the line selects.
+  auto read_syntax = [&form_reasons](const std::string &rest, KeptLine &kept,
+                                     std::vector<std::string> &reasons)
+      -> std::optional<OptimSyntax> {
+    std::istringstream in(rest);
+    try {
+      OptimSyntax syn = read_optim_syntax(in);
+      kept.key = syn.key;
+      kept.indices = syn.selector.indices;
+      for (auto &r : form_reasons(syn)) reasons.push_back(r);
+      return syn;
+    } catch (const std::exception &x) {
+      reasons.push_back(std::string("is one tadah hpo refuses (") + x.what() +
+                        ")");
+      read_kept_selector(rest, kept);
+      return std::nullopt;
+    }
+  };
   // The text after the box of a one-line OPTIM line: its comment.
   auto trailing_of = [](const std::string &physical, std::size_t text_end) {
     const auto hash = physical.find(kTargetComment, text_end);
@@ -167,24 +221,9 @@ Classified classify_optim_lines(const std::vector<std::string> &lines) {
     if (tl.unfinished) {
       reasons.push_back(std::string("is one tadah hpo refuses (") +
                         kTargetUnfinishedLineMsg + ")");
+      read_kept_selector(after_optim(tl.text), e.kept);
     } else {
-      std::istringstream rest(tl.text);
-      std::string word;
-      rest >> word;
-      try {
-        syn = read_optim_syntax(rest);
-      } catch (const std::exception &x) {
-        reasons.push_back(std::string("is one tadah hpo refuses (") +
-                          x.what() + ")");
-        std::istringstream ks(rest.str());
-        std::string w, k;
-        if (ks >> w >> k) e.kept.key = tadah::core::to_upper(k);
-      }
-    }
-    if (syn) {
-      e.kept.key = syn->key;
-      e.kept.indices = syn->selector.indices;
-      for (auto &r : form_reasons(*syn)) reasons.push_back(r);
+      syn = read_syntax(after_optim(tl.text), e.kept, reasons);
     }
     if (reasons.empty()) {
       const std::string &l = lines[p];
@@ -211,31 +250,23 @@ Classified classify_optim_lines(const std::vector<std::string> &lines) {
     const auto hash = text.find(kTargetComment);
     if (hash != std::string::npos) text.resize(hash);
     text = rtrimmed(text);
-    std::istringstream rest(text);
-    std::string word;
-    rest >> word;
-    OptimSyntax syn;
-    try {
-      syn = read_optim_syntax(rest);
-    } catch (const std::exception &) {
-      continue;  // prose, or a line tadah hpo would refuse: a comment
-    }
+    if (!std::regex_search(text, kCommentedOptimShapeRe)) continue;  // prose
     Entry e;
     e.kept.line = p + 1;
     e.kept.text = rtrimmed(lines[p]);
-    e.kept.key = syn.key;
-    e.kept.indices = syn.selector.indices;
-    const std::vector<std::string> reasons = form_reasons(syn);
+    std::vector<std::string> reasons;
+    const std::optional<OptimSyntax> syn =
+        read_syntax(after_optim(text), e.kept, reasons);
     if (reasons.empty()) {
       e.rewrite = true;
       e.ol.line = p;
       e.ol.indent = m[1].str();
       e.ol.prefix = m[2].str();
-      e.ol.key = syn.key;
-      e.ol.key_written = syn.key_as_written;
-      e.ol.index = syn.selector.indices.front();
-      e.ol.lo = syn.box.low;
-      e.ol.hi = syn.box.high;
+      e.ol.key = syn->key;
+      e.ol.key_written = syn->key_as_written;
+      e.ol.index = syn->selector.indices.front();
+      e.ol.lo = syn->box.low;
+      e.ol.hi = syn->box.high;
       e.ol.trailing = trailing_of(lines[p], m.position(3) + text.size());
     } else {
       e.warning = kept_warning(p + 1, e.kept.text, reasons);
@@ -790,16 +821,23 @@ RetargetReport retarget_hpotarget_lines(std::vector<std::string> &lines,
       }
     }
     if (!found) {
-      for (const auto &k : classified.kept)
-        if (k.key == s.key &&
-            std::find(k.indices.begin(), k.indices.end(), s.index) !=
-                k.indices.end())
-          throw std::runtime_error(
-              "--set " + s.key + "(" + std::to_string(s.index) + "): line " +
-              std::to_string(k.line) + " ('" + k.text + "'), which selects " +
-              s.key + " (" + std::to_string(s.index) + "), is kept as "
-              "written: --set applies to the lines OPTIM <KEY> (<index>) "
-              "<low> <high>.");
+      // A kept line of the key that selects the index, or whose index list
+      // tadah hpo refuses (it may be meant to).
+      for (const auto &k : classified.kept) {
+        if (k.key != s.key) continue;
+        const bool selects = std::find(k.indices.begin(), k.indices.end(),
+                                       s.index) != k.indices.end();
+        if (!selects && !k.indices.empty()) continue;
+        throw std::runtime_error(
+            "--set " + s.key + "(" + std::to_string(s.index) + "): line " +
+            std::to_string(k.line) + " ('" + k.text + "'), " +
+            (selects ? "which selects " + s.key + " (" +
+                           std::to_string(s.index) + ")"
+                     : "an OPTIM " + s.key +
+                           " line whose indices tadah hpo refuses") +
+            ", is kept as written: --set applies to the lines OPTIM <KEY> "
+            "(<index>) <low> <high>.");
+      }
       std::string avail;
       for (const auto &[key, group] : groups) {
         avail += "\n  " + key + " (1-" + std::to_string(group.size()) + ")";
