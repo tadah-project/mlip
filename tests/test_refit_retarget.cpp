@@ -1436,19 +1436,20 @@ TEST_CASE_METHOD(PTFixture,
  * --set applies to the lines OPTIM <KEY> (<index>) <low> <high>.".
  * So are they on a line tadah hpo refuses: a high bound below the low one
  * ("OPTIM SGRIDMB (1) 2 1": --set SGRIDMB(1) names it as a line that
- * selects SGRIDMB (1)), the index (0) ("OPTIM SGRIDMB (0) 1 2": --set
- * SGRIDMB(1) names it as an OPTIM SGRIDMB line whose indices tadah hpo
- * refuses) and an unfinished last line ("OPTIM SGRIDMB (1) 1 \", by --pct
- * and --set). --pct KEY=N on a key with a rewritten line besides a kept
- * one applies to the rewritten line, the kept one named by its WARNING.
- * Before the fix: "--pct SGRIDMB=50: the file has no OPTIM SGRIDMB line
- * (active or commented); its OPTIM keys: ..." and "--set SGRIDMB(2): no
- * such OPTIM line in the file. Available: ...", which say the file has no
- * such line. The lines tadah hpo refuses and the --pct beside a rewritten
- * line were added to the case after that fix: on it, the --set on the
- * three refused lines and the --pct on the unfinished one gave those two
- * messages; the --pct on the other two and the --pct beside a rewritten
- * line passed (a pin). */
+ * selects SGRIDMB (1)), the index (0) ("OPTIM SGRIDMB (0) 1 2") and a key
+ * followed by its indices in parentheses ("OPTIM SGRIDMB(1) 1 2"), both
+ * named to --set SGRIDMB(1) as "an OPTIM SGRIDMB line tadah hpo refuses,
+ * whose indices are not read", and an unfinished last line ("OPTIM
+ * SGRIDMB (1) 1 \", by --pct and --set). The --set refusals hold in a
+ * file whose OPTIM lines are all kept ("OPTIM SGRIDMB (1-4) AUTO" alone),
+ * and a --set on a file without an OPTIM line is refused: "--set
+ * CGRID2B(1): no such OPTIM line in the file.". --pct KEY=N on a key with
+ * a rewritten line besides a kept one applies to the rewritten line, the
+ * kept one named by its WARNING.
+ * Before the fix: --set on a file without a rewritten OPTIM line was
+ * ignored (exit 0, the --set dropped), and the lines whose index list is
+ * not read were named "an OPTIM SGRIDMB line whose indices tadah hpo
+ * refuses" (OPTIM SGRIDMB(1) 1 2 is refused for the form of its key). */
 TEST_CASE_METHOD(PTFixture, "retarget --pct and --set on kept lines",
                  "[retarget][optim_reader]") {
   ScopedTempDir tmp;
@@ -1482,7 +1483,11 @@ TEST_CASE_METHOD(PTFixture, "retarget --pct and --set on kept lines",
        std::vector<std::pair<std::string, std::string>>{
            {"OPTIM SGRIDMB (1) 2 1", "which selects SGRIDMB (1),"},
            {"OPTIM SGRIDMB (0) 1 2",
-            "an OPTIM SGRIDMB line whose indices tadah hpo refuses,"},
+            "an OPTIM SGRIDMB line tadah hpo refuses, whose indices are "
+            "not read,"},
+           {"OPTIM SGRIDMB(1) 1 2",
+            "an OPTIM SGRIDMB line tadah hpo refuses, whose indices are "
+            "not read,"},
            {"OPTIM SGRIDMB (1) 1 \\", "which selects SGRIDMB (1),"}}) {
     INFO(added);
     std::vector<std::string> base = read_lines("d.hpotarget");
@@ -1520,5 +1525,33 @@ TEST_CASE_METHOD(PTFixture, "retarget --pct and --set on kept lines",
     CHECK(rep.warnings.front() ==
           "line " + std::to_string(l.size()) + " ('OPTIM SGRIDMB (2-4) "
           "AUTO') " + kKeptForm + "has an AUTO box and selects 3 indices.");
+  }
+  {
+    // Every OPTIM line of the file kept as written: --set is refused.
+    const std::vector<std::string> only = {"# kept lines only",
+                                           "OPTIM SGRIDMB (1-4) AUTO"};
+    {
+      std::vector<std::string> l = only;
+      RetargetOptions opts;
+      opts.sets.push_back({"SGRIDMB", 2, 0.5, 1.5});
+      CHECK_THROWS_WITH(retarget_hpotarget_lines(l, opts),
+                        "--set SGRIDMB(2): line 2 ('OPTIM SGRIDMB (1-4) "
+                        "AUTO'), which selects SGRIDMB (2)," + kSetTail);
+    }
+    {
+      std::vector<std::string> l = only;
+      RetargetOptions opts;
+      opts.sets.push_back({"CGRID2B", 1, 0.5, 1.5});
+      CHECK_THROWS_WITH(retarget_hpotarget_lines(l, opts),
+                        "--set CGRID2B(1): no such OPTIM line in the file.");
+    }
+  }
+  {
+    // A file without an OPTIM line: --set is refused.
+    std::vector<std::string> l = {"# no search parameter", "SEED 1"};
+    RetargetOptions opts;
+    opts.sets.push_back({"CGRID2B", 1, 0.5, 1.5});
+    CHECK_THROWS_WITH(retarget_hpotarget_lines(l, opts),
+                      "--set CGRID2B(1): no such OPTIM line in the file.");
   }
 }
