@@ -1280,17 +1280,92 @@ TEST_CASE_METHOD(PTFixture,
   CHECK(rep.n_rewritten == plain_rep.n_rewritten);
 }
 
+/* Pins: a line OPTIM <KEY> (<index>) <low> <high> that tadah hpo refuses
+ * is kept byte for byte, active or commented alike, with the WARNING of
+ * its line quoting tadah hpo's reason: a high bound below the low one, a
+ * box of zero width, the index (0), a bound below the smallest normal
+ * double, a bound that is not a number, and a key not followed by its
+ * indices. A comment in which OPTIM is not followed by a key and an opening
+ * parenthesis is prose and draws no warning. The starter file's own lines
+ * are rewritten as without the added ones.
+ * Before the fix: the active lines are as pinned here (Tadah! 1.5.0
+ * rewrote every one of them but the line whose bound is not a number,
+ * around the midpoint of its bounds); the commented ones were kept without
+ * a word, so the warnings lacked them. */
+TEST_CASE_METHOD(PTFixture,
+                 "retarget keeps a line tadah hpo refuses, active or "
+                 "commented, and names it",
+                 "[retarget][optim_reader]") {
+  ScopedTempDir tmp;
+  write_hpotarget("r.hpotarget", make_knot_pot(), 5.0);
+  const std::vector<std::string> fresh = read_lines("r.hpotarget");
+  std::vector<std::string> plain = fresh;
+  const RetargetReport plain_rep =
+      retarget_hpotarget_lines(plain, RetargetOptions{});
+  REQUIRE(plain == fresh);
+
+  // Each line, and why tadah hpo refuses it.
+  const std::vector<std::pair<std::string, std::string>> refused = {
+      {"OPTIM CGRID2B (2) 3.15 2.85",
+       "OPTIM CGRID2B: <high> 2.85 is not greater than <low> 3.15"},
+      {"OPTIM CGRID2B (3) 3.5 3.5",
+       "OPTIM CGRID2B: <high> 3.5 is not greater than <low> 3.5"},
+      {"OPTIM CGRID2B (0) 1 2",
+       "OPTIM CGRID2B: bad index list (0): OPTIM indices start at 1"},
+      {"OPTIM CGRID2B (1) 1e-400 2",
+       "OPTIM CGRID2B: <low> must be a finite number (got '1e-400') (too "
+       "small: its magnitude is below the smallest normal double, "
+       "2.2250738585072014e-308)"},
+      {"OPTIM CGRID2B (1) 1 x",
+       "OPTIM CGRID2B: <high> must be a finite number (got 'x')"},
+      {"OPTIM CGRID2B(3) 1 2",
+       "OPTIM CGRID2B(3): the key is followed by its indices in "
+       "parentheses, such as OPTIM CGRID2B(3) (1)"},
+  };
+  std::vector<std::string> extra;
+  for (const auto &[line, why] : refused) {
+    extra.push_back(line);
+    extra.push_back("# " + line);
+  }
+  extra.push_back("# OPTIM lines below search the shape");
+  std::vector<std::string> lines = fresh;
+  lines.insert(lines.end(), extra.begin(), extra.end());
+  const RetargetReport rep = retarget_hpotarget_lines(lines, RetargetOptions{});
+  std::vector<std::string> want = fresh;
+  want.insert(want.end(), extra.begin(), extra.end());
+  CHECK(lines == want);
+
+  std::vector<std::string> warnings;
+  for (std::size_t i = 0; i < refused.size(); ++i)
+    for (std::size_t c = 0; c < 2; ++c) {
+      const std::size_t at = fresh.size() + 2 * i + c + 1;
+      warnings.push_back("line " + std::to_string(at) + " ('" +
+                         extra[2 * i + c] + "') " + kKeptForm +
+                         "is one tadah hpo refuses (" + refused[i].second +
+                         ").");
+    }
+  warnings.insert(warnings.end(), plain_rep.warnings.begin(),
+                  plain_rep.warnings.end());
+  CHECK(rep.warnings == warnings);
+  CHECK(rep.n_rewritten == plain_rep.n_rewritten);
+}
+
 /* Pins: OPTIM keys are read in any case, as tadah hpo reads them: in the
  * starter file of a D2_Blip potential with its SGRID2B lines written
  * sgrid2b, --pct SGRID2B=10 applies to them, the lines join the SGRID2B
  * group (no "not a standard refit hpotarget group" warning; its
  * positive-only rule applies) and keep their key as written: the output is
  * that of the file written in upper case, with those lines' key in lower
- * case, and the warnings are the same.
+ * case, and the warnings are the same. So is it with the group comment
+ * written "# sgrid2b  (+-5%, ...)" too (its percentage becomes 10, as in
+ * upper case) and with --set SGRID2B(1) (the CLI upper-cases its key),
+ * which sets the box of the line written sgrid2b.
  * Before the fix: the keys were compared as written: --pct SGRID2B=10 was
  * refused, "the file has no OPTIM SGRID2B line (active or commented); its
  * OPTIM keys: CGRID2B, FIXWEIGHT, RCUT2B, sgrid2b.", and sgrid2b was a group
- * of its own, rewritten with the plain symmetric rule. */
+ * of its own, rewritten with the plain symmetric rule. The group comment
+ * and the --set were added to the case after the fix and pass on it: a pin
+ * of the any-case reading of the group comments and of --set. */
 TEST_CASE_METHOD(PTFixture, "retarget reads an OPTIM key in any case",
                  "[retarget][optim_reader]") {
   ScopedTempDir tmp;
@@ -1298,18 +1373,28 @@ TEST_CASE_METHOD(PTFixture, "retarget reads an OPTIM key in any case",
   const std::vector<std::string> upper = read_lines("b.hpotarget");
   auto lowered = [](std::vector<std::string> v) {
     for (auto &l : v)
-      for (const std::string from : {"OPTIM SGRID2B ", "#OPTIM SGRID2B "})
+      for (const std::string from :
+           {"OPTIM SGRID2B ", "#OPTIM SGRID2B ", "# SGRID2B  (+-"})
         if (const auto p = l.find(from); p != std::string::npos)
-          l.replace(p + from.size() - 8, 7, "sgrid2b");
+          l.replace(l.find("SGRID2B", p), 7, "sgrid2b");
     return v;
   };
   const std::vector<std::string> lower = lowered(upper);
   REQUIRE(lower != upper);
+  REQUIRE(std::count_if(upper.begin(), upper.end(), [](const auto &l) {
+            return l.rfind("# SGRID2B  (+-5%", 0) == 0;
+          }) == 1);
   RetargetOptions opts;
   opts.pct = 20.0;
   opts.pct_per_key["SGRID2B"] = 10.0;
+  opts.sets.push_back({"SGRID2B", 1, 0.75, 1.25});
   std::vector<std::string> out_upper = upper, out_lower = lower;
   const RetargetReport ru = retarget_hpotarget_lines(out_upper, opts);
+  CHECK(std::count(out_upper.begin(), out_upper.end(),
+                   "# OPTIM SGRID2B (1) 7.50000000e-01 1.25000000e+00") == 1);
+  CHECK(std::count_if(out_upper.begin(), out_upper.end(), [](const auto &l) {
+          return l.rfind("# SGRID2B  (+-10%", 0) == 0;
+        }) == 1);
   RetargetReport rl;
   REQUIRE_NOTHROW(rl = retarget_hpotarget_lines(out_lower, opts));
   CHECK(out_lower == lowered(out_upper));
@@ -1349,10 +1434,21 @@ TEST_CASE_METHOD(PTFixture,
  * AUTO') is kept as written." and "--set SGRIDMB(2): line N ('OPTIM
  * SGRIDMB (1-4) AUTO'), which selects SGRIDMB (2), is kept as written:
  * --set applies to the lines OPTIM <KEY> (<index>) <low> <high>.".
+ * So are they on a line tadah hpo refuses: a high bound below the low one
+ * ("OPTIM SGRIDMB (1) 2 1": --set SGRIDMB(1) names it as a line that
+ * selects SGRIDMB (1)), the index (0) ("OPTIM SGRIDMB (0) 1 2": --set
+ * SGRIDMB(1) names it as an OPTIM SGRIDMB line whose indices tadah hpo
+ * refuses) and an unfinished last line ("OPTIM SGRIDMB (1) 1 \", by --pct
+ * and --set). --pct KEY=N on a key with a rewritten line besides a kept
+ * one applies to the rewritten line, the kept one named by its WARNING.
  * Before the fix: "--pct SGRIDMB=50: the file has no OPTIM SGRIDMB line
  * (active or commented); its OPTIM keys: ..." and "--set SGRIDMB(2): no
  * such OPTIM line in the file. Available: ...", which say the file has no
- * such line. */
+ * such line. The lines tadah hpo refuses and the --pct beside a rewritten
+ * line were added to the case after that fix: on it, the --set on the
+ * three refused lines and the --pct on the unfinished one gave those two
+ * messages; the --pct on the other two and the --pct beside a rewritten
+ * line passed (a pin). */
 TEST_CASE_METHOD(PTFixture, "retarget --pct and --set on kept lines",
                  "[retarget][optim_reader]") {
   ScopedTempDir tmp;
@@ -1378,5 +1474,51 @@ TEST_CASE_METHOD(PTFixture, "retarget --pct and --set on kept lines",
                       "(1-4) AUTO'), which selects SGRIDMB (2), is kept as "
                       "written: --set applies to the lines OPTIM <KEY> "
                       "(<index>) <low> <high>.");
+  }
+  const std::string kSetTail =
+      " is kept as written: --set applies to the lines OPTIM <KEY> "
+      "(<index>) <low> <high>.";
+  for (const auto &[added, set_names] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"OPTIM SGRIDMB (1) 2 1", "which selects SGRIDMB (1),"},
+           {"OPTIM SGRIDMB (0) 1 2",
+            "an OPTIM SGRIDMB line whose indices tadah hpo refuses,"},
+           {"OPTIM SGRIDMB (1) 1 \\", "which selects SGRIDMB (1),"}}) {
+    INFO(added);
+    std::vector<std::string> base = read_lines("d.hpotarget");
+    base.push_back(added);
+    const std::string named =
+        "line " + std::to_string(base.size()) + " ('" + added + "')";
+    {
+      std::vector<std::string> l = base;
+      RetargetOptions opts;
+      opts.pct_per_key["SGRIDMB"] = 50.0;
+      CHECK_THROWS_WITH(retarget_hpotarget_lines(l, opts),
+                        "--pct SGRIDMB=50: no OPTIM SGRIDMB line of the file "
+                        "is rewritten: " + named + " is kept as written.");
+    }
+    {
+      std::vector<std::string> l = base;
+      RetargetOptions opts;
+      opts.sets.push_back({"SGRIDMB", 1, 0.5, 1.5});
+      CHECK_THROWS_WITH(retarget_hpotarget_lines(l, opts),
+                        "--set SGRIDMB(1): " + named + ", " + set_names +
+                            kSetTail);
+    }
+  }
+  {
+    // A rewritten line of the key besides a kept one: --pct applies.
+    std::vector<std::string> l = read_lines("d.hpotarget");
+    l.push_back("OPTIM SGRIDMB (1) 0.475 0.525");
+    l.push_back("OPTIM SGRIDMB (2-4) AUTO");
+    RetargetOptions opts;
+    opts.pct_per_key["SGRIDMB"] = 10.0;
+    RetargetReport rep;
+    REQUIRE_NOTHROW(rep = retarget_hpotarget_lines(l, opts));
+    CHECK(l[l.size() - 2] == "OPTIM SGRIDMB (1) 4.50000000e-01 5.50000000e-01");
+    CHECK(l.back() == "OPTIM SGRIDMB (2-4) AUTO");
+    CHECK(rep.warnings.front() ==
+          "line " + std::to_string(l.size()) + " ('OPTIM SGRIDMB (2-4) "
+          "AUTO') " + kKeptForm + "has an AUTO box and selects 3 indices.");
   }
 }

@@ -78,9 +78,10 @@ static std::string write_tmp(const std::string& body) {
 
 /* Pins: an OPTIM line of one index gives one bound, the slot of its value
  * (arg_pos 0 for (1): the first value), its index as written and its line;
- * the lines of a block are not OPTIM lines. (arg_pos was -1, "scalar", for
- * (1) until the OPTIM lines were read with tadah hpo's reader, which gives
- * every value its slot.) */
+ * the lines of a block are not OPTIM lines.
+ * Before the fix: arg_pos was -1 ("scalar") for (1), so the case failed at
+ * "bounds[0].arg_pos == 0" (-1 == 0); Bound had no index and no line (run
+ * with a shim that gives them no value: each of those assertions fails). */
 TEST_CASE("check_bounds: parse scalar OPTIM lines", "[check_bounds]") {
   const std::string body =
       "# header comment\n"
@@ -108,7 +109,9 @@ TEST_CASE("check_bounds: parse scalar OPTIM lines", "[check_bounds]") {
 }
 
 /* Pins: an index list gives one bound per value it selects, at the value's
- * slot: (1-4) arg_pos 0..3, (1,3) arg_pos 0 and 2 with indices 1 and 3. */
+ * slot: (1-4) arg_pos 0..3, (1,3) arg_pos 0 and 2 with indices 1 and 3.
+ * Before the fix: (1,3) gave one bound, value 1 (arg_pos -1, "scalar"), so
+ * the case failed at "bounds.size() == 4 + 3 + 2" (8 == 9). */
 TEST_CASE("check_bounds: parse vector OPTIM lines", "[check_bounds]") {
   const std::string body =
       "OPTIM CGRID2B (1-4) 0.0 6.0\n"
