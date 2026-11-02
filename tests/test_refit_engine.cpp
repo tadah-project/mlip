@@ -2000,6 +2000,35 @@ TEST_CASE_METHOD(PTFixture,
                       Catch::Contains("DESCRIPTOR"));
 }
 
+/* Pins: a compact refit with DESCRIPTOR blocks (the compact fit of the
+ * DM_Embed components) writes no optimisation log, so REFIT_LOG is refused
+ * there, written REFIT_MODE compact or the default, naming the key and the
+ * mode that writes the log; a dense component refit, which writes it,
+ * accepts the key. Before the fix the key was accepted and no log was
+ * written. */
+TEST_CASE_METHOD(PTFixture,
+                 "REFIT_LOG is refused by the component compact fit, which writes no log",
+                 "[unified-dm][refit][validation]") {
+  ScopedTempDir tmp;
+  write_synth_eam("source.eam", "bcc", 3.2);
+  REQUIRE_NOTHROW(RefitEngine().validate(
+      config_file_task(component_refit_config("REFIT_LOG dense.log\n"))));
+  for (const bool defaulted : {false, true}) {
+    CAPTURE(defaulted);
+    Context c = component_refit_config("REFIT_LOG compact.log\n");
+    c.remove("REFIT_MODE");
+    if (!defaulted) c.add("REFIT_MODE", std::string("compact"));
+    REQUIRE_THROWS_WITH(
+        RefitEngine().validate(config_file_task(c)),
+        std::string("tadah refit: REFIT_LOG has no effect under REFIT_MODE "
+                    "compact") +
+            (defaulted ? " (the default)" : "") +
+            " with DESCRIPTOR blocks: the compact fit of the DM_Embed "
+            "components writes no optimisation log; remove REFIT_LOG, or set "
+            "REFIT_MODE dense");
+  }
+}
+
 /* Pins: a refit configuration (no --retarget) that sets a key of
  * --retarget (RETARGET_RCUT2B, RETARGET_RCUTMB, RETARGET_RHOFORM, PCT,
  * SET) is refused naming --retarget, as --edit and --retarget refuse the
