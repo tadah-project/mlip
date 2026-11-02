@@ -523,7 +523,7 @@ TEST_CASE("tadah explain: a stage block's text describes the keys of the "
    * 0"; INIT "`<PHI|RHO|F> <MANUAL <mu> [<eta>] | XMIN | XMAX | YMIN | YMAX
    * | SMAX | CMAX> [PIN]`" and "PIN freezes that position"; EXPLORE "Takes
    * `MAX_ADD <n>` or `MAX_ADD <phi> <rho> <F>` (the largest number of basis
-   * functions added to each function"; REFINE "per-rung
+   * functions added to the starting basis of each function"; REFINE "per-rung
    * high-precision local polish"; FUSE "Under REFIT_OBJECTIVE energy a joint
    * refinement of all three functions"; and the line that opens the layout
    * ("Written inside a stage block, for example:", "Written as a block,
@@ -548,7 +548,8 @@ TEST_CASE("tadah explain: a stage block's text describes the keys of the "
          "Written as a block, one placement per line, for example:"}},
        {"EXPLORE",
         {"Takes `MAX_ADD <n>` or `MAX_ADD <phi> <rho> <F>` (the largest "
-         "number of basis functions added to each function",
+         "number of basis functions added to the starting basis of each "
+         "function",
          "Written as a block, with an OPTIMIZER block inside"}},
        {"REFINE",
         {"per-rung high-precision local polish",
