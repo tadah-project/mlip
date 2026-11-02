@@ -446,7 +446,7 @@ StDescriptorsDB DescriptorsCalc<D2,DM,C2,CM>::calc(const StructureDB &stdb) cons
                                              (stdb(i).label.empty() ? std::string()
                                               : " ('" + stdb(i).label + "')"));
 
-  // Stage 2.3: shared-pool backend when installed, else the OpenMP loop.
+  // Shared-pool backend when installed, else the OpenMP loop.
   // Each i writes a disjoint st_desc_db(i) => order-independent.
   parallel_for(stdb.size(), [&](size_t i) {
     if (context.get<bool>("DIMER",0))

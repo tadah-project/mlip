@@ -355,6 +355,16 @@ void check_refit_mode_keys(const Context &c, RefitMode mode,
         "compact ladder's budgets are the MAXEVAL of its stage blocks); "
         "remove REFIT_COMPONENT_ITERATIONS, or declare the many-body term "
         "as a DESCRIPTOR block");
+  // the optimisation log, which the compact fit of DM_Embed components
+  // (DESCRIPTOR blocks) does not write: only the compact ladder and the
+  // dense fit write one
+  if (mode == RefitMode::Compact && !c.blocks("DESCRIPTOR").empty() &&
+      configured(c, provenance, "REFIT_LOG"))
+    throw std::runtime_error(
+        kWho + "REFIT_LOG has no effect under REFIT_MODE " + runs +
+        " with DESCRIPTOR blocks: the compact fit of the DM_Embed components "
+        "writes no optimisation log; remove REFIT_LOG, or set REFIT_MODE "
+        "dense");
   const bool curve = read_refit_curve_objective(c);
   if (mode == RefitMode::Dense) {
     if (curve) refuse("REFIT_OBJECTIVE curve");

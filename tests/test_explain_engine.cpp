@@ -306,8 +306,8 @@ TEST_CASE("tadah explain: a configuration key that is no option of a "
    * RCUT2B, RCUTMB and AMPGRIDMB after refit. A command, a subcommand and an
    * option of the command come first: `refit.hpofileout` prints refit's own
    * HPOFILEOUT text ("Output file name for the generated `tadah hpo`
-   * starter target file ..."), not the configuration key's ("Output file
-   * for the `tadah hpo` starter target ..."), and `data.merge` the
+   * starter target file ..."), not the configuration key's ("Output target
+   * file for `tadah hpo` (the `--hpotarget` file) ..."), and `data.merge` the
    * subcommand, not the MERGE key.
    * Before the fix: only the commands and their options were read, so
    * SETFL threw "tadah explain: no command 'SETFL'", refit.setfl "tadah
@@ -357,7 +357,8 @@ TEST_CASE("tadah explain: a configuration key that is no option of a "
             .rfind("Output file name for the generated `tadah hpo` starter "
                    "target file", 0) == 0);
   CHECK(explain_key_text(keys.at("HPOFILEOUT"))
-            .rfind("Output file for the `tadah hpo` starter target", 0) == 0);
+            .rfind("Output target file for `tadah hpo` (the `--hpotarget` "
+                   "file)", 0) == 0);
   CHECK(explain("data.merge") ==
         [] {
           std::string out;
@@ -521,7 +522,8 @@ TEST_CASE("tadah explain: a stage block's text describes the keys of the "
    * error", "FTOL_REL, FTOL_ABS, XTOL_REL and GTOL are finite numbers >=
    * 0"; INIT "`<PHI|RHO|F> <MANUAL <mu> [<eta>] | XMIN | XMAX | YMIN | YMAX
    * | SMAX | CMAX> [PIN]`" and "PIN freezes that position"; EXPLORE "Takes
-   * `MAX_ADD <n>` (max basis added per function)"; REFINE "per-rung
+   * `MAX_ADD <n>` or `MAX_ADD <phi> <rho> <F>` (the largest number of basis
+   * functions added to the starting basis of each function"; REFINE "per-rung
    * high-precision local polish"; FUSE "Under REFIT_OBJECTIVE energy a joint
    * refinement of all three functions"; and the line that opens the layout
    * ("Written inside a stage block, for example:", "Written as a block,
@@ -545,7 +547,9 @@ TEST_CASE("tadah explain: a stage block's text describes the keys of the "
          "PIN freezes that position",
          "Written as a block, one placement per line, for example:"}},
        {"EXPLORE",
-        {"Takes `MAX_ADD <n>` (max basis added per function)",
+        {"Takes `MAX_ADD <n>` or `MAX_ADD <phi> <rho> <F>` (the largest "
+         "number of basis functions added to the starting basis of each "
+         "function",
          "Written as a block, with an OPTIMIZER block inside"}},
        {"REFINE",
         {"per-rung high-precision local polish",
@@ -783,7 +787,7 @@ TEST_CASE("tadah explain: a deprecated key's text ends with why it is "
   /* Pins: `tadah explain MBLOCK` (NBLOCK, MPIWPCKG, SIGMA: the deprecated
    * keys of the blueprint) prints the key's text, then a blank line and the
    * line "DEPRECATED: <the blueprint's deprecated text>", which says "A fit
-   * refuses it." (MBLOCK's also "the key has no effect"); a deprecated key has
+   * refuses it." (MBLOCK's also "its value is ignored"); a deprecated key has
    * no EXAMPLES; the text of ESIGMA, a key that is not deprecated, has no
    * DEPRECATED line.
    * Before the fix: the text of a deprecated key was its description alone
@@ -806,7 +810,7 @@ TEST_CASE("tadah explain: a deprecated key's text ends with why it is "
     CHECK(out.find("EXAMPLES:") == std::string::npos);
   }
   CHECK_THAT(explain("MBLOCK"),
-             Catch::Matchers::Contains("the key has no effect"));
+             Catch::Matchers::Contains("its value is ignored"));
   CHECK(explain("ESIGMA").find("DEPRECATED:") == std::string::npos);
 }
 
