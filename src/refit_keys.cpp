@@ -303,10 +303,10 @@ std::string top_level_optimizer_refusal() {
   return kWho +
          "a top-level OPTIMIZER block is refused: the stages of tadah refit "
          "are the blocks INIT, EXPLORE, REFINE and FUSE, and an OPTIMIZER "
-         "block sits inside EXPLORE, REFINE or FUSE. In the grammar of the "
-         "top-level OPTIMIZER block, GLOBAL is the global ALGO of the "
-         "OPTIMIZER block of EXPLORE (with an INNER local search, rung 0), "
-         "POLISH is REFINE and JOINT is FUSE; the Refitting page of the "
+         "block sits inside EXPLORE, REFINE or FUSE. The GLOBAL, POLISH and "
+         "JOINT stages of a top-level OPTIMIZER block correspond to the "
+         "OPTIMIZER block inside EXPLORE (its global ALGO with an INNER local "
+         "search, rung 0), to REFINE and to FUSE; the Refitting page of the "
          "documentation has examples (Stage blocks).";
 }
 
