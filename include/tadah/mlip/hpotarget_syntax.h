@@ -151,8 +151,13 @@ const std::array<std::string_view, 4>& optim_auto_options();
 const std::array<std::string_view, 3>& optim_shape_tags();
 /** The word of an AUTO box. */
 inline constexpr std::string_view kOptimAutoWord = "AUTO";
-/** The keys that start with it (the cutoff keys) take no AUTO box. */
-inline constexpr std::string_view kOptimAutoExcludedPrefix = "RCUT";
+/** The distance cutoffs of the training configuration, which take no AUTO
+ *  box (each index: a joined descriptor has a cutoff for each of its
+ *  descriptors). A key is listed by what it is, not by its name: RCUTENV,
+ *  the width of the envelope of DM_mBlipEnv in units of the density, takes
+ *  an AUTO box. */
+inline constexpr std::array<std::string_view, 2> kOptimAutoExcludedKeys = {
+    "RCUT2B", "RCUTMB"};
 
 }  // namespace mlip
 }  // namespace tadah
