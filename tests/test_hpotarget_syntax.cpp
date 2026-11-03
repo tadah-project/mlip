@@ -255,10 +255,11 @@ TEST_CASE("target file syntax: the refusals of the box of an OPTIM line",
  * FLOOR, GROUP_FLOOR), optim_shape_tags() (LIN, LOG, ASINH),
  * kOptimAutoWord (AUTO) and the lexing characters, are those the syntax
  * reads: each AUTO option is taken with a value, each tag on an explicit
- * box (ASINH with its c), AUTO opens an AUTO box, and a key that starts
- * with kOptimAutoExcludedPrefix is a cutoff key (RCUT). HPO's tests hold
- * the same words to the target-file registry. Before the fix: the header
- * does not exist. */
+ * box (ASINH with its c), AUTO opens an AUTO box, and the keys of
+ * kOptimAutoExcludedKeys, which take no AUTO box, are the distance cutoffs
+ * RCUT2B and RCUTMB (it was the prefix RCUT, which took RCUTENV, a width in
+ * density units, for a cutoff). HPO's tests hold the same words to the
+ * target-file registry. Before the fix: the header does not exist. */
 TEST_CASE("target file syntax: the words are those the syntax reads",
           "[hpotarget_syntax]") {
   for (std::string_view o : optim_auto_options()) {
@@ -274,7 +275,8 @@ TEST_CASE("target file syntax: the words are those the syntax reads",
   }
   CHECK(optim_shape_tags().size() == 3);
   CHECK(syntax("CGRID2B (1) " + std::string(kOptimAutoWord)).box.auto_box);
-  CHECK(kOptimAutoExcludedPrefix == "RCUT");
+  CHECK(kOptimAutoExcludedKeys ==
+        std::array<std::string_view, 2>{"RCUT2B", "RCUTMB"});
   CHECK(kTargetComment == '#');
   CHECK(kTargetContinuation == '\\');
 }

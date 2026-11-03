@@ -413,8 +413,8 @@ OptimLine OptimReader::read(std::istringstream& iss, std::size_t nline) {
    *   geometric  [x0/f, x0*f] (mirrored for x0 < 0)   default for positive-only keys (RATIO 2)
    *   linear     x0 +/- max(p*|x0|, a, r*max|x0| over this OPTIM line)   otherwise (FRAC 0.5)
    *   FRAC 0 + FLOOR a  -> every index gets the same absolute half-width a (grid centres)
-   * Cutoff keys (RCUT*) are excluded: the neighbour list is sized from
-   * explicit high bounds. */
+   * The distance cutoffs (kOptimAutoExcludedKeys: RCUT2B, RCUTMB) are
+   * excluded: the neighbour list is sized from explicit high bounds. */
 
   /* The low-bound rule of the box (models::optim_low_bound_rule(k,
    * context)). RHOFORM NONNEG / MONOTONE (rho >= 0 by construction): the
@@ -468,7 +468,8 @@ OptimLine OptimReader::read(std::istringstream& iss, std::size_t nline) {
   out.tagged = box.tagged;
   out.auto_box = auto_box;
   if (auto_box) {
-    if (k.rfind(kOptimAutoExcludedPrefix, 0) == 0)
+    if (std::find(kOptimAutoExcludedKeys.begin(), kOptimAutoExcludedKeys.end(),
+                  k) != kOptimAutoExcludedKeys.end())
       throw std::runtime_error("OPTIM " + k + ": a cutoff key takes explicit "
                                "bounds, OPTIM " + k + " (indices) <low> <high>, "
                                "and no AUTO box: the neighbour list is sized "
