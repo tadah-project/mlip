@@ -170,10 +170,10 @@ TEST_CASE("classify_weight_source: FIXINDEX is read strictly, separate values "
                                       "range"));
     Context twice = ctx_with(true, "2,2", {0.1, 0.2});
     CHECK_THROWS_WITH(classify_weight_source(twice, kNCols),
-                      Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
+                      Catch::Contains("FIXINDEX 2,2 names coefficient 2 twice"));
     Context one = ctx_with(true, "2,2", {0.1});
     CHECK_THROWS_WITH(classify_weight_source(one, kNCols),
-                      Catch::Contains("FIXINDEX 2,2 names weight 2 twice"));
+                      Catch::Contains("FIXINDEX 2,2 names coefficient 2 twice"));
     Context zero = ctx_with(true, "0", {0.1});
     CHECK_THROWS_WITH(
         classify_weight_source(zero, kNCols),
