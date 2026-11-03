@@ -366,10 +366,10 @@ std::string other_toggle(const std::string &key) {
  * parse's result: the run's own values); @p eshift as for
  * ignored_keys_notice. A line is left out when the run gives its key
  * itself (the run's own value applies), and a toggle's line also when the
- * run sets the other toggle true: the two choose one thing, the source of
- * the shift, and exclude each other, so the run's own toggle is its
- * choice (and adding the potential's would set both: "Multiple ESHIFT
- * sources set"). */
+ * run sets the other toggle true: the two choose the source of the shift,
+ * and with both set ESHIFT_ATOM is taken and a WARNING says so ("Multiple
+ * ESHIFT sources set; precedence: explicit > ATOM > DBATOM."), so the
+ * run's own toggle is its choice, which the potential's would override. */
 std::string skipped_lines_notice(const KeyProvenance &provenance,
                                  const core::Context &config,
                                  const std::string &who, const TaskKeys &t,
