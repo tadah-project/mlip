@@ -75,6 +75,14 @@ struct Scratch {
  * test, which is line 3. */
 const char *const kHead = "RCUT2B 5.0\nATOM Ta\n";
 
+/* The commands whose tables list OUTFILE, as a refusal names them. */
+const char *const kOutfileCommands =
+    "tadah analysis bfunc, tadah analysis cutoff, tadah analysis "
+    "dataset_stats, tadah analysis descriptor, tadah analysis suggest_bounds, "
+    "tadah data balance, tadah data convert, tadah data dedup, tadah data "
+    "merge, tadah data sample, tadah data split, tadah data write, tadah "
+    "predict, tadah properties pairwise, tadah refit and tadah train";
+
 /* What TaskFactory makes of `tadah <task> -c <config>`: the message of the
  * exception it throws, or "" and the task's context in @p ctx. */
 std::string read_config(const std::string &task, const std::string &config,
@@ -216,6 +224,86 @@ TEST_CASE("TaskFactory names the commands that read a key of another "
                       " is not accepted here: " + c.role) !=
             std::string::npos);
       CHECK(what.find("tadah data balance") == std::string::npos);
+    }
+  }
+}
+
+/* Pins: OUTFILE is a key of the commands whose tables list it (tadah
+ * train, refit, predict, properties pairwise and the data and analysis
+ * commands that write a file), not of tadah hpo or tadah analysis
+ * check_bounds, which take the
+ * same training configuration and write files of their own: an OUTFILE
+ * line in a configuration file of either is refused at its line, naming
+ * the commands that read the key, the key's option and the command that
+ * reads the file.
+ * Before the fix: OUTFILE was a key of every configuration file, and tadah
+ * hpo -c and tadah analysis check_bounds -c read the line and wrote
+ * nothing to the file it names. */
+TEST_CASE("TaskFactory refuses OUTFILE in a configuration file of tadah hpo "
+          "and tadah analysis check_bounds",
+          "[task_factory][command_keys][outfile]") {
+  Scratch tmp;
+  const std::string file =
+      tmp.write("outfile.cfg", std::string(kHead) + "OUTFILE pot2.tadah\n");
+  for (const auto &[task, command] :
+       {std::pair<std::string, std::string>{"HPO", "tadah hpo"},
+        {"ANALYSIS.check_bounds", "tadah analysis check_bounds"}}) {
+    DYNAMIC_SECTION("a configuration file of " << command) {
+      const std::string what = read_config(task, file);
+      CHECK(what ==
+            "Key OUTFILE on line 3 of " + file + " is not accepted here: "
+            "OUTFILE is the option --outfile (-o) of " +
+            std::string(kOutfileCommands) +
+            ", not a key of a configuration file of " + command);
+    }
+  }
+}
+
+/* Pins: tadah train -c reads the OUTFILE line of its configuration file
+ * (the task's OUTFILE is pot2.tadah), as each command whose table lists
+ * the key does.
+ * Before the fix: passes as well (a pin). */
+TEST_CASE("TaskFactory reads OUTFILE in a configuration file of tadah train",
+          "[task_factory][command_keys][outfile]") {
+  Scratch tmp;
+  const std::string file =
+      tmp.write("train.cfg", std::string(kHead) + "OUTFILE pot2.tadah\n");
+  tadah::core::Context ctx;
+  const std::string what = read_config("TRAIN", file, &ctx);
+  INFO(what);
+  REQUIRE(what.empty());
+  CHECK(ctx.get<std::string>("OUTFILE") == "pot2.tadah");
+}
+
+/* Pins: a potential (a file whose lines give WEIGHTS) with an OUTFILE
+ * line, as tadah train of 1.5.0 wrote it, loads as the configuration file
+ * of tadah hpo and of tadah train: the line is a setting of the run that
+ * wrote the potential and is not read (tadah hpo has no OUTFILE, tadah
+ * train its default pot.tadah), and no notice names it as a key of
+ * another command.
+ * Before the fix: passes as well (a pin). */
+TEST_CASE("TaskFactory reads a potential with an OUTFILE line without the "
+          "line",
+          "[task_factory][command_keys][outfile]") {
+  Scratch tmp;
+  const std::string file = tmp.write(
+      "pot.tadah", std::string(kHead) + "WEIGHTS 1.0 2.0\nOUTFILE old.tadah\n");
+  for (const auto &[task, outfile] :
+       {std::pair<std::string, std::string>{"HPO", ""},
+        {"TRAIN", "pot.tadah"}}) {
+    DYNAMIC_SECTION(task) {
+      tadah::core::IgnoredKeyNoticeCapture cap;
+      tadah::core::Context ctx;
+      const std::string what = read_config(task, file, &ctx);
+      INFO(what);
+      REQUIRE(what.empty());
+      CHECK(ctx.has_stored("WEIGHTS"));
+      if (outfile.empty())
+        CHECK_FALSE(ctx.has_stored("OUTFILE"));
+      else
+        CHECK(ctx.get<std::string>("OUTFILE") == outfile);
+      for (const std::string &n : cap.notices())
+        CHECK(n.find("OUTFILE") == std::string::npos);
     }
   }
 }

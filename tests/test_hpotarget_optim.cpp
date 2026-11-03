@@ -294,6 +294,55 @@ TEST_CASE("OPTIM reader: the OPTIM lines of a file", "[hpotarget_optim]") {
   CHECK(l[1].optim.boxes.size() == 2);
 }
 
+/* Pins: AUTO is refused for the distance cutoffs alone, RCUT2B and RCUTMB
+ * (with or without AUTO options), with the cutoff refusal; RCUTENV, the
+ * width of the envelope of DM_mBlipEnv in units of the density, takes it:
+ * RCUTENV 1.5 (1) AUTO is the linear FRAC 0.5 box [0.75, 2.25],
+ * AutoLinear.
+ * Before the fix: every key that starts with RCUT took no AUTO box, so
+ * OPTIM RCUTENV (1) AUTO was refused as a cutoff key ("OPTIM RCUTENV: a
+ * cutoff key takes explicit bounds, ..."). */
+TEST_CASE("OPTIM reader: AUTO is refused for the distance cutoffs only",
+          "[hpotarget_optim]") {
+  tadah::core::PeriodicTable::initialize();
+  Context env;
+  env.add("ATOM", "Ta");
+  env.add("INIT2B", "true");
+  env.add("INITMB", "true");
+  env.add("TYPE2B", "D2_Blip 4 4 Ta Ta");
+  env.add("CGRID2B", "2.0 3.0 4.0 5.0");
+  env.add("SGRID2B", "1.0 1.0 1.0 1.0");
+  env.add("RCTYPE2B", "Cut_Cos");
+  env.add("RCUT2B", 5.5);
+  env.add("TYPEMB", "DM_mBlipEnv 0 1 1 2 2 Ta Ta");
+  env.add("CGRIDMB", 0.0);
+  env.add("SGRIDMB", 0.2);
+  env.add("CEMBFUNC", "1.0 2.0");
+  env.add("SEMBFUNC", "1.0 1.0");
+  env.add("RCUTENV", 1.5);
+  env.add("RCTYPEMB", "Cut_Cos");
+  env.add("RCUTMB", 5.0);
+  env.add("VERBOSE", 0);
+  INFO(refusal(env, "OPTIM RCUTENV (1) AUTO"));
+  REQUIRE(refusal(env, "OPTIM RCUTENV (1) AUTO") == "");
+  const OptimLine e = read_line(env, "OPTIM RCUTENV (1) AUTO");
+  CHECK(e.auto_box);
+  CHECK(boxes_of(e) ==
+        std::vector<std::pair<double, double>>{{0.75, 2.25}});
+  REQUIRE(e.boxes.size() == 1);
+  CHECK(e.boxes[0].origin == OptimBoxOrigin::AutoLinear);
+  for (const char *key : {"RCUT2B", "RCUTMB"})
+    CHECK(refusal(env, "OPTIM " + std::string(key) + " (1) AUTO") ==
+          "1: OPTIM " + std::string(key) + ": a cutoff key takes explicit "
+          "bounds, OPTIM " + std::string(key) + " (indices) <low> <high>, "
+          "and no AUTO box: the neighbour list is sized from the explicit "
+          "high bound");
+  CHECK(refusal(env, "OPTIM RCUTMB (1) AUTO FRAC 0.1") ==
+        "1: OPTIM RCUTMB: a cutoff key takes explicit bounds, OPTIM RCUTMB "
+        "(indices) <low> <high>, and no AUTO box: the neighbour list is "
+        "sized from the explicit high bound");
+}
+
 #else
 
 TEST_CASE("OPTIM reader: the header exists", "[hpotarget_optim]") {
