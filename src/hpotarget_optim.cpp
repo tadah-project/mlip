@@ -242,7 +242,7 @@ std::string optim_retired_key_error(const std::string& key) {
                                         "SWEIGHT",      "WDBFILE_AUTO",
                                         "EWEIGHT_TEMP", "UNCERTAINTY",
                                         "WCOV",         "WNOISE",
-                                        "ERROR"};
+                                        "ERROR",        "QUANTITY"};
   const std::string k = core::to_upper(key);
   for (const char* r : retired) {
     if (k != r) continue;
